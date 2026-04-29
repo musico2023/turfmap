@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* TurfMap design tokens. See CLAUDE.md visual reference. */
+@theme {
+  /* Surfaces */
+  --color-bg: #0a0a0a;
+  --color-card: #0d0d0d;
+  --color-card-glow: #0f1208;
+  --color-border: #27272a;
+  --color-border-bright: #2d3a14;
+  --color-grid-bg: #080808;
+
+  /* Brand */
+  --color-lime: #c5ff3a;
+
+  /* Heatmap rank tiers (lime = top 3, then yellow → orange → red) */
+  --color-rank-top3: #c5ff3a;
+  --color-rank-mid: #e8e54a;
+  --color-rank-low: #ff9f3a;
+  --color-rank-bad: #ff4d4d;
+
+  /* Fonts (next/font wires the CSS vars in app/layout.tsx) */
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+/* Heatmap reveal + scan-sweep animations from the prototype. */
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes scan-sweep {
+  0% { transform: translateY(-20px); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(560px); opacity: 0; }
+}
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2.2s ease-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.animate-scan-sweep { animation: scan-sweep 1.6s ease-in-out infinite; }
+.animate-blink { animation: blink 1.2s steps(2) infinite; }
+
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(197,255,58,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(197,255,58,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
