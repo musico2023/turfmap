@@ -12,6 +12,7 @@ import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
+import { aggregateCuratedCompetitors } from '@/lib/metrics/curatedCompetitors';
 import { Header } from '@/components/turfmap/Header';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { HeatmapWithToggle, type CompetitorView } from '@/components/turfmap/HeatmapWithToggle';
@@ -21,8 +22,10 @@ import { ScanButton } from '@/components/turfmap/ScanButton';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
-// Spacing per ring on the default 9×9 / 1.6mi grid.
-const MILES_PER_RING = 0.4;
+// Default 9×9 grid is 4 rings out from the center cell, so spacing per ring
+// is `service_radius_miles / 4`. Falls back to the v1 default of 1.6mi /
+// 0.4mi-per-ring when the client row predates the radius column.
+const RINGS_FROM_CENTER = 4;
 
 export default async function ClientDashboardPage({
   params,
@@ -109,13 +112,46 @@ export default async function ClientDashboardPage({
     OUT_OF_PACK_RANK
   );
 
-  const ownNamePattern = new RegExp(
-    client.business_name.split(/\s+/)[0] ?? '',
-    'i'
+  // Curated mode: if the agency has explicitly tracked competitor brands for
+  // this client (rows in the `competitors` table), surface ALL of them in the
+  // sidebar — including ones that never appeared in the local pack — so a
+  // sales pitch can show the full competitive landscape.
+  // Default mode: dynamically discover the top 3 from raw scan data.
+  const { data: trackedCompetitors } = await supabase
+    .from('competitors')
+    .select('competitor_name')
+    .eq('client_id', id);
+
+  const curatedBrandNames = (trackedCompetitors ?? []).map(
+    (r) => r.competitor_name as string
   );
-  const competitors = aggregateCompetitors(points, points.length || 1, {
-    excludeNamePattern: ownNamePattern,
-  });
+
+  let competitors: Array<{ name: string; amr: number; top3Pct: number }>;
+  let isCurated = false;
+  if (curatedBrandNames.length > 0) {
+    competitors = aggregateCuratedCompetitors(
+      points,
+      curatedBrandNames,
+      points.length || 1
+    );
+    isCurated = true;
+  } else {
+    const ownNamePattern = new RegExp(
+      client.business_name.split(/\s+/)[0] ?? '',
+      'i'
+    );
+    competitors = aggregateCompetitors(points, points.length || 1, {
+      excludeNamePattern: ownNamePattern,
+    });
+  }
+
+  // Heatmap toggle pills are useful only for competitors that actually appear
+  // in some cells (otherwise the toggled view is a blank grid). The right-rail
+  // CompetitorTable still gets the full curated list so the deck shows every
+  // brand the agency tracks.
+  const heatmapCompetitors = isCurated
+    ? competitors.filter((c) => (c as { top3Pct: number }).top3Pct > 0)
+    : competitors;
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -225,7 +261,7 @@ export default async function ClientDashboardPage({
                 Territory Heatmap
               </h3>
               <p className="text-xs text-zinc-500">
-                9×9 geo-grid · 81 search points · 1.6mi radius · UULE-based
+                9×9 geo-grid · 81 search points · {client.service_radius_miles ?? 1.6}mi radius · UULE-based
               </p>
             </div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
@@ -248,7 +284,7 @@ export default async function ClientDashboardPage({
           <HeatmapWithToggle
             clientCells={cells}
             clientName={client.business_name}
-            competitors={competitors.map((c): CompetitorView => ({
+            competitors={heatmapCompetitors.map((c): CompetitorView => ({
               ...c,
               cells: buildCompetitorCells(points, c.name),
             }))}
@@ -274,7 +310,10 @@ export default async function ClientDashboardPage({
             label="TurfRadius™"
             value={
               latestScan
-                ? `${(radiusUnits * MILES_PER_RING).toFixed(1)}mi`
+                ? `${(
+                    radiusUnits *
+                    ((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER)
+                  ).toFixed(1)}mi`
                 : '—'
             }
             subtitle="Distance you maintain top-3 visibility"

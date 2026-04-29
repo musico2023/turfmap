@@ -36,28 +36,51 @@ export function CompetitorTable({ competitors }: CompetitorTableProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {competitors.map((c, i) => (
-            <div
-              key={`${c.name}-${i}`}
-              className="flex items-center justify-between text-sm"
-            >
-              <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                <span className="font-mono text-xs text-zinc-600 w-3.5 flex-shrink-0">
-                  {i + 1}
-                </span>
-                <span className="text-zinc-200 truncate">{c.name}</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs flex-shrink-0">
-                <span className="font-mono text-zinc-500">
-                  AMR{' '}
-                  <span className="text-zinc-300 font-semibold">
-                    {c.amr.toFixed(1)}
+          {competitors.map((c, i) => {
+            const absent = c.top3Pct === 0;
+            return (
+              <div
+                key={`${c.name}-${i}`}
+                className="flex items-center justify-between text-sm"
+              >
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <span
+                    className={`font-mono text-xs w-3.5 flex-shrink-0 ${
+                      absent ? 'text-zinc-700' : 'text-zinc-600'
+                    }`}
+                  >
+                    {i + 1}
                   </span>
-                </span>
-                <span className="font-mono text-zinc-500">{c.top3Pct}%</span>
+                  <span
+                    className={`truncate ${
+                      absent ? 'text-zinc-500' : 'text-zinc-200'
+                    }`}
+                  >
+                    {c.name}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-xs flex-shrink-0">
+                  <span className="font-mono text-zinc-500">
+                    AMR{' '}
+                    <span
+                      className={
+                        absent ? 'text-zinc-600' : 'text-zinc-300 font-semibold'
+                      }
+                    >
+                      {absent ? '—' : c.amr.toFixed(1)}
+                    </span>
+                  </span>
+                  <span
+                    className={`font-mono ${
+                      absent ? 'text-zinc-700' : 'text-zinc-500'
+                    }`}
+                  >
+                    {c.top3Pct}%
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
