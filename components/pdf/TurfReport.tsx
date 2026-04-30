@@ -198,6 +198,9 @@ export type TurfReportData = {
   };
   metrics: {
     turfScore: number | null;
+    /** Already-converted 0–100 strength (avg rank where present). null
+     *  means the business doesn't appear in any cell. */
+    packStrength: number | null;
     top3Pct: number;
     radiusMiles: number;
   };
@@ -357,7 +360,16 @@ export function TurfReport({ data }: { data: TurfReportData }) {
                   ? '—'
                   : `${data.metrics.turfScore}`}
               </Text>
-              <Text style={styles.metricSub}>0–100 · higher is better</Text>
+              <Text style={styles.metricSub}>0–100 · territory coverage</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Text style={styles.metricLabel}>PACK STRENGTH</Text>
+              <Text style={styles.metricValue}>
+                {data.metrics.packStrength === null
+                  ? '—'
+                  : `${data.metrics.packStrength}`}
+              </Text>
+              <Text style={styles.metricSub}>0–100 · rank quality where you appear</Text>
             </View>
             <View style={styles.metricCardHi}>
               <Text style={styles.metricLabel}>3-PACK WIN RATE</Text>

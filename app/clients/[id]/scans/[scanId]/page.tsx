@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   ChevronLeft,
+  Award,
   Crown,
   Download,
   History,
@@ -32,6 +33,7 @@ import type {
 } from '@/lib/supabase/types';
 import { OUT_OF_PACK_RANK, turfScore } from '@/lib/metrics/turfScore';
 import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
+import { packStrength } from '@/lib/metrics/packStrength';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
@@ -102,6 +104,7 @@ export default async function PerScanPage({
     scan.turf_score !== null && scan.turf_score !== undefined
       ? Number(scan.turf_score)
       : turfScore(ranks);
+  const strength = packStrength(ranks);
   const t3 = scan.top3_win_rate !== null ? Number(scan.top3_win_rate) : top3Rate(ranks);
   const radiusUnits =
     scan.turf_radius_units ??
@@ -281,8 +284,14 @@ export default async function PerScanPage({
           <StatCard
             label="TurfScore™"
             value={score === null ? '—' : `${turfScoreDisplay(score)}`}
-            subtitle="0–100 · higher is better"
+            subtitle="0–100 · territory coverage"
             icon={Target}
+          />
+          <StatCard
+            label="Pack Strength"
+            value={strength === null ? '—' : `${strength}`}
+            subtitle="0–100 · rank quality where you appear"
+            icon={Award}
           />
           <StatCard
             label="3-Pack Win Rate"

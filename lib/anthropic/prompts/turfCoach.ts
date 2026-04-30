@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v4';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v5';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -103,7 +103,11 @@ export function buildTurfCoachUserPrompt(input: {
   industry: string | null;
   serviceArea: string;
   keyword: string;
+  /** AMR (1..20). Converted to display 0–100 inside this function. */
   turfScore: number | null;
+  /** Already-converted 0–100 Pack Strength (rank quality where present).
+   *  Null when the business doesn't appear in any cell. */
+  packStrength: number | null;
   top3WinRate: number;
   /** Result of the (newly redefined) turfRadius — max ring distance with
    *  any in-pack cell, multiplied by miles-per-ring. */
@@ -160,12 +164,13 @@ Tracked keyword: "${input.keyword}"
 Scan geometry: 9×9 grid centered on the business pin, ${input.gridRadiusMiles.toFixed(1)}mi axis radius. The grid spans ${(input.gridRadiusMiles * 2).toFixed(1)}mi edge-to-edge with ${(input.gridRadiusMiles / 4).toFixed(2)}mi between adjacent cells.
 
 Aggregate metrics across ${input.totalPoints} grid points (${input.failedPoints} failed):
-- TurfScore (0–100, higher is better; this is what the user sees on the dashboard): ${input.turfScore === null ? 'n/a' : turfScoreDisplay(input.turfScore)}
-- Internal Average Map Rank (raw 1.0–20.0, lower is better; cells not in 3-pack count as 20): ${input.turfScore === null ? 'n/a' : input.turfScore.toFixed(1)}
+- TurfScore (0–100, dominated by territory coverage; cells not in pack take a max penalty): ${input.turfScore === null ? 'n/a' : turfScoreDisplay(input.turfScore)}
+- Pack Strength (0–100, rank quality where the business actually appears, ignores absences): ${input.packStrength === null ? 'n/a (no cells in pack)' : input.packStrength}
+- Internal Average Map Rank (raw 1.0–20.0, lower better; cells not in pack count as 20): ${input.turfScore === null ? 'n/a' : input.turfScore.toFixed(1)}
 - 3-Pack Win Rate: ${input.top3WinRate}% of cells where the business ranked in the local 3-pack
 - TurfRadius (max-reach): ${input.radiusMiles.toFixed(1)}mi — furthest grid distance where the business reached the 3-pack at all
 
-When citing a score in your output, prefer the user-facing 0–100 TurfScore. The Average Map Rank is provided for your internal reasoning about rank gaps; don't surface it directly.
+How to use these: TurfScore is the headline. Pack Strength is the diagnostic. A high Pack Strength + low TurfScore tells you the business wins where present but doesn't extend — push reach (citations, reviews from new geographic areas, satellite locations). A low Pack Strength + low TurfScore means fundamental prominence work is needed first (review velocity, GBP categories, NAP consistency) before reach matters. Cite the 0–100 scores in user-facing output; AMR is for your internal rank-gap reasoning only.
 
 Per-cell rank grid (rows = north→south, cols = west→east; numbers are the business's rank 1-3, '·' means not in 3-pack, [X] is the center cell on the pin):
 ${gridText}

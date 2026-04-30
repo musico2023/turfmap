@@ -17,6 +17,7 @@ import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
 import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
+import { packStrength } from '@/lib/metrics/packStrength';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import type {
@@ -144,6 +145,7 @@ export async function GET(req: Request) {
     },
     metrics: {
       turfScore: turfScoreDisplay(score),
+      packStrength: packStrength(ranks),
       top3Pct: Number(t3),
       radiusMiles:
         Number(radiusUnits ?? 0) *

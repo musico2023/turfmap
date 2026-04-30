@@ -14,6 +14,7 @@ loadEnv({ path: path.resolve(process.cwd(), '.env.local') });
 
 import { getServerSupabase } from '../lib/supabase/server';
 import { turfRadius } from '../lib/metrics/turfRadius';
+import { packStrength } from '../lib/metrics/packStrength';
 
 const CLIENT_ID = '00000000-0000-4000-a000-000000000003';
 const PRIMARY_KEYWORD = 'pediatrician';
@@ -102,6 +103,7 @@ async function main() {
     ranksFlat.length;
   const pctTop3 = Math.round((inPackCount / ranksFlat.length) * 100);
   const turfscore = round1(100 - 5 * avgRankCapped);
+  const pack_strength = packStrength(ranksFlat);
   const radiusUnits = turfRadius(
     points.map((p) => ({
       point: { x: p.grid_x as number, y: p.grid_y as number },
@@ -196,6 +198,7 @@ async function main() {
     },
     radius_miles: client.service_radius_miles as number,
     turfscore,
+    pack_strength,
     avg_rank: round1(avgRankCapped),
     pct_top_3: pctTop3,
     pct_top_10: pctTop3,
@@ -243,7 +246,8 @@ async function main() {
   console.log(`  keyword            : "${PRIMARY_KEYWORD}"`);
   console.log(`  center             : ${CENTER_LABEL}`);
   console.log(`  grid               : 9x9, ${client.service_radius_miles}-mi axis radius`);
-  console.log(`  TurfScore          : ${turfscore} / 100`);
+  console.log(`  TurfScore          : ${turfscore} / 100  (territory coverage)`);
+  console.log(`  Pack Strength      : ${pack_strength === null ? '—' : pack_strength + ' / 100'}  (rank quality where present)`);
   console.log(`  avg rank (capped)  : ${round1(avgRankCapped)}`);
   console.log(`  in 3-pack          : ${inPackCount} / 81 cells (${pctTop3}%)`);
   console.log(`  TurfRadius (reach) : ${round1(reachMiles)}mi (max distance from pin)`);

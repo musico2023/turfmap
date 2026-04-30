@@ -25,6 +25,7 @@ import {
 } from '@/lib/anthropic/prompts/turfCoach';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
+import { packStrength } from '@/lib/metrics/packStrength';
 import type {
   ClientRow,
   ScanRow,
@@ -144,12 +145,19 @@ export async function POST(req: Request) {
 
   const milesPerRing = (client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER;
   const radiusMiles = (scan.turf_radius_units ?? 0) * milesPerRing;
+  // Compute Pack Strength inline from scan_points — it's a derived metric
+  // and not stored in the scans table.
+  const ranksFromPoints = points.map(
+    (p) => (p.rank as number | null) ?? null
+  );
+  const strength = packStrength(ranksFromPoints);
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: client.business_name,
     industry: client.industry,
     serviceArea: client.address,
     keyword: keyword.keyword,
     turfScore: scan.turf_score,
+    packStrength: strength,
     top3WinRate: Number(scan.top3_win_rate ?? 0),
     radiusMiles,
     gridRadiusMiles: client.service_radius_miles ?? 1.6,

@@ -5,7 +5,7 @@ import Link from 'next/link';
 // every scan. force-dynamic also kills any Next.js Data Cache layer that
 // might serve stale Supabase responses after a metric-definition change.
 export const dynamic = 'force-dynamic';
-import { Crown, Download, History, MapPin, Settings, Target, TrendingUp } from 'lucide-react';
+import { Award, Crown, Download, History, MapPin, Settings, Target, TrendingUp } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type {
   ClientRow,
@@ -15,6 +15,7 @@ import type {
 } from '@/lib/supabase/types';
 import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
 import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
+import { packStrength } from '@/lib/metrics/packStrength';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
@@ -111,6 +112,7 @@ export default async function ClientDashboardPage({
   }));
   const ranks = points.map((p) => p.rank);
   const score = turfScore(ranks);
+  const strength = packStrength(ranks);
   const t3 = top3Rate(ranks);
   const radiusUnits = turfRadius(
     points.map((p) => ({
@@ -318,15 +320,32 @@ export default async function ClientDashboardPage({
                 ? '—'
                 : `${turfScoreDisplay(score)}`
             }
-            subtitle="0–100 · higher is better"
+            subtitle="0–100 · territory coverage"
             icon={Target}
             tooltip={
               <>
-                A 0–100 composite of how well you rank across all 81 grid
-                cells. 100 = #1 in every cell; 0 = nowhere in the local 3-pack.
-                Cells where you&rsquo;re not in the 3-pack count as a max
-                penalty so this is apples-to-apples across the whole
-                territory — not just where you happen to show up.
+                Composite 0–100 score for how much of the 25-mi territory
+                you visibly own. Cells where you&rsquo;re not in the local
+                3-pack count as a max penalty, so this is dominated by
+                <em> reach</em>. To improve TurfScore, extend coverage to
+                new neighborhoods. (For rank quality where you DO appear,
+                see Pack Strength.)
+              </>
+            }
+          />
+          <StatCard
+            label="Pack Strength"
+            value={strength === null ? '—' : `${strength}`}
+            subtitle="0–100 · rank quality where you appear"
+            icon={Award}
+            tooltip={
+              <>
+                Rank quality across only the cells where you appear in the
+                local 3-pack — independent of how many cells you cover.
+                100 = #1 in every cell you appear in; 85 = #3 in every cell
+                you appear in. The complement to TurfScore: high Pack
+                Strength + low TurfScore means &ldquo;you win where you
+                show up, but you don&rsquo;t show up enough.&rdquo;
               </>
             }
           />

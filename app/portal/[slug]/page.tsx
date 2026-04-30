@@ -18,7 +18,7 @@
  */
 
 import { notFound, redirect } from 'next/navigation';
-import { AlertTriangle, Crown, MapPin, Target, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Award, Crown, MapPin, Target, TrendingUp } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { SignOutButton } from '@/components/turfmap/SignOutButton';
@@ -30,6 +30,7 @@ import type {
 } from '@/lib/supabase/types';
 import { OUT_OF_PACK_RANK, turfScore } from '@/lib/metrics/turfScore';
 import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
+import { packStrength } from '@/lib/metrics/packStrength';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
@@ -130,6 +131,7 @@ export default async function ClientPortalPage({
   }));
   const ranks = points.map((p) => p.rank);
   const score = turfScore(ranks);
+  const strength = packStrength(ranks);
   const t3 = top3Rate(ranks);
   const radiusUnits = turfRadius(
     points.map((p) => ({
@@ -260,8 +262,14 @@ export default async function ClientPortalPage({
           <StatCard
             label="TurfScore™"
             value={score === null ? '—' : `${turfScoreDisplay(score)}`}
-            subtitle="0–100 · higher is better"
+            subtitle="0–100 · territory coverage"
             icon={Target}
+          />
+          <StatCard
+            label="Pack Strength"
+            value={strength === null ? '—' : `${strength}`}
+            subtitle="0–100 · rank quality where you appear"
+            icon={Award}
           />
           <StatCard
             label="3-Pack Win Rate"
