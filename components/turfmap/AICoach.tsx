@@ -7,7 +7,7 @@
  * subcomponent (AICoachGenerateButton) so the page stays SSR by default.
  */
 
-import { ChevronRight, Sparkles, TrendingUp } from 'lucide-react';
+import { Sparkles, TrendingUp } from 'lucide-react';
 import { AICoachGenerateButton } from './AICoachGenerateButton';
 
 export type AICoachAction = {
@@ -54,16 +54,6 @@ export function AICoach({ scanId, insight, scanComplete }: AICoachProps) {
           <div className="flex items-center gap-2 mb-1.5">
             <Sparkles size={16} style={{ color: 'var(--color-lime)' }} />
             <h3 className="font-display text-xl font-bold">TurfMap AI Coach</h3>
-            <span
-              className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border"
-              style={{
-                background: '#1a2010',
-                color: 'var(--color-lime)',
-                borderColor: '#2d3a14',
-              }}
-            >
-              Powered by Claude
-            </span>
           </div>
           <p className="text-xs text-zinc-500">
             Strategic recommendations generated from your live heatmap data
@@ -161,12 +151,6 @@ export function AICoach({ scanId, insight, scanComplete }: AICoachProps) {
         </>
       )}
 
-      {scanComplete && !insight && scanId && (
-        <div className="mt-4 text-[10px] text-zinc-700 font-mono flex items-center gap-1">
-          <span>Powered by Claude Sonnet 4.6 · ~$0.05 / generation</span>
-          <ChevronRight size={10} className="text-zinc-700" />
-        </div>
-      )}
     </div>
   );
 }
