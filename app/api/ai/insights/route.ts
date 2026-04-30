@@ -25,7 +25,6 @@ import {
 } from '@/lib/anthropic/prompts/turfCoach';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
-import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import type {
   ClientRow,
   ScanRow,
@@ -88,20 +87,60 @@ export async function POST(req: Request) {
     );
   }
 
-  // 2. Recompute competitors from scan_points (cheap, single query)
+  // 2. Pull scan_points + build the 9×9 client rank grid + observed
+  //    competitor leaderboard (top 10 by appearance count). The grid lets
+  //    Claude see the actual geographic pattern; the explicit list keeps
+  //    it from confabulating brand names from training data.
   const { data: rawPoints } = await supabase
     .from('scan_points')
-    .select('competitors')
+    .select('grid_x, grid_y, rank, competitors')
     .eq('scan_id', scan.id);
   const points = rawPoints ?? [];
 
+  // 9×9 client rank grid (y=row, x=col)
+  const rankGrid: Array<Array<number | null>> = Array.from({ length: 9 }, () =>
+    Array<number | null>(9).fill(null)
+  );
+  for (const p of points) {
+    const x = p.grid_x as number;
+    const y = p.grid_y as number;
+    if (y >= 0 && y < 9 && x >= 0 && x < 9) {
+      rankGrid[y][x] = (p.rank as number | null) ?? null;
+    }
+  }
+
+  // Top competitors by appearance count, excluding the client's own brand.
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
     'i'
   );
-  const competitors = aggregateCompetitors(points, points.length || 1, {
-    excludeNamePattern: ownNamePattern,
-  });
+  type Stats = { ranks: number[] };
+  const compStats = new Map<string, Stats>();
+  for (const p of points) {
+    const list = (p.competitors ?? []) as Array<{
+      name: string | null;
+      rank_group: number | null;
+      rank_absolute: number | null;
+    }>;
+    for (const c of list) {
+      if (!c?.name) continue;
+      if (ownNamePattern.test(c.name)) continue;
+      const rank = c.rank_group ?? c.rank_absolute ?? null;
+      if (rank === null || rank > 3) continue;
+      const s = compStats.get(c.name) ?? { ranks: [] };
+      s.ranks.push(rank);
+      compStats.set(c.name, s);
+    }
+  }
+  const competitorList = [...compStats.entries()]
+    .map(([name, s]) => ({
+      name,
+      appearances: s.ranks.length,
+      avgRank: s.ranks.reduce((a, b) => a + b, 0) / s.ranks.length,
+      bestRank: Math.min(...s.ranks),
+    }))
+    .sort((a, b) => b.appearances - a.appearances || a.avgRank - b.avgRank)
+    .slice(0, 10);
 
   const milesPerRing = (client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER;
   const radiusMiles = (scan.turf_radius_units ?? 0) * milesPerRing;
@@ -116,7 +155,8 @@ export async function POST(req: Request) {
     gridRadiusMiles: client.service_radius_miles ?? 1.6,
     totalPoints: scan.total_points ?? 81,
     failedPoints: scan.failed_points ?? 0,
-    competitors,
+    rankGrid,
+    competitors: competitorList,
   });
 
   // 3. Call Sonnet 4.6 with structured output + prompt caching

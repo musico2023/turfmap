@@ -9,7 +9,7 @@
 
 import { z } from 'zod';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v2';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v3';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -68,17 +68,34 @@ A heatmap that's lime (top 3) at the center and red (out-of-pack) at the edges i
 - **NAP / citation chaos**: inconsistent appearance, especially for branded queries. Treat with citation cleanup, NAP audit across top 50 directories, Google Search Console review.
 - **Hyper-local competitor**: one specific competitor dominates the 3-pack at high frequency. Treat with competitive analysis on that exact business, then differential moves (faster reviews, more services, niche keywords).
 
+# Anti-confabulation rules — read carefully
+
+The user prompt provides EXACTLY the data you have. You do NOT have access to:
+- Review counts, ratings, or review recency for any business (yours or competitors')
+- GBP photo counts, post cadence, age of listing, category settings
+- Citation profiles, backlink data, on-site content
+- Anything beyond rank patterns, brand names, and aggregate counts already in the user prompt
+
+When recommending actions, you MAY suggest them generically (e.g. "audit GBP categories", "push review velocity"). You MAY NOT cite specific quantitative claims that aren't in the user prompt. Examples of forbidden output:
+- "Competitor X has only 12 reviews" — you don't have review data
+- "Their listing is older / newer than yours" — you don't have age data
+- "Photos and posts are deciding the filter" — you can't see photos or post cadence
+- Any specific brand name not present in the competitor list provided
+
+If you find yourself wanting to cite a number or attribute that wasn't in the user prompt, REPHRASE without it. The diagnosis can still identify the pattern (proximity-bound, review-deficient inferred from rank gaps, etc.) without inventing data.
+
 # Style requirements
 
 - Concrete actions only. "Build 8 neighborhood landing pages" beats "improve content".
-- Tie every action to the data: cite the AMR, top-3 rate, radius, or competitor stat.
+- Tie every action to the data: cite the AMR, top-3 rate, radius, or competitor stat actually in the prompt.
 - Realistic 90-day projections. Local SEO doesn't move overnight; don't promise the moon.
 - No marketing fluff. The audience is a Local SEO operator who knows the trade.
 - Output ONLY the structured JSON the schema asks for. No preamble, no markdown, no explanation outside the schema fields.`;
 
 /**
- * Build the per-scan user prompt from the scan stats. Keep this <500 tokens
- * so cache reads dominate cost.
+ * Build the per-scan user prompt. Includes the actual 9×9 rank grid and a
+ * top-N competitor list so Claude reasons from observed data instead of
+ * confabulating brand names or stats.
  */
 export function buildTurfCoachUserPrompt(input: {
   businessName: string;
@@ -87,6 +104,8 @@ export function buildTurfCoachUserPrompt(input: {
   keyword: string;
   turfScore: number | null;
   top3WinRate: number;
+  /** Result of the (newly redefined) turfRadius — max ring distance with
+   *  any in-pack cell, multiplied by miles-per-ring. */
   radiusMiles: number;
   /** Half-width of the grid in miles (= client.service_radius_miles).
    *  Lets the AI reason about the actual scan footprint instead of
@@ -94,34 +113,61 @@ export function buildTurfCoachUserPrompt(input: {
   gridRadiusMiles: number;
   totalPoints: number;
   failedPoints: number;
-  competitors: Array<{ name: string; amr: number; top3Pct: number }>;
+  /** 9×9 array of nullable client ranks, indexed [y][x] (y=0 north). */
+  rankGrid: Array<Array<number | null>>;
+  /** Up to ~10 competitor brands actually observed, with stats. The AI is
+   *  instructed to use ONLY this list when naming competitors. */
+  competitors: Array<{
+    name: string;
+    appearances: number;
+    avgRank: number;
+    bestRank: number;
+  }>;
 }): string {
+  // Render 9×9 as a fixed-width grid Claude can reason about visually.
+  // 'X' = in pack with rank, '·' = not in pack. Center cell marked.
+  const center = Math.floor(input.rankGrid.length / 2);
+  const gridText = input.rankGrid
+    .map((row, y) =>
+      row
+        .map((rank, x) => {
+          const cell = rank === null ? '·' : String(rank);
+          const isCenter = x === center && y === center;
+          return isCenter ? `[${cell}]` : ` ${cell} `;
+        })
+        .join('')
+    )
+    .join('\n');
+
   const compRows =
     input.competitors.length === 0
-      ? '(no consistent 3-pack competitors observed yet)'
+      ? '(no observed 3-pack competitors)'
       : input.competitors
           .map(
             (c) =>
-              `  - ${c.name}: AMR ${c.amr.toFixed(1)}, Top-3% ${c.top3Pct}%`
+              `  - ${c.name}: ${c.appearances} cells, avg rank ${c.avgRank.toFixed(1)}, best rank ${c.bestRank}`
           )
           .join('\n');
 
   return `Analyze this geo-grid scan and return the structured playbook.
 
 Business: ${input.businessName}
-Industry: ${input.industry ?? 'home services'}
+Industry: ${input.industry ?? 'local services'}
 Service area: ${input.serviceArea}
 Tracked keyword: "${input.keyword}"
 
-Scan geometry: 9×9 grid centered on the business pin, ${input.gridRadiusMiles.toFixed(1)}mi axis radius (so the grid spans ${(input.gridRadiusMiles * 2).toFixed(1)}mi edge-to-edge with ${(input.gridRadiusMiles / 4).toFixed(2)}mi between adjacent cells).
+Scan geometry: 9×9 grid centered on the business pin, ${input.gridRadiusMiles.toFixed(1)}mi axis radius. The grid spans ${(input.gridRadiusMiles * 2).toFixed(1)}mi edge-to-edge with ${(input.gridRadiusMiles / 4).toFixed(2)}mi between adjacent cells.
 
-Scan results across ${input.totalPoints} grid points (${input.failedPoints} failed):
-- TurfScore (Average Map Rank, lower is better, capped at 20 for not-in-pack cells): ${input.turfScore === null ? 'n/a' : input.turfScore.toFixed(1)}
-- 3-Pack Win Rate: ${input.top3WinRate}% of grid points where the business ranked in the local 3-pack
-- TurfRadius: ${input.radiusMiles.toFixed(1)} miles where average local-pack rank stayed ≤ 3.5
+Aggregate metrics across ${input.totalPoints} grid points (${input.failedPoints} failed):
+- TurfScore (Average Map Rank — lower is better; cells not in 3-pack count as 20): ${input.turfScore === null ? 'n/a' : input.turfScore.toFixed(1)}
+- 3-Pack Win Rate: ${input.top3WinRate}% of cells where the business ranked in the local 3-pack
+- TurfRadius (max-reach): ${input.radiusMiles.toFixed(1)}mi — furthest grid distance where the business reached the 3-pack at all
 
-Top observed 3-pack competitors at this location:
+Per-cell rank grid (rows = north→south, cols = west→east; numbers are the business's rank 1-3, '·' means not in 3-pack, [X] is the center cell on the pin):
+${gridText}
+
+Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference:
 ${compRows}
 
-Return the structured playbook now.`;
+Return the structured playbook now. Remember: do not cite review counts, ratings, photo counts, GBP age, or any specific quantitative attribute not listed above.`;
 }

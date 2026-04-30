@@ -279,7 +279,7 @@ export default async function ClientPortalPage({
                   ).toFixed(1)}mi`
                 : '—'
             }
-            subtitle="Distance you maintain top-3 visibility"
+            subtitle="Furthest distance from your pin where you reach the 3-pack"
             icon={TrendingUp}
           />
           <CompetitorTable competitors={competitors} />

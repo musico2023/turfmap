@@ -29,8 +29,15 @@ async function main() {
     .eq('status', 'complete');
   if (error) throw new Error(error.message);
 
-  const stale = (scans ?? []).filter(
-    (s) => s.turf_score == null || s.top3_win_rate == null || s.turf_radius_units == null
+  // Forceable: pass --force to recompute even when columns already have
+  // values. Useful after a metric definition change (e.g. turfRadius
+  // semantics swap from concentric-ring averaging → max-reach distance).
+  const force = process.argv.includes('--force');
+  const stale = (scans ?? []).filter((s) =>
+    force ||
+    s.turf_score == null ||
+    s.top3_win_rate == null ||
+    s.turf_radius_units == null
   );
 
   if (stale.length === 0) {
@@ -38,7 +45,9 @@ async function main() {
     return;
   }
 
-  console.log(`Found ${stale.length} scan(s) missing metrics. Backfilling…`);
+  console.log(
+    `${force ? 'Force-recomputing' : 'Found'} ${stale.length} scan(s)…`
+  );
   for (const s of stale) {
     const { data: pts } = await supabase
       .from('scan_points')

@@ -343,13 +343,14 @@ export default async function ClientDashboardPage({
                   ).toFixed(1)}mi`
                 : '—'
             }
-            subtitle="Distance you maintain top-3 visibility"
+            subtitle="Furthest pin distance where you reach the 3-pack"
             icon={TrendingUp}
             tooltip={
               <>
-                Largest concentric ring around your pin where the average rank
-                stays in the top 3-pack. Measures how far out from your address
-                your visibility holds before it falls off.
+                Distance from your pin to the furthest grid cell where you
+                appear in the local 3-pack at all. A clean &ldquo;reach&rdquo;
+                metric — non-zero whenever you have any 3-pack presence,
+                even if your coverage is concentrated in one direction.
               </>
             }
           />
