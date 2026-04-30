@@ -19,6 +19,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -48,6 +49,8 @@ const CreateClientBody = z.object({
 });
 
 export async function POST(req: Request) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   let parsed: z.infer<typeof CreateClientBody>;
   try {
     parsed = CreateClientBody.parse(await req.json());

@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 
 export const runtime = 'nodejs';
 
@@ -24,6 +25,8 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   let parsed: z.infer<typeof Body>;
   try {
     parsed = Body.parse(await req.json());

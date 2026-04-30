@@ -23,6 +23,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import type {
   ClientRow,
   ScanPointRow,
@@ -52,6 +53,7 @@ export default async function PerScanPage({
   params: Promise<{ id: string; scanId: string }>;
 }) {
   const { id, scanId } = await params;
+  const me = await requireAgencyUserOrRedirect(`/clients/${id}/scans/${scanId}`);
   const supabase = getServerSupabase();
 
   // Load client + scan + keyword in parallel
@@ -133,7 +135,7 @@ export default async function PerScanPage({
 
   return (
     <div className="min-h-screen w-full text-white">
-      <Header />
+      <Header userEmail={me.email} />
 
       {/* Historical-scan banner */}
       <div

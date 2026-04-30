@@ -9,11 +9,13 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { Header } from '@/components/turfmap/Header';
 import { ClientCreateForm } from '@/components/turfmap/ClientCreateForm';
+import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 
-export default function NewClientPage() {
+export default async function NewClientPage() {
+  const me = await requireAgencyUserOrRedirect('/clients/new');
   return (
     <div className="min-h-screen w-full text-white">
-      <Header />
+      <Header userEmail={me.email} />
       <div className="px-8 py-6">
         <Link
           href="/"

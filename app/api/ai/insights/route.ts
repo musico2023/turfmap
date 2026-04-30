@@ -24,6 +24,7 @@ import {
   buildTurfCoachUserPrompt,
 } from '@/lib/anthropic/prompts/turfCoach';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import type {
   ClientRow,
@@ -40,6 +41,8 @@ const RequestBody = z.object({ scanId: z.string().uuid() });
 const MILES_PER_RING = 0.4;
 
 export async function POST(req: Request) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   let body: { scanId: string };
   try {
     body = RequestBody.parse(await req.json());

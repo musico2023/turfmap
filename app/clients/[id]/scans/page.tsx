@@ -20,6 +20,7 @@ import {
 import { TrendChart, type TrendPoint } from '@/components/turfmap/TrendChart';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type { ClientRow, ScanRow } from '@/lib/supabase/types';
+import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 
 const TREND_LIMIT = 26;
 
@@ -29,6 +30,7 @@ export default async function ScanHistoryPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireAgencyUserOrRedirect(`/clients/${id}/scans`);
   const supabase = getServerSupabase();
 
   const { data: client } = await supabase
@@ -109,7 +111,7 @@ export default async function ScanHistoryPage({
 
   return (
     <div className="min-h-screen w-full text-white">
-      <Header />
+      <Header userEmail={me.email} />
 
       <div className="px-8 py-6">
         <Link

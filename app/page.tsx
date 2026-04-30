@@ -3,8 +3,10 @@ import { ChevronRight, Crosshair, Plus } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type { ClientRow } from '@/lib/supabase/types';
 import { Header } from '@/components/turfmap/Header';
+import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 
 export default async function AgencyHomePage() {
+  const me = await requireAgencyUserOrRedirect('/');
   const supabase = getServerSupabase();
   const { data: clients } = await supabase
     .from('clients')
@@ -15,7 +17,7 @@ export default async function AgencyHomePage() {
 
   return (
     <div className="min-h-screen w-full text-white">
-      <Header />
+      <Header userEmail={me.email} />
 
       <div className="px-8 py-6">
         <div className="flex items-center justify-between mb-6">

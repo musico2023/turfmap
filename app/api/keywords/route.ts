@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import type { TrackedKeywordRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -29,6 +30,8 @@ const PostBody = z.object({
 });
 
 export async function POST(req: Request) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   let parsed: z.infer<typeof PostBody>;
   try {
     parsed = PostBody.parse(await req.json());

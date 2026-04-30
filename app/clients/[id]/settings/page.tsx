@@ -21,6 +21,7 @@ import {
 } from '@/components/turfmap/ClientUsersManager';
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 export default async function ClientSettingsPage({
@@ -29,6 +30,7 @@ export default async function ClientSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireAgencyUserOrRedirect(`/clients/${id}/settings`);
   const supabase = getServerSupabase();
 
   const [{ data: client }, { data: keywords }, { data: portalUsers }] =
@@ -57,7 +59,7 @@ export default async function ClientSettingsPage({
 
   return (
     <div className="min-h-screen w-full text-white">
-      <Header />
+      <Header userEmail={me.email} />
 
       <div className="px-8 py-6 max-w-5xl">
         <Link

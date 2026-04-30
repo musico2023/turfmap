@@ -1,6 +1,7 @@
 import { Crosshair } from 'lucide-react';
+import { SignOutButton } from './SignOutButton';
 
-export function Header() {
+export function Header({ userEmail }: { userEmail?: string | null } = {}) {
   return (
     <header
       className="border-b px-8 py-5"
@@ -55,6 +56,18 @@ export function Header() {
             />
             <span>System operational</span>
           </div>
+          {userEmail && (
+            <>
+              <div
+                className="h-4 w-px"
+                style={{ background: 'var(--color-border)' }}
+              />
+              <span className="font-mono text-zinc-500 truncate max-w-[200px]">
+                {userEmail}
+              </span>
+              <SignOutButton />
+            </>
+          )}
         </div>
       </div>
     </header>

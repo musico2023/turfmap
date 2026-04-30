@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +17,8 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const supabase = getServerSupabase();
   const { error, count } = await supabase

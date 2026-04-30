@@ -9,9 +9,11 @@
  * sensible filename based on the business name + scan date.
  */
 
+import { NextResponse } from 'next/server';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { TurfReport, type TurfReportData } from '@/components/pdf/TurfReport';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
 import { top3Rate } from '@/lib/metrics/top3Rate';
@@ -29,6 +31,8 @@ export const maxDuration = 30;
 const MILES_PER_RING = 0.4;
 
 export async function GET(req: Request) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   const url = new URL(req.url);
   const scanId = url.searchParams.get('scanId');
   if (!scanId) {

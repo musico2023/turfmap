@@ -48,11 +48,15 @@ export async function GET(req: Request) {
 }
 
 function redirectWithError(next: string, msg: string): string {
-  // Bounce back to the login URL implied by `next` (which is /portal/<id>);
-  // append the error so the user sees what happened.
+  // Bounce back to whichever login surface the user was originally trying
+  // to reach, surfacing the error on the form so they can retry.
   if (next.startsWith('/portal/')) {
     const slug = next.split('/')[2];
     return `/portal/${slug}/login?error=${encodeURIComponent(msg)}`;
   }
-  return `/?error=${encodeURIComponent(msg)}`;
+  // Agency-side default — preserve `next` so they land where they were
+  // headed after a successful retry.
+  const params = new URLSearchParams({ error: msg });
+  if (next && next !== '/') params.set('next', next);
+  return `/login?${params.toString()}`;
 }

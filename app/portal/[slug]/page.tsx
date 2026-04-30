@@ -11,9 +11,10 @@
  * v1 scope: `[slug]` is the client UUID. Phase 4 may swap to a friendly
  * subdomain or a `clients.slug` column.
  *
- * Auth: NOT IMPLEMENTED YET. Anyone who knows the URL can view the data.
- * Phase 4 will add Supabase Auth (magic-link via Resend) gated by the
- * `client_users` table.
+ * Auth: Supabase magic-link, gated by membership in `client_users`. Agency
+ * staff (rows in `users`) bypass the membership check so we can preview a
+ * portal during sales/demos — they see an "Agency preview" tag in the
+ * header to make the impersonation obvious.
  */
 
 import { notFound, redirect } from 'next/navigation';
@@ -41,7 +42,7 @@ import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
-const MILES_PER_RING = 0.4;
+const RINGS_FROM_CENTER = 4;
 
 export default async function ClientPortalPage({
   params,
@@ -69,14 +70,26 @@ export default async function ClientPortalPage({
   }
 
   const userEmail = (user.email ?? '').toLowerCase();
-  const { data: membership } = await supabase
-    .from('client_users')
-    .select('id')
-    .eq('client_id', slug)
-    .eq('email', userEmail)
-    .maybeSingle<{ id: string }>();
+  const [{ data: membership }, { data: agencyRow }] = await Promise.all([
+    supabase
+      .from('client_users')
+      .select('id')
+      .eq('client_id', slug)
+      .eq('email', userEmail)
+      .maybeSingle<{ id: string }>(),
+    supabase
+      .from('users')
+      .select('id, role')
+      .eq('email', userEmail)
+      .maybeSingle<{ id: string; role: string }>(),
+  ]);
 
-  if (!membership) {
+  // Agency staff get an impersonation override — they can preview any
+  // client portal, but the header surfaces a tag so the screen-share is
+  // unambiguous.
+  const isAgencyPreview = !membership && Boolean(agencyRow);
+
+  if (!membership && !agencyRow) {
     return <NoAccessScreen email={user.email ?? ''} />;
   }
   // ───────────────────────────────────────────────────────────────────────────
@@ -162,6 +175,7 @@ export default async function ClientPortalPage({
         logoUrl={client.logo_url}
         accent={accent}
         userEmail={user.email ?? null}
+        isAgencyPreview={isAgencyPreview}
       />
 
       {/* Compact business meta — no scan-trigger / cost data here */}
@@ -210,7 +224,8 @@ export default async function ClientPortalPage({
                 Territory Heatmap
               </h3>
               <p className="text-xs text-zinc-500">
-                9×9 geo-grid · 81 search points · 1.6mi radius
+                9×9 geo-grid · 81 search points ·{' '}
+                {client.service_radius_miles ?? 1.6}mi radius
               </p>
             </div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
@@ -258,7 +273,10 @@ export default async function ClientPortalPage({
             label="TurfRadius™"
             value={
               latestScan
-                ? `${(radiusUnits * MILES_PER_RING).toFixed(1)}mi`
+                ? `${(
+                    radiusUnits *
+                    ((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER)
+                  ).toFixed(1)}mi`
                 : '—'
             }
             subtitle="Distance you maintain top-3 visibility"
@@ -311,11 +329,13 @@ function PortalHeader({
   logoUrl,
   accent,
   userEmail,
+  isAgencyPreview,
 }: {
   businessName: string;
   logoUrl: string | null;
   accent: string;
   userEmail: string | null;
+  isAgencyPreview: boolean;
 }) {
   const initial = businessName.trim().charAt(0).toUpperCase() || 'T';
   return (
@@ -354,6 +374,19 @@ function PortalHeader({
       </div>
       {userEmail && (
         <div className="flex items-center gap-3 text-xs text-zinc-500">
+          {isAgencyPreview && (
+            <span
+              className="px-2 py-1 rounded text-[10px] uppercase tracking-[0.18em] font-bold"
+              style={{
+                background: 'rgba(197, 255, 58, 0.12)',
+                color: 'var(--color-lime, #c5ff3a)',
+                border: '1px solid rgba(197, 255, 58, 0.3)',
+              }}
+              title="You're viewing this client's portal as agency staff. The client doesn't see this tag."
+            >
+              Agency preview
+            </span>
+          )}
           <span className="font-mono truncate max-w-[200px]">{userEmail}</span>
           <SignOutButton />
         </div>

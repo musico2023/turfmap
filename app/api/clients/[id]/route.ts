@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import type { ClientRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -46,6 +47,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
   let parsed: z.infer<typeof PatchBody>;
@@ -97,6 +100,8 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
   let parsed: z.infer<typeof DeleteBody>;

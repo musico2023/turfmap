@@ -25,6 +25,7 @@ import dns from 'node:dns';
 import { runLiveLocalPackScan } from '@/lib/dataforseo/client';
 import { generateGridCoordinates } from '@/lib/dataforseo/grid';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { turfScore } from '@/lib/metrics/turfScore';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
@@ -39,6 +40,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
+  const auth = await requireAgencyUserForApi();
+  if (auth instanceof NextResponse) return auth;
   let body: { clientId?: string; keywordId?: string };
   try {
     body = await req.json();

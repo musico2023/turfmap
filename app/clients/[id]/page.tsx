@@ -19,6 +19,7 @@ import { HeatmapWithToggle, type CompetitorView } from '@/components/turfmap/Hea
 import { StatCard } from '@/components/turfmap/StatCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { InfoTooltip } from '@/components/turfmap/InfoTooltip';
+import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import { ScanButton } from '@/components/turfmap/ScanButton';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
@@ -34,6 +35,7 @@ export default async function ClientDashboardPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireAgencyUserOrRedirect(`/clients/${id}`);
   const supabase = getServerSupabase();
 
   const { data: client } = await supabase
@@ -156,7 +158,7 @@ export default async function ClientDashboardPage({
 
   return (
     <div className="min-h-screen w-full text-white">
-      <Header />
+      <Header userEmail={me.email} />
 
       {/* Business setup bar */}
       <div
