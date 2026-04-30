@@ -250,7 +250,7 @@ export default async function ClientDashboardPage({
       <div className="grid grid-cols-12 gap-6 p-8">
         {/* Heatmap */}
         <div
-          className="col-span-8 border rounded-lg p-6 relative overflow-hidden"
+          className="col-span-8 border rounded-lg p-6 relative"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',

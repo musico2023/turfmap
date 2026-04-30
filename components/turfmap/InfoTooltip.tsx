@@ -34,7 +34,7 @@ export function InfoTooltip({
         className="text-zinc-600 group-hover:text-zinc-300 transition-colors"
       />
       <span
-        className={`invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute z-50 left-1/2 -translate-x-1/2 ${sideCls} ${width} px-3 py-2 rounded-md text-[11px] font-normal text-zinc-300 bg-zinc-900 border border-zinc-700 shadow-xl whitespace-normal leading-relaxed pointer-events-none`}
+        className={`invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute z-50 left-1/2 -translate-x-1/2 ${sideCls} ${width} px-3 py-2 rounded-md text-[11px] font-normal text-zinc-300 bg-zinc-900 border border-zinc-700 shadow-xl whitespace-normal leading-relaxed pointer-events-none normal-case tracking-normal`}
       >
         {children}
       </span>

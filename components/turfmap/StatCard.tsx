@@ -22,7 +22,7 @@ export function StatCard({
 }: StatCardProps) {
   return (
     <div
-      className="border rounded-lg p-5 relative overflow-hidden"
+      className="border rounded-lg p-5 relative"
       style={{
         background: highlight
           ? 'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)'
