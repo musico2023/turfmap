@@ -1,21 +1,15 @@
 /**
- * Real-client scan: Ivy's Touch Home Healthcare LLC (Alexandria, VA).
+ * Real-client scan: Kidcrew Medical (Toronto, ON).
  *
- * First production scan run from a sales-pitch context.
+ * Run with:  npm run scan:kidcrew
  *
- * Run with:  npm run scan:ivys-touch
- *
- *   1. Upsert client row in Supabase (idempotent on fixed UUID).
- *   2. Insert primary keyword ("home care") + 5 secondaries (queued only).
- *   3. Create scan row in 'running' status.
- *   4. Generate 81-point 9x9 grid at 25-mile radius (≈6.25mi spacing).
- *   5. Run Live Local Pack scan via lib/dataforseo/client.
- *   6. Persist scan_points + cost_cents.
- *   7. Build pitch-deck JSON at outputs/ivys-touch-home-care-scan.json:
- *        - 9x9 client rank grid (null = not in top 3-pack at that cell)
- *        - Brand-collapsed competitor leaderboard
- *        - TurfScore = 100 - 5 * avg_rank_capped_at_20
- *   8. Print console summary.
+ * Forked from scan-ivys-touch.ts. Differences:
+ *   - Different client UUID + flagship address (1440 Bathurst, Wychwood)
+ *   - Toronto-specific competitor brands (15 total)
+ *   - Brand patterns accept Canadian "paediatric" spelling alongside US
+ *     "pediatric" (and Sickkids' multiple GBP listing variants)
+ *   - 4 queued secondary keywords (not run in this script)
+ *   - Tracks the secondary North York location in _meta for follow-up
  */
 
 import { config as loadEnv } from 'dotenv';
@@ -23,8 +17,6 @@ import path from 'node:path';
 import dns from 'node:dns';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-// Force IPv4-first DNS (api.dataforseo.com only publishes A records;
-// dual-stack networks sometimes flake on AAAA).
 dns.setDefaultResultOrder('ipv4first');
 loadEnv({ path: path.resolve(process.cwd(), '.env.local') });
 
@@ -38,52 +30,60 @@ import { getServerSupabase } from '../lib/supabase/server';
 import { turfRadius } from '../lib/metrics/turfRadius';
 
 // ─── Client fixture ────────────────────────────────────────────────────────
-const CLIENT_ID = '00000000-0000-4000-a000-000000000002';
+const CLIENT_ID = '00000000-0000-4000-a000-000000000003';
 const CLIENT = {
   id: CLIENT_ID,
-  business_name: "Ivy's Touch Home Healthcare LLC",
-  address: '5904 Richmond Hwy, Ste 518, Alexandria, VA 22303',
-  latitude: 38.78,
-  longitude: -77.08,
-  industry: 'home healthcare',
+  business_name: 'Kidcrew Medical',
+  // Flagship; secondary at 240 Duncan Mill Rd is queued in _meta.
+  address: '1440 Bathurst Street, Toronto, ON M5R 3J3',
+  latitude: 43.6822,
+  longitude: -79.41834,
+  industry: 'pediatric medical',
   status: 'active' as const,
   service_radius_miles: 25,
 };
-const CENTER_LABEL = 'Alexandria, VA — Hybla Valley';
+const CENTER_LABEL = 'Toronto, ON — Wychwood (Bathurst & St. Clair)';
+const SECONDARY_LOCATION = {
+  address: '240 Duncan Mill Road, Toronto, ON M3B 3S6',
+  latitude: 43.76214,
+  longitude: -79.35142,
+  label: 'North York / Don Valley East',
+};
 
-const PRIMARY_KEYWORD = 'home care';
+const PRIMARY_KEYWORD = 'pediatrician';
 const SECONDARY_KEYWORDS = [
-  'home health care',
-  'in home senior care',
-  'elder care near me',
-  'live in caregiver',
+  'child psychologist',
+  'pediatric occupational therapist',
+  'ADHD assessment',
+  'psychoeducational assessment',
 ];
 
 const OUT_OF_PACK = 20;
 
-// Fuzzy match for the client business itself across local-pack listings.
-// Catches "Ivy's Touch", "Ivys Touch Home Healthcare", "Ivy's Touch Home Care", etc.
-const IVYS_TOUCH_PATTERN = /ivy.{0,3}touch/i;
+// Match the client business itself in local-pack listings. Catches
+// "Kidcrew Medical", "Kidcrew Pediatric Medical Clinic", etc.
+const KIDCREW_PATTERN = /kidcrew/i;
 
 // ─── Brand-root patterns for franchise / multi-location collapse ───────────
-// Order matters: longer / more-specific patterns first so multi-word brands
-// don't get partial-matched by a shorter pattern (none collide here, but
-// keeping the convention for safety).
+// Canadian "paediatric" + US "pediatric" both accepted via [ae] class.
 type BrandPattern = { name: string; pattern: RegExp };
 const COMPETITORS: BrandPattern[] = [
-  { name: 'Home Instead',            pattern: /home\s*instead/i },
-  { name: 'Comfort Keepers',         pattern: /comfort\s*keepers/i },
-  { name: 'Visiting Angels',         pattern: /visiting\s*angels/i },
-  { name: 'IncrediCare',             pattern: /incredi[-\s]*care/i },
-  { name: 'Right at Home',           pattern: /right\s+at\s+home/i },
-  { name: 'BrightStar Care',         pattern: /bright\s*star\s*care/i },
-  { name: 'Always Best Care',        pattern: /always\s+best\s+care/i },
-  { name: 'Apollo Home Healthcare',  pattern: /apollo\s+home\s*healthcare?/i },
-  { name: 'Senior Helpers',          pattern: /senior\s*helpers?/i },
-  { name: 'Caring Senior Service',   pattern: /caring\s+senior\s+service/i },
-  { name: 'Edna Home Care Services', pattern: /edna\s+home\s+care/i },
-  { name: 'Ajir Home Care',          pattern: /ajir\s+home\s+care/i },
-  { name: 'Mint Caregivers',         pattern: /mint\s+caregivers?/i },
+  { name: 'Nest Health',                  pattern: /nest\s+health/i },
+  { name: 'Medcan',                       pattern: /\bmedcan\b/i },
+  { name: 'Cleveland Clinic Canada',      pattern: /cleveland\s+clinic/i },
+  { name: 'Don Mills Pediatrics',         pattern: /don\s+mills\s+p[ae]diatric/i },
+  { name: 'Toronto Beach Pediatrics',     pattern: /toronto\s+beach/i },
+  { name: 'True North Health Centre',     pattern: /true\s+north\s+health/i },
+  // Sickkids has many GBP listing variants — match all of them.
+  { name: 'The Hospital for Sick Children', pattern: /sick\s*kids|hospital\s+for\s+sick/i },
+  { name: 'Sunnybrook Pediatrics',        pattern: /sunnybrook/i },
+  { name: 'North Toronto Pediatrics',     pattern: /north\s+toronto\s+p[ae]diatric/i },
+  { name: 'Pediatric Alliance',           pattern: /p[ae]diatric\s+alliance/i },
+  { name: 'Midtown Pediatrics',           pattern: /midtown\s+p[ae]diatric/i },
+  { name: 'Everest Pediatric Clinic',     pattern: /everest\s+p[ae]diatric|everest\s+clinic/i },
+  { name: 'Roundhouse Pediatrics',        pattern: /roundhouse\s+p[ae]diatric/i },
+  { name: 'Bloorkids',                    pattern: /bloorkids|bloor\s+kids/i },
+  { name: 'Kindercare Pediatrics',        pattern: /kindercare/i },
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -92,7 +92,6 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/** Find which competitor brand a local-pack item belongs to, if any. */
 function brandFor(item: LocalPackItem): string | null {
   const title = (item.title ?? '').toString();
   for (const c of COMPETITORS) {
@@ -101,11 +100,6 @@ function brandFor(item: LocalPackItem): string | null {
   return null;
 }
 
-/**
- * Build a 9x9 grid of Ivy's Touch ranks, indexed grid[y][x]
- * (y=0 → northernmost row, matching how generateGridCoordinates lays out
- * points). null means not in top 3-pack at that cell.
- */
 function buildClientGrid(results: ScanPointResult[]): (number | null)[][] {
   const grid: (number | null)[][] = Array.from({ length: 9 }, () =>
     Array<number | null>(9).fill(null)
@@ -116,22 +110,12 @@ function buildClientGrid(results: ScanPointResult[]): (number | null)[][] {
   return grid;
 }
 
-/**
- * Collapse multi-location franchises and compute (avg_rank, appears_in_cells)
- * per brand. A brand "appears in" a cell if at least one of its locations
- * shows up in that cell's local 3-pack; rank is the BEST (lowest) of any
- * locations present in that cell.
- *
- * Brands not in COMPETITORS are ignored entirely (not surfaced in leaderboard).
- */
 function buildCompetitorLeaderboard(
   results: ScanPointResult[]
 ): Array<{ name: string; avg_rank: number; appears_in_cells: number }> {
-  // brand → array of best-rank-per-cell
   const ranksByBrand = new Map<string, number[]>();
 
   for (const r of results) {
-    // best rank per brand within this single cell
     const cellBest = new Map<string, number>();
     for (const item of r.items) {
       const brand = brandFor(item);
@@ -142,7 +126,7 @@ function buildCompetitorLeaderboard(
           : typeof item.rank_absolute === 'number'
             ? item.rank_absolute
             : null;
-      if (rank === null || rank > 3) continue; // local pack only goes 1-3
+      if (rank === null || rank > 3) continue;
       const prev = cellBest.get(brand);
       if (prev === undefined || rank < prev) cellBest.set(brand, rank);
     }
@@ -172,14 +156,12 @@ function buildCompetitorLeaderboard(
 async function main() {
   const supabase = getServerSupabase();
 
-  // 1. Upsert client (idempotent)
   console.log('▸ Upserting client row…');
   {
     const { error } = await supabase.from('clients').upsert(CLIENT);
     if (error) throw new Error(`client upsert failed: ${error.message}`);
   }
 
-  // 2. Ensure primary + queued secondary keywords exist
   console.log('▸ Ensuring keywords exist (1 primary + 4 queued secondaries)…');
   let primaryKeywordId: string;
   {
@@ -192,7 +174,6 @@ async function main() {
       (existing ?? []).map((k) => [k.keyword.toLowerCase(), k.id as string])
     );
 
-    // primary
     const primaryExisting = existingMap.get(PRIMARY_KEYWORD);
     if (primaryExisting) {
       primaryKeywordId = primaryExisting;
@@ -210,7 +191,6 @@ async function main() {
       primaryKeywordId = data.id;
     }
 
-    // secondaries (queued, is_primary=false, no scan run for these)
     for (const kw of SECONDARY_KEYWORDS) {
       if (existingMap.has(kw.toLowerCase())) continue;
       const { error } = await supabase.from('tracked_keywords').insert({
@@ -218,16 +198,12 @@ async function main() {
         keyword: kw,
         is_primary: false,
       });
-      if (error) {
-        // 23505 = unique violation; fine, just skip
-        if (!String(error.code).includes('23505')) {
-          throw new Error(`secondary keyword insert failed: ${error.message}`);
-        }
+      if (error && !String(error.code).includes('23505')) {
+        throw new Error(`secondary keyword insert failed: ${error.message}`);
       }
     }
   }
 
-  // 3. Create scan row
   console.log('▸ Creating scan row…');
   const { data: scanRow, error: scanErr } = await supabase
     .from('scans')
@@ -247,7 +223,6 @@ async function main() {
   const scanId = scanRow.id;
   console.log(`  scan_id = ${scanId}`);
 
-  // 4. Generate grid (25-mi axis radius → 6.25mi spacing on 9x9)
   const points: GridPoint[] = generateGridCoordinates({
     centerLat: CLIENT.latitude,
     centerLng: CLIENT.longitude,
@@ -259,8 +234,7 @@ async function main() {
       `(spacing ${(CLIENT.service_radius_miles / 4).toFixed(2)} mi)`
   );
 
-  // 5. Run scan (real money)
-  console.log('▸ Running DFS Live scan for "home care" (real cost incoming)…');
+  console.log('▸ Running DFS Live scan for "pediatrician" (real cost incoming)…');
   const t0 = Date.now();
   let scan;
   try {
@@ -268,7 +242,7 @@ async function main() {
       keyword: PRIMARY_KEYWORD,
       points,
       targetMatch: (item) =>
-        IVYS_TOUCH_PATTERN.test((item.title ?? '').toString()),
+        KIDCREW_PATTERN.test((item.title ?? '').toString()),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -286,7 +260,6 @@ async function main() {
       `(${scan.dfsCostCents}¢), failed_points=${scan.failedPoints}`
   );
 
-  // 6. Persist scan_points
   console.log('▸ Writing scan_points…');
   {
     const rows = scan.results.map((r) => ({
@@ -310,15 +283,20 @@ async function main() {
     if (error) throw new Error(`scan_points insert failed: ${error.message}`);
   }
 
-  // 7. Compute summary metrics
+  // ─── Compute summary metrics that the dashboard + AI Coach read ─────────
   const ranksFlat = scan.results.map((r) => r.rank);
   const inPackCount = ranksFlat.filter((r): r is number => r !== null).length;
+
   const avgRankCapped =
     ranksFlat.reduce<number>(
       (sum, r) => sum + (r === null ? OUT_OF_PACK : r),
       0
     ) / ranksFlat.length;
-  const pctTop3Persisted = Math.round((inPackCount / ranksFlat.length) * 100);
+
+  const pctTop3 = Math.round((inPackCount / ranksFlat.length) * 100);
+  const pctTop10 = pctTop3;
+  const pctTop20 = pctTop3;
+  const turfscore = round1(100 - 5 * avgRankCapped);
   const radiusUnits = turfRadius(
     scan.results.map((r) => ({
       point: { x: r.point.x, y: r.point.y },
@@ -328,8 +306,7 @@ async function main() {
     OUT_OF_PACK
   );
 
-  // 7b. Mark scan complete (with computed metrics so AI Coach has data)
-  console.log('▸ Updating scan row to complete…');
+  console.log('▸ Updating scan row to complete (with computed metrics)…');
   {
     const { error } = await supabase
       .from('scans')
@@ -339,40 +316,31 @@ async function main() {
         failed_points: scan.failedPoints,
         total_points: scan.results.length,
         completed_at: new Date().toISOString(),
+        // These three are what the AI Coach + dashboard SQL fallbacks read.
+        // Without them the AI thinks the client has 0% presence.
         turf_score: round1(avgRankCapped),
-        top3_win_rate: pctTop3Persisted,
+        top3_win_rate: pctTop3,
         turf_radius_units: radiusUnits,
       })
       .eq('id', scanId);
     if (error) throw new Error(`scan update failed: ${error.message}`);
   }
 
-  // 8. Build pitch-deck JSON
-  const ivysGrid = buildClientGrid(scan.results);
-
-  // Visibility metrics. Local-pack data only gives ranks 1-3, so
-  // pct_top_10 and pct_top_20 are mathematically equal to pct_top_3
-  // (a rank ≤ 3 is trivially also ≤ 10 and ≤ 20). For broader visibility
-  // depth we'd need to also query organic results — out of scope for v1.
-  const pctTop3 = Math.round((inPackCount / ranksFlat.length) * 100);
-  const pctTop10 = pctTop3;
-  const pctTop20 = pctTop3;
-
-  const turfscore = round1(100 - 5 * avgRankCapped);
+  // ─── Build pitch-deck JSON ───────────────────────────────────────────────
+  const kidcrewGrid = buildClientGrid(scan.results);
 
   const competitors = buildCompetitorLeaderboard(scan.results);
 
-  // Where does Ivy's Touch land in the leaderboard if we include them?
-  const ivysLeaderboardRow = {
-    name: "Ivy's Touch Home Healthcare LLC",
+  const kidcrewLeaderboardRow = {
+    name: CLIENT.business_name,
     avg_rank: round1(avgRankCapped),
     appears_in_cells: inPackCount,
   };
-  const fullLeaderboard = [...competitors, ivysLeaderboardRow].sort(
+  const fullLeaderboard = [...competitors, kidcrewLeaderboardRow].sort(
     (a, b) => a.avg_rank - b.avg_rank
   );
-  const ivysPosition =
-    fullLeaderboard.findIndex((row) => row.name === ivysLeaderboardRow.name) + 1;
+  const kidcrewPosition =
+    fullLeaderboard.findIndex((row) => row.name === kidcrewLeaderboardRow.name) + 1;
 
   const output = {
     client: CLIENT.business_name,
@@ -389,35 +357,40 @@ async function main() {
     pct_top_3: pctTop3,
     pct_top_10: pctTop10,
     pct_top_20: pctTop20,
-    grid: ivysGrid,
-    competitors, // primary leaderboard (the 13 brands)
-    client_rank_per_cell: ivysGrid, // duplicate per spec
+    grid: kidcrewGrid,
+    competitors,
+    client_rank_per_cell: kidcrewGrid,
     cost_cents: scan.dfsCostCents,
-    // ── extras for pitch-deck convenience ──
     _meta: {
       scan_id: scanId,
       grid_size: 9,
       grid_spacing_miles: round1(CLIENT.service_radius_miles / 4),
       dfs_endpoint: '/v3/serp/google/organic/live/advanced',
       failed_points: scan.failedPoints,
-      ivys_touch_match_pattern: IVYS_TOUCH_PATTERN.source,
-      ivys_touch_leaderboard_position: ivysPosition,
-      ivys_touch_in_leaderboard: ivysLeaderboardRow,
+      kidcrew_match_pattern: KIDCREW_PATTERN.source,
+      kidcrew_leaderboard_position: kidcrewPosition,
+      kidcrew_in_leaderboard: kidcrewLeaderboardRow,
+      followup_scan_address: SECONDARY_LOCATION,
+      queued_secondary_keywords: SECONDARY_KEYWORDS,
       note_visibility_metrics:
         'pct_top_10 and pct_top_20 equal pct_top_3 because local-pack data ' +
-        'only returns ranks 1-3. For deeper rank tracking, query organic SERP.',
+        'only returns ranks 1-3.',
+      note_pitch_framing:
+        "Sickkids is included in the leaderboard for baseline reference, " +
+        "not as a competitive comparison — the meaningful pitch story " +
+        "compares Kidcrew against private clinics (Nest, Medcan, Don Mills, " +
+        "Bloorkids, Kindercare, Midtown, Everest, Roundhouse).",
     },
   };
 
-  // 9. Write file
   const outDir = path.resolve(process.cwd(), 'outputs');
   await mkdir(outDir, { recursive: true });
-  const outPath = path.join(outDir, 'ivys-touch-home-care-scan.json');
+  const outPath = path.join(outDir, 'kidcrew-medical-pediatrician-scan.json');
   await writeFile(outPath, JSON.stringify(output, null, 2) + '\n', 'utf8');
   console.log(`▸ Wrote ${outPath}`);
 
-  // 10. Console summary
-  const winner = competitors[0]; // already sorted by avg_rank ascending
+  // ─── Console summary ─────────────────────────────────────────────────────
+  const winner = competitors[0];
   const winnerLabel =
     winner && winner.appears_in_cells > 0
       ? `${winner.name} — avg rank ${winner.avg_rank}, in ${winner.appears_in_cells}/81 cells`
@@ -425,7 +398,7 @@ async function main() {
 
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log("  Ivy's Touch — TurfMap scan summary");
+  console.log(`  ${CLIENT.business_name} — TurfMap scan summary`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`  keyword            : "${PRIMARY_KEYWORD}"`);
   console.log(`  center             : ${CENTER_LABEL}`);
@@ -438,24 +411,24 @@ async function main() {
   console.log(`  pct top 3 / 10 / 20: ${pctTop3}% / ${pctTop10}% / ${pctTop20}%`);
   console.log(`  leaderboard #1     : ${winnerLabel}`);
   console.log(
-    `  Ivy's Touch position : ${
-      ivysPosition > 0 ? `#${ivysPosition} of ${fullLeaderboard.length}` : 'unranked'
+    `  Kidcrew position   : ${
+      kidcrewPosition > 0 ? `#${kidcrewPosition} of ${fullLeaderboard.length}` : 'unranked'
     }`
   );
   console.log(
     `  DFS cost (USD)     : $${scan.dfsCostDollars.toFixed(4)} (${scan.dfsCostCents}¢)`
   );
   console.log(`  failed points      : ${scan.failedPoints}`);
-  console.log(`  output             : outputs/ivys-touch-home-care-scan.json`);
+  console.log(`  output             : outputs/kidcrew-medical-pediatrician-scan.json`);
   console.log(`  scan_id            : ${scanId}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
   console.log('  Top of leaderboard:');
-  for (const c of competitors.slice(0, 5)) {
+  for (const c of competitors.slice(0, 8)) {
     const tag =
       c.appears_in_cells === 0 ? '— not in local pack' : `${c.appears_in_cells} cells`;
     console.log(
-      `    avg ${String(c.avg_rank).padStart(4)}  ${c.name.padEnd(28)} ${tag}`
+      `    avg ${String(c.avg_rank).padStart(4)}  ${c.name.padEnd(34)} ${tag}`
     );
   }
 }

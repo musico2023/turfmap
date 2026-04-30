@@ -37,8 +37,8 @@ export const maxDuration = 60;
 
 const RequestBody = z.object({ scanId: z.string().uuid() });
 
-/** Spacing per ring on the default 9×9 / 1.6mi grid. */
-const MILES_PER_RING = 0.4;
+/** 9×9 grid is 4 rings out from center, so spacing = service_radius / 4. */
+const RINGS_FROM_CENTER = 4;
 
 export async function POST(req: Request) {
   const auth = await requireAgencyUserForApi();
@@ -103,7 +103,8 @@ export async function POST(req: Request) {
     excludeNamePattern: ownNamePattern,
   });
 
-  const radiusMiles = (scan.turf_radius_units ?? 0) * MILES_PER_RING;
+  const milesPerRing = (client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER;
+  const radiusMiles = (scan.turf_radius_units ?? 0) * milesPerRing;
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: client.business_name,
     industry: client.industry,
@@ -112,6 +113,7 @@ export async function POST(req: Request) {
     turfScore: scan.turf_score,
     top3WinRate: Number(scan.top3_win_rate ?? 0),
     radiusMiles,
+    gridRadiusMiles: client.service_radius_miles ?? 1.6,
     totalPoints: scan.total_points ?? 81,
     failedPoints: scan.failed_points ?? 0,
     competitors,

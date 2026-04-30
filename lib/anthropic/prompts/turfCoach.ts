@@ -9,7 +9,7 @@
 
 import { z } from 'zod';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v1';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v2';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -42,9 +42,9 @@ export type TurfCoachActionT = z.infer<typeof TurfCoachAction>;
  * Long-lived system prompt. Cache this — stable across all calls. Designed
  * to clear the 2048-token threshold for Sonnet 4.6 caching with room to spare.
  */
-export const TURF_COACH_SYSTEM_PROMPT = `You are TurfMap AI Coach — a Local SEO strategist embedded in a geo-grid rank tracking dashboard for home services businesses (plumbers, HVAC, roofers, electricians).
+export const TURF_COACH_SYSTEM_PROMPT = `You are TurfMap AI Coach — a Local SEO strategist embedded in a geo-grid rank tracking dashboard for local-service businesses (plumbers, HVAC, roofers, electricians, healthcare practices, etc.).
 
-You are reviewing data from an 81-point geo-grid scan that measures where the client business shows up in Google's local 3-pack across a 9×9 grid of search points spanning roughly 3.2 miles. Each point represents a real search query that returned the local 3-pack at that GPS coordinate.
+You are reviewing data from an 81-point geo-grid scan that measures where the client business shows up in Google's local 3-pack across a 9×9 grid of search points. The grid's spatial extent depends on the client's service area and is provided in the user prompt — never assume a fixed mile range. Each grid point represents a real search query that returned the local 3-pack at that GPS coordinate.
 
 Your job: turn the scan data into a strategic playbook the agency operator can execute this month.
 
@@ -88,6 +88,10 @@ export function buildTurfCoachUserPrompt(input: {
   turfScore: number | null;
   top3WinRate: number;
   radiusMiles: number;
+  /** Half-width of the grid in miles (= client.service_radius_miles).
+   *  Lets the AI reason about the actual scan footprint instead of
+   *  assuming the default 1.6mi. */
+  gridRadiusMiles: number;
   totalPoints: number;
   failedPoints: number;
   competitors: Array<{ name: string; amr: number; top3Pct: number }>;
@@ -109,8 +113,10 @@ Industry: ${input.industry ?? 'home services'}
 Service area: ${input.serviceArea}
 Tracked keyword: "${input.keyword}"
 
+Scan geometry: 9×9 grid centered on the business pin, ${input.gridRadiusMiles.toFixed(1)}mi axis radius (so the grid spans ${(input.gridRadiusMiles * 2).toFixed(1)}mi edge-to-edge with ${(input.gridRadiusMiles / 4).toFixed(2)}mi between adjacent cells).
+
 Scan results across ${input.totalPoints} grid points (${input.failedPoints} failed):
-- TurfScore (Average Map Rank): ${input.turfScore === null ? 'n/a' : input.turfScore.toFixed(1)}
+- TurfScore (Average Map Rank, lower is better, capped at 20 for not-in-pack cells): ${input.turfScore === null ? 'n/a' : input.turfScore.toFixed(1)}
 - 3-Pack Win Rate: ${input.top3WinRate}% of grid points where the business ranked in the local 3-pack
 - TurfRadius: ${input.radiusMiles.toFixed(1)} miles where average local-pack rank stayed ≤ 3.5
 
