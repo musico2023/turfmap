@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, ChevronRight, MapPin } from 'lucide-react';
+import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
 
 // Common picks. The form accepts any free-text value — these are just
 // suggestions surfaced via <datalist>.
@@ -27,6 +27,7 @@ const INDUSTRY_SUGGESTIONS = [
   'painting',
   'flooring',
   'drywall',
+  'home healthcare',
 ];
 
 type Form = {
@@ -57,6 +58,14 @@ const initial: Form = {
   scan_frequency: 'weekly',
 };
 
+type GeocodeState =
+  | { status: 'idle' }
+  | { status: 'looking' }
+  | { status: 'found'; lat: number; lng: number; formatted: string }
+  | { status: 'failed'; error: string };
+
+const GEOCODE_DEBOUNCE_MS = 600;
+
 export function ClientCreateForm() {
   const router = useRouter();
   const [form, setForm] = useState<Form>(initial);
@@ -64,8 +73,71 @@ export function ClientCreateForm() {
   const [submitting, setSubmitting] = useState(false);
   const [, startTransition] = useTransition();
 
+  const [geocode, setGeocode] = useState<GeocodeState>({ status: 'idle' });
+  const [manualOverride, setManualOverride] = useState(false);
+
   const update = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((s) => ({ ...s, [k]: v }));
+
+  // ─── Auto-geocode on address change (debounced) ────────────────────────
+  useEffect(() => {
+    if (manualOverride) return;
+    const trimmed = form.address.trim();
+    if (trimmed.length < 4) {
+      setGeocode({ status: 'idle' });
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setGeocode({ status: 'looking' });
+      try {
+        const res = await fetch('/api/geocode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: trimmed }),
+        });
+        const data = (await res.json()) as {
+          lat?: number;
+          lng?: number;
+          formatted?: string;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || data.lat === undefined || data.lng === undefined) {
+          setGeocode({
+            status: 'failed',
+            error: data.error ?? `geocode failed (HTTP ${res.status})`,
+          });
+          return;
+        }
+        // Auto-populate lat/lng on the form. User can still tweak via
+        // manual override if Nominatim's pin is off.
+        setForm((s) => ({
+          ...s,
+          latitude: String(data.lat),
+          longitude: String(data.lng),
+        }));
+        setGeocode({
+          status: 'found',
+          lat: data.lat!,
+          lng: data.lng!,
+          formatted: data.formatted ?? trimmed,
+        });
+      } catch (e) {
+        if (cancelled) return;
+        setGeocode({
+          status: 'failed',
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }, GEOCODE_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [form.address, manualOverride]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,8 +145,12 @@ export function ClientCreateForm() {
 
     const lat = Number(form.latitude);
     const lng = Number(form.longitude);
-    if (Number.isNaN(lat) || Number.isNaN(lng)) {
-      setError('latitude and longitude must be numbers');
+    if (Number.isNaN(lat) || Number.isNaN(lng) || form.latitude === '' || form.longitude === '') {
+      setError(
+        manualOverride
+          ? 'enter both latitude and longitude'
+          : "we couldn't auto-locate that address — click \"override coordinates manually\" to enter them"
+      );
       return;
     }
 
@@ -147,43 +223,55 @@ export function ClientCreateForm() {
             className={inputClass}
           />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field
-            label="Latitude"
-            required
-            help={
-              <a
-                href="https://www.latlong.net/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-zinc-500 hover:text-zinc-300 inline-flex items-center gap-1"
-              >
-                <MapPin size={11} /> find lat/lng
-              </a>
-            }
-          >
-            <input
-              type="number"
-              step="0.0000001"
-              value={form.latitude}
-              onChange={(e) => update('latitude', e.target.value)}
-              placeholder="43.6532"
+
+        {/* Geocode status — always rendered, content varies by state */}
+        <GeocodeStatus
+          state={geocode}
+          manualOverride={manualOverride}
+          onToggleOverride={() => setManualOverride((v) => !v)}
+        />
+
+        {/* Lat/lng inputs only show in manual-override mode */}
+        {manualOverride && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Latitude" required>
+              <input
+                type="number"
+                step="0.0000001"
+                value={form.latitude}
+                onChange={(e) => update('latitude', e.target.value)}
+                placeholder="43.6532"
+                required
+                className={inputClass}
+              />
+            </Field>
+            <Field
+              label="Longitude"
               required
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Longitude" required>
-            <input
-              type="number"
-              step="0.0000001"
-              value={form.longitude}
-              onChange={(e) => update('longitude', e.target.value)}
-              placeholder="-79.3832"
-              required
-              className={inputClass}
-            />
-          </Field>
-        </div>
+              help={
+                <a
+                  href="https://www.latlong.net/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-zinc-500 hover:text-zinc-300 inline-flex items-center gap-1"
+                >
+                  <MapPin size={11} /> find lat/lng
+                </a>
+              }
+            >
+              <input
+                type="number"
+                step="0.0000001"
+                value={form.longitude}
+                onChange={(e) => update('longitude', e.target.value)}
+                placeholder="-79.3832"
+                required
+                className={inputClass}
+              />
+            </Field>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Industry" help="Optional. Free-text — pick a suggestion or type your own.">
             <input
@@ -293,7 +381,7 @@ export function ClientCreateForm() {
         )}
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || geocode.status === 'looking'}
           className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
           style={{
             background: 'var(--color-lime)',
@@ -313,6 +401,65 @@ export function ClientCreateForm() {
         </button>
       </div>
     </form>
+  );
+}
+
+function GeocodeStatus({
+  state,
+  manualOverride,
+  onToggleOverride,
+}: {
+  state: GeocodeState;
+  manualOverride: boolean;
+  onToggleOverride: () => void;
+}) {
+  // Always-visible footer line below the address field. The "manual
+  // override" toggle is here so users can swap to coords-only without
+  // hunting for it elsewhere.
+  return (
+    <div className="flex items-start justify-between gap-3 -mt-1">
+      <div className="text-xs text-zinc-500 font-mono leading-relaxed flex-1 min-w-0">
+        {state.status === 'idle' && (
+          <span className="text-zinc-600">
+            We&apos;ll auto-locate this address (free, via OpenStreetMap).
+          </span>
+        )}
+        {state.status === 'looking' && (
+          <span className="text-zinc-400 inline-flex items-center gap-1.5">
+            <Activity size={11} className="animate-pulse" /> Looking up coordinates…
+          </span>
+        )}
+        {state.status === 'found' && (
+          <span className="inline-flex items-start gap-1.5 text-zinc-300">
+            <Check
+              size={12}
+              className="flex-shrink-0 mt-0.5"
+              style={{ color: 'var(--color-lime)' }}
+            />
+            <span className="truncate">
+              <span style={{ color: 'var(--color-lime)' }}>
+                {state.lat.toFixed(5)}, {state.lng.toFixed(5)}
+              </span>
+              <span className="text-zinc-600 mx-1.5">·</span>
+              <span className="text-zinc-500">{state.formatted}</span>
+            </span>
+          </span>
+        )}
+        {state.status === 'failed' && (
+          <span className="inline-flex items-start gap-1.5 text-zinc-400">
+            <X size={12} className="flex-shrink-0 mt-0.5 text-red-400" />
+            <span>{state.error}</span>
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onToggleOverride}
+        className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 whitespace-nowrap"
+      >
+        {manualOverride ? '← back to auto-locate' : 'override coordinates manually →'}
+      </button>
+    </div>
   );
 }
 

@@ -50,7 +50,7 @@ export default async function AgencyLoginPage({
           style={{ borderColor: 'var(--color-border)' }}
         >
           Proprietary technology of <span className="text-zinc-400 font-semibold">Fourdots Digital</span>{' '}
-          — the moat behind <span className="text-zinc-300 font-semibold">Local Lead Machine</span>. Access is restricted to agency staff.
+          — the team behind <span className="text-zinc-300 font-semibold">Local Lead Machine</span>. Access is restricted to agency staff.
         </div>
       </div>
     </div>
