@@ -14,6 +14,7 @@ import type {
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
 import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
+import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
@@ -283,10 +284,10 @@ export default async function ClientDashboardPage({
             </div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
               {[
-                { color: '#c5ff3a', label: 'Top 3' },
-                { color: '#e8e54a', label: '4–10' },
-                { color: '#ff9f3a', label: '11–20' },
-                { color: '#ff4d4d', label: '21+' },
+                { color: '#c5ff3a', label: '#1' },
+                { color: '#e8e54a', label: '#2' },
+                { color: '#ff9f3a', label: '#3' },
+                { color: '#ff4d4d', label: 'Not in pack' },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5">
                   <div
@@ -312,22 +313,27 @@ export default async function ClientDashboardPage({
         <div className="col-span-4 space-y-4">
           <StatCard
             label="TurfScore™"
-            value={score === null ? '—' : score.toFixed(1)}
-            subtitle="Average Map Rank · lower is better"
+            value={
+              score === null
+                ? '—'
+                : `${turfScoreDisplay(score)}`
+            }
+            subtitle="0–100 · higher is better"
             icon={Target}
             tooltip={
               <>
-                Average rank across all 81 grid cells. Cells where you{`’`}re
-                not in the local 3-pack count as 20 (the &ldquo;not visible&rdquo;
-                penalty). 1.0 = #1 everywhere; 20.0 = invisible everywhere.
-                Apples-to-apples across the whole territory.
+                A 0–100 composite of how well you rank across all 81 grid
+                cells. 100 = #1 in every cell; 0 = nowhere in the local 3-pack.
+                Cells where you&rsquo;re not in the 3-pack count as a max
+                penalty so this is apples-to-apples across the whole
+                territory — not just where you happen to show up.
               </>
             }
           />
           <StatCard
             label="3-Pack Win Rate"
             value={latestScan ? `${t3}%` : '—'}
-            subtitle="Of 81 grid points where you rank top 3"
+            subtitle="% of 81 cells where you rank in the local 3-pack"
             icon={Crown}
             highlight
             tooltip={

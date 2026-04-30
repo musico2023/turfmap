@@ -16,6 +16,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
+import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import type {
@@ -28,7 +29,6 @@ import type {
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
-const MILES_PER_RING = 0.4;
 
 export async function GET(req: Request) {
   const auth = await requireAgencyUserForApi();
@@ -143,9 +143,11 @@ export async function GET(req: Request) {
       dfsCostCents: scan.dfs_cost_cents ?? 0,
     },
     metrics: {
-      turfScore: score,
+      turfScore: turfScoreDisplay(score),
       top3Pct: Number(t3),
-      radiusMiles: Number(radiusUnits ?? 0) * MILES_PER_RING,
+      radiusMiles:
+        Number(radiusUnits ?? 0) *
+        ((client.service_radius_miles ?? 1.6) / 4),
     },
     cells,
     competitors,

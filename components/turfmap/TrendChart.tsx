@@ -1,19 +1,28 @@
 /**
  * Pure-SVG dual-axis trend chart for scan history.
  *
- * Plots TurfScore (lower-is-better, left axis) and 3-Pack Win Rate %
- * (higher-is-better, right axis) on a shared time axis. No charting library
- * dependency — keeps the bundle small and lets us match the dashboard's
- * dark/lime aesthetic precisely.
+ * Plots TurfScore (0–100, higher-is-better, left axis) and 3-Pack Win Rate %
+ * (also higher-is-better, right axis) on a shared time axis. Both lines move
+ * UP for "things got better" — intentional: makes the trend readable without
+ * the viewer having to remember which axis inverts. No charting library
+ * dependency — keeps the bundle small and matches the dashboard aesthetic.
+ *
+ * Input note: `turfScore` here is the raw AMR (1..20) stored in
+ * scans.turf_score. The component converts to the 0–100 display score
+ * internally via turfScoreDisplay, so callers don't have to know about
+ * the AMR/display split.
  *
  * Data assumption: at least 2 points to draw a line; with 1 point, render
  * an empty-state placeholder.
  */
+import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 
 export type TrendPoint = {
   scanId: string;
   /** ISO timestamp of when the scan completed. */
   completedAt: string;
+  /** AMR value from scans.turf_score (1..20). Internally converted to
+   *  the 0–100 display score before plotting. */
   turfScore: number | null;
   top3Pct: number;
 };
@@ -26,7 +35,7 @@ export type TrendChartProps = {
 /** Padding inside the SVG viewport. Top reserves space for axis labels. */
 const PAD = { top: 24, right: 56, bottom: 28, left: 48 };
 
-const COLOR_SCORE = '#c5ff3a'; // lime — TurfScore (lower is better)
+const COLOR_SCORE = '#c5ff3a'; // lime — TurfScore (0–100, higher is better)
 const COLOR_RATE = '#ff9f3a'; // orange — Top3 win rate (higher is better)
 const COLOR_AXIS = '#3f3f46';
 const COLOR_GRID = '#1f1f23';
@@ -44,12 +53,12 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
       new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime()
   );
 
-  // Score range: clamp 1..20 so the visual is stable across scans (TurfScore
-  // hits 20 when out-of-pack; 1 is perfect). Pad 0.5 either side.
-  const SCORE_MIN = 0.5;
-  const SCORE_MAX = 20.5;
+  // Both axes are 0..100 with higher-is-better. TurfScore display value
+  // is bounded [0, 95] in practice (95 = #1 in every cell) but we render
+  // the full 0..100 axis for symmetry with the win-rate axis.
+  const SCORE_MIN = 0;
+  const SCORE_MAX = 100;
 
-  // Top3 win rate is always 0..100.
   const RATE_MIN = 0;
   const RATE_MAX = 100;
 
@@ -63,14 +72,22 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
       ? PAD.left + innerW / 2
       : PAD.left + (i / (sorted.length - 1)) * innerW;
 
-  const yScore = (s: number | null): number =>
-    PAD.top +
-    (innerH * (clamp(s ?? SCORE_MAX, SCORE_MIN, SCORE_MAX) - SCORE_MIN)) /
-      (SCORE_MAX - SCORE_MIN);
+  // Higher is better → invert so 100 sits at the top. Same shape for both
+  // metrics so an upward slope on either line means "things improved."
+  const yScore = (s: number | null): number => {
+    const display = turfScoreDisplay(s) ?? SCORE_MIN;
+    return (
+      PAD.top +
+      innerH -
+      (innerH * (clamp(display, SCORE_MIN, SCORE_MAX) - SCORE_MIN)) /
+        (SCORE_MAX - SCORE_MIN)
+    );
+  };
 
   const yRate = (r: number): number =>
-    // Higher is better → invert so 100% sits at the top.
-    PAD.top + innerH - (innerH * (clamp(r, RATE_MIN, RATE_MAX) - RATE_MIN)) /
+    PAD.top +
+    innerH -
+    (innerH * (clamp(r, RATE_MIN, RATE_MAX) - RATE_MIN)) /
       (RATE_MAX - RATE_MIN);
 
   const scorePath = sorted
@@ -81,8 +98,8 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
     .map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yRate(p.top3Pct)}`)
     .join(' ');
 
-  // Tick marks: 5 evenly spaced for both axes.
-  const scoreTicks = [SCORE_MIN, 5, 10, 15, 20];
+  // Tick marks: 5 evenly spaced for both axes (same scale = visual parity).
+  const scoreTicks = [0, 25, 50, 75, 100];
   const rateTicks = [0, 25, 50, 75, 100];
 
   // Date ticks — 4 evenly distributed labels max, but always include first + last.
@@ -135,19 +152,25 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
         strokeWidth={1}
       />
 
-      {/* y-axis tick labels */}
+      {/* y-axis tick labels — score axis (left). Tick values are display-
+       *  scale 0..100 already, so we don't pipe them through yScore (which
+       *  expects an AMR input). Position them by inverting the same math. */}
       {scoreTicks.map((s) => (
         <text
           key={`s-${s}`}
           x={PAD.left - 6}
-          y={yScore(s)}
+          y={
+            PAD.top +
+            innerH -
+            (innerH * (s - SCORE_MIN)) / (SCORE_MAX - SCORE_MIN)
+          }
           fontSize={10}
           fill={COLOR_LABEL}
           textAnchor="end"
           dominantBaseline="middle"
           fontFamily="var(--font-mono), monospace"
         >
-          {s.toFixed(0)}
+          {s}
         </text>
       ))}
       {rateTicks.map((r) => (
@@ -174,7 +197,7 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
         textAnchor="start"
         fontFamily="var(--font-mono), monospace"
       >
-        TurfScore (lower is better)
+        TurfScore (0–100, higher is better)
       </text>
       <text
         x={VIEW_W - PAD.right}

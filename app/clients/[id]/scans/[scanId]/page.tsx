@@ -31,6 +31,7 @@ import type {
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
 import { OUT_OF_PACK_RANK, turfScore } from '@/lib/metrics/turfScore';
+import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
@@ -45,7 +46,8 @@ import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
-const MILES_PER_RING = 0.4;
+// 9×9 grid = 4 rings out from center; spacing = service_radius / 4.
+const RINGS_FROM_CENTER = 4;
 
 export default async function PerScanPage({
   params,
@@ -278,21 +280,24 @@ export default async function PerScanPage({
         <div className="col-span-4 space-y-4">
           <StatCard
             label="TurfScore™"
-            value={score === null ? '—' : score.toFixed(1)}
-            subtitle="Average Map Rank · lower is better"
+            value={score === null ? '—' : `${turfScoreDisplay(score)}`}
+            subtitle="0–100 · higher is better"
             icon={Target}
           />
           <StatCard
             label="3-Pack Win Rate"
             value={`${t3}%`}
-            subtitle="Of 81 grid points where you rank top 3"
+            subtitle="% of 81 cells where you rank in the local 3-pack"
             icon={Crown}
             highlight
           />
           <StatCard
             label="TurfRadius™"
-            value={`${(radiusUnits * MILES_PER_RING).toFixed(1)}mi`}
-            subtitle="Distance you maintain top-3 visibility"
+            value={`${(
+              radiusUnits *
+              ((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER)
+            ).toFixed(1)}mi`}
+            subtitle="Furthest distance from your pin where you reach the 3-pack"
             icon={TrendingUp}
           />
           <CompetitorTable competitors={competitors} />

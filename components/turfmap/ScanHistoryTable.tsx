@@ -5,6 +5,7 @@
 
 import Link from 'next/link';
 import { ChevronRight, Download, Sparkles } from 'lucide-react';
+import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 
 export type ScanHistoryRow = {
   id: string;
@@ -23,11 +24,17 @@ export type ScanHistoryRow = {
 export type ScanHistoryTableProps = {
   clientId: string;
   rows: ScanHistoryRow[];
+  /** Client's configured service radius in miles. Used to convert
+   *  turf_radius_units (rings) → miles. Defaults to the v1 default. */
+  serviceRadiusMiles?: number;
 };
 
-const MILES_PER_RING = 0.4;
-
-export function ScanHistoryTable({ clientId, rows }: ScanHistoryTableProps) {
+export function ScanHistoryTable({
+  clientId,
+  rows,
+  serviceRadiusMiles = 1.6,
+}: ScanHistoryTableProps) {
+  const milesPerRing = serviceRadiusMiles / 4;
   if (rows.length === 0) {
     return (
       <div
@@ -77,7 +84,7 @@ export function ScanHistoryTable({ clientId, rows }: ScanHistoryTableProps) {
             const radius =
               r.turfRadiusUnits === null
                 ? '—'
-                : `${(r.turfRadiusUnits * MILES_PER_RING).toFixed(1)}mi`;
+                : `${(r.turfRadiusUnits * milesPerRing).toFixed(1)}mi`;
 
             return (
               <tr
@@ -103,7 +110,9 @@ export function ScanHistoryTable({ clientId, rows }: ScanHistoryTableProps) {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right text-zinc-200">
-                  {r.turfScore === null ? '—' : r.turfScore.toFixed(1)}
+                  {r.turfScore === null
+                    ? '—'
+                    : `${turfScoreDisplay(r.turfScore)}`}
                 </td>
                 <td className="px-4 py-3 text-right text-zinc-200">
                   {r.top3WinRate === null ? '—' : `${Number(r.top3WinRate)}%`}

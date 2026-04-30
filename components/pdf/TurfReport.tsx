@@ -355,21 +355,21 @@ export function TurfReport({ data }: { data: TurfReportData }) {
               <Text style={styles.metricValue}>
                 {data.metrics.turfScore === null
                   ? '—'
-                  : data.metrics.turfScore.toFixed(1)}
+                  : `${data.metrics.turfScore}`}
               </Text>
-              <Text style={styles.metricSub}>Average Map Rank — lower is better</Text>
+              <Text style={styles.metricSub}>0–100 · higher is better</Text>
             </View>
             <View style={styles.metricCardHi}>
               <Text style={styles.metricLabel}>3-PACK WIN RATE</Text>
               <Text style={styles.metricValueLime}>{data.metrics.top3Pct}%</Text>
-              <Text style={styles.metricSub}>Of 81 grid points where you rank top 3</Text>
+              <Text style={styles.metricSub}>% of 81 cells where you rank in the local 3-pack</Text>
             </View>
             <View style={styles.metricCard}>
               <Text style={styles.metricLabel}>TURFRADIUS</Text>
               <Text style={styles.metricValue}>
                 {data.metrics.radiusMiles.toFixed(1)}mi
               </Text>
-              <Text style={styles.metricSub}>Distance you maintain top-3 visibility</Text>
+              <Text style={styles.metricSub}>Furthest distance from your pin where you reach the 3-pack</Text>
             </View>
             <View style={styles.metricCard}>
               <Text style={styles.metricLabel}>3-PACK COMPETITORS</Text>

@@ -144,8 +144,8 @@ export default async function ScanHistoryPage({
                 TurfScore & 3-Pack Win Rate trend
               </h3>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Last {Math.min(scans.length, TREND_LIMIT)} complete scans —
-                lower TurfScore + higher Top-3% is better.
+                Last {Math.min(scans.length, TREND_LIMIT)} complete scans.
+                Both lines move up when things improve.
               </p>
             </div>
           </div>
@@ -153,7 +153,11 @@ export default async function ScanHistoryPage({
         </div>
 
         {/* Table */}
-        <ScanHistoryTable clientId={client.id} rows={tableRows} />
+        <ScanHistoryTable
+          clientId={client.id}
+          rows={tableRows}
+          serviceRadiusMiles={client.service_radius_miles ?? undefined}
+        />
       </div>
     </div>
   );

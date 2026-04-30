@@ -29,6 +29,7 @@ import type {
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
 import { OUT_OF_PACK_RANK, turfScore } from '@/lib/metrics/turfScore';
+import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 import { top3Rate } from '@/lib/metrics/top3Rate';
 import { turfRadius } from '@/lib/metrics/turfRadius';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
@@ -258,14 +259,14 @@ export default async function ClientPortalPage({
         <div className="col-span-4 space-y-4">
           <StatCard
             label="TurfScore™"
-            value={score === null ? '—' : score.toFixed(1)}
-            subtitle="Average Map Rank · lower is better"
+            value={score === null ? '—' : `${turfScoreDisplay(score)}`}
+            subtitle="0–100 · higher is better"
             icon={Target}
           />
           <StatCard
             label="3-Pack Win Rate"
             value={latestScan ? `${t3}%` : '—'}
-            subtitle="Of 81 grid points where you rank top 3"
+            subtitle="% of 81 cells where you rank in the local 3-pack"
             icon={Crown}
             highlight
           />
