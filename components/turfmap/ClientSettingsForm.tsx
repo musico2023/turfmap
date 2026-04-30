@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, Save } from 'lucide-react';
 import type { ClientRow, ClientStatus } from '@/lib/supabase/types';
+import { LogoUploader } from './LogoUploader';
 
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
@@ -40,7 +41,6 @@ type Form = {
   primary_color: string;
   monthly_price_dollars: string;
   status: ClientStatus;
-  logo_url: string;
 };
 
 function formFromClient(c: ClientRow): Form {
@@ -57,7 +57,6 @@ function formFromClient(c: ClientRow): Form {
         ? ''
         : (c.monthly_price_cents / 100).toFixed(2).replace(/\.00$/, ''),
     status: (c.status ?? 'active') as ClientStatus,
-    logo_url: c.logo_url ?? '',
   };
 }
 
@@ -107,8 +106,6 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
       patch.service_radius_miles = Number(form.service_radius_miles);
     if (form.primary_color !== original.primary_color)
       patch.primary_color = form.primary_color.trim();
-    if (form.logo_url !== original.logo_url)
-      patch.logo_url = form.logo_url.trim() === '' ? null : form.logo_url.trim();
     if (form.status !== original.status) patch.status = form.status;
     if (form.monthly_price_dollars !== original.monthly_price_dollars) {
       if (form.monthly_price_dollars.trim() === '') {
@@ -236,15 +233,12 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
             />
           </div>
         </Field>
-        <Field label="Logo URL" help="Optional. Used in the white-label portal header.">
-          <input
-            type="url"
-            value={form.logo_url}
-            onChange={(e) => update('logo_url', e.target.value)}
-            placeholder="https://example.com/logo.png"
-            className={inputClass}
-          />
-        </Field>
+        <LogoUploader
+          clientId={client.id}
+          initialLogoUrl={client.logo_url}
+          businessName={client.business_name}
+          accent={form.primary_color || '#c5ff3a'}
+        />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Monthly price (USD)">
             <div className="relative">

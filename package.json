@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test-scan": "tsx scripts/test-scan.ts",
     "scan:ivys-touch": "tsx scripts/scan-ivys-touch.ts",
-    "seed:ivys-competitors": "tsx scripts/seed-ivys-touch-competitors.ts"
+    "seed:ivys-competitors": "tsx scripts/seed-ivys-touch-competitors.ts",
+    "init:storage": "tsx scripts/init-storage.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
