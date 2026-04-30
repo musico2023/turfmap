@@ -1,7 +1,7 @@
 import { config as loadEnv } from 'dotenv';
 import path from 'node:path';
 loadEnv({ path: path.resolve(process.cwd(), '.env.local') });
-import { getServerSupabase } from '/Users/anthonyalfonsi/Claude/turfmap/lib/supabase/server';
+import { getServerSupabase } from '../lib/supabase/server';
 
 const SCAN_ID = 'da4a816c-1748-4654-ae20-ee2b938b7ff9';
 (async () => {
