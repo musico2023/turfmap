@@ -46,11 +46,29 @@ export default async function AgencyLoginPage({
         <LoginForm initialError={error ?? null} next={next ?? '/'} />
 
         <div
-          className="mt-8 pt-5 border-t text-[10px] text-zinc-600 leading-relaxed"
+          className="mt-8 pt-5 border-t text-[10px] text-zinc-600 leading-relaxed flex items-start gap-3"
           style={{ borderColor: 'var(--color-border)' }}
         >
-          Proprietary technology of <span className="text-zinc-400 font-semibold">Fourdots Digital</span>{' '}
-          — the team behind <span className="text-zinc-300 font-semibold">Local Lead Machine</span>. Access is restricted to agency staff.
+          <a
+            href="https://fourdots.io/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-shrink-0 opacity-50 hover:opacity-80 transition-opacity"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/fourdots-logo.png"
+              alt="Fourdots Digital"
+              className="h-4 w-auto"
+            />
+          </a>
+          <span>
+            Proprietary technology of{' '}
+            <span className="text-zinc-400 font-semibold">Fourdots Digital</span>{' '}
+            — the team behind{' '}
+            <span className="text-zinc-300 font-semibold">Local Lead Machine</span>.
+            Access is restricted to agency staff.
+          </span>
         </div>
       </div>
     </div>

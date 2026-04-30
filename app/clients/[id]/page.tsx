@@ -1,5 +1,10 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+
+// Always render fresh — the page reads scan_points, which can change on
+// every scan. force-dynamic also kills any Next.js Data Cache layer that
+// might serve stale Supabase responses after a metric-definition change.
+export const dynamic = 'force-dynamic';
 import { Crown, Download, History, MapPin, Settings, Target, TrendingUp } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type {
@@ -371,9 +376,21 @@ export default async function ClientDashboardPage({
         className="border-t px-8 py-4 flex items-center justify-between text-xs text-zinc-600"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <span>
-          © Local Lead Machine · TurfMap™ is proprietary technology of Fourdots
-          Digital
+        <span className="flex items-center gap-2.5">
+          © Local Lead Machine · TurfMap™ is proprietary technology of
+          <a
+            href="https://fourdots.io/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center hover:opacity-100 transition-opacity opacity-60"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/fourdots-logo.png"
+              alt="Fourdots Digital"
+              className="h-4 w-auto"
+            />
+          </a>
         </span>
         <span className="font-mono">
           {latestScan
