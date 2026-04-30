@@ -1,3 +1,5 @@
+import { InfoTooltip } from './InfoTooltip';
+
 export type CompetitorRow = {
   name: string;
   /** Average map rank across all points where they appeared. */
@@ -24,8 +26,13 @@ export function CompetitorTable({ competitors }: CompetitorTableProps) {
       }}
     >
       <div className="flex items-center justify-between mb-3.5">
-        <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
           3-Pack Competitors
+          <InfoTooltip>
+            Brands tracked for this client. Each row shows their average map
+            rank when present, and the % of the 81 grid cells where they
+            appear in the local 3-pack.
+          </InfoTooltip>
         </div>
         <span className="text-[10px] font-mono text-zinc-600">live</span>
       </div>
@@ -60,7 +67,7 @@ export function CompetitorTable({ competitors }: CompetitorTableProps) {
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs flex-shrink-0">
-                  <span className="font-mono text-zinc-500">
+                  <span className="font-mono text-zinc-500 inline-flex items-center gap-1">
                     AMR{' '}
                     <span
                       className={
@@ -69,13 +76,30 @@ export function CompetitorTable({ competitors }: CompetitorTableProps) {
                     >
                       {absent ? '—' : c.amr.toFixed(1)}
                     </span>
+                    {i === 0 && (
+                      <InfoTooltip side="top">
+                        Average map rank across cells where this brand
+                        appeared in the local 3-pack. Lower = better. Cells
+                        where the brand is absent are <em>not</em> counted, so
+                        a brand in 1 cell at #1 shows AMR 1.0. Use AMR
+                        together with Share to gauge actual dominance.
+                      </InfoTooltip>
+                    )}
                   </span>
                   <span
-                    className={`font-mono ${
+                    className={`font-mono inline-flex items-center gap-1 ${
                       absent ? 'text-zinc-700' : 'text-zinc-500'
                     }`}
                   >
-                    {c.top3Pct}%
+                    Share {c.top3Pct}%
+                    {i === 0 && (
+                      <InfoTooltip side="top">
+                        % of the 81 grid cells where this brand appears in
+                        the local 3-pack. Measures territory presence — a
+                        brand at 23% covers nearly a quarter of the
+                        searchable area.
+                      </InfoTooltip>
+                    )}
                   </span>
                 </div>
               </div>

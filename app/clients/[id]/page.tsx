@@ -18,6 +18,7 @@ import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { HeatmapWithToggle, type CompetitorView } from '@/components/turfmap/HeatmapWithToggle';
 import { StatCard } from '@/components/turfmap/StatCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
+import { InfoTooltip } from '@/components/turfmap/InfoTooltip';
 import { ScanButton } from '@/components/turfmap/ScanButton';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
@@ -260,8 +261,17 @@ export default async function ClientDashboardPage({
               <h3 className="font-display text-xl font-bold">
                 Territory Heatmap
               </h3>
-              <p className="text-xs text-zinc-500">
-                9×9 geo-grid · 81 search points · {client.service_radius_miles ?? 1.6}mi radius · UULE-based
+              <p className="text-xs text-zinc-500 inline-flex items-center gap-1.5">
+                9×9 geo-grid · 81 search points ·{' '}
+                {client.service_radius_miles ?? 1.6}mi radius · UULE-based
+                <InfoTooltip width="w-72">
+                  Each of the 81 cells is one Google search executed from a
+                  specific GPS coordinate (UULE = Google&rsquo;s URL parameter
+                  for &ldquo;simulate this search from this location&rdquo;).
+                  Spacing between cells is{' '}
+                  {((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER).toFixed(2)}{' '}
+                  mi on this grid.
+                </InfoTooltip>
               </p>
             </div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
@@ -298,6 +308,14 @@ export default async function ClientDashboardPage({
             value={score === null ? '—' : score.toFixed(1)}
             subtitle="Average Map Rank · lower is better"
             icon={Target}
+            tooltip={
+              <>
+                Average rank across all 81 grid cells. Cells where you{`’`}re
+                not in the local 3-pack count as 20 (the &ldquo;not visible&rdquo;
+                penalty). 1.0 = #1 everywhere; 20.0 = invisible everywhere.
+                Apples-to-apples across the whole territory.
+              </>
+            }
           />
           <StatCard
             label="3-Pack Win Rate"
@@ -305,6 +323,13 @@ export default async function ClientDashboardPage({
             subtitle="Of 81 grid points where you rank top 3"
             icon={Crown}
             highlight
+            tooltip={
+              <>
+                % of the 81 grid cells where this business appears in the local
+                3-pack (Google&rsquo;s boxed map at the top of the SERP). 100% =
+                you show up everywhere; 0% = invisible everywhere.
+              </>
+            }
           />
           <StatCard
             label="TurfRadius™"
@@ -318,6 +343,13 @@ export default async function ClientDashboardPage({
             }
             subtitle="Distance you maintain top-3 visibility"
             icon={TrendingUp}
+            tooltip={
+              <>
+                Largest concentric ring around your pin where the average rank
+                stays in the top 3-pack. Measures how far out from your address
+                your visibility holds before it falls off.
+              </>
+            }
           />
           <CompetitorTable competitors={competitors} />
         </div>
