@@ -11,6 +11,7 @@ import { getServerSupabase } from '../lib/supabase/server';
 
 const STAFF = [
   { email: 'anthony@fourdots.ca', full_name: 'Anthony Alfonsi', role: 'admin' as const },
+  { email: 'anthony@fourdots.io', full_name: 'Anthony Alfonsi', role: 'admin' as const },
 ];
 
 async function main() {

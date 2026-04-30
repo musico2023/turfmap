@@ -82,7 +82,7 @@ export function LoginForm({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="anthony@fourdots.ca"
+          placeholder="you@your-agency.com"
           required
           autoFocus
           className="w-full px-3 py-2.5 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
