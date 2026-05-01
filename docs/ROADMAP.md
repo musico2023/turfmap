@@ -71,6 +71,44 @@ genuinely work with multiple clients.
 
 Apply via Supabase SQL editor (project isn't connected to MCP).
 
+## UI polish (small wins, do in batches)
+
+### "100% pack presence" convergence badge
+
+When TurfScore == Pack Strength on a client's dashboard, that's a
+meaningful signal in itself: the business is in the local 3-pack at every
+single grid cell, so the territory-coverage penalty never fires and the
+two metrics collapse to the same number. First observed on Logik Roofing
+(Oshawa, 1.6mi radius, 81/81 cells in pack, both scores = 91).
+
+Today the dashboard renders the two scores as numbers without commentary,
+which buries the signal. Add a small inline badge or callout when
+`TurfScore === Pack Strength` (and Pack Strength is not null), reading
+something like:
+
+> ✓ **100% pack presence** — you appear in the local 3-pack at every
+> point on the grid. The two scores converge because there's no absent-
+> cell penalty to apply. Re-scan at a wider radius to find the edge of
+> dominance.
+
+Implementation notes:
+
+- Component-side check in the StatCard wrappers (server component
+  computes both, conditionally renders the badge under one or both
+  cards).
+- Edge case: if both are 0 ("—"), don't render the badge (that's the
+  zero-presence case, opposite signal — TurfScore = 0 and Pack Strength
+  = null/—, they're not "converged" they're both empty).
+- Probably belongs on the agency dashboard AND the white-label portal.
+- One-line CTA built in: "Scan at wider radius" button that re-runs the
+  scan with `service_radius_miles × 2` (or some configurable expansion).
+  This naturally surfaces growth opportunity for already-dominant
+  clients. Could also be a dedicated "Find the edge of your turf"
+  workflow.
+
+**Estimated build:** ~30 min for the badge alone, ~2 hours if we wire the
+"scan at wider radius" CTA.
+
 ## Already deferred (lower priority)
 
 - Standard Queue for scheduled scans (3.3× cheaper than Live Mode at scale)
