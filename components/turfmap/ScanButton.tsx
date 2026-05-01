@@ -33,9 +33,24 @@ export function ScanButton({ clientId, keywordLabel }: ScanButtonProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId }),
       });
-      const data = (await res.json()) as { error?: string };
+      // Read as text first so we can produce a useful error if Vercel
+      // returns an HTML error page (function timeout, OOM, build error)
+      // instead of our JSON envelope.
+      const text = await res.text();
+      let data: { error?: string } | null = null;
+      try {
+        data = JSON.parse(text) as { error?: string };
+      } catch {
+        // Non-JSON response — most likely a Vercel infra error page.
+        const snippet = text.slice(0, 140).replace(/\s+/g, ' ').trim();
+        setError(
+          `scan failed (HTTP ${res.status}). Response wasn't JSON — likely a function timeout or crash. Check Vercel logs. Body: "${snippet}…"`
+        );
+        setIsScanning(false);
+        return;
+      }
       if (!res.ok) {
-        setError(data.error ?? `scan failed (HTTP ${res.status})`);
+        setError(data?.error ?? `scan failed (HTTP ${res.status})`);
         setIsScanning(false);
         return;
       }

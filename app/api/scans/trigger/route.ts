@@ -37,9 +37,30 @@ dns.setDefaultResultOrder('ipv4first');
 // Force this route onto the Node runtime — it uses dns + Buffer + needs
 // long-running fetches that don't fit the Edge runtime model.
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Vercel default is 300s on all plans; we explicitly cap to that. DFS scans
+// typically finish in 20-50s but the long tail (40207 retries, slow DFS
+// upstream) can push closer to 90s; the previous 60s cap could time out
+// the Lambda before the response left the function, returning Vercel's
+// generic HTML error page that the client couldn't JSON.parse.
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
+  // Top-level safety net: any uncaught exception below is converted to a
+  // 500 JSON envelope so the ScanButton always sees parseable JSON instead
+  // of Vercel's generic HTML error page.
+  try {
+    return await runScanTrigger(req);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[/api/scans/trigger] unhandled:', msg, e);
+    return NextResponse.json(
+      { error: `scan trigger crashed: ${msg}` },
+      { status: 500 }
+    );
+  }
+}
+
+async function runScanTrigger(req: Request) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
   let body: { clientId?: string; keywordId?: string };
