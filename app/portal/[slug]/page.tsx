@@ -18,7 +18,7 @@
  */
 
 import { notFound, redirect } from 'next/navigation';
-import { AlertTriangle, Award, Crown, MapPin, Target, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Compass, Crown, MapPin, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { SignOutButton } from '@/components/turfmap/SignOutButton';
@@ -28,11 +28,10 @@ import type {
   ScanRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
-import { OUT_OF_PACK_RANK, turfScore } from '@/lib/metrics/turfScore';
-import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
-import { packStrength } from '@/lib/metrics/packStrength';
-import { top3Rate } from '@/lib/metrics/top3Rate';
-import { turfRadius } from '@/lib/metrics/turfRadius';
+import { turfReach } from '@/lib/metrics/turfReach';
+import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
+import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
+import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import {
@@ -40,11 +39,12 @@ import {
   type CompetitorView,
 } from '@/components/turfmap/HeatmapWithToggle';
 import { StatCard } from '@/components/turfmap/StatCard';
+import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
-const RINGS_FROM_CENTER = 4;
+export const dynamic = 'force-dynamic';
 
 export default async function ClientPortalPage({
   params,
@@ -130,17 +130,27 @@ export default async function ClientPortalPage({
     rank: p.rank,
   }));
   const ranks = points.map((p) => p.rank);
-  const score = turfScore(ranks);
-  const strength = packStrength(ranks);
-  const t3 = top3Rate(ranks);
-  const radiusUnits = turfRadius(
-    points.map((p) => ({
-      point: { x: p.grid_x, y: p.grid_y },
-      rank: p.rank,
-    })),
-    9,
-    OUT_OF_PACK_RANK
-  );
+  const reach =
+    latestScan?.turf_reach != null
+      ? Number(latestScan.turf_reach)
+      : turfReach(ranks);
+  const rank =
+    latestScan?.turf_rank != null
+      ? Number(latestScan.turf_rank)
+      : turfRank(ranks);
+  const score =
+    latestScan?.turf_score != null
+      ? Number(latestScan.turf_score)
+      : composeTurfScore(reach, rank);
+  const band = getTurfScoreBand(score);
+  const momentumValue =
+    latestScan?.momentum != null ? Number(latestScan.momentum) : null;
+  const { count: completedScanCount } = await supabase
+    .from('scans')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', client.id)
+    .eq('status', 'complete');
+  const isFirstScan = (completedScanCount ?? 0) <= 1;
 
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
@@ -180,6 +190,26 @@ export default async function ClientPortalPage({
         userEmail={user.email ?? null}
         isAgencyPreview={isAgencyPreview}
       />
+
+      {latestScan && isFirstScan && (
+        <div
+          className="px-8 py-3 border-b flex items-center gap-3 text-xs"
+          style={{
+            background: 'rgba(197, 255, 58, 0.05)',
+            borderColor: 'var(--color-border)',
+            color: '#a1a1aa',
+          }}
+        >
+          <Sparkles size={14} style={{ color: accent }} />
+          <span>
+            <span className="text-zinc-200 font-semibold">
+              Baseline scan complete.
+            </span>{' '}
+            This is your starting point — re-scans every 90 days will show
+            your territory expanding.
+          </span>
+        </div>
+      )}
 
       {/* Compact business meta — no scan-trigger / cost data here */}
       <div
@@ -260,37 +290,60 @@ export default async function ClientPortalPage({
 
         <div className="col-span-4 space-y-4">
           <StatCard
+            variant="hero"
             label="TurfScore™"
-            value={score === null ? '—' : `${turfScoreDisplay(score)}`}
-            subtitle="0–100 · territory coverage"
+            value={latestScan ? `${score} / 100` : '—'}
+            subtitle="Composite visibility score"
             icon={Target}
-          />
-          <StatCard
-            label="Pack Strength"
-            value={strength === null ? '—' : `${strength}`}
-            subtitle="0–100 · rank quality where you appear"
-            icon={Award}
-          />
-          <StatCard
-            label="3-Pack Win Rate"
-            value={latestScan ? `${t3}%` : '—'}
-            subtitle="% of 81 cells where you rank in the local 3-pack"
-            icon={Crown}
             highlight
-          />
-          <StatCard
-            label="TurfRadius™"
-            value={
-              latestScan
-                ? `${(
-                    radiusUnits *
-                    ((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER)
-                  ).toFixed(1)}mi`
-                : '—'
+            band={latestScan ? { label: band.label, tone: band.tone } : undefined}
+            tooltip={
+              <>
+                Your composite visibility score, 0 to 100. Combines how
+                much of your territory you cover (TurfReach) with how
+                high you rank when you appear (TurfRank). Benchmarks:
+                0&ndash;20 invisible, 20&ndash;40 patchy, 40&ndash;60
+                solid, 60&ndash;80 dominant, 80+ rare air.
+              </>
             }
-            subtitle="Furthest distance from your pin where you reach the 3-pack"
-            icon={TrendingUp}
           />
+          <div className="grid grid-cols-2 gap-4">
+            <StatCard
+              label="TurfReach™"
+              value={latestScan ? `${reach}%` : '—'}
+              subtitle={
+                latestScan
+                  ? `Visible in ${reach}% of your territory`
+                  : 'Coverage of your territory'
+              }
+              icon={Compass}
+              tooltip={
+                <>
+                  The percentage of your service area where you appear
+                  in Google&rsquo;s local 3-pack. Measured across an
+                  81-point grid covering your territory.
+                </>
+              }
+            />
+            <StatCard
+              label="TurfRank™"
+              value={
+                latestScan && rank !== null ? `${rank.toFixed(1)} / 3` : '—'
+              }
+              subtitle={turfRankCaption(rank)}
+              icon={Crown}
+              tooltip={
+                <>
+                  Your average position in the local 3-pack across the
+                  cells where you appear. 3.0 = always #1, 2.0 = always
+                  #2, 1.0 = always #3. Higher is better.
+                </>
+              }
+            />
+          </div>
+          {latestScan && !isFirstScan && (
+            <MomentumCard momentum={momentumValue} />
+          )}
           <CompetitorTable competitors={competitors} />
         </div>
 
