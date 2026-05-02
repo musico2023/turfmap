@@ -197,12 +197,15 @@ export type TurfReportData = {
     dfsCostCents: number;
   };
   metrics: {
+    /** Composite 0..100 TurfScore. */
     turfScore: number | null;
-    /** Already-converted 0–100 strength (avg rank where present). null
-     *  means the business doesn't appear in any cell. */
-    packStrength: number | null;
-    top3Pct: number;
-    radiusMiles: number;
+    turfScoreBand: { label: string; tone: string };
+    /** Coverage 0..100%. */
+    turfReach: number | null;
+    /** Rank quality 0..3 where present. NULL when no presence. */
+    turfRank: number | null;
+    /** Signed delta vs. prior scan. NULL on first scan. */
+    momentum: number | null;
   };
   cells: Array<{ x: number; y: number; rank: number | null }>;
   competitors: Array<{ name: string; amr: number; top3Pct: number }>;
@@ -353,36 +356,45 @@ export function TurfReport({ data }: { data: TurfReportData }) {
           </View>
 
           <View style={styles.rightCol}>
-            <View style={styles.metricCard}>
+            <View style={styles.metricCardHi}>
               <Text style={styles.metricLabel}>TURFSCORE</Text>
-              <Text style={styles.metricValue}>
+              <Text style={styles.metricValueLime}>
                 {data.metrics.turfScore === null
                   ? '—'
-                  : `${data.metrics.turfScore}`}
+                  : `${data.metrics.turfScore} / 100`}
               </Text>
-              <Text style={styles.metricSub}>0–100 · territory coverage</Text>
+              <Text style={styles.metricSub}>
+                {data.metrics.turfScoreBand.label} · composite visibility
+              </Text>
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricLabel}>PACK STRENGTH</Text>
+              <Text style={styles.metricLabel}>TURFREACH</Text>
               <Text style={styles.metricValue}>
-                {data.metrics.packStrength === null
+                {data.metrics.turfReach === null
                   ? '—'
-                  : `${data.metrics.packStrength}`}
+                  : `${data.metrics.turfReach}%`}
               </Text>
-              <Text style={styles.metricSub}>0–100 · rank quality where you appear</Text>
-            </View>
-            <View style={styles.metricCardHi}>
-              <Text style={styles.metricLabel}>3-PACK WIN RATE</Text>
-              <Text style={styles.metricValueLime}>{data.metrics.top3Pct}%</Text>
-              <Text style={styles.metricSub}>% of 81 cells where you rank in the local 3-pack</Text>
+              <Text style={styles.metricSub}>Coverage of your territory</Text>
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricLabel}>TURFRADIUS</Text>
+              <Text style={styles.metricLabel}>TURFRANK</Text>
               <Text style={styles.metricValue}>
-                {data.metrics.radiusMiles.toFixed(1)}mi
+                {data.metrics.turfRank === null
+                  ? '—'
+                  : `${data.metrics.turfRank.toFixed(1)} / 3`}
               </Text>
-              <Text style={styles.metricSub}>Furthest distance from your pin where you reach the 3-pack</Text>
+              <Text style={styles.metricSub}>Position when you appear</Text>
             </View>
+            {data.metrics.momentum !== null && (
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>MOMENTUM</Text>
+                <Text style={styles.metricValue}>
+                  {data.metrics.momentum > 0 ? '+' : ''}
+                  {data.metrics.momentum}
+                </Text>
+                <Text style={styles.metricSub}>vs. previous scan</Text>
+              </View>
+            )}
             <View style={styles.metricCard}>
               <Text style={styles.metricLabel}>3-PACK COMPETITORS</Text>
               {data.competitors.length === 0 ? (
