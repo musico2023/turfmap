@@ -1,29 +1,30 @@
 /**
  * Pure-SVG dual-axis trend chart for scan history.
  *
- * Plots TurfScore (0–100, higher-is-better, left axis) and 3-Pack Win Rate %
- * (also higher-is-better, right axis) on a shared time axis. Both lines move
- * UP for "things got better" — intentional: makes the trend readable without
- * the viewer having to remember which axis inverts. No charting library
- * dependency — keeps the bundle small and matches the dashboard aesthetic.
+ * Plots TurfScore (0–100 composite, higher-is-better, left axis) and
+ * TurfReach (0–100% coverage, higher-is-better, right axis) on a
+ * shared time axis. Both lines move UP for "things got better" —
+ * intentional: makes the trend readable without the viewer having to
+ * remember which axis inverts. No charting library dependency —
+ * keeps the bundle small and matches the dashboard aesthetic.
  *
- * Input note: `turfScore` here is the raw AMR (1..20) stored in
- * scans.turf_score. The component converts to the 0–100 display score
- * internally via turfScoreDisplay, so callers don't have to know about
- * the AMR/display split.
+ * Input note: `turfScore` here is the new composite 0–100 stored in
+ * scans.turf_score (post-2026-05-02 score redesign). The component
+ * renders it directly without conversion. `top3Pct` is the prior
+ * field name; callers should now pass turf_reach into it.
  *
  * Data assumption: at least 2 points to draw a line; with 1 point, render
  * an empty-state placeholder.
  */
-import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 
 export type TrendPoint = {
   scanId: string;
   /** ISO timestamp of when the scan completed. */
   completedAt: string;
-  /** AMR value from scans.turf_score (1..20). Internally converted to
-   *  the 0–100 display score before plotting. */
+  /** Composite TurfScore from scans.turf_score (0..100). */
   turfScore: number | null;
+  /** TurfReach from scans.turf_reach (0..100%). Field name preserved
+   *  as `top3Pct` for backward-compat with the parent page binding. */
   top3Pct: number;
 };
 
@@ -74,12 +75,13 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
 
   // Higher is better → invert so 100 sits at the top. Same shape for both
   // metrics so an upward slope on either line means "things improved."
+  // turfScore is already 0–100 composite, no conversion needed.
   const yScore = (s: number | null): number => {
-    const display = turfScoreDisplay(s) ?? SCORE_MIN;
+    const v = s ?? SCORE_MIN;
     return (
       PAD.top +
       innerH -
-      (innerH * (clamp(display, SCORE_MIN, SCORE_MAX) - SCORE_MIN)) /
+      (innerH * (clamp(v, SCORE_MIN, SCORE_MAX) - SCORE_MIN)) /
         (SCORE_MAX - SCORE_MIN)
     );
   };
@@ -207,7 +209,7 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
         textAnchor="end"
         fontFamily="var(--font-mono), monospace"
       >
-        Top-3 Win % (higher is better)
+        TurfReach % (higher is better)
       </text>
 
       {/* x-axis date labels */}

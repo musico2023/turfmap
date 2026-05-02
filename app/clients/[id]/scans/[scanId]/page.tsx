@@ -15,13 +15,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   ChevronLeft,
-  Award,
+  Compass,
   Crown,
   Download,
   History,
   MapPin,
   Target,
-  TrendingUp,
 } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
@@ -31,11 +30,10 @@ import type {
   ScanRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
-import { OUT_OF_PACK_RANK, turfScore } from '@/lib/metrics/turfScore';
-import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
-import { packStrength } from '@/lib/metrics/packStrength';
-import { top3Rate } from '@/lib/metrics/top3Rate';
-import { turfRadius } from '@/lib/metrics/turfRadius';
+import { turfReach } from '@/lib/metrics/turfReach';
+import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
+import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
+import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import { Header } from '@/components/turfmap/Header';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
@@ -44,6 +42,7 @@ import {
   type CompetitorView,
 } from '@/components/turfmap/HeatmapWithToggle';
 import { StatCard } from '@/components/turfmap/StatCard';
+import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
@@ -100,22 +99,20 @@ export default async function PerScanPage({
     rank: p.rank,
   }));
   const ranks = points.map((p) => p.rank);
+  // Read persisted columns when populated (post-backfill); fall back to
+  // recomputing from scan_points on this individual page so it never
+  // shows stale values during a metric-definition transition.
+  const reach =
+    scan.turf_reach != null ? Number(scan.turf_reach) : turfReach(ranks);
+  const rank =
+    scan.turf_rank != null ? Number(scan.turf_rank) : turfRank(ranks);
   const score =
-    scan.turf_score !== null && scan.turf_score !== undefined
+    scan.turf_score != null
       ? Number(scan.turf_score)
-      : turfScore(ranks);
-  const strength = packStrength(ranks);
-  const t3 = scan.top3_win_rate !== null ? Number(scan.top3_win_rate) : top3Rate(ranks);
-  const radiusUnits =
-    scan.turf_radius_units ??
-    turfRadius(
-      points.map((p) => ({
-        point: { x: p.grid_x, y: p.grid_y },
-        rank: p.rank,
-      })),
-      9,
-      OUT_OF_PACK_RANK
-    );
+      : composeTurfScore(reach, rank);
+  const band = getTurfScoreBand(score);
+  const momentumValue =
+    scan.momentum != null ? Number(scan.momentum) : null;
 
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
@@ -282,33 +279,29 @@ export default async function PerScanPage({
 
         <div className="col-span-4 space-y-4">
           <StatCard
+            variant="hero"
             label="TurfScore™"
-            value={score === null ? '—' : `${turfScoreDisplay(score)}`}
-            subtitle="0–100 · territory coverage"
+            value={`${score} / 100`}
+            subtitle="Composite visibility score"
             icon={Target}
-          />
-          <StatCard
-            label="Pack Strength"
-            value={strength === null ? '—' : `${strength}`}
-            subtitle="0–100 · rank quality where you appear"
-            icon={Award}
-          />
-          <StatCard
-            label="3-Pack Win Rate"
-            value={`${t3}%`}
-            subtitle="% of 81 cells where you rank in the local 3-pack"
-            icon={Crown}
             highlight
+            band={{ label: band.label, tone: band.tone }}
           />
-          <StatCard
-            label="TurfRadius™"
-            value={`${(
-              radiusUnits *
-              ((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER)
-            ).toFixed(1)}mi`}
-            subtitle="Furthest distance from your pin where you reach the 3-pack"
-            icon={TrendingUp}
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <StatCard
+              label="TurfReach™"
+              value={`${reach}%`}
+              subtitle={`Visible in ${reach}% of your territory`}
+              icon={Compass}
+            />
+            <StatCard
+              label="TurfRank™"
+              value={rank !== null ? `${rank.toFixed(1)} / 3` : '—'}
+              subtitle={turfRankCaption(rank)}
+              icon={Crown}
+            />
+          </div>
+          {momentumValue !== null && <MomentumCard momentum={momentumValue} />}
           <CompetitorTable competitors={competitors} />
         </div>
 

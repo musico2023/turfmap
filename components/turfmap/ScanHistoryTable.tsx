@@ -5,7 +5,6 @@
 
 import Link from 'next/link';
 import { ChevronRight, Download, Sparkles } from 'lucide-react';
-import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
 
 export type ScanHistoryRow = {
   id: string;
@@ -13,9 +12,14 @@ export type ScanHistoryRow = {
   status: 'queued' | 'running' | 'complete' | 'failed';
   completedAt: string | null;
   createdAt: string | null;
+  /** Composite TurfScore (0..100) from scans.turf_score. */
   turfScore: number | null;
-  top3WinRate: number | null;
-  turfRadiusUnits: number | null;
+  /** TurfReach (0..100%) from scans.turf_reach. */
+  turfReach: number | null;
+  /** TurfRank (0..3) from scans.turf_rank. */
+  turfRank: number | null;
+  /** Signed momentum vs. previous scan from scans.momentum. */
+  momentum: number | null;
   failedPoints: number | null;
   totalPoints: number | null;
   hasInsight: boolean;
@@ -24,17 +28,12 @@ export type ScanHistoryRow = {
 export type ScanHistoryTableProps = {
   clientId: string;
   rows: ScanHistoryRow[];
-  /** Client's configured service radius in miles. Used to convert
-   *  turf_radius_units (rings) → miles. Defaults to the v1 default. */
-  serviceRadiusMiles?: number;
 };
 
 export function ScanHistoryTable({
   clientId,
   rows,
-  serviceRadiusMiles = 1.6,
 }: ScanHistoryTableProps) {
-  const milesPerRing = serviceRadiusMiles / 4;
   if (rows.length === 0) {
     return (
       <div
@@ -66,8 +65,9 @@ export function ScanHistoryTable({
             <th className="text-left font-semibold px-4 py-3">Date (UTC)</th>
             <th className="text-left font-semibold px-4 py-3">Type</th>
             <th className="text-right font-semibold px-4 py-3">TurfScore</th>
-            <th className="text-right font-semibold px-4 py-3">Top-3 %</th>
-            <th className="text-right font-semibold px-4 py-3">Radius</th>
+            <th className="text-right font-semibold px-4 py-3">Reach</th>
+            <th className="text-right font-semibold px-4 py-3">Rank</th>
+            <th className="text-right font-semibold px-4 py-3">Momentum</th>
             <th className="text-right font-semibold px-4 py-3">Failed</th>
             <th className="text-center font-semibold px-4 py-3">Coach</th>
             <th className="text-right font-semibold px-4 py-3">Actions</th>
@@ -81,10 +81,18 @@ export function ScanHistoryTable({
               : r.createdAt
                 ? `${new Date(r.createdAt).toISOString().slice(0, 16).replace('T', ' ')} (no completion)`
                 : '—';
-            const radius =
-              r.turfRadiusUnits === null
+            const momentumDisplay =
+              r.momentum === null || r.momentum === undefined
                 ? '—'
-                : `${(r.turfRadiusUnits * milesPerRing).toFixed(1)}mi`;
+                : `${r.momentum > 0 ? '+' : ''}${r.momentum}`;
+            const momentumColor =
+              r.momentum === null || r.momentum === undefined
+                ? '#71717a'
+                : r.momentum > 0
+                  ? 'var(--color-lime)'
+                  : r.momentum < 0
+                    ? '#ff4d4d'
+                    : '#a1a1aa';
 
             return (
               <tr
@@ -110,14 +118,22 @@ export function ScanHistoryTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right text-zinc-200">
-                  {r.turfScore === null
-                    ? '—'
-                    : `${turfScoreDisplay(r.turfScore)}`}
+                  {r.turfScore === null ? '—' : r.turfScore}
                 </td>
                 <td className="px-4 py-3 text-right text-zinc-200">
-                  {r.top3WinRate === null ? '—' : `${Number(r.top3WinRate)}%`}
+                  {r.turfReach === null ? '—' : `${Number(r.turfReach)}%`}
                 </td>
-                <td className="px-4 py-3 text-right text-zinc-200">{radius}</td>
+                <td className="px-4 py-3 text-right text-zinc-200">
+                  {r.turfRank === null
+                    ? '—'
+                    : `${Number(r.turfRank).toFixed(1)} / 3`}
+                </td>
+                <td
+                  className="px-4 py-3 text-right font-semibold"
+                  style={{ color: momentumColor }}
+                >
+                  {momentumDisplay}
+                </td>
                 <td className="px-4 py-3 text-right text-zinc-500">
                   {r.failedPoints === null
                     ? '—'

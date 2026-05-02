@@ -26,9 +26,10 @@ import { runLiveLocalPackScan } from '@/lib/dataforseo/client';
 import { generateGridCoordinates } from '@/lib/dataforseo/grid';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
-import { turfScore } from '@/lib/metrics/turfScore';
-import { top3Rate } from '@/lib/metrics/top3Rate';
-import { turfRadius } from '@/lib/metrics/turfRadius';
+import { turfReach } from '@/lib/metrics/turfReach';
+import { turfRank } from '@/lib/metrics/turfRank';
+import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
+import { momentum as computeMomentum } from '@/lib/metrics/momentum';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 // Avoid IPv6 ENOTFOUND flakes on dual-stack networks.
@@ -195,14 +196,30 @@ async function runScanTrigger(req: Request) {
     );
   }
 
-  // 6. Compute + persist metrics
+  // 6. Compute the new score family. Reach + Rank are derived from
+  //    scan_points; TurfScore is the composite. Momentum compares this
+  //    scan's TurfScore against the most recent prior complete scan
+  //    for this client (null on first scan). Deprecated columns
+  //    (top3_win_rate, turf_radius_units) are no longer written.
   const ranks = scan.results.map((r) => r.rank);
-  const score = turfScore(ranks);
-  const t3 = top3Rate(ranks);
-  const radius = turfRadius(
-    scan.results.map((r) => ({ point: { x: r.point.x, y: r.point.y }, rank: r.rank }))
-  );
+  const totalCells = scan.results.length;
+  const reach = turfReach(ranks, totalCells);
+  const rank = turfRank(ranks);
+  const score = composeTurfScore(reach, rank);
   const found = scan.results.filter((r) => r.businessFound).length;
+
+  // Look up the previous complete scan for this client (excluding the
+  // current scan). If none exists, momentum is null.
+  const { data: prevScan } = await supabase
+    .from('scans')
+    .select('turf_score')
+    .eq('client_id', clientId)
+    .eq('status', 'complete')
+    .neq('id', scanId)
+    .order('completed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ turf_score: number | null }>();
+  const momentumValue = computeMomentum(score, prevScan?.turf_score ?? null);
 
   await supabase
     .from('scans')
@@ -212,8 +229,9 @@ async function runScanTrigger(req: Request) {
       failed_points: scan.failedPoints,
       total_points: scan.results.length,
       turf_score: score,
-      top3_win_rate: t3,
-      turf_radius_units: radius,
+      turf_reach: reach,
+      turf_rank: rank,
+      momentum: momentumValue,
       completed_at: new Date().toISOString(),
     })
     .eq('id', scanId);
@@ -225,7 +243,8 @@ async function runScanTrigger(req: Request) {
     failedPoints: scan.failedPoints,
     found,
     turfScore: score,
-    top3Pct: t3,
-    radiusUnits: radius,
+    turfReach: reach,
+    turfRank: rank,
+    momentum: momentumValue,
   });
 }
