@@ -4,6 +4,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import type { ClientRow } from '@/lib/supabase/types';
 import { Header } from '@/components/turfmap/Header';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
+import { LinkButton } from '@/components/ui/Button';
 
 export default async function AgencyHomePage() {
   const me = await requireAgencyUserOrRedirect('/');
@@ -27,17 +28,14 @@ export default async function AgencyHomePage() {
               {list.length} client{list.length === 1 ? '' : 's'} on TurfMap.
             </p>
           </div>
-          <Link
+          <LinkButton
+            variant="primary"
+            size="md"
             href="/clients/new"
-            className="px-4 py-2 rounded-md font-bold text-sm flex items-center gap-1.5 transition-all hover:brightness-110"
-            style={{
-              background: 'var(--color-lime)',
-              color: 'black',
-              boxShadow: '0 4px 16px #c5ff3a30',
-            }}
+            leftIcon={<Plus size={14} strokeWidth={2.75} />}
           >
-            <Plus size={14} strokeWidth={2.75} /> Add client
-          </Link>
+            Add client
+          </LinkButton>
         </div>
 
         {list.length === 0 ? (

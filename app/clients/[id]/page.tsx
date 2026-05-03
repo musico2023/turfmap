@@ -33,6 +33,7 @@ import { ScanButton } from '@/components/turfmap/ScanButton';
 import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
+import { LinkButton, buttonStyles } from '@/components/ui/Button';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { getRescanCapStatus } from '@/lib/scans/rateLimit';
@@ -316,38 +317,29 @@ export default async function ClientDashboardPage({
             )}
           </div>
           <div className="flex items-center justify-end gap-2 flex-wrap">
-            <Link
+            <LinkButton
+              variant="secondary"
+              size="md"
               href={`/clients/${client.public_id}/settings`}
-              className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
-              style={{
-                borderColor: 'var(--color-border)',
-                background: 'var(--color-card)',
-              }}
+              leftIcon={<Settings size={12} />}
             >
-              <Settings size={12} /> Settings
-            </Link>
-            <Link
+              Settings
+            </LinkButton>
+            <LinkButton
+              variant="secondary"
+              size="md"
               href={`/clients/${client.public_id}/scans`}
-              className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
-              style={{
-                borderColor: 'var(--color-border)',
-                background: 'var(--color-card)',
-              }}
+              leftIcon={<History size={12} />}
             >
-              <History size={12} /> History
-            </Link>
+              History
+            </LinkButton>
             {latestScan && (
               <>
                 <a
                   href={`/api/reports/pdf?scanId=${latestScan.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
-                  style={{
-                    borderColor: 'var(--color-border)',
-                    color: 'var(--color-text, white)',
-                    background: 'var(--color-card)',
-                  }}
+                  {...buttonStyles({ variant: 'secondary', size: 'md' })}
                 >
                   <Download size={12} /> PDF
                 </a>

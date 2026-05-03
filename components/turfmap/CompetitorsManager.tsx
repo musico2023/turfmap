@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, Crown, Plus, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 export type TrackedCompetitorRow = {
   id: string;
@@ -186,22 +187,17 @@ export function CompetitorsManager({
           disabled={!locationId}
           className="col-span-10 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50"
         />
-        <button
+        <Button
           type="submit"
-          disabled={busy === 'add' || !newName.trim() || !locationId}
-          className="col-span-2 px-3 py-2 rounded-md font-bold text-xs flex items-center justify-center gap-1.5 transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            background: 'var(--color-lime)',
-            color: 'black',
-          }}
+          variant="primary"
+          size="md"
+          disabled={!newName.trim() || !locationId}
+          loading={busy === 'add'}
+          leftIcon={<Plus size={12} strokeWidth={2.75} />}
+          className="col-span-2"
         >
-          {busy === 'add' ? (
-            <Activity size={12} className="animate-pulse" />
-          ) : (
-            <Plus size={12} strokeWidth={2.75} />
-          )}
           Add
-        </button>
+        </Button>
       </form>
     </div>
   );

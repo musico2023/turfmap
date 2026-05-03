@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Activity, ChevronRight, Mail } from 'lucide-react';
+import { ChevronRight, Mail } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 export function LoginForm({
   initialError,
@@ -89,26 +90,18 @@ export function LoginForm({
         />
       </div>
 
-      <button
+      <Button
         type="submit"
-        disabled={submitting || !email.trim()}
-        className="w-full px-5 py-2.5 rounded-md font-bold text-sm flex items-center justify-center gap-2 transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{
-          background: 'var(--color-lime)',
-          color: 'black',
-          boxShadow: '0 4px 16px #c5ff3a30',
-        }}
+        variant="primary"
+        size="lg"
+        disabled={!email.trim()}
+        loading={submitting}
+        loadingLabel="Sending link…"
+        rightIcon={<ChevronRight size={14} />}
+        className="w-full"
       >
-        {submitting ? (
-          <>
-            <Activity size={14} className="animate-pulse" /> Sending link…
-          </>
-        ) : (
-          <>
-            Email me a sign-in link <ChevronRight size={14} />
-          </>
-        )}
-      </button>
+        Email me a sign-in link
+      </Button>
 
       {error && (
         <div className="text-xs text-red-400 font-mono leading-relaxed">

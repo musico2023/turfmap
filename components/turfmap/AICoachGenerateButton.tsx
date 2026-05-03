@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 export type AICoachGenerateButtonProps = {
   scanId: string;
@@ -71,28 +72,16 @@ export function AICoachGenerateButton({ scanId }: AICoachGenerateButtonProps) {
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <button
-        type="button"
+      <Button
+        variant="ai"
+        size="md"
         onClick={onClick}
-        disabled={busy}
-        className="px-4 py-2 rounded-md text-xs font-bold border transition-all flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
-        style={{
-          borderColor: 'var(--color-border-bright)',
-          color: 'var(--color-lime)',
-          background: '#0a0f04',
-        }}
+        loading={busy}
+        loadingLabel="Generating playbook…"
+        rightIcon={!busy ? <ChevronRight size={12} /> : undefined}
       >
-        {busy ? (
-          <>
-            <Activity size={12} className="animate-pulse" />
-            Generating playbook…
-          </>
-        ) : (
-          <>
-            Generate playbook <ChevronRight size={12} />
-          </>
-        )}
-      </button>
+        Generate playbook
+      </Button>
       {busy && elapsed >= 10 && (
         <span className="text-[10px] text-zinc-500 font-mono">
           {formatElapsed(elapsed)}

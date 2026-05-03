@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
+import { Button } from '@/components/ui/Button';
 
 // Common picks. The form accepts any free-text value — these are just
 // suggestions surfaced via <datalist>.
@@ -450,26 +451,17 @@ export function ClientCreateForm() {
             {error}
           </span>
         )}
-        <button
+        <Button
           type="submit"
-          disabled={submitting || geocode.status === 'looking'}
-          className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
-          style={{
-            background: 'var(--color-lime)',
-            color: 'black',
-            boxShadow: '0 4px 16px #c5ff3a30',
-          }}
+          variant="primary"
+          size="lg"
+          disabled={geocode.status === 'looking'}
+          loading={submitting}
+          loadingLabel="Creating…"
+          rightIcon={<ChevronRight size={14} />}
         >
-          {submitting ? (
-            <>
-              <Activity size={14} className="animate-pulse" /> Creating…
-            </>
-          ) : (
-            <>
-              Create client <ChevronRight size={14} />
-            </>
-          )}
-        </button>
+          Create client
+        </Button>
       </div>
     </form>
   );

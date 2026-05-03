@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Lock, Radio, Search } from 'lucide-react';
+import { Lock, Radio, Search } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 export type RescanCap = {
   count: number;
@@ -101,44 +102,40 @@ export function ScanButton({
     }
   };
 
+  // Variant flips when the rate-limit cap is hit: a primary CTA isn't
+  // honest there (clicking would 429); secondary outline reads as
+  // "currently unavailable" — same visual language as a disabled nav.
+  const label = atCap
+    ? 'Daily limit reached'
+    : keywordLabel
+      ? 'Re-scan turf'
+      : 'Run TurfScan';
+  const icon = atCap ? (
+    <Lock size={14} strokeWidth={2.5} />
+  ) : keywordLabel ? (
+    <Radio size={14} strokeWidth={2.75} />
+  ) : (
+    <Search size={14} strokeWidth={2.75} />
+  );
+
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <button
-        type="button"
+      <Button
+        variant={atCap ? 'secondary' : 'primary'}
+        size="lg"
         onClick={onClick}
         disabled={disabled}
-        className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
-        style={{
-          background: atCap ? 'var(--color-card)' : 'var(--color-lime)',
-          color: atCap ? '#a1a1aa' : 'black',
-          boxShadow: atCap ? 'none' : '0 4px 16px #c5ff3a30',
-          border: atCap ? '1px solid var(--color-border)' : 'none',
-        }}
+        loading={busy}
+        loadingLabel="Scanning territory…"
+        leftIcon={icon}
         title={
           atCap
             ? `Daily on-demand scan limit reached (${rescanCap?.count}/${rescanCap?.limit}). Next slot ${formatNextAvailable(rescanCap?.nextAvailableAt) ?? 'soon'}.`
             : undefined
         }
       >
-        {busy ? (
-          <>
-            <Activity size={15} strokeWidth={2.75} className="animate-pulse" />
-            Scanning territory…
-          </>
-        ) : atCap ? (
-          <>
-            <Lock size={13} strokeWidth={2.5} /> Daily limit reached
-          </>
-        ) : keywordLabel ? (
-          <>
-            <Radio size={15} strokeWidth={2.75} /> Re-scan turf
-          </>
-        ) : (
-          <>
-            <Search size={15} strokeWidth={2.75} /> Run TurfScan
-          </>
-        )}
-      </button>
+        {label}
+      </Button>
       {rescanCap && !atCap && rescanCap.count > 0 && (
         <span className="text-[10px] font-mono text-zinc-600">
           {rescanCap.count} of {rescanCap.limit} on-demand scans used (24h)

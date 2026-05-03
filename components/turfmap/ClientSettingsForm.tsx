@@ -6,6 +6,7 @@ import { Activity, MapPin, Save } from 'lucide-react';
 import type { ClientRow, ClientStatus } from '@/lib/supabase/types';
 import { LogoUploader } from './LogoUploader';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
+import { Button } from '@/components/ui/Button';
 
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
@@ -461,26 +462,17 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
             ✓ Saved
           </span>
         )}
-        <button
+        <Button
           type="submit"
-          disabled={submitting || !dirty}
-          className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            background: 'var(--color-lime)',
-            color: 'black',
-            boxShadow: '0 4px 16px #c5ff3a30',
-          }}
+          variant="primary"
+          size="lg"
+          disabled={!dirty}
+          loading={submitting}
+          loadingLabel="Saving…"
+          leftIcon={<Save size={14} />}
         >
-          {submitting ? (
-            <>
-              <Activity size={14} className="animate-pulse" /> Saving…
-            </>
-          ) : (
-            <>
-              <Save size={14} /> {dirty ? 'Save changes' : 'No changes'}
-            </>
-          )}
-        </button>
+          {dirty ? 'Save changes' : 'No changes'}
+        </Button>
       </div>
     </form>
   );
