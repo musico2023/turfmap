@@ -63,8 +63,8 @@ export default function MarketingLanding() {
         eyebrow="The problem"
         heading={
           <>
-            You checked your rank <em>once.</em> From your office. That&rsquo;s
-            one search out of 81.
+            You checked your rank <em>once.</em>{' '}From your office.
+            That&rsquo;s one search out of 81.
           </>
         }
         intro={
