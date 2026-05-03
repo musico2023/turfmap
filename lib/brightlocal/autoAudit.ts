@@ -287,9 +287,9 @@ export async function maybeFinalizeNapAudit(
     if (summary && summary.allReady) {
       const { data: client } = await supabase
         .from('clients')
-        .select('business_name')
+        .select('business_name, industry')
         .eq('id', clientId)
-        .maybeSingle<Pick<ClientRow, 'business_name'>>();
+        .maybeSingle<Pick<ClientRow, 'business_name' | 'industry'>>();
       if (!client) return null;
       const business = locationToBusinessProfile(
         client.business_name,
@@ -313,7 +313,8 @@ export async function maybeFinalizeNapAudit(
       const findings = summarizeFindings(
         summary.perDirectory,
         business,
-        siblings
+        siblings,
+        { industry: client.industry }
       );
       const totalCitations = findings.citations.length;
       const inconsistenciesCount = findings.inconsistencies.length;

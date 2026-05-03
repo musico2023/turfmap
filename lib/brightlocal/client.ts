@@ -37,6 +37,7 @@ import type {
   NapAuditMissing,
   NapAuditStatus,
 } from '@/lib/supabase/types';
+import { priorityForMissingDirectory } from '@/lib/brightlocal/missingPriority';
 
 const BRIGHTLOCAL_BASE = 'https://api.brightlocal.com';
 
@@ -349,7 +350,14 @@ export type SiblingLocation = BusinessProfile & {
 export function summarizeFindings(
   perDirectory: AuditStatusSummary['perDirectory'],
   canonical: BusinessProfile,
-  siblings: readonly SiblingLocation[] = []
+  siblings: readonly SiblingLocation[] = [],
+  options: {
+    /** Free-text industry from clients.industry. Used to tag missing
+     *  directories with vertical-gravitational priority (e.g.
+     *  Healthgrades is high for medical, Angi is high for home-services).
+     *  Falls back to 'medium' for everything when null. */
+    industry?: string | null;
+  } = {}
 ): NapAuditFindings {
   const citations: NapAuditCitation[] = [];
   const inconsistencies: NapAuditInconsistency[] = [];
@@ -362,16 +370,18 @@ export function summarizeFindings(
     address: composeAddress(s),
     phone: s.telephone,
   }));
+  const industryForPriority = options.industry ?? null;
 
   for (const d of perDirectory) {
     if (!d.ready) continue;
     if (!d.success || !d.profile) {
-      // BL searched and didn't find a profile in this directory.
+      // BL searched and didn't find a profile in this directory. Tag
+      // priority based on the client's vertical so the AI Coach can
+      // distinguish "missing Healthgrades for a pediatric clinic"
+      // (high) from "missing Foursquare for a pediatric clinic" (medium).
       missing.push({
         directory: d.directory,
-        // Phase 1: every missing directory is 'medium' priority. Phase 2
-        // will source priority from a per-vertical lookup.
-        priority: 'medium',
+        priority: priorityForMissingDirectory(d.directory, industryForPriority),
       });
       continue;
     }
