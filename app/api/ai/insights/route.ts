@@ -35,7 +35,12 @@ import type {
 } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Bumped from 60s to 300s (Vercel default) to give a running NAP audit time
+// to finish so its findings can be folded into the prompt. BrightLocal
+// Listings audits typically resolve in 1-3 minutes for our 15-directory
+// fan-out; the coach blocks on `maybeFinalizeNapAudit` with a budget that
+// leaves ~50s of headroom for the Anthropic call itself.
+export const maxDuration = 300;
 
 const RequestBody = z.object({ scanId: z.string().uuid() });
 
@@ -156,13 +161,18 @@ export async function POST(req: Request) {
   const compositeScore =
     scan.turf_score != null ? Number(scan.turf_score) : null;
 
-  // NAP audit grounding: lazily finalize any running audit for this client
-  // (poll BrightLocal once; if all directories are ready, persist findings
-  // and flip status → complete) before reading. This is what advances
-  // audits kicked off by the scan trigger so they're available here.
-  // Safe to call when no running audit exists: returns the existing
-  // complete one, or null if there's no audit at all.
-  const napAudit = await maybeFinalizeNapAudit(supabase, client.id);
+  // NAP audit grounding: if there's a running audit (kicked off by the
+  // most recent scan trigger), poll BrightLocal in a loop until it's ready
+  // — up to ~4 minutes — then finalize and use the findings. If it's
+  // already complete, that comes back instantly. If there's no audit at
+  // all, returns null and the coach proceeds without grounding (older
+  // behavior).
+  //
+  // Budget is 240s to leave ~50s headroom for the Anthropic call inside
+  // the route's 300s maxDuration cap.
+  const napAudit = await maybeFinalizeNapAudit(supabase, client.id, {
+    waitForReadyMs: 240_000,
+  });
 
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: client.business_name,
