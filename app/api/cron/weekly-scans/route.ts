@@ -3,55 +3,61 @@
  *
  * Schedule (vercel.json): every Monday at 06:00 UTC.
  *
- * For each active client with a tracked keyword that has
- * scan_frequency='weekly', runs a Live Mode scan and persists the result
- * as scan_type='scheduled'. Idempotent within a UTC day — if a scheduled
- * scan for the same (client, keyword) pair was already run today, it's
- * skipped.
+ * For each (active client, physical location, scan_frequency='weekly'
+ * keyword) tuple, runs a Live Mode DataForSEO scan and persists the
+ * result as scan_type='scheduled'. Idempotent within a UTC day — if a
+ * scheduled scan for the same (location, keyword) pair was already run
+ * today, it's skipped.
+ *
+ * Multi-location aware: a client with N locations and M keywords-per-
+ * location yields up to N×M scans per cron run. Locations with missing
+ * coords are skipped silently.
  *
  * Auth: `Authorization: Bearer ${CRON_SECRET}` — Vercel Cron adds this
- * automatically when CRON_SECRET is set in the project's env.
+ * header automatically when CRON_SECRET is set in the project's env.
  *
- * v1 scope:
- *   - Sequential execution (one scan at a time). Fits within 60s function
- *     timeout for ~1-2 clients on Live Mode (~30s per scan).
- *   - Live Mode at $0.002/req. The spec eventually wants Standard Queue
- *     (~$0.0006/req) for scheduled scans — TODO when we cross 5+ clients.
+ * Implementation note: scan execution is delegated to
+ * lib/scans/runScan.runScanForLocation so this route shares the exact
+ * same code path as the manual /api/scans/trigger endpoint. No metric
+ * drift, no missing location_id, NAP audit auto-fires post-scan.
  *
- * Returns: { triggered, skipped, errors, results: [{clientId, keywordId, scanId, error?}] }
+ * Returns: { triggered, skipped, errors, results: [{...}] }
  */
 
 import { NextResponse } from 'next/server';
 import dns from 'node:dns';
-import { runLiveLocalPackScan } from '@/lib/dataforseo/client';
-import { generateGridCoordinates } from '@/lib/dataforseo/grid';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { turfScore } from '@/lib/metrics/turfScore';
-import { top3Rate } from '@/lib/metrics/top3Rate';
-import { turfRadius } from '@/lib/metrics/turfRadius';
+import { runScanForLocation } from '@/lib/scans/runScan';
 import type {
+  ClientLocationRow,
   ClientRow,
   ScanRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseLike = SupabaseClient<any, any, any>;
+
 dns.setDefaultResultOrder('ipv4first');
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Bumped from 60s → 300s. The previous 60s ceiling could only handle
+// 1-2 scans before timing out; with multi-location each scan run can
+// produce many more (N locations × M keywords). 300s lets us complete
+// roughly 8-10 scheduled scans per cron tick — beyond that, we'd need
+// to chunk across multiple cron invocations or move to Standard Queue.
+export const maxDuration = 300;
 
 type RunResult = {
   clientId: string;
+  locationId: string;
   keywordId: string;
   scanId?: string;
   error?: string;
-  skipped?: 'already_ran_today';
+  skipped?: 'already_ran_today' | 'location_missing_coords';
 };
 
-/**
- * Verify the request came from Vercel Cron (or a manually authorized caller
- * sharing the secret). If CRON_SECRET is unset we refuse — fail closed.
- */
 function isAuthorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -74,46 +80,118 @@ async function handle(req: Request) {
 
   const supabase = getServerSupabase();
 
-  // 1. Find all (client, weekly keyword) pairs to scan.
-  const { data: keywords, error: kwErr } = await supabase
-    .from('tracked_keywords')
-    .select('id, client_id, keyword')
-    .eq('scan_frequency', 'weekly')
-    .returns<Pick<TrackedKeywordRow, 'id' | 'client_id' | 'keyword'>[]>();
-  if (kwErr) {
+  // 1. Active clients only.
+  const { data: clients, error: cErr } = await supabase
+    .from('clients')
+    .select('id, business_name, status')
+    .eq('status', 'active')
+    .returns<Pick<ClientRow, 'id' | 'business_name' | 'status'>[]>();
+  if (cErr) {
     return NextResponse.json(
-      { error: `keyword query failed: ${kwErr.message}` },
+      { error: `client query failed: ${cErr.message}` },
       { status: 500 }
     );
   }
+  const activeClients = clients ?? [];
+  if (activeClients.length === 0) {
+    return NextResponse.json({
+      triggered: 0,
+      skipped: 0,
+      errors: 0,
+      results: [],
+      runAt: new Date().toISOString(),
+      note: 'no active clients',
+    });
+  }
 
-  // Filter to active clients only. One join would be cleaner; doing two
-  // queries keeps the code readable for v1.
-  const clientIds = [...new Set((keywords ?? []).map((k) => k.client_id))];
-  const { data: activeClients } = await supabase
-    .from('clients')
-    .select('*')
-    .in('id', clientIds)
-    .eq('status', 'active')
-    .returns<ClientRow[]>();
-  const clientById = new Map((activeClients ?? []).map((c) => [c.id, c]));
+  // 2. All locations for those clients.
+  const clientIds = activeClients.map((c) => c.id);
+  const { data: allLocations } = await supabase
+    .from('client_locations')
+    .select(
+      'id, client_id, latitude, longitude, service_radius_miles, label'
+    )
+    .in('client_id', clientIds)
+    .returns<
+      Pick<
+        ClientLocationRow,
+        | 'id'
+        | 'client_id'
+        | 'latitude'
+        | 'longitude'
+        | 'service_radius_miles'
+        | 'label'
+      >[]
+    >();
+  const locationsByClient = new Map<
+    string,
+    typeof allLocations
+  >();
+  for (const loc of allLocations ?? []) {
+    const list = locationsByClient.get(loc.client_id) ?? [];
+    list.push(loc);
+    locationsByClient.set(loc.client_id, list);
+  }
 
-  const work = (keywords ?? []).filter((k) => clientById.has(k.client_id));
+  // 3. All weekly-frequency keywords for those clients.
+  const { data: allKeywords } = await supabase
+    .from('tracked_keywords')
+    .select('id, client_id, location_id, keyword')
+    .in('client_id', clientIds)
+    .eq('scan_frequency', 'weekly')
+    .returns<
+      Pick<
+        TrackedKeywordRow,
+        'id' | 'client_id' | 'location_id' | 'keyword'
+      >[]
+    >();
 
-  // 2. Execute sequentially.
+  // Index keywords by location_id (post-migration 0006). Keywords
+  // without location_id are legacy rows — apply them to the client's
+  // primary location as a fallback, since that's what the migration
+  // backfill assumed.
+  const keywordsByLocation = new Map<
+    string,
+    Pick<TrackedKeywordRow, 'id' | 'client_id' | 'location_id' | 'keyword'>[]
+  >();
+  for (const kw of allKeywords ?? []) {
+    if (kw.location_id) {
+      const list = keywordsByLocation.get(kw.location_id) ?? [];
+      list.push(kw);
+      keywordsByLocation.set(kw.location_id, list);
+    }
+  }
+
+  // 4. Iterate (client, location, keyword) tuples sequentially. Each
+  //    scan is ~30-60s; sequential keeps the function within
+  //    maxDuration without parallelism complexity.
   const results: RunResult[] = [];
   let triggered = 0;
   let skipped = 0;
   let errors = 0;
 
-  for (const kw of work) {
-    const client = clientById.get(kw.client_id);
-    if (!client) continue; // shouldn't happen given the filter above
-    const result = await runScheduledScan(client, kw, supabase);
-    results.push(result);
-    if (result.skipped) skipped++;
-    else if (result.error) errors++;
-    else triggered++;
+  const todayStartUtc = new Date();
+  todayStartUtc.setUTCHours(0, 0, 0, 0);
+  const todayCutoff = todayStartUtc.toISOString();
+
+  for (const client of activeClients) {
+    const locations = locationsByClient.get(client.id) ?? [];
+    for (const location of locations) {
+      const kws = keywordsByLocation.get(location.id) ?? [];
+      for (const kw of kws) {
+        const r = await scanOneTuple(
+          supabase,
+          { id: client.id, business_name: client.business_name },
+          location,
+          kw,
+          todayCutoff
+        );
+        results.push(r);
+        if (r.skipped) skipped++;
+        else if (r.error) errors++;
+        else triggered++;
+      }
+    }
   }
 
   return NextResponse.json({
@@ -125,138 +203,63 @@ async function handle(req: Request) {
   });
 }
 
-async function runScheduledScan(
-  client: ClientRow,
-  kw: Pick<TrackedKeywordRow, 'id' | 'client_id' | 'keyword'>,
-  supabase: ReturnType<typeof getServerSupabase>
+async function scanOneTuple(
+  supabase: SupabaseLike,
+  client: Pick<ClientRow, 'id' | 'business_name'>,
+  location: Pick<
+    ClientLocationRow,
+    | 'id'
+    | 'client_id'
+    | 'latitude'
+    | 'longitude'
+    | 'service_radius_miles'
+    | 'label'
+  >,
+  keyword: Pick<TrackedKeywordRow, 'id' | 'keyword'>,
+  todayCutoff: string
 ): Promise<RunResult> {
-  // Idempotency — skip if a scheduled scan for this pair was already run today (UTC).
-  const todayStartUtc = new Date();
-  todayStartUtc.setUTCHours(0, 0, 0, 0);
+  const base: RunResult = {
+    clientId: client.id,
+    locationId: location.id,
+    keywordId: keyword.id,
+  };
+
+  // Skip locations missing coords — they can't generate a grid.
+  if (location.latitude == null || location.longitude == null) {
+    return { ...base, skipped: 'location_missing_coords' };
+  }
+
+  // Idempotency: skip if a scheduled scan for THIS (location, keyword)
+  // already ran today. The previous version was scoped to (client,
+  // keyword) which was wrong for multi-location — Don Mills's scan
+  // would block Wychwood's scan if they shared a keyword id (they
+  // don't, post-0006, but the tighter constraint here is cleaner).
   const { data: existing } = await supabase
     .from('scans')
     .select('id')
     .eq('client_id', client.id)
-    .eq('keyword_id', kw.id)
+    .eq('location_id', location.id)
+    .eq('keyword_id', keyword.id)
     .eq('scan_type', 'scheduled')
-    .gte('created_at', todayStartUtc.toISOString())
+    .gte('created_at', todayCutoff)
     .limit(1)
     .maybeSingle<Pick<ScanRow, 'id'>>();
   if (existing) {
-    return {
-      clientId: client.id,
-      keywordId: kw.id,
-      scanId: existing.id,
-      skipped: 'already_ran_today',
-    };
+    return { ...base, scanId: existing.id, skipped: 'already_ran_today' };
   }
 
-  // Insert running scan row
-  const { data: scanRow, error: insErr } = await supabase
-    .from('scans')
-    .insert({
-      client_id: client.id,
-      keyword_id: kw.id,
-      scan_type: 'scheduled',
-      grid_size: 9,
-      status: 'running',
-      total_points: 81,
-    })
-    .select('id')
-    .single();
-  if (insErr || !scanRow) {
-    return {
-      clientId: client.id,
-      keywordId: kw.id,
-      error: `scan insert failed: ${insErr?.message ?? 'no row'}`,
-    };
-  }
-  const scanId = scanRow.id;
-
-  // Generate grid + run scan
-  const points = generateGridCoordinates({
-    centerLat: Number(client.latitude),
-    centerLng: Number(client.longitude),
-    gridSize: 9,
-    radiusMiles: Number(client.service_radius_miles ?? 1.6),
+  // Delegate to the shared executor — same code path as the manual
+  // trigger button. NAP audit auto-fires inside.
+  const result = await runScanForLocation(supabase, {
+    client,
+    location,
+    keyword,
+    scanType: 'scheduled',
+    triggeredBy: null, // cron-driven; no operator user id
   });
-  const ownPattern = new RegExp(
-    client.business_name.split(/\s+/)[0]?.toLowerCase() || '___never_match___',
-    'i'
-  );
 
-  let scan;
-  try {
-    scan = await runLiveLocalPackScan({
-      keyword: kw.keyword,
-      points,
-      targetMatch: (item) =>
-        ownPattern.test((item.title ?? '').toString().toLowerCase()),
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await supabase
-      .from('scans')
-      .update({ status: 'failed', completed_at: new Date().toISOString() })
-      .eq('id', scanId);
-    return { clientId: client.id, keywordId: kw.id, scanId, error: msg };
+  if (!result.ok) {
+    return { ...base, scanId: result.scanId, error: result.error };
   }
-
-  // Persist points
-  const rows = scan.results.map((r) => ({
-    scan_id: scanId,
-    grid_x: r.point.x,
-    grid_y: r.point.y,
-    latitude: r.point.lat,
-    longitude: r.point.lng,
-    rank: r.rank,
-    business_found: r.businessFound,
-    competitors: r.items.slice(0, 3).map((it) => ({
-      name: it.title ?? null,
-      domain: it.domain ?? null,
-      rank_group: it.rank_group ?? null,
-      rank_absolute: it.rank_absolute ?? null,
-      place_id: it.cid ?? null,
-    })),
-    raw_response: r.raw,
-  }));
-  const { error: ptsErr } = await supabase.from('scan_points').insert(rows);
-  if (ptsErr) {
-    await supabase
-      .from('scans')
-      .update({ status: 'failed', completed_at: new Date().toISOString() })
-      .eq('id', scanId);
-    return {
-      clientId: client.id,
-      keywordId: kw.id,
-      scanId,
-      error: `scan_points insert failed: ${ptsErr.message}`,
-    };
-  }
-
-  // Compute + persist metrics
-  const ranks = scan.results.map((r) => r.rank);
-  const score = turfScore(ranks);
-  const t3 = top3Rate(ranks);
-  const radius = turfRadius(
-    scan.results.map((r) => ({
-      point: { x: r.point.x, y: r.point.y },
-      rank: r.rank,
-    }))
-  );
-  await supabase
-    .from('scans')
-    .update({
-      status: 'complete',
-      dfs_cost_cents: scan.dfsCostCents,
-      failed_points: scan.failedPoints,
-      total_points: scan.results.length,
-      turf_score: score,
-      top3_win_rate: t3,
-      turf_radius_units: radius,
-      completed_at: new Date().toISOString(),
-    })
-    .eq('id', scanId);
-
-  return { clientId: client.id, keywordId: kw.id, scanId };
+  return { ...base, scanId: result.scanId };
 }
