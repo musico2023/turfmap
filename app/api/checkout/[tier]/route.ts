@@ -28,16 +28,29 @@ import { NextRequest, NextResponse } from 'next/server';
  *   section so they don't lose their place.
  */
 
-type Tier = 'scan' | 'audit' | 'strategy';
+type Tier = 'scan' | 'audit' | 'strategy' | 'pulse' | 'pulse_plus';
 
 const TIER_TO_ENV: Record<Tier, string> = {
   scan: 'NEXT_PUBLIC_STRIPE_PRICE_SCAN',
   audit: 'NEXT_PUBLIC_STRIPE_PRICE_AUDIT',
   strategy: 'NEXT_PUBLIC_STRIPE_PRICE_STRATEGY',
+  pulse: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY',
+  pulse_plus: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_PLUS_MONTHLY',
 };
 
+/** One-time tiers use Stripe `mode: 'payment'`; recurring tiers use
+ *  `mode: 'subscription'`. The Stripe Price ID points at a recurring
+ *  product for Pulse/Pulse+ on the dashboard side. */
+const SUBSCRIPTION_TIERS: ReadonlySet<Tier> = new Set(['pulse', 'pulse_plus']);
+
 function isTier(s: string): s is Tier {
-  return s === 'scan' || s === 'audit' || s === 'strategy';
+  return (
+    s === 'scan' ||
+    s === 'audit' ||
+    s === 'strategy' ||
+    s === 'pulse' ||
+    s === 'pulse_plus'
+  );
 }
 
 export async function POST(
@@ -98,9 +111,11 @@ export async function POST(
     req.headers.get('origin') ??
     'https://turfmap.ai';
 
+  const isSubscription = SUBSCRIPTION_TIERS.has(tierParam);
+
   try {
     const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
+      mode: isSubscription ? 'subscription' : 'payment',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${origin}/order/success?tier=${tierParam}&session_id={CHECKOUT_SESSION_ID}`,
@@ -108,7 +123,10 @@ export async function POST(
       // Capture the buyer's email up-front so the post-purchase form
       // can pre-fill it. allow_promotion_codes lets us run launch
       // discounts without rebuilding.
-      customer_creation: 'if_required',
+      // customer_creation isn't valid in subscription mode (Stripe
+      // always creates a customer for subs), so only set it for
+      // one-time payments.
+      ...(isSubscription ? {} : { customer_creation: 'if_required' as const }),
       allow_promotion_codes: true,
       metadata: {
         tier: tierParam,

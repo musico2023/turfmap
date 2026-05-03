@@ -1,10 +1,21 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, Compass, Crown, Eye, FileText, Sparkles, Target } from 'lucide-react';
+import {
+  ArrowRight,
+  Compass,
+  Crown,
+  Eye,
+  FileText,
+  Gift,
+  MapPin,
+  Sparkles,
+  Target,
+} from 'lucide-react';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
 import { MarketingHero } from '@/components/marketing/MarketingHero';
 import { Section } from '@/components/marketing/Section';
 import { PricingCards } from '@/components/marketing/PricingCards';
+import { MonitoringCards } from '@/components/marketing/MonitoringCards';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { LinkButton } from '@/components/ui/Button';
@@ -303,21 +314,116 @@ export default function MarketingLanding() {
         </div>
       </Section>
 
-      {/* 05 — Pricing (Stripe checkout) */}
+      {/* 05 — Pricing (Stripe checkout)
+       *
+       * Two-subsection layout:
+       *   ─ One-time audits (3 cards: $99 / $499 / $1,497)
+       *   ─ Continuous monitoring (2 cards: Pulse $39 / Pulse+ $89)
+       *
+       * Plus a per-location add-on callout and an attach-banner that
+       * dangles 30 free days of Pulse on top of any audit purchase.
+       *
+       * The H2 captures the funnel: pick the audit, then keep watching.
+       * Intro line is the agency-comparison anchor — most agencies
+       * charge $1.5K-$2.5K just to look, TurfMap starts at $99.
+       */}
       <Section
         id="section-05"
         n={5}
         eyebrow="Pricing"
         heading={
           <>
-            One purchase, no subscription. <em>Pick a tier and go.</em>
+            Pick your audit. Then <em>keep watching.</em>
           </>
         }
-        intro="Each tier is a single payment. After checkout you'll fill in your business details (name, address, keyword) and we'll fire the scan immediately."
+        intro={
+          <>
+            Most agencies charge{' '}
+            <span className="text-zinc-200 font-semibold">$1,500–$2,500+</span>{' '}
+            before they&rsquo;ll even look at your map pack. TurfMap starts
+            at <span style={{ color: 'var(--color-lime)' }}>$99</span>.
+          </>
+        }
         tint
       >
+        <SubsectionHeader
+          title="One-time audits"
+          subhead="One scan, full diagnosis. Pick your depth."
+        />
         <PricingCards />
-        <p className="text-xs text-zinc-600 font-mono mt-8 text-center">
+
+        <div className="mt-20">
+          <SubsectionHeader
+            title="Continuous monitoring"
+            subhead="Keep watching your territory. Cancel anytime."
+          />
+          <MonitoringCards />
+        </div>
+
+        {/* Per-location add-on. Linear pricing — no tier-jump tax for
+         *  multi-location operators. The whole reason the schema is
+         *  multi-location-native is so franchise / multi-clinic /
+         *  multi-storefront operators can layer locations as needed. */}
+        <div
+          className="mt-10 mx-auto max-w-3xl rounded-lg border p-5 flex items-start gap-3"
+          style={{
+            background: 'var(--color-bg)',
+            borderColor: 'var(--color-border)',
+          }}
+        >
+          <MapPin
+            size={18}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div className="text-sm text-zinc-300 leading-relaxed">
+            <span className="font-semibold text-zinc-100">
+              Multiple locations? Add them linearly.
+            </span>{' '}
+            <span className="text-zinc-400">
+              <span className="font-mono">+$19/mo</span> per additional
+              location on Pulse,{' '}
+              <span className="font-mono">+$29/mo</span> on Pulse+. No tier
+              ladders, no per-location penalties.
+            </span>
+          </div>
+        </div>
+
+        {/* Attach banner. Marketing's lead-magnet hook: any audit
+         *  purchase comes with 30 free days of Pulse on top. The trial
+         *  auto-cancels unless the buyer keeps it (no
+         *  drip-into-charge-without-warning trickery). Implementation
+         *  note: this requires the Stripe checkout to attach a
+         *  subscription with `trial_period_days: 30` to the one-time
+         *  payment session — not yet wired, so for now the banner is a
+         *  promise we'll honor manually until the trial-attachment
+         *  flow is built. */}
+        <div
+          className="mt-5 mx-auto max-w-3xl rounded-lg p-5 flex items-start gap-3"
+          style={{
+            background: '#0d130a',
+            border: '1px solid var(--color-border-bright)',
+          }}
+        >
+          <Gift
+            size={18}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div className="text-sm text-zinc-300 leading-relaxed">
+            <span
+              className="font-semibold"
+              style={{ color: 'var(--color-lime)' }}
+            >
+              Buy any audit, get 30 days of Pulse free.
+            </span>{' '}
+            <span className="text-zinc-400">
+              Cancel anytime — keep watching only if you want to.
+            </span>
+          </div>
+        </div>
+
+        <p className="text-xs text-zinc-600 font-mono mt-10 text-center">
           All prices in USD. Refund policy: full refund within 24h if you
           haven&rsquo;t received your scan yet.
         </p>
@@ -510,6 +616,32 @@ export default function MarketingLanding() {
 }
 
 // ─── Sub-components used inline above ─────────────────────────────────────
+
+/**
+ * Subsection header used inside Section 05 to split "One-time audits"
+ * from "Continuous monitoring." Smaller than the section H2 — uses the
+ * same eyebrow + heading pattern as Section but at a level down so the
+ * eye reads "this is one section split into two product groupings,"
+ * not "two top-level sections jammed together."
+ */
+function SubsectionHeader({
+  title,
+  subhead,
+}: {
+  title: string;
+  subhead: string;
+}) {
+  return (
+    <div className="mt-10 mb-2 max-w-3xl">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-2">
+        <span style={{ color: 'var(--color-lime)' }}>·</span> {title}
+      </div>
+      <p className="font-display text-xl md:text-2xl font-bold text-zinc-100 leading-tight">
+        {subhead}
+      </p>
+    </div>
+  );
+}
 
 function CompareCard({
   title,
