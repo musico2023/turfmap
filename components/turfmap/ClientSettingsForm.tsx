@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Activity, MapPin, Save } from 'lucide-react';
 import type { ClientRow, ClientStatus } from '@/lib/supabase/types';
 import { LogoUploader } from './LogoUploader';
+import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
@@ -138,6 +139,11 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
         return;
       }
       const c = data.components;
+      // Operator-typed postcode wins over Nominatim's normalized one.
+      // Re-geocode is an explicit action, but the operator's text input
+      // is still the source of truth for what they meant.
+      const operatorPostcode = extractPostcodeFromAddress(addr);
+      const finalPostcode = operatorPostcode ?? c?.postcode ?? null;
       let filled = 0;
       setForm((s) => {
         const next = { ...s };
@@ -155,8 +161,8 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
           next.region = c.region;
           filled++;
         }
-        if (c?.postcode && c.postcode !== s.postcode) {
-          next.postcode = c.postcode;
+        if (finalPostcode && finalPostcode !== s.postcode) {
+          next.postcode = finalPostcode;
           filled++;
         }
         if (c?.country_code && c.country_code !== s.country_code) {

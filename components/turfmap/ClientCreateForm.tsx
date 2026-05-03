@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
+import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 
 // Common picks. The form accepts any free-text value — these are just
 // suggestions surfaced via <datalist>.
@@ -137,7 +138,12 @@ export function ClientCreateForm() {
         // NAP fields fill ONLY IF currently empty so we don't clobber
         // any in-progress edits. User can still tweak coords via manual
         // override if Nominatim's pin is off.
+        // Postcode precedence: operator-typed > Nominatim-normalized.
+        // Nominatim sometimes returns a different code than the operator
+        // intended; trusting their input here prevents the audit from
+        // later flagging real listings as inconsistencies.
         const c = data.components;
+        const operatorPostcode = extractPostcodeFromAddress(trimmed);
         setForm((s) => ({
           ...s,
           latitude: String(data.lat),
@@ -145,7 +151,7 @@ export function ClientCreateForm() {
           street_address: s.street_address || (c?.street_address ?? ''),
           city: s.city || (c?.city ?? ''),
           region: s.region || (c?.region ?? ''),
-          postcode: s.postcode || (c?.postcode ?? ''),
+          postcode: s.postcode || operatorPostcode || (c?.postcode ?? ''),
           // country_code starts as 'USA' default; only let Nominatim
           // override when it's still at the default (i.e. operator
           // hasn't manually changed it).

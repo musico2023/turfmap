@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, ChevronDown, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
 import type { ClientLocationRow } from '@/lib/supabase/types';
+import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 
 export type LocationsManagerProps = {
   clientId: string;
@@ -194,6 +195,15 @@ function AddLocationForm({
       }
       const c = geoData.components;
 
+      // Operator-typed postcode wins over Nominatim's normalized one.
+      // (Nominatim sometimes returns a different code than what the
+      // operator actually wrote — e.g. M3B 2S7 vs the typed M3B 3S6 —
+      // and the audit downstream then flags real listings as
+      // inconsistencies.) Falls back to Nominatim's parse only when
+      // the operator didn't include a postcode in their input.
+      const operatorPostcode = extractPostcodeFromAddress(address.trim());
+      const finalPostcode = operatorPostcode ?? c?.postcode ?? null;
+
       // 2. POST the new location with the resolved coords + components.
       const res = await fetch(`/api/clients/${clientId}/locations`, {
         method: 'POST',
@@ -204,7 +214,7 @@ function AddLocationForm({
           street_address: c?.street_address ?? null,
           city: c?.city ?? null,
           region: c?.region ?? null,
-          postcode: c?.postcode ?? null,
+          postcode: finalPostcode,
           country_code: c?.country_code ?? 'USA',
           phone: phone.trim() || null,
           latitude: geoData.lat,
@@ -358,13 +368,17 @@ function EditLocationForm({
           setSubmitting(false);
           return;
         }
+        // Same postcode-precedence rule as AddLocationForm: trust the
+        // operator's typed postcode when present, fall back to
+        // Nominatim's parse only when there's nothing to extract.
+        const operatorPostcode = extractPostcodeFromAddress(address.trim());
         geocodePayload = {
           latitude: geoData.lat,
           longitude: geoData.lng,
           street_address: geoData.components?.street_address ?? null,
           city: geoData.components?.city ?? null,
           region: geoData.components?.region ?? null,
-          postcode: geoData.components?.postcode ?? null,
+          postcode: operatorPostcode ?? geoData.components?.postcode ?? null,
           country_code: geoData.components?.country_code ?? 'USA',
         };
       }
