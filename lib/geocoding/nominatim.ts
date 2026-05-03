@@ -26,6 +26,33 @@ export type GeocodeResult = {
   importance: number;
   /** Bounding box [south, north, west, east] in degrees. */
   bbox?: [number, number, number, number];
+  /** Parsed components — used to pre-fill the structured NAP fields on
+   *  the client form so operators don't have to type the address twice. */
+  components?: {
+    /** "house_number road", e.g. "100 Queen Street West". */
+    street_address: string | null;
+    /** city / town / village / hamlet / suburb — first one Nominatim returns. */
+    city: string | null;
+    /** Full state/province name (e.g. "Ontario"). Nominatim doesn't provide
+     *  the 2-letter code; the operator can shorten if needed. */
+    region: string | null;
+    postcode: string | null;
+    /** ISO-3166-1 alpha-3 (e.g. "USA"). Mapped from Nominatim's alpha-2.
+     *  Falls back to uppercase alpha-2 when no mapping exists — BrightLocal
+     *  rejects unknowns; operator can edit on the form. */
+    country_code: string | null;
+  };
+};
+
+// Common alpha-2 → alpha-3 country codes for TurfMap's expected markets.
+// BrightLocal Listings API requires alpha-3.
+const ALPHA2_TO_ALPHA3: Record<string, string> = {
+  us: 'USA',
+  ca: 'CAN',
+  gb: 'GBR',
+  au: 'AUS',
+  nz: 'NZL',
+  ie: 'IRL',
 };
 
 export async function geocodeAddress(
@@ -37,7 +64,9 @@ export async function geocodeAddress(
   const params = new URLSearchParams({
     q: trimmed,
     format: 'jsonv2',
-    addressdetails: '0',
+    // 1 = include the structured `address` object (street, city, state,
+    // postcode, country, country_code). Used to pre-fill the NAP fields.
+    addressdetails: '1',
     limit: '1',
   });
   const url = `${NOMINATIM_BASE}/search?${params.toString()}`;
@@ -57,12 +86,28 @@ export async function geocodeAddress(
     throw new Error(`Nominatim HTTP ${res.status}`);
   }
 
+  type NominatimAddress = {
+    house_number?: string;
+    road?: string;
+    pedestrian?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    hamlet?: string;
+    suburb?: string;
+    state?: string;
+    state_district?: string;
+    postcode?: string;
+    country?: string;
+    country_code?: string;
+  };
   const json = (await res.json()) as Array<{
     lat: string;
     lon: string;
     display_name: string;
     importance?: number;
     boundingbox?: [string, string, string, string];
+    address?: NominatimAddress;
   }>;
 
   if (!json.length) return null;
@@ -72,6 +117,21 @@ export async function geocodeAddress(
   const lng = Number(r.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
+  const a = r.address ?? {};
+  const street = [a.house_number, a.road ?? a.pedestrian]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  // City fallbacks: cities use 'city', suburbs use 'suburb', rural areas
+  // use 'town'/'village'/'hamlet'. Pick the most populated unit available.
+  const city =
+    a.city ?? a.town ?? a.village ?? a.hamlet ?? a.suburb ?? null;
+  const region = a.state ?? a.state_district ?? null;
+  const postcode = a.postcode ?? null;
+  const cc2 = (a.country_code ?? '').toLowerCase();
+  const country_code =
+    ALPHA2_TO_ALPHA3[cc2] ?? (cc2 ? cc2.toUpperCase() : null);
+
   return {
     lat,
     lng,
@@ -80,5 +140,12 @@ export async function geocodeAddress(
     bbox: r.boundingbox
       ? (r.boundingbox.map((s) => Number(s)) as [number, number, number, number])
       : undefined,
+    components: {
+      street_address: street.length > 0 ? street : null,
+      city,
+      region,
+      postcode,
+      country_code,
+    },
   };
 }

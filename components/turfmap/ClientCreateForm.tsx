@@ -116,6 +116,13 @@ export function ClientCreateForm() {
           lat?: number;
           lng?: number;
           formatted?: string;
+          components?: {
+            street_address: string | null;
+            city: string | null;
+            region: string | null;
+            postcode: string | null;
+            country_code: string | null;
+          } | null;
           error?: string;
         };
         if (cancelled) return;
@@ -126,12 +133,26 @@ export function ClientCreateForm() {
           });
           return;
         }
-        // Auto-populate lat/lng on the form. User can still tweak via
-        // manual override if Nominatim's pin is off.
+        // Auto-populate lat/lng + structured NAP fields on the form.
+        // NAP fields fill ONLY IF currently empty so we don't clobber
+        // any in-progress edits. User can still tweak coords via manual
+        // override if Nominatim's pin is off.
+        const c = data.components;
         setForm((s) => ({
           ...s,
           latitude: String(data.lat),
           longitude: String(data.lng),
+          street_address: s.street_address || (c?.street_address ?? ''),
+          city: s.city || (c?.city ?? ''),
+          region: s.region || (c?.region ?? ''),
+          postcode: s.postcode || (c?.postcode ?? ''),
+          // country_code starts as 'USA' default; only let Nominatim
+          // override when it's still at the default (i.e. operator
+          // hasn't manually changed it).
+          country_code:
+            s.country_code === 'USA' && c?.country_code
+              ? c.country_code
+              : s.country_code,
         }));
         setGeocode({
           status: 'found',

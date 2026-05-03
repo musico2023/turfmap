@@ -6,7 +6,10 @@
  * a friendly error if Nominatim doesn't recognize the address.
  *
  * Body:    { address: string }
- * Returns: { lat, lng, formatted } | { error }
+ * Returns: { lat, lng, formatted, components } | { error }
+ *   components: structured fields parsed from Nominatim — used to
+ *   pre-fill the BrightLocal NAP section on the create form so
+ *   operators don't type the address twice.
  */
 
 import { NextResponse } from 'next/server';
@@ -58,5 +61,6 @@ export async function POST(req: Request) {
     lat: result.lat,
     lng: result.lng,
     formatted: result.display_name,
+    components: result.components ?? null,
   });
 }

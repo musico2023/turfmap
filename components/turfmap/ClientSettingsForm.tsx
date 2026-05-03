@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Save } from 'lucide-react';
+import { Activity, MapPin, Save } from 'lucide-react';
 import type { ClientRow, ClientStatus } from '@/lib/supabase/types';
 import { LogoUploader } from './LogoUploader';
 
@@ -74,6 +74,12 @@ function formFromClient(c: ClientRow): Form {
   };
 }
 
+type FillState =
+  | { status: 'idle' }
+  | { status: 'looking' }
+  | { status: 'filled'; filled: number }
+  | { status: 'failed'; error: string };
+
 export function ClientSettingsForm({ client }: { client: ClientRow }) {
   const router = useRouter();
   const [original] = useState<Form>(() => formFromClient(client));
@@ -81,11 +87,92 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [fillState, setFillState] = useState<FillState>({ status: 'idle' });
   const [, startTransition] = useTransition();
 
   const update = <K extends keyof Form>(k: K, v: Form[K]) => {
     setForm((s) => ({ ...s, [k]: v }));
     setSavedAt(null);
+  };
+
+  /**
+   * Pull structured NAP fields out of the freeform `address` (Nominatim).
+   * Only fills empty fields — never clobbers operator-edited values.
+   */
+  const fillFromAddress = async () => {
+    const addr = form.address.trim();
+    if (addr.length < 4) {
+      setFillState({
+        status: 'failed',
+        error: 'enter a full address first',
+      });
+      return;
+    }
+    setFillState({ status: 'looking' });
+    try {
+      const res = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: addr }),
+      });
+      const data = (await res.json()) as {
+        components?: {
+          street_address: string | null;
+          city: string | null;
+          region: string | null;
+          postcode: string | null;
+          country_code: string | null;
+        } | null;
+        error?: string;
+      };
+      if (!res.ok) {
+        setFillState({
+          status: 'failed',
+          error: data.error ?? `geocode failed (HTTP ${res.status})`,
+        });
+        return;
+      }
+      const c = data.components;
+      if (!c) {
+        setFillState({
+          status: 'failed',
+          error: 'geocode returned no structured fields',
+        });
+        return;
+      }
+      let filled = 0;
+      setForm((s) => {
+        const next = { ...s };
+        if (!s.street_address && c.street_address) {
+          next.street_address = c.street_address;
+          filled++;
+        }
+        if (!s.city && c.city) {
+          next.city = c.city;
+          filled++;
+        }
+        if (!s.region && c.region) {
+          next.region = c.region;
+          filled++;
+        }
+        if (!s.postcode && c.postcode) {
+          next.postcode = c.postcode;
+          filled++;
+        }
+        if ((s.country_code === '' || s.country_code === 'USA') && c.country_code) {
+          next.country_code = c.country_code;
+          if (s.country_code === '') filled++;
+        }
+        return next;
+      });
+      setSavedAt(null);
+      setFillState({ status: 'filled', filled });
+    } catch (e) {
+      setFillState({
+        status: 'failed',
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   };
 
   const dirty = (Object.keys(form) as Array<keyof Form>).some(
@@ -247,11 +334,46 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
       </Section>
 
       <Section title="Citation NAP fields">
-        <p className="text-xs text-zinc-500 -mt-2 mb-1">
-          Required for BrightLocal citation audits. Address fields above are
-          kept for geocoding; these are the structured equivalents that get
-          sent to directory APIs.
-        </p>
+        <div className="-mt-2 mb-1 flex items-start justify-between gap-3">
+          <p className="text-xs text-zinc-500 max-w-xl">
+            Required for BrightLocal citation audits. Address fields above are
+            kept for geocoding; these are the structured equivalents that get
+            sent to directory APIs. Phone has no auto-fill — type it in.
+          </p>
+          <button
+            type="button"
+            onClick={fillFromAddress}
+            disabled={fillState.status === 'looking'}
+            className="px-2.5 py-1 rounded-md text-[11px] font-mono border transition-colors hover:border-zinc-700 flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              borderColor: 'var(--color-border)',
+              background: 'var(--color-card)',
+              color: '#a1a1aa',
+            }}
+          >
+            {fillState.status === 'looking' ? (
+              <>
+                <Activity size={11} className="animate-pulse" /> Filling…
+              </>
+            ) : (
+              <>
+                <MapPin size={11} /> Fill from address
+              </>
+            )}
+          </button>
+        </div>
+        {fillState.status === 'filled' && (
+          <p className="text-[11px] font-mono text-zinc-500 -mt-1 mb-1">
+            {fillState.filled === 0
+              ? '✓ all fields already populated — nothing to fill'
+              : `✓ filled ${fillState.filled} ${fillState.filled === 1 ? 'field' : 'fields'} from geocode`}
+          </p>
+        )}
+        {fillState.status === 'failed' && (
+          <p className="text-[11px] font-mono text-red-400 -mt-1 mb-1">
+            {fillState.error}
+          </p>
+        )}
         <Field label="Phone" help="E.164 preferred, e.g. +1-416-555-0100">
           <input
             type="tel"
