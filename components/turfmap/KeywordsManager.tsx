@@ -16,6 +16,11 @@ export type KeywordsManagerProps = {
    *  multi-location clients so the operator sees which location's
    *  keywords are listed). */
   locationLabel?: string | null;
+  /** Pre-computed industry+city-based keyword chips (e.g. ["pediatrician
+   *  toronto", "pediatric clinic toronto", ...]). Click → fills the
+   *  input. Empty array hides the suggestion row. Computed server-side
+   *  via lib/keywords/suggestions.buildKeywordSuggestions. */
+  suggestions?: string[];
   keywords: TrackedKeywordRow[];
 };
 
@@ -23,6 +28,7 @@ export function KeywordsManager({
   clientId,
   locationId = null,
   locationLabel = null,
+  suggestions = [],
   keywords,
 }: KeywordsManagerProps) {
   const router = useRouter();
@@ -162,6 +168,39 @@ export function KeywordsManager({
           ))
         )}
       </div>
+
+      {/* Suggestion chips — only shown when we have something to suggest
+          AND it's not already on the list. Click fills the input below;
+          operator can edit before submitting. */}
+      {suggestions.length > 0 && (
+        <div className="mb-3">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5">
+            Suggestions
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {suggestions
+              .filter(
+                (s) =>
+                  !keywords.some((k) => k.keyword.toLowerCase() === s.toLowerCase())
+              )
+              .map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setNewKeyword(s)}
+                  className="px-2 py-1 rounded-md text-[11px] font-mono border transition-colors hover:border-zinc-700"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: 'var(--color-bg)',
+                    color: '#a1a1aa',
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Add form */}
       <form onSubmit={onAdd} className="space-y-3">

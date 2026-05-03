@@ -24,6 +24,7 @@ import {
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { listLocations, resolveLocation } from '@/lib/supabase/locations';
+import { buildKeywordSuggestions } from '@/lib/keywords/suggestions';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
@@ -124,6 +125,10 @@ export default async function ClientSettingsPage({
                 ? activeLocation.label || activeLocation.city || 'Primary'
                 : null
             }
+            suggestions={buildKeywordSuggestions(
+              client.industry,
+              activeLocation?.city ?? null
+            )}
             keywords={keywords ?? []}
           />
           <ClientUsersManager
