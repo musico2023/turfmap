@@ -244,7 +244,10 @@ export function ClientCreateForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-6 max-w-3xl">
-      {/* Business basics */}
+      {/* Business basics — the structured citation fields (street/city/state/
+          zip/country) live in form state but are filled silently from the
+          Nominatim geocode below. They're stored on the row and used by the
+          NAP audit pipeline. The operator only sees: name, phone, address. */}
       <Section title="Business">
         <Field label="Business name" required>
           <input
@@ -257,7 +260,17 @@ export function ClientCreateForm() {
             className={inputClass}
           />
         </Field>
-        <Field label="Street address" required>
+        <Field label="Phone" required help="E.164 preferred, e.g. +1-416-555-0100">
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={(e) => update('phone', e.target.value)}
+            placeholder="+1-416-555-0100"
+            required
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Address" required>
           <input
             type="text"
             value={form.address}
@@ -343,76 +356,6 @@ export function ClientCreateForm() {
             />
           </Field>
         </div>
-      </Section>
-
-      {/* Structured NAP fields — required by BrightLocal Listings API. */}
-      <Section
-        title="Citation NAP fields"
-        subtitle="Used for BrightLocal citation audits. Address fields above are kept for geocoding; these are the structured equivalents that get sent to directory APIs."
-      >
-        <Field label="Phone" required help="E.164 preferred, e.g. +1-416-555-0100">
-          <input
-            type="tel"
-            value={form.phone}
-            onChange={(e) => update('phone', e.target.value)}
-            placeholder="+1-416-555-0100"
-            required
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Street address" required help="Street + number only (no city/state/zip)">
-          <input
-            type="text"
-            value={form.street_address}
-            onChange={(e) => update('street_address', e.target.value)}
-            placeholder="100 Queen St W"
-            required
-            className={inputClass}
-          />
-        </Field>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="City" required>
-            <input
-              type="text"
-              value={form.city}
-              onChange={(e) => update('city', e.target.value)}
-              placeholder="Toronto"
-              required
-              className={inputClass}
-            />
-          </Field>
-          <Field label="State / region" required>
-            <input
-              type="text"
-              value={form.region}
-              onChange={(e) => update('region', e.target.value)}
-              placeholder="ON"
-              required
-              className={inputClass}
-            />
-          </Field>
-          <Field label="ZIP / postcode" required>
-            <input
-              type="text"
-              value={form.postcode}
-              onChange={(e) => update('postcode', e.target.value)}
-              placeholder="M5H 2N2"
-              required
-              className={inputClass}
-            />
-          </Field>
-        </div>
-        <Field label="Country code" help="ISO-3166-1 alpha-3 (USA, CAN, GBR, …)">
-          <input
-            type="text"
-            value={form.country_code}
-            onChange={(e) =>
-              update('country_code', e.target.value.toUpperCase().slice(0, 3))
-            }
-            maxLength={3}
-            className={`${inputClass} font-mono uppercase`}
-          />
-        </Field>
       </Section>
 
       {/* Tracking keyword */}

@@ -27,10 +27,9 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
+import { maybeFinalizeNapAudit } from '@/lib/brightlocal/autoAudit';
 import type {
   ClientRow,
-  NapAuditFindings,
-  NapAuditRow,
   ScanRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
@@ -157,28 +156,13 @@ export async function POST(req: Request) {
   const compositeScore =
     scan.turf_score != null ? Number(scan.turf_score) : null;
 
-  // Optional: pull most recent COMPLETE NAP audit for this client. Stale-but-
-  // complete audits are still useful — citations rot slowly. We don't gate
-  // on age in v1; if Anthony decides freshness matters we'd add a 90-day
-  // window here.
-  const { data: latestNap } = await supabase
-    .from('nap_audits')
-    .select('id, status, completed_at, findings')
-    .eq('client_id', client.id)
-    .eq('status', 'complete')
-    .not('findings', 'is', null)
-    .order('completed_at', { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle<
-      Pick<NapAuditRow, 'id' | 'status' | 'completed_at' | 'findings'>
-    >();
-  const napAudit =
-    latestNap && latestNap.findings
-      ? {
-          findings: latestNap.findings as NapAuditFindings,
-          completedAt: latestNap.completed_at,
-        }
-      : null;
+  // NAP audit grounding: lazily finalize any running audit for this client
+  // (poll BrightLocal once; if all directories are ready, persist findings
+  // and flip status → complete) before reading. This is what advances
+  // audits kicked off by the scan trigger so they're available here.
+  // Safe to call when no running audit exists: returns the existing
+  // complete one, or null if there's no audit at all.
+  const napAudit = await maybeFinalizeNapAudit(supabase, client.id);
 
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: client.business_name,

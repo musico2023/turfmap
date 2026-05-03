@@ -96,8 +96,11 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
   };
 
   /**
-   * Pull structured NAP fields out of the freeform `address` (Nominatim).
-   * Only fills empty fields — never clobbers operator-edited values.
+   * Re-geocode the freeform `address` and refresh the hidden structured
+   * citation fields (street/city/region/postcode/country) plus lat/lng.
+   * This is an explicit user action (the "re-geocode" link) so we overwrite
+   * existing values rather than just filling gaps — the operator changed
+   * the address, the new geocode is canonical.
    */
   const fillFromAddress = async () => {
     const addr = form.address.trim();
@@ -116,6 +119,8 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
         body: JSON.stringify({ address: addr }),
       });
       const data = (await res.json()) as {
+        lat?: number;
+        lng?: number;
         components?: {
           street_address: string | null;
           city: string | null;
@@ -133,35 +138,30 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
         return;
       }
       const c = data.components;
-      if (!c) {
-        setFillState({
-          status: 'failed',
-          error: 'geocode returned no structured fields',
-        });
-        return;
-      }
       let filled = 0;
       setForm((s) => {
         const next = { ...s };
-        if (!s.street_address && c.street_address) {
+        if (data.lat !== undefined) next.latitude = String(data.lat);
+        if (data.lng !== undefined) next.longitude = String(data.lng);
+        if (c?.street_address && c.street_address !== s.street_address) {
           next.street_address = c.street_address;
           filled++;
         }
-        if (!s.city && c.city) {
+        if (c?.city && c.city !== s.city) {
           next.city = c.city;
           filled++;
         }
-        if (!s.region && c.region) {
+        if (c?.region && c.region !== s.region) {
           next.region = c.region;
           filled++;
         }
-        if (!s.postcode && c.postcode) {
+        if (c?.postcode && c.postcode !== s.postcode) {
           next.postcode = c.postcode;
           filled++;
         }
-        if ((s.country_code === '' || s.country_code === 'USA') && c.country_code) {
+        if (c?.country_code && c.country_code !== s.country_code) {
           next.country_code = c.country_code;
-          if (s.country_code === '') filled++;
+          filled++;
         }
         return next;
       });
@@ -274,7 +274,37 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Street address" required>
+        <Field label="Phone" help="E.164 preferred, e.g. +1-416-555-0100">
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={(e) => update('phone', e.target.value)}
+            placeholder="+1-416-555-0100"
+            className={inputClass}
+          />
+        </Field>
+        <Field
+          label="Address"
+          required
+          help={
+            <button
+              type="button"
+              onClick={fillFromAddress}
+              disabled={fillState.status === 'looking'}
+              className="text-zinc-500 hover:text-zinc-300 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {fillState.status === 'looking' ? (
+                <>
+                  <Activity size={11} className="animate-pulse" /> re-geocoding…
+                </>
+              ) : (
+                <>
+                  <MapPin size={11} /> re-geocode
+                </>
+              )}
+            </button>
+          }
+        >
           <input
             type="text"
             value={form.address}
@@ -283,6 +313,17 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
             className={inputClass}
           />
         </Field>
+        {fillState.status === 'filled' && fillState.filled > 0 && (
+          <p className="text-[11px] font-mono text-zinc-500 -mt-1 mb-1">
+            ✓ refreshed {fillState.filled} citation{' '}
+            {fillState.filled === 1 ? 'field' : 'fields'} from geocode
+          </p>
+        )}
+        {fillState.status === 'failed' && (
+          <p className="text-[11px] font-mono text-red-400 -mt-1 mb-1">
+            {fillState.error}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Latitude" required>
             <input
@@ -331,107 +372,6 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
             />
           </Field>
         </div>
-      </Section>
-
-      <Section title="Citation NAP fields">
-        <div className="-mt-2 mb-1 flex items-start justify-between gap-3">
-          <p className="text-xs text-zinc-500 max-w-xl">
-            Required for BrightLocal citation audits. Address fields above are
-            kept for geocoding; these are the structured equivalents that get
-            sent to directory APIs. Phone has no auto-fill — type it in.
-          </p>
-          <button
-            type="button"
-            onClick={fillFromAddress}
-            disabled={fillState.status === 'looking'}
-            className="px-2.5 py-1 rounded-md text-[11px] font-mono border transition-colors hover:border-zinc-700 flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              borderColor: 'var(--color-border)',
-              background: 'var(--color-card)',
-              color: '#a1a1aa',
-            }}
-          >
-            {fillState.status === 'looking' ? (
-              <>
-                <Activity size={11} className="animate-pulse" /> Filling…
-              </>
-            ) : (
-              <>
-                <MapPin size={11} /> Fill from address
-              </>
-            )}
-          </button>
-        </div>
-        {fillState.status === 'filled' && (
-          <p className="text-[11px] font-mono text-zinc-500 -mt-1 mb-1">
-            {fillState.filled === 0
-              ? '✓ all fields already populated — nothing to fill'
-              : `✓ filled ${fillState.filled} ${fillState.filled === 1 ? 'field' : 'fields'} from geocode`}
-          </p>
-        )}
-        {fillState.status === 'failed' && (
-          <p className="text-[11px] font-mono text-red-400 -mt-1 mb-1">
-            {fillState.error}
-          </p>
-        )}
-        <Field label="Phone" help="E.164 preferred, e.g. +1-416-555-0100">
-          <input
-            type="tel"
-            value={form.phone}
-            onChange={(e) => update('phone', e.target.value)}
-            placeholder="+1-416-555-0100"
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Street address" help="Street + number only (no city/state/zip)">
-          <input
-            type="text"
-            value={form.street_address}
-            onChange={(e) => update('street_address', e.target.value)}
-            placeholder="100 Queen St W"
-            className={inputClass}
-          />
-        </Field>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="City">
-            <input
-              type="text"
-              value={form.city}
-              onChange={(e) => update('city', e.target.value)}
-              placeholder="Toronto"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="State / region">
-            <input
-              type="text"
-              value={form.region}
-              onChange={(e) => update('region', e.target.value)}
-              placeholder="ON"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="ZIP / postcode">
-            <input
-              type="text"
-              value={form.postcode}
-              onChange={(e) => update('postcode', e.target.value)}
-              placeholder="M5H 2N2"
-              className={inputClass}
-            />
-          </Field>
-        </div>
-        <Field label="Country code" help="ISO-3166-1 alpha-3 (USA, CAN, GBR, …)">
-          <input
-            type="text"
-            value={form.country_code}
-            onChange={(e) =>
-              update('country_code', e.target.value.toUpperCase().slice(0, 3))
-            }
-            maxLength={3}
-            className={`${inputClass} font-mono uppercase`}
-          />
-        </Field>
       </Section>
 
       <Section title="White-label + billing">

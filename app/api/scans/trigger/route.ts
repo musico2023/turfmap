@@ -30,6 +30,7 @@ import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { momentum as computeMomentum } from '@/lib/metrics/momentum';
+import { maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 // Avoid IPv6 ENOTFOUND flakes on dual-stack networks.
@@ -235,6 +236,13 @@ async function runScanTrigger(req: Request) {
       completed_at: new Date().toISOString(),
     })
     .eq('id', scanId);
+
+  // Auto-trigger a NAP audit if there isn't a recent one for this client.
+  // Awaits the BL initiate fan-out (~1-2s for ≤15 directories); the audit
+  // then progresses asynchronously inside BrightLocal and gets finalized
+  // lazily on the next AI Coach generation. Failures are absorbed inside
+  // the helper so the scan response is unaffected.
+  await maybeRunNapAudit(supabase, clientId, auth.id);
 
   return NextResponse.json({
     scanId,
