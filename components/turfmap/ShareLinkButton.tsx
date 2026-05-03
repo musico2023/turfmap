@@ -12,6 +12,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Agency-side "Share" button. Opens a modal showing existing share
@@ -328,6 +329,17 @@ function LinkRow({
   onCopy: () => void;
   onRevoke: () => void;
 }) {
+  // Render the FULL URL (protocol + host + path) inside the readonly
+  // input below so a user who manually selects + copies the displayed
+  // string gets a paste-safe URL, not just `/share/<id>` which would be
+  // a broken relative link in the recipient's email/Slack/whatever.
+  // window.location.origin is browser-only — start with a server-safe
+  // fallback and hydrate after mount to avoid SSR mismatch warnings.
+  const [shareUrl, setShareUrl] = useState(`/share/${link.id}`);
+  useEffect(() => {
+    setShareUrl(`${window.location.origin}/share/${link.id}`);
+  }, [link.id]);
+
   const expires = new Date(link.expiresAt);
   const expiresLabel =
     link.status === 'expired'
@@ -351,7 +363,7 @@ function LinkRow({
         opacity: link.status === 'active' ? 1 : 0.55,
       }}
     >
-      <div className="flex items-center gap-2 mb-1.5">
+      <div className="flex items-center gap-2 mb-2">
         <span
           className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded"
           style={{
@@ -367,36 +379,50 @@ function LinkRow({
           <Eye size={11} /> {link.viewCount} {link.viewCount === 1 ? 'view' : 'views'}
         </span>
       </div>
+      {/* URL row.
+       *  - Read-only <input> (not <code>) so triple-click selects the full
+       *    string — and we put the FULL URL in there so any manual copy
+       *    yields a working paste, not a bare path.
+       *  - Click-to-select on focus (operators sometimes do that instead
+       *    of clicking the dedicated Copy button — make their muscle
+       *    memory work).
+       *  - The Copy button is the primary CTA: lime, labeled, sized to
+       *    match the input. Pre-bump it was a small zinc icon and people
+       *    were defaulting to triple-clicking the path string. */}
       <div className="flex items-center gap-2">
-        <code className="flex-1 text-[11px] text-zinc-400 font-mono truncate">
-          /share/{link.id}
-        </code>
-        <button
-          type="button"
+        <input
+          type="text"
+          readOnly
+          value={shareUrl}
+          onFocus={(e) => e.currentTarget.select()}
+          onClick={(e) => e.currentTarget.select()}
+          className="flex-1 px-2.5 py-1.5 rounded-md border bg-[var(--color-card)] border-[var(--color-border)] text-[11px] text-zinc-300 font-mono focus:outline-none focus:border-zinc-600 transition-colors"
+          aria-label="Share URL"
+        />
+        <Button
+          variant="primary"
+          size="sm"
           onClick={onCopy}
           disabled={link.status !== 'active'}
-          title="Copy link"
-          className="text-zinc-500 hover:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          leftIcon={
+            copied ? <Check size={11} strokeWidth={2.75} /> : <Copy size={11} strokeWidth={2.5} />
+          }
         >
-          {copied ? (
-            <Check size={13} style={{ color: 'var(--color-lime)' }} />
-          ) : (
-            <Copy size={13} />
-          )}
-        </button>
+          {copied ? 'Copied' : 'Copy link'}
+        </Button>
         {link.status === 'active' && (
           <button
             type="button"
             onClick={onRevoke}
             title="Revoke"
-            className="text-zinc-500 hover:text-red-400 transition-colors"
+            className="text-zinc-500 hover:text-red-400 transition-colors p-1.5"
           >
             <Trash2 size={13} />
           </button>
         )}
       </div>
       {link.lastViewedAt && link.viewCount > 0 && (
-        <div className="text-[10px] text-zinc-600 mt-1 font-mono">
+        <div className="text-[10px] text-zinc-600 mt-1.5 font-mono">
           Last viewed {new Date(link.lastViewedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC
         </div>
       )}
