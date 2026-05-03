@@ -94,7 +94,6 @@ export function LocationSwitcher({
   const active =
     locations.find((l) => l.id === activeLocationId) ?? locations[0];
   const activeLabel = displayLabel(active);
-  const activeSubtitle = displaySubtitle(active);
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -226,15 +225,6 @@ export function LocationSwitcher({
           </div>
         )}
       </div>
-
-      {/* Subtitle outside the dropdown — adds context for the active
-          location without crowding the trigger button. Hidden when the
-          dropdown is open since the panel itself shows full info. */}
-      {!open && activeSubtitle && (
-        <span className="text-[11px] font-mono text-zinc-600 truncate max-w-[280px]">
-          {activeSubtitle}
-        </span>
-      )}
     </div>
   );
 }
