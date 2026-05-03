@@ -45,7 +45,10 @@ export function StatCard({
       }}
     >
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
+        {/* Score names render as written (PascalCase, no space) — no
+         *  CSS uppercase transform. Other in-app labels (column
+         *  headers, etc.) have their own styling and stay uppercase. */}
+        <div className="flex items-center gap-1.5 text-xs tracking-tight text-zinc-400 font-semibold">
           {label}
           {tooltip && <InfoTooltip>{tooltip}</InfoTooltip>}
         </div>
@@ -61,7 +64,7 @@ export function StatCard({
       </div>
       {band && (
         <div
-          className="text-xs uppercase tracking-[0.18em] font-bold mb-1.5"
+          className="text-sm font-bold mb-1.5"
           style={{ color: bandColor(band.tone) }}
         >
           {band.label}

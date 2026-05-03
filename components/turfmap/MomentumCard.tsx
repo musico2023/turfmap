@@ -51,7 +51,7 @@ export function MomentumCard({
       }}
     >
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
+        <div className="flex items-center gap-1.5 text-xs tracking-tight text-zinc-400 font-semibold">
           Momentum™
           <InfoTooltip>
             The change in your TurfScore since your previous scan.

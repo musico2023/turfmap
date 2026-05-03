@@ -112,9 +112,9 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   metricLabel: {
-    fontSize: 6.5,
-    color: C.textMuted,
-    letterSpacing: 1.4,
+    fontSize: 9,
+    color: C.textDim,
+    fontWeight: 700,
     marginBottom: 4,
   },
   metricValue: { fontSize: 22, fontWeight: 700, color: C.text },
@@ -357,7 +357,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
 
           <View style={styles.rightCol}>
             <View style={styles.metricCardHi}>
-              <Text style={styles.metricLabel}>TURFSCORE</Text>
+              <Text style={styles.metricLabel}>TurfScore</Text>
               <Text style={styles.metricValueLime}>
                 {data.metrics.turfScore === null
                   ? '—'
@@ -368,7 +368,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
               </Text>
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricLabel}>TURFREACH</Text>
+              <Text style={styles.metricLabel}>TurfReach</Text>
               <Text style={styles.metricValue}>
                 {data.metrics.turfReach === null
                   ? '—'
@@ -377,7 +377,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
               <Text style={styles.metricSub}>Coverage of your territory</Text>
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricLabel}>TURFRANK</Text>
+              <Text style={styles.metricLabel}>TurfRank</Text>
               <Text style={styles.metricValue}>
                 {data.metrics.turfRank === null
                   ? '—'
@@ -387,7 +387,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
             </View>
             {data.metrics.momentum !== null && (
               <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>MOMENTUM</Text>
+                <Text style={styles.metricLabel}>Momentum</Text>
                 <Text style={styles.metricValue}>
                   {data.metrics.momentum > 0 ? '+' : ''}
                   {data.metrics.momentum}
