@@ -18,6 +18,10 @@ import { KeywordsManager } from '@/components/turfmap/KeywordsManager';
 import { LocationsManager } from '@/components/turfmap/LocationsManager';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import {
+  CompetitorsManager,
+  type TrackedCompetitorRow,
+} from '@/components/turfmap/CompetitorsManager';
+import {
   ClientUsersManager,
   type ClientUserRow,
 } from '@/components/turfmap/ClientUsersManager';
@@ -72,6 +76,18 @@ export default async function ClientSettingsPage({
         .order('created_at', { ascending: true })
         .returns<TrackedKeywordRow[]>()
     : { data: [] as TrackedKeywordRow[] };
+
+  // Tracked competitors for the active location. Empty = automatic
+  // discovery on the dashboard; non-empty = curated mode.
+  const { data: trackedCompetitors } = activeLocation
+    ? await supabase
+        .from('competitors')
+        .select('id, competitor_name')
+        .eq('client_id', id)
+        .eq('location_id', activeLocation.id)
+        .order('created_at', { ascending: true })
+        .returns<TrackedCompetitorRow[]>()
+    : { data: [] as TrackedCompetitorRow[] };
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -128,6 +144,16 @@ export default async function ClientSettingsPage({
               activeLocation?.city ?? null
             )}
             keywords={keywords ?? []}
+          />
+          <CompetitorsManager
+            clientId={client.id}
+            locationId={activeLocation?.id ?? null}
+            locationLabel={
+              activeLocation
+                ? activeLocation.label || activeLocation.city || 'Primary'
+                : null
+            }
+            competitors={trackedCompetitors ?? []}
           />
           <ClientUsersManager
             clientId={client.public_id}

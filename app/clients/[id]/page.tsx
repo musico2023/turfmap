@@ -20,6 +20,7 @@ import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
+import { aggregateCuratedCompetitors } from '@/lib/metrics/curatedCompetitors';
 import { Header } from '@/components/turfmap/Header';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { HeatmapWithToggle, type CompetitorView } from '@/components/turfmap/HeatmapWithToggle';
@@ -184,22 +185,47 @@ export default async function ClientDashboardPage({
     ? await getRescanCapStatus(supabase, activeLocation.id)
     : null;
 
-  // Competitors are discovered automatically from the scan's
-  // local-pack data — no manual curation. Anthony's preference: every
-  // brand in the right-rail came from a real DataForSEO observation
-  // on this scan's grid, so a 0% share row never shows up. The
-  // legacy `competitors` table + per-client seed scripts are retained
-  // (no migration to drop) but no longer read.
+  // Competitors: automatic discovery by default; per-location manual
+  // override when the operator has explicitly added competitors via the
+  // settings → Tracked competitors card. The query is strictly scoped
+  // to the active location (no client-wide fallback) so legacy seed-
+  // script rows pinned to the primary don't auto-trigger curated mode
+  // on sibling locations.
+  //
+  // Empty list → automatic mode (aggregateCompetitors discovers from
+  //                              the scan's observed local-pack brands).
+  // Non-empty   → curated mode (aggregateCuratedCompetitors looks up
+  //                              the operator-specified brands and
+  //                              surfaces them all, even at 0% share —
+  //                              the CompetitorTable's expander hides
+  //                              the absent ones below the fold).
+  const { data: locationCurated } = activeLocation
+    ? await supabase
+        .from('competitors')
+        .select('competitor_name')
+        .eq('client_id', id)
+        .eq('location_id', activeLocation.id)
+    : { data: null };
+  const curatedNames = (locationCurated ?? []).map(
+    (r) => r.competitor_name as string
+  );
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
     'i'
   );
-  const competitors = aggregateCompetitors(points, points.length || 1, {
-    excludeNamePattern: ownNamePattern,
-  });
-  // Heatmap competitor toggle uses the same list. Every entry is in-pack
-  // by definition so no extra filter is needed.
-  const heatmapCompetitors = competitors;
+  const isCurated = curatedNames.length > 0;
+  const competitors = isCurated
+    ? aggregateCuratedCompetitors(points, curatedNames, points.length || 1)
+    : aggregateCompetitors(points, points.length || 1, {
+        excludeNamePattern: ownNamePattern,
+      });
+  // Heatmap toggle: only show competitors actually in some cells —
+  // toggling to a 0%-share competitor renders an empty grid which
+  // looks broken. CompetitorTable still receives the full list so the
+  // expander surfaces the absent rows.
+  const heatmapCompetitors = isCurated
+    ? competitors.filter((c) => (c as { top3Pct: number }).top3Pct > 0)
+    : competitors;
 
   return (
     <div className="min-h-screen w-full text-white">
