@@ -341,9 +341,9 @@ export default function MarketingLanding() {
                 q: 'How long does it take to receive my TurfMap?',
                 a: (
                   <>
-                    The actual scan finishes in 5–10 minutes — Google has to
-                    return results from 81 different geo-coordinates. After
-                    you fill in your business details on the order form,
+                    The scan itself finishes in under a minute — we run all 81
+                    queries in parallel against Google&rsquo;s local-pack feed.
+                    After you fill in your business details on the order form,
                     you&rsquo;ll get an email with a link to your map and your
                     AI Coach playbook. The Visibility Audit and Strategy
                     Session add the strategist&rsquo;s written diagnosis,

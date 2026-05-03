@@ -76,7 +76,7 @@ export function MarketingHero() {
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ background: 'var(--color-lime)' }}
               />
-              Delivered in minutes
+              Delivered in seconds
             </span>
             <span className="flex items-center gap-1.5">
               <span

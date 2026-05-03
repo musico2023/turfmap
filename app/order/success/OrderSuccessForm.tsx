@@ -124,8 +124,8 @@ export function OrderSuccessForm({
         </div>
         <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">
           We&rsquo;ll send your TurfMap to{' '}
-          <span className="font-mono text-zinc-100">{email}</span> within 5–10
-          minutes. You can close this tab.
+          <span className="font-mono text-zinc-100">{email}</span> in under a
+          minute. You can close this tab.
         </p>
         {tier !== 'scan' && (
           <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto">

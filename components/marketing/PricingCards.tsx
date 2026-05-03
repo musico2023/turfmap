@@ -47,7 +47,7 @@ const TIERS: TierSpec[] = [
       'TurfReach + TurfRank + TurfScore',
       'AI Coach: top 3 strategic recommendations',
       'PDF report you can keep or share',
-      'Delivered in 5–10 minutes',
+      'Delivered in under a minute',
     ],
     cta: 'Order TurfScan',
   },

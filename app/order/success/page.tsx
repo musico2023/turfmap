@@ -93,7 +93,7 @@ export default async function OrderSuccessPage({
                 <p className="text-zinc-300 leading-relaxed">
                   One more step. Tell us about your business and we&rsquo;ll
                   fire your scan immediately. You&rsquo;ll get an email with
-                  your TurfMap link in 5–10 minutes.
+                  your TurfMap link in under a minute.
                 </p>
               </div>
             </div>

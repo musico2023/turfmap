@@ -76,17 +76,24 @@ export function MarketingNav() {
           >
             Pricing
           </a>
+        </div>
+
+        {/* Right cluster: Sign in sits adjacent to the primary CTA so
+         *  the eye lands on the conversion action and the auth-already-
+         *  have-an-account escape hatch reads as a paired pair, not as
+         *  a third nav-style entry buried mid-row. Sign in is text-only
+         *  / secondary so the lime CTA still wins the visual weight. */}
+        <div className="flex items-center gap-5">
           <Link
             href="/login"
-            className="text-zinc-400 hover:text-zinc-100 transition-colors"
+            className="hidden md:inline-block text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
           >
             Sign in
           </Link>
+          <LinkButton variant="primary" size="md" href="#section-05">
+            Order audit
+          </LinkButton>
         </div>
-
-        <LinkButton variant="primary" size="md" href="#section-05">
-          Order audit
-        </LinkButton>
       </div>
     </nav>
   );
