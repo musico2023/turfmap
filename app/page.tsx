@@ -12,7 +12,7 @@ import { LinkButton } from '@/components/ui/Button';
 export const metadata: Metadata = {
   title: 'TurfMap™ — See exactly where you rank across your territory',
   description:
-    "TurfMap runs an 81-point geo-grid scan across your service area and shows you, cell by cell, where you appear in Google's local 3-pack. Local SEO diagnostic for service businesses. Delivered in minutes. From $99.",
+    "TurfMap runs an 81-point geo-grid scan across your service area and shows you, cell by cell, where you appear in Google's local 3-pack. Local SEO diagnostic for service businesses. Delivered in seconds. From $99.",
   openGraph: {
     title: 'TurfMap™ — See exactly where you rank across your territory',
     description:
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'TurfMap™ — See exactly where you rank',
     description:
-      'An 81-point geo-grid SEO diagnostic. From $99, delivered in minutes.',
+      'An 81-point geo-grid SEO diagnostic. From $99, delivered in seconds.',
   },
 };
 
