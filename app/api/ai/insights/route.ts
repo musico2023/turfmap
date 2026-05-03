@@ -27,7 +27,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
-import { maybeFinalizeNapAudit } from '@/lib/brightlocal/autoAudit';
+import { maybeFinalizeNapAudit, maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
 import type {
   ClientRow,
   ScanRow,
@@ -161,14 +161,23 @@ export async function POST(req: Request) {
   const compositeScore =
     scan.turf_score != null ? Number(scan.turf_score) : null;
 
-  // NAP audit grounding: if there's a running audit (kicked off by the
-  // most recent scan trigger), poll BrightLocal in a loop until it's ready
-  // — up to ~4 minutes — then finalize and use the findings. If it's
-  // already complete, that comes back instantly. If there's no audit at
-  // all, returns null and the coach proceeds without grounding (older
-  // behavior).
+  // NAP audit grounding (self-healing).
   //
-  // Budget is 240s to leave ~50s headroom for the Anthropic call inside
+  // Step 1: kick off a NAP audit if there isn't a recent one yet. This
+  // covers the case where the operator filled in structured NAP fields
+  // AFTER the most recent scan ran, so the scan trigger silently skipped.
+  // No-op when a recent audit exists or NAP fields aren't populated.
+  // Returns in ~1-2s (BL initiate fan-out).
+  await maybeRunNapAudit(supabase, client.id, auth.id);
+
+  // Step 2: if there's now a running audit (just kicked off, or kicked off
+  // by the prior scan), poll BrightLocal in a loop until it's ready — up
+  // to ~4 minutes — then finalize and use the findings. If it's already
+  // complete, that comes back instantly. If there's no audit at all
+  // (e.g. NAP fields still empty), returns null and the coach proceeds
+  // without grounding.
+  //
+  // Budget is 240s, leaving ~50s headroom for the Anthropic call inside
   // the route's 300s maxDuration cap.
   const napAudit = await maybeFinalizeNapAudit(supabase, client.id, {
     waitForReadyMs: 240_000,
