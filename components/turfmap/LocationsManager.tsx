@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, ChevronDown, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
 import type { ClientLocationRow } from '@/lib/supabase/types';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
+import { Button } from '@/components/ui/Button';
 
 export type LocationsManagerProps = {
   clientId: string;
@@ -53,18 +54,15 @@ export function LocationsManager({ clientId, locations }: LocationsManagerProps)
             reason about each storefront independently.
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={() => setAdding((v) => !v)}
-          className="px-2.5 py-1 rounded-md text-[11px] font-mono border transition-colors hover:border-zinc-700 flex items-center gap-1.5 flex-shrink-0"
-          style={{
-            borderColor: 'var(--color-border)',
-            background: 'var(--color-card)',
-            color: '#a1a1aa',
-          }}
+          leftIcon={!adding ? <Plus size={11} /> : undefined}
+          className="flex-shrink-0"
         >
-          <Plus size={11} /> {adding ? 'Cancel' : 'Add location'}
-        </button>
+          {adding ? 'Cancel' : 'Add location'}
+        </Button>
       </div>
 
       {error && (
@@ -285,29 +283,23 @@ function AddLocationForm({
         />
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="md"
           onClick={onCancel}
-          className="px-3 py-1.5 rounded-md text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
-          disabled={submitting}
-          className="px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
-          style={{ background: 'var(--color-lime)', color: 'black' }}
+          variant="primary"
+          size="md"
+          loading={submitting}
+          loadingLabel="Adding…"
+          leftIcon={<MapPin size={11} />}
         >
-          {submitting ? (
-            <>
-              <Activity size={11} className="animate-pulse" /> Adding…
-            </>
-          ) : (
-            <>
-              <MapPin size={11} /> Add location
-            </>
-          )}
-        </button>
+          Add location
+        </Button>
       </div>
     </form>
   );
@@ -516,46 +508,36 @@ function EditLocationForm({
       <div className="flex justify-between items-center gap-2 pt-1">
         <div className="flex gap-2">
           {!location.is_primary && (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={onMakePrimary}
               disabled={submitting}
-              className="px-3 py-1.5 rounded-md text-[11px] font-mono border transition-colors hover:border-zinc-700 disabled:opacity-50"
-              style={{
-                borderColor: 'var(--color-border)',
-                color: '#a1a1aa',
-              }}
             >
               Make primary
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
+            variant="destructive"
+            size="sm"
             onClick={onDelete}
             disabled={deleting}
-            className="px-3 py-1.5 rounded-md text-[11px] font-mono border transition-colors hover:border-red-700 hover:text-red-400 disabled:opacity-50 flex items-center gap-1"
-            style={{
-              borderColor: 'var(--color-border)',
-              color: '#a1a1aa',
-            }}
+            loading={deleting}
+            loadingLabel="Deleting…"
+            leftIcon={<Trash2 size={10} />}
           >
-            <Trash2 size={10} /> {deleting ? 'Deleting…' : 'Delete'}
-          </button>
+            Delete
+          </Button>
         </div>
-        <button
+        <Button
           type="submit"
-          disabled={submitting}
-          className="px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
-          style={{ background: 'var(--color-lime)', color: 'black' }}
+          variant="primary"
+          size="md"
+          loading={submitting}
+          loadingLabel="Saving…"
         >
-          {submitting ? (
-            <>
-              <Activity size={11} className="animate-pulse" /> Saving…
-            </>
-          ) : (
-            'Save changes'
-          )}
-        </button>
+          Save changes
+        </Button>
       </div>
     </form>
   );

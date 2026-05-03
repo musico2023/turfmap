@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Image as ImageIcon, Trash2, Upload } from 'lucide-react';
+import { Image as ImageIcon, Trash2, Upload } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Logo uploader for the client settings page.
@@ -147,43 +148,27 @@ export function LogoUploader({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="md"
               onClick={onPick}
               disabled={busy !== null}
-              className="px-3 py-1.5 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                borderColor: 'var(--color-border)',
-                background: 'var(--color-card)',
-              }}
+              loading={busy === 'uploading'}
+              leftIcon={logoUrl ? <ImageIcon size={12} /> : <Upload size={12} />}
             >
-              {busy === 'uploading' ? (
-                <Activity size={12} className="animate-pulse" />
-              ) : logoUrl ? (
-                <ImageIcon size={12} />
-              ) : (
-                <Upload size={12} />
-              )}
               {logoUrl ? 'Replace' : 'Upload'}
-            </button>
+            </Button>
             {logoUrl && (
-              <button
-                type="button"
+              <Button
+                variant="destructive"
+                size="md"
                 onClick={onRemove}
                 disabled={busy !== null}
-                className="px-3 py-1.5 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 text-zinc-400 hover:text-red-400 hover:border-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  borderColor: 'var(--color-border)',
-                  background: 'var(--color-card)',
-                }}
+                loading={busy === 'removing'}
+                leftIcon={<Trash2 size={12} />}
               >
-                {busy === 'removing' ? (
-                  <Activity size={12} className="animate-pulse" />
-                ) : (
-                  <Trash2 size={12} />
-                )}
                 Remove
-              </button>
+              </Button>
             )}
           </div>
           {error && (
