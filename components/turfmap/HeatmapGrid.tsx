@@ -21,11 +21,18 @@ export type HeatmapGridProps = {
   animateReveal?: boolean;
 };
 
+// Cell colors must match the legend rendered above the heatmap on the
+// dashboard (#1 lime / #2 yellow / #3 orange / not-in-pack red). The
+// previous implementation collapsed all 3-pack ranks to lime, which made
+// every cell look identical and broke the legend's visual contract.
 function rankColor(rank: number | null): string {
-  if (rank === null) return '#ff4d4d';
-  if (rank <= 3) return BRAND_LIME;
-  if (rank <= 10) return '#e8e54a';
-  if (rank <= 20) return '#ff9f3a';
+  if (rank === null) return '#ff4d4d'; // not in 3-pack → red
+  if (rank === 1) return BRAND_LIME; // #1 → lime
+  if (rank === 2) return '#e8e54a'; // #2 → yellow
+  if (rank === 3) return '#ff9f3a'; // #3 → orange
+  // Out-of-pack ranks (4+) shouldn't normally show up in the 9×9 grid
+  // — DataForSEO Local Pack returns ranks 1-3 + "not present". Treat
+  // anything else as not-in-pack for consistency with the legend.
   return '#ff4d4d';
 }
 
