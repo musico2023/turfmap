@@ -226,8 +226,11 @@ async function runScanTrigger(req: Request) {
   // 6. Compute the new score family. Reach + Rank are derived from
   //    scan_points; TurfScore is the composite. Momentum compares this
   //    scan's TurfScore against the most recent prior complete scan
-  //    for this client (null on first scan). Deprecated columns
-  //    (top3_win_rate, turf_radius_units) are no longer written.
+  //    for THIS LOCATION (not just this client) — multi-location brands
+  //    have independent grids per storefront, so cross-location momentum
+  //    would compare apples to oranges. Null on the first scan of a
+  //    location. Deprecated columns (top3_win_rate, turf_radius_units)
+  //    are no longer written.
   const ranks = scan.results.map((r) => r.rank);
   const totalCells = scan.results.length;
   const reach = turfReach(ranks, totalCells);
@@ -235,12 +238,16 @@ async function runScanTrigger(req: Request) {
   const score = composeTurfScore(reach, rank);
   const found = scan.results.filter((r) => r.businessFound).length;
 
-  // Look up the previous complete scan for this client (excluding the
-  // current scan). If none exists, momentum is null.
+  // Previous complete scan for THIS location (post-migration 0006).
+  // We also accept legacy scans without location_id as the location's
+  // own history — they were backfilled to the primary location, so for
+  // the primary they're correct prior scans; for non-primary locations
+  // they're filtered out by the location_id match.
   const { data: prevScan } = await supabase
     .from('scans')
     .select('turf_score')
     .eq('client_id', clientId)
+    .eq('location_id', location.id)
     .eq('status', 'complete')
     .neq('id', scanId)
     .order('completed_at', { ascending: false })
