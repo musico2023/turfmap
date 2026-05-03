@@ -38,6 +38,7 @@ import type {
   NapAuditStatus,
 } from '@/lib/supabase/types';
 import { priorityForMissingDirectory } from '@/lib/brightlocal/missingPriority';
+import { normalizeAddress } from '@/lib/brightlocal/normalize';
 
 const BRIGHTLOCAL_BASE = 'https://api.brightlocal.com';
 
@@ -505,16 +506,11 @@ function isSiblingMatch(
 
 // ─── Comparators ──────────────────────────────────────────────────────────
 
-function normalize(s: string | null | undefined): string {
-  return (s ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function sameLoose(a: string | null, b: string | null): boolean {
-  return normalize(a) === normalize(b);
+  // Address-aware normalization — expands Rd↔Road, ON↔Ontario, N↔North
+  // etc. so directory format-drift doesn't fire as real inconsistency.
+  // See lib/brightlocal/normalize.ts for the full token map.
+  return normalizeAddress(a) === normalizeAddress(b);
 }
 
 function samePhone(a: string | null, b: string | null): boolean {

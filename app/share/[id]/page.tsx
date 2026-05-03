@@ -23,6 +23,10 @@
 import { Crosshair, Crown, MapPin, Target, Compass, ChevronRight, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { getServerSupabase } from '@/lib/supabase/server';
+import {
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
 import type {
   ClientRow,
   ScanPointRow,
@@ -110,6 +114,18 @@ export default async function PublicSharePage({
         >(),
     ]);
   if (!client) return <ExpiredScreen reason="not_found" />;
+
+  // Resolve the scan's specific location (post-migration 0006). Shares
+  // are pinned to a single scan → single location, so there's no
+  // switcher to mount; we just need the right address + service-radius
+  // values for display so the recipient sees the storefront the report
+  // was actually generated for. Falls back to the client's deprecated
+  // mirror columns for legacy scans without a location_id.
+  const scanLocation = await resolveLocation(
+    supabase,
+    scan.client_id,
+    scan.location_id ?? null
+  );
 
   const points = rawPoints ?? [];
   const cells: HeatmapCell[] = points.map((p) => ({
@@ -222,6 +238,11 @@ export default async function PublicSharePage({
           </div>
           <div className="text-sm font-medium text-zinc-100">
             {client.business_name}
+            {scanLocation && !scanLocation.is_primary && (
+              <span className="text-zinc-500 font-normal text-xs ml-1.5">
+                · {locationDisplayLabel(scanLocation)}
+              </span>
+            )}
           </div>
         </div>
         <div className="col-span-4">
@@ -230,7 +251,7 @@ export default async function PublicSharePage({
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
             <MapPin size={13} className="text-zinc-500" />
-            {client.address}
+            {scanLocation?.address ?? client.address}
           </div>
         </div>
         <div className="col-span-4">
@@ -260,7 +281,7 @@ export default async function PublicSharePage({
               </h3>
               <p className="text-xs text-zinc-500">
                 9×9 geo-grid · 81 search points ·{' '}
-                {client.service_radius_miles ?? 1.6}mi radius
+                {scanLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6}mi radius
               </p>
             </div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">

@@ -20,6 +20,12 @@ import {
 import { TrendChart, type TrendPoint } from '@/components/turfmap/TrendChart';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
+import {
+  listLocations,
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
+import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import type { ScanRow } from '@/lib/supabase/types';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 
@@ -27,10 +33,13 @@ const TREND_LIMIT = 26;
 
 export default async function ScanHistoryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ location?: string }>;
 }) {
   const { id: clientParam } = await params;
+  const { location: locationParam } = await searchParams;
   const me = await requireAgencyUserOrRedirect(`/clients/${clientParam}/scans`);
   const supabase = getServerSupabase();
 
@@ -38,12 +47,22 @@ export default async function ScanHistoryPage({
   if (!client) notFound();
   const id = client.id; // canonical UUID for FK queries
 
+  // Multi-location: scope the entire history view to one location at a
+  // time. Without this, multi-location clients see Don Mills scans
+  // mashed into Midtown's trend line and the table — junk-trend data.
+  const locations = await listLocations(supabase, id);
+  const activeLocation =
+    (await resolveLocation(supabase, id, locationParam ?? null)) ??
+    locations[0] ??
+    null;
+
   const { data: rawScans } = await supabase
     .from('scans')
     .select(
       'id, scan_type, status, completed_at, created_at, turf_score, turf_reach, turf_rank, momentum, failed_points, total_points'
     )
     .eq('client_id', id)
+    .eq('location_id', activeLocation?.id ?? '')
     .order('completed_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .returns<
@@ -123,9 +142,27 @@ export default async function ScanHistoryPage({
         >
           <ChevronLeft size={12} /> Back to {client.business_name}
         </Link>
+
+        {locations.length > 1 && (
+          <div className="mb-5">
+            <LocationSwitcher
+              clientId={client.public_id}
+              locations={locations}
+              activeLocationId={activeLocation?.id ?? null}
+            />
+          </div>
+        )}
+
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="font-display text-2xl font-bold">Scan history</h1>
+            <h1 className="font-display text-2xl font-bold">
+              Scan history
+              {activeLocation && !activeLocation.is_primary && (
+                <span className="text-zinc-500 font-normal text-base ml-2">
+                  · {locationDisplayLabel(activeLocation)}
+                </span>
+              )}
+            </h1>
             <p className="text-xs text-zinc-500 mt-1">
               {scans.length} total · {completedCount} complete · {cronCount}{' '}
               scheduled · {onDemandCount} on-demand
