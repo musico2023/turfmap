@@ -20,7 +20,6 @@ import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
-import { aggregateCuratedCompetitors } from '@/lib/metrics/curatedCompetitors';
 import { Header } from '@/components/turfmap/Header';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { HeatmapWithToggle, type CompetitorView } from '@/components/turfmap/HeatmapWithToggle';
@@ -185,67 +184,22 @@ export default async function ClientDashboardPage({
     ? await getRescanCapStatus(supabase, activeLocation.id)
     : null;
 
-  // Curated mode: if the agency has explicitly tracked competitor brands for
-  // this client (rows in the `competitors` table), surface ALL of them in the
-  // sidebar — including ones that never appeared in the local pack — so a
-  // sales pitch can show the full competitive landscape.
-  // Default mode: dynamically discover the top 3 from raw scan data.
-  //
-  // Multi-location: prefer competitors tagged with this location_id. If
-  // none exist (single-location clients + legacy seeded competitors),
-  // fall back to client-wide competitors so the existing kidcrew/etc.
-  // seed scripts continue to work without per-location backfill. A
-  // franchise client can override per-location via the future
-  // location-aware competitor manager.
-  let trackedCompetitors: { competitor_name: string }[] | null = null;
-  if (activeLocation) {
-    const { data: locationScoped } = await supabase
-      .from('competitors')
-      .select('competitor_name')
-      .eq('client_id', id)
-      .eq('location_id', activeLocation.id);
-    if (locationScoped && locationScoped.length > 0) {
-      trackedCompetitors = locationScoped;
-    }
-  }
-  if (!trackedCompetitors) {
-    const { data: clientWide } = await supabase
-      .from('competitors')
-      .select('competitor_name')
-      .eq('client_id', id);
-    trackedCompetitors = clientWide ?? [];
-  }
-
-  const curatedBrandNames = (trackedCompetitors ?? []).map(
-    (r) => r.competitor_name as string
+  // Competitors are discovered automatically from the scan's
+  // local-pack data — no manual curation. Anthony's preference: every
+  // brand in the right-rail came from a real DataForSEO observation
+  // on this scan's grid, so a 0% share row never shows up. The
+  // legacy `competitors` table + per-client seed scripts are retained
+  // (no migration to drop) but no longer read.
+  const ownNamePattern = new RegExp(
+    client.business_name.split(/\s+/)[0] ?? '',
+    'i'
   );
-
-  let competitors: Array<{ name: string; amr: number; top3Pct: number }>;
-  let isCurated = false;
-  if (curatedBrandNames.length > 0) {
-    competitors = aggregateCuratedCompetitors(
-      points,
-      curatedBrandNames,
-      points.length || 1
-    );
-    isCurated = true;
-  } else {
-    const ownNamePattern = new RegExp(
-      client.business_name.split(/\s+/)[0] ?? '',
-      'i'
-    );
-    competitors = aggregateCompetitors(points, points.length || 1, {
-      excludeNamePattern: ownNamePattern,
-    });
-  }
-
-  // Heatmap toggle pills are useful only for competitors that actually appear
-  // in some cells (otherwise the toggled view is a blank grid). The right-rail
-  // CompetitorTable still gets the full curated list so the deck shows every
-  // brand the agency tracks.
-  const heatmapCompetitors = isCurated
-    ? competitors.filter((c) => (c as { top3Pct: number }).top3Pct > 0)
-    : competitors;
+  const competitors = aggregateCompetitors(points, points.length || 1, {
+    excludeNamePattern: ownNamePattern,
+  });
+  // Heatmap competitor toggle uses the same list. Every entry is in-pack
+  // by definition so no extra filter is needed.
+  const heatmapCompetitors = competitors;
 
   return (
     <div className="min-h-screen w-full text-white">
