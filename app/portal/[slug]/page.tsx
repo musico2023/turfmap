@@ -5,8 +5,17 @@
  * renders, with three differences:
  *   1. Internal cost data (DFS cost cents) is hidden from the footer.
  *   2. Internal scan controls (Re-scan / scan ID) are hidden.
- *   3. The client's `primary_color` overrides the brand lime accent across
- *      anything that reads `var(--color-lime)`.
+ *   3. The client's logo replaces the TurfMap brand mark in the header.
+ *
+ * White-label scope is INTENTIONALLY narrow — only the logo gets
+ * customized. The lime accent, dark surfaces, and instrument typography
+ * stay constant across every client portal so the product reads as
+ * "TurfMap, dressed for this client" rather than "this client's branded
+ * dashboard." Per-client accent colors were tried and dropped: the
+ * arbitrary hexes operators picked clashed with the dark+lime aesthetic
+ * and made every portal feel like a different (and worse) product. The
+ * `clients.primary_color` column remains in the schema as historical
+ * data but isn't read here.
  *
  * v1 scope: `[slug]` is the client UUID. Phase 4 may swap to a friendly
  * subdomain or a `clients.slug` column.
@@ -196,19 +205,11 @@ export default async function ClientPortalPage({
         }>()
     : { data: null };
 
-  // Apply per-client brand color via a CSS variable override on the wrapper.
-  const accent = client.primary_color ?? '#c5ff3a';
-  const wrapperStyle = {
-    // overrides anything that reads var(--color-lime)
-    ['--color-lime' as string]: accent,
-  } as React.CSSProperties;
-
   return (
-    <div className="min-h-screen w-full text-white" style={wrapperStyle}>
+    <div className="min-h-screen w-full text-white">
       <PortalHeader
         businessName={client.business_name}
         logoUrl={client.logo_url}
-        accent={accent}
         userEmail={user.email ?? null}
         isAgencyPreview={isAgencyPreview}
       />
@@ -239,7 +240,7 @@ export default async function ClientPortalPage({
             color: '#a1a1aa',
           }}
         >
-          <Sparkles size={14} style={{ color: accent }} />
+          <Sparkles size={14} style={{ color: 'var(--color-lime)' }} />
           <span>
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
@@ -305,12 +306,18 @@ export default async function ClientPortalPage({
                 {activeLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6}mi radius
               </p>
             </div>
+            {/* Legend matches the actual rank tiers the heatmap renders:
+             *  the local 3-pack only has three slots, so cells are
+             *  either rank #1, #2, #3, or "not in pack". The previous
+             *  legend ("Top 3 / 4–10 / 11–20 / 21+") was a holdover
+             *  from a pre-3-pack iteration and didn't match what the
+             *  client was actually looking at. */}
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
               {[
-                { color: '#c5ff3a', label: 'Top 3' },
-                { color: '#e8e54a', label: '4–10' },
-                { color: '#ff9f3a', label: '11–20' },
-                { color: '#ff4d4d', label: '21+' },
+                { color: '#c5ff3a', label: '#1' },
+                { color: '#e8e54a', label: '#2' },
+                { color: '#ff9f3a', label: '#3' },
+                { color: '#ff4d4d', label: 'Not in pack' },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5">
                   <div
@@ -426,20 +433,21 @@ export default async function ClientPortalPage({
 }
 
 /**
- * Portal header. Uses the client's logo if present, falling back to a
- * generic letter-mark in the lime-square style. Hides agency-side branding
- * meta (system status pill, version label).
+ * Portal header. Renders the client's uploaded logo as the brand mark.
+ * When no logo is set, falls back to a generic letter-mark in the
+ * standard lime square — same affordance the agency dashboard uses
+ * — so even an un-customized portal feels intentional rather than
+ * unfinished. Hides agency-side branding meta (system status pill,
+ * version label).
  */
 function PortalHeader({
   businessName,
   logoUrl,
-  accent,
   userEmail,
   isAgencyPreview,
 }: {
   businessName: string;
   logoUrl: string | null;
-  accent: string;
   userEmail: string | null;
   isAgencyPreview: boolean;
 }) {
@@ -457,7 +465,7 @@ function PortalHeader({
             alt={businessName}
             className="w-9 h-9 rounded-md object-contain p-0.5"
             style={{
-              boxShadow: `0 0 24px ${accent}40`,
+              boxShadow: '0 0 24px #c5ff3a40',
               background: '#0a0a0a',
             }}
           />
@@ -465,8 +473,8 @@ function PortalHeader({
           <div
             className="w-9 h-9 rounded-md flex items-center justify-center font-display font-bold text-black"
             style={{
-              background: accent,
-              boxShadow: `0 0 24px ${accent}40`,
+              background: 'var(--color-lime)',
+              boxShadow: '0 0 24px #c5ff3a40',
             }}
           >
             {initial}

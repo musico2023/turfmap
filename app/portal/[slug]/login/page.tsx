@@ -5,9 +5,11 @@
  * Supabase OTP and ultimately bounces back through /auth/callback into the
  * portal route.
  *
- * The agency's branding sits in the header (client logo + name + accent
- * color) so the prospect feels like they're signing into their own
- * service, not a generic SaaS auth page.
+ * The client's logo sits in the header so the prospect feels like
+ * they're signing into their own service, not a generic SaaS auth page.
+ * Brand-accent customization was removed (see /portal/[slug]/page.tsx
+ * for the rationale) — every portal now uses the standard TurfMap
+ * lime + dark surfaces, with only the logo varying per client.
  */
 
 import { notFound } from 'next/navigation';
@@ -30,13 +32,8 @@ export default async function PortalLoginPage({
   const client = await findClientByPublicIdOrUuid(supabase, slug);
   if (!client) notFound();
 
-  const accent = client.primary_color ?? '#c5ff3a';
-
   return (
-    <div
-      className="min-h-screen w-full text-white flex items-center justify-center px-6"
-      style={{ ['--color-lime' as string]: accent } as React.CSSProperties}
-    >
+    <div className="min-h-screen w-full text-white flex items-center justify-center px-6">
       <div
         className="w-full max-w-md rounded-lg border p-8"
         style={{
@@ -52,7 +49,7 @@ export default async function PortalLoginPage({
               alt={client.business_name}
               className="w-9 h-9 rounded-md object-contain p-0.5"
               style={{
-                boxShadow: `0 0 24px ${accent}40`,
+                boxShadow: '0 0 24px #c5ff3a40',
                 background: '#0a0a0a',
               }}
             />
@@ -60,8 +57,8 @@ export default async function PortalLoginPage({
             <div
               className="w-9 h-9 rounded-md flex items-center justify-center font-display font-bold text-black"
               style={{
-                background: accent,
-                boxShadow: `0 0 24px ${accent}40`,
+                background: 'var(--color-lime)',
+                boxShadow: '0 0 24px #c5ff3a40',
               }}
             >
               {client.business_name.trim().charAt(0).toUpperCase() || 'T'}

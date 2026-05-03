@@ -48,7 +48,6 @@ type Form = {
   country_code: string;
   industry: string;
   service_radius_miles: string;
-  primary_color: string;
   /** User-facing dollar amount (e.g. "3500" or "3500.00"). Converted to
    *  integer cents on submit to match the DB column. */
   monthly_price_dollars: string;
@@ -69,7 +68,6 @@ const initial: Form = {
   country_code: 'USA',
   industry: '',
   service_radius_miles: '1.6',
-  primary_color: '#c5ff3a',
   monthly_price_dollars: '',
   keyword: '',
   scan_frequency: 'weekly',
@@ -211,7 +209,10 @@ export function ClientCreateForm() {
       postcode: form.postcode.trim() || null,
       country_code: form.country_code.trim().toUpperCase() || 'USA',
       service_radius_miles: Number(form.service_radius_miles),
-      primary_color: form.primary_color.trim() || '#c5ff3a',
+      // primary_color intentionally omitted — the API defaults it to
+      // '#c5ff3a' server-side, matching the new "logo-only white-label"
+      // policy. Removed the picker here so operators can't accidentally
+      // override it back to a clashing hex.
       keyword: {
         keyword: form.keyword.trim(),
         scan_frequency: form.scan_frequency,
@@ -404,28 +405,12 @@ export function ClientCreateForm() {
         </Field>
       </Section>
 
-      {/* White-label + billing */}
-      <Section title="White-label + billing">
-        <Field
-          label="Brand accent color"
-          help="Hex like #c5ff3a — used in their portal."
-        >
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={form.primary_color}
-              onChange={(e) => update('primary_color', e.target.value)}
-              className={`${inputClass} font-mono`}
-            />
-            <div
-              className="w-9 h-9 rounded border"
-              style={{
-                background: form.primary_color,
-                borderColor: 'var(--color-border)',
-              }}
-            />
-          </div>
-        </Field>
+      {/* Billing — logo upload is deferred to /clients/[id]/settings
+       *  after the row is created (LogoUploader needs the client UUID
+       *  to scope the storage path). Brand-accent color was removed
+       *  as a configurable; every portal now uses standard TurfMap
+       *  lime + dark surfaces with only the logo varying. */}
+      <Section title="Billing">
         <Field label="Monthly price (USD)" help="Optional. Stored as integer cents internally.">
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">

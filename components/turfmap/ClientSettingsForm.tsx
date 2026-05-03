@@ -8,8 +8,6 @@ import { LogoUploader } from './LogoUploader';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
 
-const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
-
 const INDUSTRY_SUGGESTIONS = [
   'plumbing',
   'hvac',
@@ -48,7 +46,6 @@ type Form = {
   country_code: string;
   industry: string;
   service_radius_miles: string;
-  primary_color: string;
   monthly_price_dollars: string;
   status: ClientStatus;
 };
@@ -67,7 +64,6 @@ function formFromClient(c: ClientRow): Form {
     country_code: c.country_code ?? 'USA',
     industry: c.industry ?? '',
     service_radius_miles: String(c.service_radius_miles ?? 1.6),
-    primary_color: c.primary_color ?? '#c5ff3a',
     monthly_price_dollars:
       c.monthly_price_cents == null
         ? ''
@@ -196,10 +192,6 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
       setError('latitude and longitude must be numbers');
       return;
     }
-    if (!HEX_COLOR.test(form.primary_color.trim())) {
-      setError('brand accent must be hex like #c5ff3a');
-      return;
-    }
 
     // Build the patch body — only send keys that actually changed so we
     // don't pointlessly rewrite immutable rows.
@@ -229,8 +221,6 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
       patch.industry = form.industry.trim() === '' ? null : form.industry.trim();
     if (form.service_radius_miles !== original.service_radius_miles)
       patch.service_radius_miles = Number(form.service_radius_miles);
-    if (form.primary_color !== original.primary_color)
-      patch.primary_color = form.primary_color.trim();
     if (form.status !== original.status) patch.status = form.status;
     if (form.monthly_price_dollars !== original.monthly_price_dollars) {
       if (form.monthly_price_dollars.trim() === '') {
@@ -382,44 +372,17 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
       </Section>
 
       <Section title="White-label + billing">
-        <Field
-          label="Brand accent color"
-          help="Click swatch to pick · or paste a hex"
-        >
-          <div className="flex items-center gap-2">
-            {/* Native color picker — clicking the swatch opens the OS
-                picker. Bound to the same form field as the text input
-                so paste-a-hex still works for power users. */}
-            <input
-              type="color"
-              aria-label="Pick brand accent color"
-              value={
-                HEX_COLOR.test(form.primary_color.trim())
-                  ? form.primary_color
-                  : '#c5ff3a'
-              }
-              onChange={(e) => update('primary_color', e.target.value)}
-              className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
-              style={{
-                borderColor: 'var(--color-border)',
-                background: 'transparent',
-                padding: 0,
-              }}
-            />
-            <input
-              type="text"
-              value={form.primary_color}
-              onChange={(e) => update('primary_color', e.target.value)}
-              placeholder="#c5ff3a"
-              className={`${inputClass} font-mono`}
-            />
-          </div>
-        </Field>
+        {/* White-label scope is intentionally narrow: just the logo.
+         *  Per-client brand accent colors were removed — operators
+         *  picked arbitrary hexes that clashed with the lime/dark
+         *  instrument aesthetic, and every portal ended up looking like
+         *  a different (and worse) product. The `clients.primary_color`
+         *  column stays in the schema as historical data but is no
+         *  longer surfaced or read. */}
         <LogoUploader
           clientId={client.id}
           initialLogoUrl={client.logo_url}
           businessName={client.business_name}
-          accent={form.primary_color || '#c5ff3a'}
         />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Monthly price (USD)">

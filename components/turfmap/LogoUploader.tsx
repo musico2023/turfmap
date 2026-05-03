@@ -18,12 +18,10 @@ export function LogoUploader({
   clientId,
   initialLogoUrl,
   businessName,
-  accent,
 }: {
   clientId: string;
   initialLogoUrl: string | null;
   businessName: string;
-  accent: string;
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,17 +115,22 @@ export function LogoUploader({
               style={{
                 borderColor: 'var(--color-border)',
                 background: '#0a0a0a',
-                boxShadow: `0 0 24px ${accent}30`,
+                boxShadow: '0 0 24px #c5ff3a30',
               }}
             />
           ) : (
+            // No-logo fallback: standard TurfMap lime square with the
+            // first letter of the business name. Brand-accent
+            // customization was removed — every portal now uses the
+            // same lime square so an un-customized portal still looks
+            // intentional rather than like an unfinished setup.
             <div
               className="w-16 h-16 rounded-md flex items-center justify-center font-display font-bold text-2xl text-black"
               style={{
-                background: accent,
-                boxShadow: `0 0 24px ${accent}40`,
+                background: 'var(--color-lime)',
+                boxShadow: '0 0 24px #c5ff3a40',
               }}
-              title="No logo set — falls back to a letter mark in the brand accent"
+              title="No logo set — falls back to a TurfMap lime letter mark"
             >
               {initial}
             </div>
@@ -143,7 +146,7 @@ export function LogoUploader({
               </span>
             ) : (
               <span className="text-zinc-500">
-                No logo set — using a letter mark in the brand accent.
+                No logo set — using a TurfMap lime letter mark.
               </span>
             )}
           </div>
