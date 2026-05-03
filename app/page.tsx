@@ -10,6 +10,7 @@ import {
   MapPin,
   Sparkles,
   Target,
+  Zap,
 } from 'lucide-react';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
 import { MarketingHero } from '@/components/marketing/MarketingHero';
@@ -150,9 +151,11 @@ export default function MarketingLanding() {
               </>
             }
             bands={[
-              { range: '< 40%', label: 'Patchy', color: '#ff9f3a' },
-              { range: '40–70%', label: 'Solid', color: '#e8e54a' },
-              { range: '> 70%', label: 'Dominant', color: '#c5ff3a' },
+              { range: '< 20%', label: 'Invisible', color: '#ff4d4d' },
+              { range: '20–40%', label: 'Patchy', color: '#ff9f3a' },
+              { range: '40–60%', label: 'Solid', color: '#e8e54a' },
+              { range: '60–80%', label: 'Dominant', color: '#c5ff3a' },
+              { range: '80+%', label: 'Saturated', color: '#f5c842' },
             ]}
           />
           <ScoreCard
@@ -169,9 +172,11 @@ export default function MarketingLanding() {
               </>
             }
             bands={[
-              { range: '< 1.7', label: 'Bottom-of-pack', color: '#ff9f3a' },
-              { range: '2.0–2.5', label: 'Solid', color: '#e8e54a' },
-              { range: '> 2.6', label: 'Top-of-pack', color: '#c5ff3a' },
+              { range: '< 1.0', label: 'Edge of pack', color: '#ff4d4d' },
+              { range: '1.0–1.5', label: 'Bottom-pack', color: '#ff9f3a' },
+              { range: '1.5–2.0', label: 'Mid-pack', color: '#e8e54a' },
+              { range: '2.0–2.5', label: 'Top-pack', color: '#c5ff3a' },
+              { range: '2.5+', label: 'Position #1', color: '#f5c842' },
             ]}
           />
           <ScoreCard
@@ -194,7 +199,7 @@ export default function MarketingLanding() {
               { range: '20–40', label: 'Patchy', color: '#ff9f3a' },
               { range: '40–60', label: 'Solid', color: '#e8e54a' },
               { range: '60–80', label: 'Dominant', color: '#c5ff3a' },
-              { range: '80+', label: 'Rare air', color: '#c5ff3a' },
+              { range: '80+', label: 'Rare air', color: '#f5c842' },
             ]}
             highlight
           />
@@ -273,6 +278,36 @@ export default function MarketingLanding() {
                 </div>
               ))}
             </div>
+            {/* Grounding callout — articulates what makes this AI Coach
+             *  different from generic SEO chatbots. Inline within the
+             *  same panel (not a separate card) so it reads as a
+             *  closing note on the sample output. Lime ⚡ + slightly
+             *  brighter foreground than the "sample output" line so the
+             *  eye lands here too. */}
+            <div
+              className="mt-4 pt-4 border-t flex items-start gap-2.5"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <Zap
+                size={13}
+                strokeWidth={2.5}
+                className="flex-shrink-0 mt-0.5"
+                style={{ color: 'var(--color-lime)' }}
+              />
+              <div className="text-xs leading-relaxed text-zinc-400">
+                <span
+                  className="font-semibold"
+                  style={{ color: 'var(--color-lime)' }}
+                >
+                  Grounded in real data.
+                </span>{' '}
+                Every recommendation cites the specific directories you&rsquo;re
+                missing from, the inconsistencies in your business listing,
+                and the moves that map to your industry. No generic SEO advice
+                — real audit findings, prioritized.
+              </div>
+            </div>
+
             <p className="text-xs text-zinc-600 font-mono mt-3">
               Sample output. Your actions will be specific to your business,
               category, and what your map reveals.
@@ -292,24 +327,24 @@ export default function MarketingLanding() {
             about fixing this.
           </>
         }
-        intro="$99 if you just want to see your map. $499 if you want a strategist's read on it. $1,497 if you want a 12-week plan and a 90-min call to walk through it."
+        intro="$99 if you just want to see your map. $499 if you want a strategist's read on it live. $1,497 if you want three keywords scanned and a deeper session to walk the whole picture."
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
           <TierBrief
             label="$99 · TurfScan"
             who="For: business owners who want the data."
-            description="The map, the three scores, and an AI Coach playbook of the top three things to fix. No human time, no consulting. Self-serve."
+            description="The map, the three scores, an auto-NAP citation check, and an AI Coach playbook of the top three things to fix — grounded in your real audit data. Self-serve, no human time."
           />
           <TierBrief
             label="$499 · Visibility Audit"
-            who="For: businesses that want to know what to fix first."
-            description="Everything in the scan, plus a NAP audit, a category-specific GBP checklist, a citation-gap analysis vs your three nearest competitors, and a written diagnosis from a real strategist. Includes a 30-day re-scan."
+            who="For: businesses that want to know what's broken."
+            description="Everything in TurfScan, plus a per-vertical NAP audit, a full breakdown of your 3 nearest competitors with heatmap overlay, a 30-minute clarity session with a TurfMap strategist (live competitor teardown + diagnosis), a customized branded PDF with strategist notes after the call, and a 30-day re-scan."
             highlight
           />
           <TierBrief
             label="$1,497 · Strategy Session"
-            who="For: businesses ready to act on it."
-            description="The audit on three keywords, a 90-minute call with our SEO lead to walk the map, a 12-week priority-stacked action plan, and two re-scans (60 + 90 days) to verify the lift."
+            who="For: operators ready to invest in the full picture."
+            description="Three TurfMap scans across different keywords or service variations, three competitor deep-dives with annotated GBP teardowns, a 60-minute strategy session with a TurfMap strategist, a branded comparative report covering all three angles, and two re-scans (60 + 90 days) to track progress."
           />
         </div>
       </Section>
@@ -466,8 +501,8 @@ export default function MarketingLanding() {
                     that&rsquo;s usually <code>plumber [city]</code> — not your
                     business name, not a niche service. If you&rsquo;re unsure,
                     pick what you&rsquo;d type if you needed your own service
-                    in a city you don&rsquo;t live in. The $1,497 tier scans
-                    three keywords so you can compare.
+                    in a city you don&rsquo;t live in. The Strategy Session
+                    scans three keywords so you can compare.
                   </>
                 ),
               },
@@ -597,16 +632,36 @@ export default function MarketingLanding() {
             I&rsquo;m an existing customer
           </LinkButton>
         </div>
-        <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          <Trust icon={Eye} label="Real searches">
-            81 actual Google queries per scan, not estimates.
-          </Trust>
-          <Trust icon={FileText} label="Real deliverable">
-            PDF report you can keep, share, or hand to a freelancer.
-          </Trust>
-          <Trust icon={Sparkles} label="Built by operators">
-            By the agency that uses it on its own clients every day.
-          </Trust>
+        {/* Trust strip — three short reassurances anchoring the closing
+         *  CTA. Pre-fix these sat as three independent cards on the
+         *  section's transparent surface and visually orphaned from
+         *  the heading/CTA above. Now wrapped in a single tinted
+         *  container with a small eyebrow so they read as the closing
+         *  beat of the section, not a separate row of widgets. The
+         *  inner cards lose their individual borders/backgrounds and
+         *  become flush items inside the unifying container. */}
+        <div
+          className="mt-10 rounded-lg p-6 md:p-8"
+          style={{
+            background: 'var(--color-card)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-5 flex items-center gap-1.5">
+            <span style={{ color: 'var(--color-lime)' }}>·</span>
+            Why this is real software, not a PDF mill
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 text-sm">
+            <TrustInline icon={Eye} label="Real searches">
+              81 actual Google queries per scan, not estimates.
+            </TrustInline>
+            <TrustInline icon={FileText} label="Real deliverable">
+              Branded PDF report you can keep, share, or hand to a freelancer.
+            </TrustInline>
+            <TrustInline icon={Sparkles} label="Built by operators">
+              By the agency that uses it on its own clients every day.
+            </TrustInline>
+          </div>
         </div>
       </Section>
 
@@ -791,7 +846,13 @@ function TierBrief({
   );
 }
 
-function Trust({
+/**
+ * Inline trust item — used inside the unifying Section 07 container.
+ * Replaces the previous standalone-card Trust component which created
+ * the visual orphaning issue. No individual border/background; the
+ * item relies on the parent container for chrome.
+ */
+function TrustInline({
   icon: Icon,
   label,
   children,
@@ -801,13 +862,7 @@ function Trust({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="border rounded-lg p-4"
-      style={{
-        background: 'var(--color-card)',
-        borderColor: 'var(--color-border)',
-      }}
-    >
+    <div>
       <div className="flex items-center gap-2 mb-2">
         <Icon size={14} style={{ color: 'var(--color-lime)' }} />
         <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Gift, Loader2 } from 'lucide-react';
 
 /**
  * Three-tier pricing surface.
@@ -31,6 +31,12 @@ type TierSpec = {
   priceCadence: string;
   tagline: string;
   features: string[];
+  /** Bonus row rendered with a Gift icon + lime-tinted text below the
+   *  feature list. Mirrors the attach-banner offer ("Buy any audit,
+   *  get 30 days of Pulse free") inside each card so the bonus is
+   *  legible at a glance without the buyer having to scroll back to
+   *  the section banner. */
+  bonus?: string;
   cta: string;
   popular?: boolean;
 };
@@ -45,10 +51,12 @@ const TIERS: TierSpec[] = [
     features: [
       '81-point geo-grid scan, one keyword',
       'TurfReach + TurfRank + TurfScore',
-      'AI Coach: top 3 strategic recommendations',
-      'PDF report you can keep or share',
+      "Auto-NAP citation check across your industry's directories",
+      'AI Coach: top 3 strategic recommendations, grounded in your real NAP data',
+      'Branded PDF report you can keep or share',
       'Delivered in under a minute',
     ],
+    bonus: '30 days of TurfMap Pulse — free',
     cta: 'Order TurfScan',
   },
   {
@@ -56,15 +64,16 @@ const TIERS: TierSpec[] = [
     name: 'Visibility Audit',
     price: '$499',
     priceCadence: 'one-time',
-    tagline: 'Scan + diagnosis on what to fix first.',
+    tagline: "Scan + diagnosis on what's broken.",
     features: [
       'Everything in TurfScan',
-      'NAP audit — every directory checked',
-      'GBP optimization checklist (specific to your category)',
-      'Citation-gap analysis vs your nearest 3 competitors',
-      'Written diagnostic from a real strategist (not just AI)',
-      '30-day re-scan included to measure your fixes',
+      'Per-vertical NAP audit — every directory specific to your trade',
+      'Competitor analysis — full breakdown of your nearest 3 competitors with heatmap overlay',
+      '30-minute clarity session with a TurfMap strategist — live competitor teardown + strategic diagnosis',
+      'Branded customized PDF with strategist notes, delivered post-call',
+      '30-day automated re-scan to measure movement',
     ],
+    bonus: '30 days of TurfMap Pulse — free',
     cta: 'Order Visibility Audit',
     popular: true,
   },
@@ -73,15 +82,17 @@ const TIERS: TierSpec[] = [
     name: 'Strategy Session',
     price: '$1,497',
     priceCadence: 'one-time',
-    tagline: 'Audit + a 90-min call to build the playbook.',
+    tagline: 'The full picture — for operators ready to invest.',
     features: [
       'Everything in Visibility Audit',
-      'Three keywords scanned (vs one)',
-      '90-minute strategy call with our SEO lead',
-      '12-week priority-stacked action plan',
-      'Two re-scans (60 + 90 days) to verify lift',
-      'Direct line to the strategist for follow-up Qs',
+      'Three TurfMap scans across different keywords or service variations',
+      'Three competitor deep-dives — full GBP teardowns with annotated screenshots',
+      '60-minute strategy session with a TurfMap strategist',
+      'Strategist read on where to focus your investment',
+      'Branded comparative report covering all three keyword angles',
+      'Two automated re-scans (60 + 90 days) to track progress',
     ],
+    bonus: '30 days of TurfMap Pulse — free',
     cta: 'Book Strategy Session',
   },
 ];
@@ -170,7 +181,7 @@ function PricingCard({ tier }: { tier: TierSpec }) {
       </div>
       <p className="text-sm text-zinc-400 leading-snug mb-6">{tier.tagline}</p>
 
-      <ul className="space-y-2.5 mb-7 flex-1">
+      <ul className="space-y-2.5 mb-5 flex-1">
         {tier.features.map((f) => (
           <li key={f} className="flex items-start gap-2.5 text-sm text-zinc-300">
             <Check
@@ -183,6 +194,30 @@ function PricingCard({ tier }: { tier: TierSpec }) {
           </li>
         ))}
       </ul>
+
+      {tier.bonus && (
+        // Bonus row — visually separated from the feature list with a
+        // top divider + lime tint so the attach-trial offer reads as a
+        // "this is on top" beat rather than a 7th bullet. Same Gift
+        // icon used in the section attach banner so the buyer pattern-
+        // matches the two surfaces as the same offer.
+        <div
+          className="mb-7 pt-3 border-t flex items-start gap-2.5 text-sm leading-snug"
+          style={{
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-lime)',
+          }}
+        >
+          <Gift
+            size={14}
+            strokeWidth={2.5}
+            className="flex-shrink-0 mt-0.5"
+          />
+          <span>
+            <span className="font-semibold">+ {tier.bonus}</span>
+          </span>
+        </div>
+      )}
 
       <button
         type="button"

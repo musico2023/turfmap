@@ -101,7 +101,6 @@ const TIERS: MonitoringSpec[] = [
           'Slack integration — alerts and weekly summaries to your channel',
           'Looker Studio + Google Sheets data export',
           'CSV raw data export',
-          'White-label PDF reports',
         ],
       },
       {

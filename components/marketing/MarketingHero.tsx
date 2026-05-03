@@ -48,7 +48,8 @@ export function MarketingHero() {
             Geo-grid SEO diagnostic · from $99
           </div>
           <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.02] mb-6">
-            You&rsquo;re not as visible as <em>you think.</em>
+            See exactly where you <em>win</em>{' '}— and where your{' '}
+            <em>competitors own your map.</em>
           </h1>
           <p className="text-zinc-300 text-lg md:text-xl leading-relaxed max-w-xl mb-8">
             TurfMap runs an 81-point geo-grid scan across your service area and
@@ -83,7 +84,7 @@ export function MarketingHero() {
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ background: 'var(--color-lime)' }}
               />
-              No subscription
+              No commitment
             </span>
             <span className="flex items-center gap-1.5">
               <span
