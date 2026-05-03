@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
+import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import type { ClientLocationRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -59,7 +60,7 @@ export async function PATCH(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id: clientId, locationId } = await params;
+  const { id: clientParam, locationId } = await params;
 
   let parsed: z.infer<typeof PatchBody>;
   try {
@@ -82,6 +83,10 @@ export async function PATCH(
   }
 
   const supabase = getServerSupabase();
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
 
   // Promotion: if caller sets is_primary=true, demote the current primary
   // first so the partial unique index doesn't reject the update.
@@ -120,9 +125,13 @@ export async function DELETE(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id: clientId, locationId } = await params;
+  const { id: clientParam, locationId } = await params;
 
   const supabase = getServerSupabase();
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
 
   const { data: target } = await supabase
     .from('client_locations')

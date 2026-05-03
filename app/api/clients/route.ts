@@ -103,8 +103,8 @@ export async function POST(req: Request) {
       monthly_price_cents: parsed.monthly_price_cents ?? null,
       status: (parsed.status ?? 'active') as ClientStatus,
     })
-    .select('id')
-    .single<{ id: string }>();
+    .select('id, public_id')
+    .single<{ id: string; public_id: string }>();
 
   if (clientErr || !client) {
     return NextResponse.json(
@@ -157,5 +157,5 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ id: client.id });
+  return NextResponse.json({ id: client.id, public_id: client.public_id });
 }

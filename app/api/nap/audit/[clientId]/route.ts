@@ -30,6 +30,7 @@ import {
   type BusinessProfile,
 } from '@/lib/brightlocal/client';
 import { getDirectoriesForIndustry } from '@/lib/brightlocal/directories';
+import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import type { ClientRow, NapAuditRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -43,9 +44,13 @@ export async function POST(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { clientId } = await params;
+  const { clientId: clientParam } = await params;
 
   const supabase = getServerSupabase();
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
 
   // 1. Confirm client exists + has the structured NAP fields BL requires.
   const { data: client } = await supabase
@@ -162,9 +167,13 @@ export async function GET(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { clientId } = await params;
+  const { clientId: clientParam } = await params;
 
   const supabase = getServerSupabase();
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
   const { data: rows, error } = await supabase
     .from('nap_audits')
     .select(

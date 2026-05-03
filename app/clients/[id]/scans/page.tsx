@@ -19,7 +19,8 @@ import {
 } from '@/components/turfmap/ScanHistoryTable';
 import { TrendChart, type TrendPoint } from '@/components/turfmap/TrendChart';
 import { getServerSupabase } from '@/lib/supabase/server';
-import type { ClientRow, ScanRow } from '@/lib/supabase/types';
+import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
+import type { ScanRow } from '@/lib/supabase/types';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 
 const TREND_LIMIT = 26;
@@ -29,16 +30,13 @@ export default async function ScanHistoryPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const me = await requireAgencyUserOrRedirect(`/clients/${id}/scans`);
+  const { id: clientParam } = await params;
+  const me = await requireAgencyUserOrRedirect(`/clients/${clientParam}/scans`);
   const supabase = getServerSupabase();
 
-  const { data: client } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle<ClientRow>();
+  const client = await findClientByPublicIdOrUuid(supabase, clientParam);
   if (!client) notFound();
+  const id = client.id; // canonical UUID for FK queries
 
   const { data: rawScans } = await supabase
     .from('scans')
@@ -120,7 +118,7 @@ export default async function ScanHistoryPage({
 
       <div className="px-8 py-6">
         <Link
-          href={`/clients/${client.id}`}
+          href={`/clients/${client.public_id}`}
           className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1 mb-3"
         >
           <ChevronLeft size={12} /> Back to {client.business_name}
@@ -158,7 +156,7 @@ export default async function ScanHistoryPage({
         </div>
 
         {/* Table */}
-        <ScanHistoryTable clientId={client.id} rows={tableRows} />
+        <ScanHistoryTable clientId={client.public_id} rows={tableRows} />
       </div>
     </div>
   );

@@ -157,7 +157,7 @@ export default async function PublicSharePage({
   );
   const sharedBy = share.agency_label?.trim() || 'Fourdots Digital';
   const ctaText = share.cta_text?.trim() || 'Want a TurfMap of your business?';
-  const ctaUrl = share.cta_url?.trim() || 'https://localleadmachine.io';
+  const ctaUrl = share.cta_url?.trim() || 'https://fourdots.io';
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -330,7 +330,7 @@ export default async function PublicSharePage({
       </div>
 
       {/* CTA footer — the conversion lever. Points to the agency's
-          chosen URL (Local Lead Machine by default). */}
+          chosen URL (Fourdots Digital by default). */}
       <footer
         className="border-t px-8 py-6 flex items-center justify-between"
         style={{
@@ -409,10 +409,10 @@ function ExpiredScreen({
         <h3 className="font-display text-lg font-bold mb-2">{headline}</h3>
         <p className="text-xs text-zinc-400 leading-relaxed mb-5">{body}</p>
         <Link
-          href="https://localleadmachine.io"
+          href="https://fourdots.io"
           className="text-xs font-mono text-zinc-500 hover:text-zinc-300"
         >
-          localleadmachine.io →
+          fourdots.io →
         </Link>
       </div>
     </div>

@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { listLocations } from '@/lib/supabase/locations';
+import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import type { ClientLocationRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -51,9 +52,13 @@ export async function GET(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id } = await params;
+  const { id: clientParam } = await params;
   const supabase = getServerSupabase();
-  const locations = await listLocations(supabase, id);
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
+  const locations = await listLocations(supabase, clientId);
   return NextResponse.json({ locations });
 }
 
@@ -63,7 +68,7 @@ export async function POST(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id: clientId } = await params;
+  const { id: clientParam } = await params;
 
   let parsed: z.infer<typeof NewLocationBody>;
   try {
@@ -87,13 +92,9 @@ export async function POST(
 
   const supabase = getServerSupabase();
 
-  // Confirm the client exists.
-  const { data: clientCheck } = await supabase
-    .from('clients')
-    .select('id')
-    .eq('id', clientId)
-    .maybeSingle<{ id: string }>();
-  if (!clientCheck) {
+  // Tolerant client lookup → canonical UUID for FK insert.
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
     return NextResponse.json({ error: 'client not found' }, { status: 404 });
   }
 

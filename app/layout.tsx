@@ -26,7 +26,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'TurfMap.ai — Geo-grid intelligence',
   description:
-    'An exclusive feature of Local Lead Machine. Geo-grid rank tracking for home services businesses.',
+    'Geo-grid rank tracking + AI-driven local SEO playbooks for local-service and healthcare businesses. Built by Fourdots Digital.',
 };
 
 export default function RootLayout({

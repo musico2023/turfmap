@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 import { Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { listLocations, resolveLocation } from '@/lib/supabase/locations';
+import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import type {
   ClientRow,
   ScanPointRow,
@@ -46,17 +47,16 @@ export default async function ClientDashboardPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ location?: string }>;
 }) {
-  const { id } = await params;
+  const { id: clientParam } = await params;
   const { location: locationParam } = await searchParams;
-  const me = await requireAgencyUserOrRedirect(`/clients/${id}`);
+  const me = await requireAgencyUserOrRedirect(`/clients/${clientParam}`);
   const supabase = getServerSupabase();
 
-  const { data: client } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle<ClientRow>();
+  // Tolerant lookup — accepts the short public_id (default for new URLs)
+  // or a legacy UUID (for bookmarks predating migration 0007).
+  const client = await findClientByPublicIdOrUuid(supabase, clientParam);
   if (!client) notFound();
+  const id = client.id; // canonical UUID used for all subsequent queries
 
   // Multi-location resolution: if `?location=<id>` is in the URL, scope
   // the dashboard to that location; otherwise default to the client's
@@ -247,7 +247,7 @@ export default async function ClientDashboardPage({
           style={{ borderColor: 'var(--color-border)' }}
         >
           <LocationSwitcher
-            clientId={client.id}
+            clientId={client.public_id}
             locations={locations}
             activeLocationId={activeLocation?.id ?? null}
           />
@@ -306,7 +306,7 @@ export default async function ClientDashboardPage({
           </div>
           <div className="flex items-center justify-end gap-2 flex-wrap">
             <Link
-              href={`/clients/${client.id}/settings`}
+              href={`/clients/${client.public_id}/settings`}
               className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
               style={{
                 borderColor: 'var(--color-border)',
@@ -316,7 +316,7 @@ export default async function ClientDashboardPage({
               <Settings size={12} /> Settings
             </Link>
             <Link
-              href={`/clients/${client.id}/scans`}
+              href={`/clients/${client.public_id}/scans`}
               className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
               style={{
                 borderColor: 'var(--color-border)',
@@ -344,7 +344,7 @@ export default async function ClientDashboardPage({
               </>
             )}
             <ScanButton
-              clientId={client.id}
+              clientId={client.public_id}
               locationId={activeLocation?.id ?? null}
               keywordLabel={keyword?.keyword}
             />
@@ -485,7 +485,7 @@ export default async function ClientDashboardPage({
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span className="flex items-center gap-2.5">
-          © Local Lead Machine · TurfMap™ is proprietary technology of
+          TurfMap™ is proprietary technology of
           <a
             href="https://fourdots.io/"
             target="_blank"

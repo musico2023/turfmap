@@ -21,6 +21,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
+import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -47,7 +48,12 @@ export async function POST(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id } = await params;
+  const { id: clientParam } = await params;
+  const supabase = getServerSupabase();
+  const id = await resolveClientUuid(supabase, clientParam);
+  if (!id) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
 
   let formData: FormData;
   try {
@@ -83,8 +89,6 @@ export async function POST(
       { status: 413 }
     );
   }
-
-  const supabase = getServerSupabase();
 
   // Confirm the client exists (and incidentally remember the previous
   // logo so we can clean it up after a successful upload).
@@ -150,9 +154,13 @@ export async function DELETE(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id } = await params;
-
+  const { id: clientParam } = await params;
   const supabase = getServerSupabase();
+  const id = await resolveClientUuid(supabase, clientParam);
+  if (!id) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
+
   const { data: client } = await supabase
     .from('clients')
     .select('id, logo_url')

@@ -47,7 +47,7 @@ export default async function AgencyHomePage() {
             {list.map((c) => (
               <Link
                 key={c.id}
-                href={`/clients/${c.id}`}
+                href={`/clients/${c.public_id}`}
                 className="border rounded-lg p-5 transition-colors hover:border-zinc-700 group"
                 style={{
                   background: 'var(--color-card)',

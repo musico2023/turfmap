@@ -361,9 +361,9 @@ export default async function ClientPortalPage({
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span>
-          Powered by <span className="font-semibold text-zinc-400">TurfMap™</span> · An exclusive feature of{' '}
+          Powered by <span className="font-semibold text-zinc-400">TurfMap™</span> · proprietary technology of{' '}
           <span className="text-zinc-300 font-semibold">
-            Local Lead Machine
+            Fourdots Digital
           </span>
         </span>
         {latestScan && (

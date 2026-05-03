@@ -34,16 +34,6 @@ export function Header({ userEmail }: { userEmail?: string | null } = {}) {
               </div>
             </div>
           </div>
-          <div
-            className="h-8 w-px mx-1"
-            style={{ background: 'var(--color-border)' }}
-          />
-          <div className="text-xs text-zinc-500">
-            An exclusive feature of{' '}
-            <span className="text-zinc-300 font-semibold">
-              Local Lead Machine
-            </span>
-          </div>
         </div>
         <div className="flex items-center gap-5 text-xs">
           <div className="flex items-center gap-1.5 text-zinc-400">

@@ -23,9 +23,9 @@ import {
   Target,
 } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import type {
-  ClientRow,
   ScanPointRow,
   ScanRow,
   TrackedKeywordRow,
@@ -56,25 +56,25 @@ export default async function PerScanPage({
 }: {
   params: Promise<{ id: string; scanId: string }>;
 }) {
-  const { id, scanId } = await params;
-  const me = await requireAgencyUserOrRedirect(`/clients/${id}/scans/${scanId}`);
+  const { id: clientParam, scanId } = await params;
+  const me = await requireAgencyUserOrRedirect(
+    `/clients/${clientParam}/scans/${scanId}`
+  );
   const supabase = getServerSupabase();
 
-  // Load client + scan + keyword in parallel
-  const [{ data: client }, { data: scan }] = await Promise.all([
-    supabase
-      .from('clients')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle<ClientRow>(),
-    supabase
-      .from('scans')
-      .select('*')
-      .eq('id', scanId)
-      .eq('client_id', id)
-      .maybeSingle<ScanRow>(),
-  ]);
-  if (!client || !scan) notFound();
+  // Tolerant client lookup (public_id or legacy UUID), then load the
+  // scan keyed by the canonical UUID we just resolved.
+  const client = await findClientByPublicIdOrUuid(supabase, clientParam);
+  if (!client) notFound();
+  const id = client.id;
+
+  const { data: scan } = await supabase
+    .from('scans')
+    .select('*')
+    .eq('id', scanId)
+    .eq('client_id', id)
+    .maybeSingle<ScanRow>();
+  if (!scan) notFound();
 
   const { data: keyword } = await supabase
     .from('tracked_keywords')
@@ -173,13 +173,13 @@ export default async function PerScanPage({
         </div>
         <div className="flex items-center gap-4">
           <Link
-            href={`/clients/${client.id}/scans`}
+            href={`/clients/${client.public_id}/scans`}
             className="text-zinc-500 hover:text-zinc-200 transition-colors flex items-center gap-1"
           >
             <ChevronLeft size={12} /> All scans
           </Link>
           <Link
-            href={`/clients/${client.id}`}
+            href={`/clients/${client.public_id}`}
             className="text-zinc-500 hover:text-zinc-200 transition-colors"
           >
             View latest →
@@ -321,8 +321,7 @@ export default async function PerScanPage({
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span>
-          © Local Lead Machine · TurfMap™ is proprietary technology of Fourdots
-          Digital
+          TurfMap™ is proprietary technology of Fourdots Digital
         </span>
         <span className="font-mono">
           Scan {scan.id.slice(0, 8)} · {scan.failed_points ?? 0} failed pts ·

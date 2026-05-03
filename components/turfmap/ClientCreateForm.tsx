@@ -229,13 +229,21 @@ export function ClientCreateForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as { id?: string; error?: string };
+      const data = (await res.json()) as {
+        id?: string;
+        public_id?: string;
+        error?: string;
+      };
       if (!res.ok || !data.id) {
         setError(data.error ?? `request failed (HTTP ${res.status})`);
         setSubmitting(false);
         return;
       }
-      startTransition(() => router.push(`/clients/${data.id}`));
+      // Redirect to the short public_id URL when present (post-migration
+      // 0007); fall back to UUID for the brief window where the column
+      // hasn't been backfilled yet.
+      const slug = data.public_id ?? data.id;
+      startTransition(() => router.push(`/clients/${slug}`));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSubmitting(false);

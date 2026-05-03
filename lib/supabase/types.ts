@@ -14,6 +14,10 @@ export type ClientStatus = 'active' | 'paused' | 'churned';
 
 export type ClientRow = {
   id: string;
+  /** Short (10-char) random user-facing identifier used in all URLs +
+   *  dashboard links. The UUID id remains the primary key for foreign
+   *  keys. Added in migration 0007. */
+  public_id: string;
   business_name: string;
   /** Legacy/deprecated location columns — kept as deprecated mirrors of
    *  the primary client_locations row for backward-compat with code paths

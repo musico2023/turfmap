@@ -269,7 +269,7 @@ function ShareModal({
                 type="url"
                 value={ctaUrl}
                 onChange={(e) => setCtaUrl(e.target.value)}
-                placeholder="CTA URL (default: localleadmachine.io)"
+                placeholder="CTA URL (default: fourdots.io)"
                 className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-xs text-zinc-200 placeholder-zinc-600 font-mono"
               />
             </div>

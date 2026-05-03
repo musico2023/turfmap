@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import type { ClientRow } from '@/lib/supabase/types';
 
@@ -57,7 +58,7 @@ export async function PATCH(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id } = await params;
+  const { id: clientParam } = await params;
 
   let parsed: z.infer<typeof PatchBody>;
   try {
@@ -80,6 +81,12 @@ export async function PATCH(
   }
 
   const supabase = getServerSupabase();
+  // Tolerant lookup — public_id (default) or legacy UUID.
+  const existing = await findClientByPublicIdOrUuid(supabase, clientParam);
+  if (!existing) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
+  const id = existing.id;
 
   // Dual-write: clients gets EVERYTHING (location columns are deprecated
   // mirrors), client_locations.primary gets the location-shaped subset.
@@ -154,7 +161,7 @@ export async function DELETE(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { id } = await params;
+  const { id: clientParam } = await params;
 
   let parsed: z.infer<typeof DeleteBody>;
   try {
@@ -174,15 +181,12 @@ export async function DELETE(
 
   const supabase = getServerSupabase();
 
-  // Load the row so we can verify the confirmation matches.
-  const { data: client } = await supabase
-    .from('clients')
-    .select('id, business_name')
-    .eq('id', id)
-    .maybeSingle<Pick<ClientRow, 'id' | 'business_name'>>();
+  // Tolerant lookup — public_id or legacy UUID.
+  const client = await findClientByPublicIdOrUuid(supabase, clientParam);
   if (!client) {
     return NextResponse.json({ error: 'client not found' }, { status: 404 });
   }
+  const id = client.id;
 
   if (parsed.confirm_business_name.trim() !== client.business_name) {
     return NextResponse.json(

@@ -79,8 +79,7 @@ export default async function PortalLoginPage({
         <LoginForm clientId={client.id} initialError={error ?? null} />
 
         <div className="mt-8 pt-5 border-t text-[10px] text-zinc-600 leading-relaxed" style={{ borderColor: 'var(--color-border)' }}>
-          Powered by <span className="text-zinc-400 font-semibold">TurfMap™</span> · An exclusive feature of{' '}
-          <span className="text-zinc-300 font-semibold">Local Lead Machine</span>. Access is granted by your account manager.
+          Powered by <span className="text-zinc-400 font-semibold">TurfMap™</span>. Access is granted by your account manager.
         </div>
       </div>
     </div>

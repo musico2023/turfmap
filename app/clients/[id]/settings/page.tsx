@@ -24,9 +24,10 @@ import {
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { listLocations, resolveLocation } from '@/lib/supabase/locations';
+import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { buildKeywordSuggestions } from '@/lib/keywords/suggestions';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
-import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
+import type { TrackedKeywordRow } from '@/lib/supabase/types';
 
 export default async function ClientSettingsPage({
   params,
@@ -35,28 +36,25 @@ export default async function ClientSettingsPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ location?: string }>;
 }) {
-  const { id } = await params;
+  const { id: clientParam } = await params;
   const { location: locationParam } = await searchParams;
-  const me = await requireAgencyUserOrRedirect(`/clients/${id}/settings`);
+  const me = await requireAgencyUserOrRedirect(`/clients/${clientParam}/settings`);
   const supabase = getServerSupabase();
 
-  const [{ data: client }, { data: portalUsers }, locations] =
-    await Promise.all([
-      supabase
-        .from('clients')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle<ClientRow>(),
-      supabase
-        .from('client_users')
-        .select('id, client_id, email, invited_at, last_login_at')
-        .eq('client_id', id)
-        .order('invited_at', { ascending: false, nullsFirst: false })
-        .returns<ClientUserRow[]>(),
-      listLocations(supabase, id),
-    ]);
-
+  // Tolerant lookup — public_id from new URLs or UUID from legacy bookmarks.
+  const client = await findClientByPublicIdOrUuid(supabase, clientParam);
   if (!client) notFound();
+  const id = client.id; // canonical UUID for FK queries
+
+  const [{ data: portalUsers }, locations] = await Promise.all([
+    supabase
+      .from('client_users')
+      .select('id, client_id, email, invited_at, last_login_at')
+      .eq('client_id', id)
+      .order('invited_at', { ascending: false, nullsFirst: false })
+      .returns<ClientUserRow[]>(),
+    listLocations(supabase, id),
+  ]);
 
   // Resolve active location for the keyword card. The location switcher
   // surfaces above so the operator can swap.
@@ -81,7 +79,7 @@ export default async function ClientSettingsPage({
 
       <div className="px-8 py-6 max-w-5xl">
         <Link
-          href={`/clients/${client.id}`}
+          href={`/clients/${client.public_id}`}
           className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1 mb-3"
         >
           <ChevronLeft size={12} /> Back to {client.business_name}
@@ -95,7 +93,7 @@ export default async function ClientSettingsPage({
             </p>
           </div>
           <Link
-            href={`/portal/${client.id}`}
+            href={`/portal/${client.public_id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
@@ -107,7 +105,7 @@ export default async function ClientSettingsPage({
         {locations.length > 1 && (
           <div className="mb-5">
             <LocationSwitcher
-              clientId={client.id}
+              clientId={client.public_id}
               locations={locations}
               activeLocationId={activeLocation?.id ?? null}
             />
@@ -116,9 +114,9 @@ export default async function ClientSettingsPage({
 
         <div className="space-y-6">
           <ClientSettingsForm client={client} />
-          <LocationsManager clientId={client.id} locations={locations} />
+          <LocationsManager clientId={client.public_id} locations={locations} />
           <KeywordsManager
-            clientId={client.id}
+            clientId={client.public_id}
             locationId={activeLocation?.id ?? null}
             locationLabel={
               activeLocation
@@ -132,11 +130,11 @@ export default async function ClientSettingsPage({
             keywords={keywords ?? []}
           />
           <ClientUsersManager
-            clientId={client.id}
+            clientId={client.public_id}
             users={portalUsers ?? []}
           />
           <DeleteClientCard
-            clientId={client.id}
+            clientId={client.public_id}
             businessName={client.business_name}
           />
         </div>

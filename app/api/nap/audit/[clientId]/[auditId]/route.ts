@@ -16,6 +16,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
+import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import {
   pollAuditResults,
   summarizeFindings,
@@ -37,9 +38,13 @@ export async function GET(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  const { clientId, auditId } = await params;
+  const { clientId: clientParam, auditId } = await params;
 
   const supabase = getServerSupabase();
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
 
   // 1. Load the audit row.
   const { data: audit } = await supabase

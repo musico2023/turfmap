@@ -32,6 +32,7 @@ import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { momentum as computeMomentum } from '@/lib/metrics/momentum';
 import { maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
 import { resolveLocation } from '@/lib/supabase/locations';
+import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 // Avoid IPv6 ENOTFOUND flakes on dual-stack networks.
@@ -73,8 +74,8 @@ async function runScanTrigger(req: Request) {
     return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
   }
 
-  const { clientId, keywordId, locationId } = body;
-  if (!clientId) {
+  const { clientId: clientParam, keywordId, locationId } = body;
+  if (!clientParam) {
     return NextResponse.json(
       { error: 'clientId is required' },
       { status: 400 }
@@ -82,6 +83,14 @@ async function runScanTrigger(req: Request) {
   }
 
   const supabase = getServerSupabase();
+
+  // Tolerant client lookup: ScanButton sends the public_id (matching
+  // what's in the URL); legacy callers may still send a UUID. Either
+  // resolves to the canonical UUID for FK queries.
+  const clientId = await resolveClientUuid(supabase, clientParam);
+  if (!clientId) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
 
   // 1. Load client (need business_name for the matcher) + resolve which
   //    location to scan (explicit locationId, or the client's primary).

@@ -64,9 +64,7 @@ export default async function AgencyLoginPage({
           </a>
           <span>
             Proprietary technology of{' '}
-            <span className="text-zinc-400 font-semibold">Fourdots Digital</span>{' '}
-            — the team behind{' '}
-            <span className="text-zinc-300 font-semibold">Local Lead Machine</span>.
+            <span className="text-zinc-400 font-semibold">Fourdots Digital</span>.
             Access is restricted to agency staff.
           </span>
         </div>

@@ -337,7 +337,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
   return (
     <Document
       title={`TurfReport — ${data.client.businessName}`}
-      author="TurfMap.ai · Local Lead Machine"
+      author="TurfMap.ai · Fourdots Digital"
     >
       <Page size="LETTER" style={styles.page}>
         <ReportHeader data={data} />
@@ -432,7 +432,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
 
         {/* Footer (page 1) */}
         <View style={styles.footer} fixed>
-          <Text>© Local Lead Machine · TurfMap™ proprietary technology of Fourdots Digital</Text>
+          <Text>TurfMap™ — proprietary technology of Fourdots Digital</Text>
           <Text>
             Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
           </Text>
@@ -482,7 +482,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
 
           {/* Footer (page 2 — same shape as page 1) */}
           <View style={styles.footer} fixed>
-            <Text>© Local Lead Machine · TurfMap™ proprietary technology of Fourdots Digital</Text>
+            <Text>TurfMap™ — proprietary technology of Fourdots Digital</Text>
             <Text>
               Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
             </Text>
