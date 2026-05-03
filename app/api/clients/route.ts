@@ -81,7 +81,9 @@ export async function POST(req: Request) {
 
   const supabase = getServerSupabase();
 
-  // 1. Insert client
+  // 1. Insert clients row. Location columns are dual-written here as
+  //    deprecated mirrors so existing read sites don't break; the
+  //    canonical location data also goes into client_locations below.
   const { data: client, error: clientErr } = await supabase
     .from('clients')
     .insert({
@@ -102,7 +104,7 @@ export async function POST(req: Request) {
       status: (parsed.status ?? 'active') as ClientStatus,
     })
     .select('id')
-    .single();
+    .single<{ id: string }>();
 
   if (clientErr || !client) {
     return NextResponse.json(
@@ -111,7 +113,35 @@ export async function POST(req: Request) {
     );
   }
 
-  // 2. Insert primary keyword. Roll back the client on failure to avoid orphan.
+  // 2. Insert the primary location row. This is the canonical storage
+  //    for NAP + scan-grid data going forward.
+  const { error: locErr } = await supabase.from('client_locations').insert({
+    client_id: client.id,
+    is_primary: true,
+    label: parsed.city ?? null,
+    address: parsed.address,
+    street_address: parsed.street_address ?? null,
+    city: parsed.city ?? null,
+    region: parsed.region ?? null,
+    postcode: parsed.postcode ?? null,
+    country_code: parsed.country_code ?? 'USA',
+    phone: parsed.phone ?? null,
+    latitude: parsed.latitude,
+    longitude: parsed.longitude,
+    service_radius_miles: parsed.service_radius_miles ?? 1.6,
+  });
+  if (locErr) {
+    await supabase.from('clients').delete().eq('id', client.id);
+    return NextResponse.json(
+      {
+        error: `primary location insert failed (client rolled back): ${locErr.message}`,
+      },
+      { status: 500 }
+    );
+  }
+
+  // 3. Insert primary keyword. Roll back both the client and its
+  //    primary location on failure (cascade handles the latter).
   const { error: kwErr } = await supabase.from('tracked_keywords').insert({
     client_id: client.id,
     keyword: parsed.keyword.keyword,

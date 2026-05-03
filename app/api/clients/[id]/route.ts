@@ -80,6 +80,31 @@ export async function PATCH(
   }
 
   const supabase = getServerSupabase();
+
+  // Dual-write: clients gets EVERYTHING (location columns are deprecated
+  // mirrors), client_locations.primary gets the location-shaped subset.
+  // Once every read site has been migrated to client_locations, the
+  // mirror columns get dropped in a follow-up migration and this route
+  // splits cleanly into brand-only updates.
+  const LOCATION_KEYS = [
+    'address',
+    'latitude',
+    'longitude',
+    'pin_lat',
+    'pin_lng',
+    'phone',
+    'street_address',
+    'city',
+    'region',
+    'postcode',
+    'country_code',
+    'service_radius_miles',
+  ] as const;
+  const locationPatch: Record<string, unknown> = {};
+  for (const k of LOCATION_KEYS) {
+    if (k in parsed) locationPatch[k] = (parsed as Record<string, unknown>)[k];
+  }
+
   const { data: updated, error } = await supabase
     .from('clients')
     .update(parsed)
@@ -95,6 +120,25 @@ export async function PATCH(
   }
   if (!updated) {
     return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
+
+  // Mirror the location-shaped fields onto the primary location row.
+  // Best-effort: if it fails we still return the clients row and log;
+  // the operator's edit isn't lost (it landed on clients), it just
+  // didn't propagate to client_locations. Future audits + scans would
+  // see stale location data until the next save.
+  if (Object.keys(locationPatch).length > 0) {
+    const { error: locErr } = await supabase
+      .from('client_locations')
+      .update(locationPatch)
+      .eq('client_id', id)
+      .eq('is_primary', true);
+    if (locErr) {
+      console.error(
+        `[/api/clients/${id}] primary location dual-write failed:`,
+        locErr.message
+      );
+    }
   }
 
   return NextResponse.json(updated);
