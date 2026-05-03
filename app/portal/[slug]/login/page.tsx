@@ -12,7 +12,7 @@
 
 import { notFound } from 'next/navigation';
 import { getServerSupabase } from '@/lib/supabase/server';
-import type { ClientRow } from '@/lib/supabase/types';
+import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { LoginForm } from './LoginForm';
 
 export default async function PortalLoginPage({
@@ -25,11 +25,9 @@ export default async function PortalLoginPage({
   const { slug } = await params;
   const { error } = await searchParams;
   const supabase = getServerSupabase();
-  const { data: client } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', slug)
-    .maybeSingle<ClientRow>();
+  // Tolerant lookup — supports both legacy UUID URLs and the new
+  // public_id slugs introduced in migration 0007.
+  const client = await findClientByPublicIdOrUuid(supabase, slug);
   if (!client) notFound();
 
   const accent = client.primary_color ?? '#c5ff3a';
@@ -52,8 +50,11 @@ export default async function PortalLoginPage({
             <img
               src={client.logo_url}
               alt={client.business_name}
-              className="w-9 h-9 rounded-md object-cover"
-              style={{ boxShadow: `0 0 24px ${accent}40` }}
+              className="w-9 h-9 rounded-md object-contain p-0.5"
+              style={{
+                boxShadow: `0 0 24px ${accent}40`,
+                background: '#0a0a0a',
+              }}
             />
           ) : (
             <div

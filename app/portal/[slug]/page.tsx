@@ -22,8 +22,8 @@ import { AlertTriangle, Compass, Crown, MapPin, Sparkles, Target } from 'lucide-
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { SignOutButton } from '@/components/turfmap/SignOutButton';
+import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import type {
-  ClientRow,
   ScanPointRow,
   ScanRow,
   TrackedKeywordRow,
@@ -54,12 +54,11 @@ export default async function ClientPortalPage({
   const { slug } = await params;
   const supabase = getServerSupabase();
 
-  const { data: client } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', slug)
-    .maybeSingle<ClientRow>();
+  // Tolerant client lookup — accepts the short public_id (default
+  // post-migration 0007) or the legacy UUID.
+  const client = await findClientByPublicIdOrUuid(supabase, slug);
   if (!client) notFound();
+  const clientUuid = client.id; // canonical UUID for FK queries below
 
   // ─── auth gate ────────────────────────────────────────────────────────────
   const auth = await getAuthSupabase();
@@ -76,7 +75,7 @@ export default async function ClientPortalPage({
     supabase
       .from('client_users')
       .select('id')
-      .eq('client_id', slug)
+      .eq('client_id', clientUuid)
       .eq('email', userEmail)
       .maybeSingle<{ id: string }>(),
     supabase
@@ -411,8 +410,11 @@ function PortalHeader({
           <img
             src={logoUrl}
             alt={businessName}
-            className="w-9 h-9 rounded-md object-cover"
-            style={{ boxShadow: `0 0 24px ${accent}40` }}
+            className="w-9 h-9 rounded-md object-contain p-0.5"
+            style={{
+              boxShadow: `0 0 24px ${accent}40`,
+              background: '#0a0a0a',
+            }}
           />
         ) : (
           <div

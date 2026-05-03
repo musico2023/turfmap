@@ -91,7 +91,7 @@ export function LogoUploader({
       <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 flex items-center justify-between">
         <span>Logo</span>
         <span className="text-[10px] normal-case tracking-normal text-zinc-600">
-          PNG / JPG / WEBP / SVG · max 2 MB
+          square · ≥ 256×256 · PNG / JPG / WEBP / SVG · max 2 MB
         </span>
       </div>
 
@@ -102,16 +102,20 @@ export function LogoUploader({
           borderColor: 'var(--color-border)',
         }}
       >
-        {/* Preview */}
+        {/* Preview — object-contain (not cover) so tall/wide logos
+            display in full instead of getting cropped. The container
+            has a neutral bg + small padding so transparent PNGs show
+            cleanly and aspect-mismatched logos don't kiss the edges. */}
         <div className="flex-shrink-0">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={logoUrl}
               alt={businessName}
-              className="w-16 h-16 rounded-md object-cover border"
+              className="w-16 h-16 rounded-md object-contain border p-1.5"
               style={{
                 borderColor: 'var(--color-border)',
+                background: '#0a0a0a',
                 boxShadow: `0 0 24px ${accent}30`,
               }}
             />

@@ -375,20 +375,36 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
       </Section>
 
       <Section title="White-label + billing">
-        <Field label="Brand accent color">
+        <Field
+          label="Brand accent color"
+          help="Click swatch to pick · or paste a hex"
+        >
           <div className="flex items-center gap-2">
+            {/* Native color picker — clicking the swatch opens the OS
+                picker. Bound to the same form field as the text input
+                so paste-a-hex still works for power users. */}
+            <input
+              type="color"
+              aria-label="Pick brand accent color"
+              value={
+                HEX_COLOR.test(form.primary_color.trim())
+                  ? form.primary_color
+                  : '#c5ff3a'
+              }
+              onChange={(e) => update('primary_color', e.target.value)}
+              className="w-10 h-10 rounded border cursor-pointer flex-shrink-0"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'transparent',
+                padding: 0,
+              }}
+            />
             <input
               type="text"
               value={form.primary_color}
               onChange={(e) => update('primary_color', e.target.value)}
+              placeholder="#c5ff3a"
               className={`${inputClass} font-mono`}
-            />
-            <div
-              className="w-9 h-9 rounded border"
-              style={{
-                background: form.primary_color,
-                borderColor: 'var(--color-border)',
-              }}
             />
           </div>
         </Field>
