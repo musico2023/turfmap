@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Crown, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, Crown, User } from 'lucide-react';
 import { HeatmapGrid, type HeatmapCell } from './HeatmapGrid';
 
 export type CompetitorView = {
@@ -24,6 +24,14 @@ export type HeatmapWithToggleProps = {
  * Wraps HeatmapGrid with a toggle that flips between the client's heatmap
  * and any of the top competitors'. Pure client-side — the parent server
  * component pre-computes every cell array so the toggle is instant.
+ *
+ * UI scales by competitor count:
+ *   - 0 competitors → no toggle (just renders the client heatmap)
+ *   - 1-2 competitors → pill row (current visual; fast tap)
+ *   - 3+ competitors → client pill + a dropdown for the competitor set
+ *     so the row doesn't blow out horizontally. The franchise client
+ *     case (50+ competitors per location) folds cleanly into search-
+ *     ready dropdown without redesign.
  */
 export function HeatmapWithToggle({
   clientCells,
@@ -33,15 +41,18 @@ export function HeatmapWithToggle({
   type ViewKey = 'client' | `comp-${number}`;
   const [view, setView] = useState<ViewKey>('client');
 
+  const activeCompIndex =
+    view === 'client' ? null : Number(view.split('-')[1]);
   const activeCells: HeatmapCell[] =
-    view === 'client'
+    activeCompIndex === null
       ? clientCells
-      : competitors[Number(view.split('-')[1])]?.cells ?? clientCells;
-
+      : (competitors[activeCompIndex]?.cells ?? clientCells);
   const activeName =
-    view === 'client'
+    activeCompIndex === null
       ? clientName
-      : competitors[Number(view.split('-')[1])]?.name ?? clientName;
+      : (competitors[activeCompIndex]?.name ?? clientName);
+
+  const useDropdown = competitors.length > 2;
 
   return (
     <div>
@@ -56,15 +67,23 @@ export function HeatmapWithToggle({
             icon={<User size={11} />}
             label={truncate(clientName, 28)}
           />
-          {competitors.map((c, i) => (
-            <ViewPill
-              key={c.name}
-              active={view === `comp-${i}`}
-              onClick={() => setView(`comp-${i}` as ViewKey)}
-              icon={<Crown size={11} />}
-              label={`${truncate(c.name, 22)} · ${c.top3Pct}%`}
+          {useDropdown ? (
+            <CompetitorDropdown
+              competitors={competitors}
+              activeIndex={activeCompIndex}
+              onSelect={(i) => setView(`comp-${i}` as ViewKey)}
             />
-          ))}
+          ) : (
+            competitors.map((c, i) => (
+              <ViewPill
+                key={c.name}
+                active={view === `comp-${i}`}
+                onClick={() => setView(`comp-${i}` as ViewKey)}
+                icon={<Crown size={11} />}
+                label={`${truncate(c.name, 22)} · ${c.top3Pct}%`}
+              />
+            ))
+          )}
         </div>
       )}
 
@@ -83,6 +102,8 @@ export function HeatmapWithToggle({
     </div>
   );
 }
+
+// ─── Internal components ──────────────────────────────────────────────────
 
 function ViewPill({
   active,
@@ -103,12 +124,136 @@ function ViewPill({
       style={{
         background: active ? '#1a2010' : 'var(--color-card)',
         color: active ? 'var(--color-lime)' : '#a1a1aa',
-        borderColor: active ? 'var(--color-border-bright)' : 'var(--color-border)',
+        borderColor: active
+          ? 'var(--color-border-bright)'
+          : 'var(--color-border)',
       }}
     >
       {icon}
       {label}
     </button>
+  );
+}
+
+/**
+ * Dropdown variant for competitor selection. Used when competitors.length
+ * is > 2 so the pill row doesn't blow out horizontally. Mirrors the
+ * LocationSwitcher pattern (button trigger → panel of rows → outside-
+ * click + Escape close) but tighter since competitor stats are simple.
+ */
+function CompetitorDropdown({
+  competitors,
+  activeIndex,
+  onSelect,
+}: {
+  competitors: CompetitorView[];
+  activeIndex: number | null;
+  onSelect: (index: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const active = activeIndex !== null ? competitors[activeIndex] : null;
+  const triggerLabel = active
+    ? `${truncate(active.name, 22)} · ${active.top3Pct}%`
+    : `Compare to competitor (${competitors.length})`;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="px-2.5 py-1.5 rounded text-[11px] font-mono flex items-center gap-1.5 transition-colors border"
+        style={{
+          background: active ? '#1a2010' : 'var(--color-card)',
+          color: active ? 'var(--color-lime)' : '#a1a1aa',
+          borderColor: open
+            ? 'var(--color-border-bright)'
+            : active
+              ? 'var(--color-border-bright)'
+              : 'var(--color-border)',
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <Crown size={11} />
+        {triggerLabel}
+        <ChevronDown
+          size={11}
+          className={`transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-30 mt-1 w-[280px] rounded-md border shadow-2xl"
+          style={{
+            background: 'var(--color-card)',
+            borderColor: 'var(--color-border)',
+            boxShadow: '0 12px 40px #00000080',
+          }}
+          role="listbox"
+        >
+          <ul className="max-h-72 overflow-y-auto py-1">
+            {competitors.map((c, i) => {
+              const isActive = i === activeIndex;
+              return (
+                <li key={c.name}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(i);
+                      setOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-mono hover:bg-white/[0.04] transition-colors text-left"
+                    style={{
+                      color: isActive ? 'var(--color-lime)' : '#e4e4e7',
+                    }}
+                    role="option"
+                    aria-selected={isActive}
+                  >
+                    <Check
+                      size={11}
+                      className="flex-shrink-0"
+                      style={{ opacity: isActive ? 1 : 0 }}
+                    />
+                    <span className="flex-1 min-w-0 truncate">{c.name}</span>
+                    <span className="text-zinc-500 flex-shrink-0">
+                      {c.top3Pct}%
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div
+            className="px-3 py-2 border-t text-[10px] font-mono text-zinc-600"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            {competitors.length} competitors · sorted by share
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

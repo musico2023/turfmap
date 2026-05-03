@@ -190,10 +190,31 @@ export default async function ClientDashboardPage({
   // sidebar — including ones that never appeared in the local pack — so a
   // sales pitch can show the full competitive landscape.
   // Default mode: dynamically discover the top 3 from raw scan data.
-  const { data: trackedCompetitors } = await supabase
-    .from('competitors')
-    .select('competitor_name')
-    .eq('client_id', id);
+  //
+  // Multi-location: prefer competitors tagged with this location_id. If
+  // none exist (single-location clients + legacy seeded competitors),
+  // fall back to client-wide competitors so the existing kidcrew/etc.
+  // seed scripts continue to work without per-location backfill. A
+  // franchise client can override per-location via the future
+  // location-aware competitor manager.
+  let trackedCompetitors: { competitor_name: string }[] | null = null;
+  if (activeLocation) {
+    const { data: locationScoped } = await supabase
+      .from('competitors')
+      .select('competitor_name')
+      .eq('client_id', id)
+      .eq('location_id', activeLocation.id);
+    if (locationScoped && locationScoped.length > 0) {
+      trackedCompetitors = locationScoped;
+    }
+  }
+  if (!trackedCompetitors) {
+    const { data: clientWide } = await supabase
+      .from('competitors')
+      .select('competitor_name')
+      .eq('client_id', id);
+    trackedCompetitors = clientWide ?? [];
+  }
 
   const curatedBrandNames = (trackedCompetitors ?? []).map(
     (r) => r.competitor_name as string
