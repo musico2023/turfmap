@@ -16,39 +16,36 @@ import { Header } from '@/components/turfmap/Header';
 import { ClientSettingsForm } from '@/components/turfmap/ClientSettingsForm';
 import { KeywordsManager } from '@/components/turfmap/KeywordsManager';
 import { LocationsManager } from '@/components/turfmap/LocationsManager';
+import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import {
   ClientUsersManager,
   type ClientUserRow,
 } from '@/components/turfmap/ClientUsersManager';
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { listLocations } from '@/lib/supabase/locations';
+import { listLocations, resolveLocation } from '@/lib/supabase/locations';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 export default async function ClientSettingsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ location?: string }>;
 }) {
   const { id } = await params;
+  const { location: locationParam } = await searchParams;
   const me = await requireAgencyUserOrRedirect(`/clients/${id}/settings`);
   const supabase = getServerSupabase();
 
-  const [{ data: client }, { data: keywords }, { data: portalUsers }, locations] =
+  const [{ data: client }, { data: portalUsers }, locations] =
     await Promise.all([
       supabase
         .from('clients')
         .select('*')
         .eq('id', id)
         .maybeSingle<ClientRow>(),
-      supabase
-        .from('tracked_keywords')
-        .select('*')
-        .eq('client_id', id)
-        .order('is_primary', { ascending: false })
-        .order('created_at', { ascending: true })
-        .returns<TrackedKeywordRow[]>(),
       supabase
         .from('client_users')
         .select('id, client_id, email, invited_at, last_login_at')
@@ -59,6 +56,23 @@ export default async function ClientSettingsPage({
     ]);
 
   if (!client) notFound();
+
+  // Resolve active location for the keyword card. The location switcher
+  // surfaces above so the operator can swap.
+  const activeLocation =
+    (await resolveLocation(supabase, id, locationParam ?? null)) ??
+    locations[0] ??
+    null;
+  const { data: keywords } = activeLocation
+    ? await supabase
+        .from('tracked_keywords')
+        .select('*')
+        .eq('client_id', id)
+        .eq('location_id', activeLocation.id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+        .returns<TrackedKeywordRow[]>()
+    : { data: [] as TrackedKeywordRow[] };
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -89,10 +103,29 @@ export default async function ClientSettingsPage({
           </Link>
         </div>
 
+        {locations.length > 1 && (
+          <div className="mb-5">
+            <LocationSwitcher
+              clientId={client.id}
+              locations={locations}
+              activeLocationId={activeLocation?.id ?? null}
+            />
+          </div>
+        )}
+
         <div className="space-y-6">
           <ClientSettingsForm client={client} />
           <LocationsManager clientId={client.id} locations={locations} />
-          <KeywordsManager clientId={client.id} keywords={keywords ?? []} />
+          <KeywordsManager
+            clientId={client.id}
+            locationId={activeLocation?.id ?? null}
+            locationLabel={
+              activeLocation
+                ? activeLocation.label || activeLocation.city || 'Primary'
+                : null
+            }
+            keywords={keywords ?? []}
+          />
           <ClientUsersManager
             clientId={client.id}
             users={portalUsers ?? []}

@@ -7,10 +7,24 @@ import type { ScanFrequency, TrackedKeywordRow } from '@/lib/supabase/types';
 
 export type KeywordsManagerProps = {
   clientId: string;
+  /** Optional — which location these keywords belong to. New keywords
+   *  are created on this location. Multi-location settings page passes
+   *  the active location; legacy callers pass null and the API defaults
+   *  to the client's primary. */
+  locationId?: string | null;
+  /** Display label for the active location (shown in the card title for
+   *  multi-location clients so the operator sees which location's
+   *  keywords are listed). */
+  locationLabel?: string | null;
   keywords: TrackedKeywordRow[];
 };
 
-export function KeywordsManager({ clientId, keywords }: KeywordsManagerProps) {
+export function KeywordsManager({
+  clientId,
+  locationId = null,
+  locationLabel = null,
+  keywords,
+}: KeywordsManagerProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -34,6 +48,7 @@ export function KeywordsManager({ clientId, keywords }: KeywordsManagerProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: clientId,
+          location_id: locationId ?? undefined,
           keyword: newKeyword.trim(),
           scan_frequency: newFrequency,
           is_primary: makePrimary,
@@ -81,7 +96,14 @@ export function KeywordsManager({ clientId, keywords }: KeywordsManagerProps) {
       }}
     >
       <div className="mb-4">
-        <h3 className="font-display text-lg font-bold">Tracked keywords</h3>
+        <h3 className="font-display text-lg font-bold">
+          Tracked keywords
+          {locationLabel && (
+            <span className="text-xs text-zinc-500 font-normal ml-2">
+              · {locationLabel}
+            </span>
+          )}
+        </h3>
         <p className="text-xs text-zinc-500 mt-0.5">
           {keywords.length} keyword{keywords.length === 1 ? '' : 's'} · scheduled
           scans run on each keyword&apos;s frequency.

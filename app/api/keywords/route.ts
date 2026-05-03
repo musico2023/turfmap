@@ -16,12 +16,17 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
+import { resolveLocation } from '@/lib/supabase/locations';
 import type { TrackedKeywordRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
 const PostBody = z.object({
   client_id: z.string().uuid(),
+  /** Optional. Defaults to the client's primary location. Multi-location
+   *  clients pass the active location id so the keyword belongs to that
+   *  storefront's scan set. */
+  location_id: z.string().uuid().optional(),
   keyword: z.string().min(2).max(160),
   scan_frequency: z
     .enum(['daily', 'weekly', 'biweekly', 'monthly'])
@@ -54,12 +59,32 @@ export async function POST(req: Request) {
 
   const supabase = getServerSupabase();
 
-  // Ensure single-primary invariant.
+  // Resolve the location this keyword should belong to. Defaults to the
+  // client's primary location for single-location callers and old code
+  // paths that don't pass location_id.
+  const location = await resolveLocation(
+    supabase,
+    parsed.client_id,
+    parsed.location_id ?? null
+  );
+  if (!location) {
+    return NextResponse.json(
+      {
+        error:
+          'no location resolved for this client — add at least one location before adding keywords',
+      },
+      { status: 400 }
+    );
+  }
+
+  // Ensure single-primary invariant — scoped to the LOCATION since each
+  // location has its own primary keyword.
   if (parsed.is_primary) {
     await supabase
       .from('tracked_keywords')
       .update({ is_primary: false })
       .eq('client_id', parsed.client_id)
+      .eq('location_id', location.id)
       .eq('is_primary', true);
   }
 
@@ -67,6 +92,7 @@ export async function POST(req: Request) {
     .from('tracked_keywords')
     .insert({
       client_id: parsed.client_id,
+      location_id: location.id,
       keyword: parsed.keyword.trim(),
       scan_frequency: parsed.scan_frequency ?? 'weekly',
       is_primary: parsed.is_primary ?? false,
