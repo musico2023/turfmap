@@ -169,13 +169,16 @@ export function KeywordsManager({
         )}
       </div>
 
-      {/* Suggestion chips — only shown when we have something to suggest
-          AND it's not already on the list. Click fills the input below;
-          operator can edit before submitting. */}
+      {/* Suggestion chips — affordances are explicit: a + icon, hover
+          glow, and a small label tell the operator they're clickable.
+          Click fills the input below so they can edit before submitting. */}
       {suggestions.length > 0 && (
         <div className="mb-3">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5">
-            Suggestions
+          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 flex items-center gap-1.5">
+            <span>Suggestions</span>
+            <span className="text-zinc-600 normal-case tracking-normal font-normal">
+              click to add
+            </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {suggestions
@@ -188,13 +191,34 @@ export function KeywordsManager({
                   key={s}
                   type="button"
                   onClick={() => setNewKeyword(s)}
-                  className="px-2 py-1 rounded-md text-[11px] font-mono border transition-colors hover:border-zinc-700"
+                  title={`Use "${s}" as the new keyword`}
+                  className="group px-2 py-1 rounded-md text-[11px] font-mono border transition-all flex items-center gap-1 hover:scale-[1.02] focus:outline-none focus:ring-1 focus:ring-[var(--color-lime)]"
                   style={{
                     borderColor: 'var(--color-border)',
                     background: 'var(--color-bg)',
                     color: '#a1a1aa',
                   }}
+                  // Inline mouse handlers paint hover state via the
+                  // CSS vars instead of a brittle Tailwind hover: combo
+                  // (which can't easily target both border AND lime icon
+                  // tint together in our setup).
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-lime)';
+                    e.currentTarget.style.background = '#0d130a';
+                    e.currentTarget.style.color = 'var(--color-lime)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor =
+                      'var(--color-border)';
+                    e.currentTarget.style.background = 'var(--color-bg)';
+                    e.currentTarget.style.color = '#a1a1aa';
+                  }}
                 >
+                  <Plus
+                    size={10}
+                    strokeWidth={2.5}
+                    className="opacity-60 group-hover:opacity-100 transition-opacity"
+                  />
                   {s}
                 </button>
               ))}
