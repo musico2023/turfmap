@@ -5,7 +5,7 @@ import Link from 'next/link';
 // every scan. force-dynamic also kills any Next.js Data Cache layer that
 // might serve stale Supabase responses after a metric-definition change.
 export const dynamic = 'force-dynamic';
-import { Award, Crown, Download, History, MapPin, Settings, Target, TrendingUp } from 'lucide-react';
+import { Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type {
   ClientRow,
@@ -13,17 +13,17 @@ import type {
   ScanRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
-import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
-import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
-import { packStrength } from '@/lib/metrics/packStrength';
-import { top3Rate } from '@/lib/metrics/top3Rate';
-import { turfRadius } from '@/lib/metrics/turfRadius';
+import { turfReach } from '@/lib/metrics/turfReach';
+import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
+import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
+import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import { aggregateCuratedCompetitors } from '@/lib/metrics/curatedCompetitors';
 import { Header } from '@/components/turfmap/Header';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { HeatmapWithToggle, type CompetitorView } from '@/components/turfmap/HeatmapWithToggle';
 import { StatCard } from '@/components/turfmap/StatCard';
+import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { InfoTooltip } from '@/components/turfmap/InfoTooltip';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
@@ -111,17 +111,36 @@ export default async function ClientDashboardPage({
     rank: p.rank,
   }));
   const ranks = points.map((p) => p.rank);
-  const score = turfScore(ranks);
-  const strength = packStrength(ranks);
-  const t3 = top3Rate(ranks);
-  const radiusUnits = turfRadius(
-    points.map((p) => ({
-      point: { x: p.grid_x, y: p.grid_y },
-      rank: p.rank,
-    })),
-    9,
-    OUT_OF_PACK_RANK
-  );
+  // New score family. Reads scans columns when populated (post-backfill);
+  // recomputes from scan_points as a defensive fallback so the dashboard
+  // never shows stale values during a metric definition transition.
+  const reach =
+    latestScan?.turf_reach != null
+      ? Number(latestScan.turf_reach)
+      : turfReach(ranks);
+  const rank =
+    latestScan?.turf_rank != null
+      ? Number(latestScan.turf_rank)
+      : turfRank(ranks);
+  const score =
+    latestScan?.turf_score != null
+      ? Number(latestScan.turf_score)
+      : composeTurfScore(reach, rank);
+  const band = getTurfScoreBand(score);
+  // Momentum is null until the second scan; the page reads the persisted
+  // column rather than recomputing client-side because computing it
+  // requires another DB round trip for the prior scan.
+  const momentumValue =
+    latestScan?.momentum != null ? Number(latestScan.momentum) : null;
+  // First-scan banner trigger — rendered when this is the only complete
+  // scan in history. Uses scan count rather than `momentum === null`
+  // because Momentum can also be null on a failed-prior-scan edge case.
+  const { count: completedScanCount } = await supabase
+    .from('scans')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', id)
+    .eq('status', 'complete');
+  const isFirstScan = (completedScanCount ?? 0) <= 1;
 
   // Curated mode: if the agency has explicitly tracked competitor brands for
   // this client (rows in the `competitors` table), surface ALL of them in the
@@ -167,6 +186,26 @@ export default async function ClientDashboardPage({
   return (
     <div className="min-h-screen w-full text-white">
       <Header userEmail={me.email} />
+
+      {latestScan && isFirstScan && (
+        <div
+          className="px-8 py-3 border-b flex items-center gap-3 text-xs"
+          style={{
+            background: '#0d130a',
+            borderColor: 'var(--color-border)',
+            color: '#a1a1aa',
+          }}
+        >
+          <Sparkles size={14} style={{ color: 'var(--color-lime)' }} />
+          <span>
+            <span className="text-zinc-200 font-semibold">
+              Baseline scan complete.
+            </span>{' '}
+            This is your starting point — re-scans every 90 days will show
+            your territory expanding.
+          </span>
+        </div>
+      )}
 
       {/* Business setup bar */}
       <div
@@ -311,84 +350,67 @@ export default async function ClientDashboardPage({
           />
         </div>
 
-        {/* Stats sidebar */}
+        {/* Stats sidebar — score family redesign:
+              hero TurfScore (full width)
+              paired TurfReach + TurfRank (2-up grid)
+              optional Momentum (full width, second+ scan only)
+        */}
         <div className="col-span-4 space-y-4">
           <StatCard
+            variant="hero"
             label="TurfScore™"
-            value={
-              score === null
-                ? '—'
-                : `${turfScoreDisplay(score)}`
-            }
-            subtitle="0–100 · territory coverage"
+            value={latestScan ? `${score} / 100` : '—'}
+            subtitle="Composite visibility score"
             icon={Target}
-            tooltip={
-              <>
-                Composite 0–100 score for how much of the 25-mi territory
-                you visibly own. Cells where you&rsquo;re not in the local
-                3-pack count as a max penalty, so this is dominated by
-                <em> reach</em>. To improve TurfScore, extend coverage to
-                new neighborhoods. (For rank quality where you DO appear,
-                see Pack Strength.)
-              </>
-            }
-          />
-          <StatCard
-            label="Pack Strength"
-            value={strength === null ? '—' : `${strength}`}
-            subtitle="0–100 · rank quality where you appear"
-            icon={Award}
-            tooltip={
-              <>
-                Rank quality across only the cells where you appear in the
-                local 3-pack — independent of how many cells you cover.
-                100 = #1 in every cell you appear in; 85 = #3 in every cell
-                you appear in. The complement to TurfScore: high Pack
-                Strength + low TurfScore means &ldquo;you win where you
-                show up, but you don&rsquo;t show up enough.&rdquo;
-              </>
-            }
-          />
-          <StatCard
-            label="TurfReach™"
-            value={latestScan ? `${t3}%` : '—'}
-            subtitle={
-              latestScan
-                ? `Visible in ${t3}% of your territory`
-                : 'Coverage of your territory'
-            }
-            icon={Crown}
             highlight
+            band={latestScan ? { label: band.label, tone: band.tone } : undefined}
             tooltip={
               <>
-                The percentage of your service area where you appear in
-                Google&rsquo;s local 3-pack. Measured across an 81-point
-                grid covering your territory. 100% = you show up
-                everywhere; 0% = invisible everywhere.
+                Your composite visibility score, 0 to 100. Combines how
+                much of your territory you cover (TurfReach) with how
+                high you rank when you appear (TurfRank). Benchmarks:
+                0&ndash;20 invisible, 20&ndash;40 patchy, 40&ndash;60
+                solid, 60&ndash;80 dominant, 80+ rare air.
               </>
             }
           />
-          <StatCard
-            label="TurfRadius™"
-            value={
-              latestScan
-                ? `${(
-                    radiusUnits *
-                    ((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER)
-                  ).toFixed(1)}mi`
-                : '—'
-            }
-            subtitle="Furthest pin distance where you reach the 3-pack"
-            icon={TrendingUp}
-            tooltip={
-              <>
-                Distance from your pin to the furthest grid cell where you
-                appear in the local 3-pack at all. A clean &ldquo;reach&rdquo;
-                metric — non-zero whenever you have any 3-pack presence,
-                even if your coverage is concentrated in one direction.
-              </>
-            }
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <StatCard
+              label="TurfReach™"
+              value={latestScan ? `${reach}%` : '—'}
+              subtitle={
+                latestScan
+                  ? `Visible in ${reach}% of your territory`
+                  : 'Coverage of your territory'
+              }
+              icon={Compass}
+              tooltip={
+                <>
+                  The percentage of your service area where you appear
+                  in Google&rsquo;s local 3-pack. Measured across an
+                  81-point grid covering your territory.
+                </>
+              }
+            />
+            <StatCard
+              label="TurfRank™"
+              value={
+                latestScan && rank !== null ? `${rank.toFixed(1)} / 3` : '—'
+              }
+              subtitle={turfRankCaption(rank)}
+              icon={Crown}
+              tooltip={
+                <>
+                  Your average position in the local 3-pack across the
+                  cells where you appear. 3.0 = always #1, 2.0 = always
+                  #2, 1.0 = always #3. Higher is better.
+                </>
+              }
+            />
+          </div>
+          {latestScan && !isFirstScan && (
+            <MomentumCard momentum={momentumValue} />
+          )}
           <CompetitorTable competitors={competitors} />
         </div>
 

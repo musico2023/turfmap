@@ -2,7 +2,7 @@
  * Scan history page — `/clients/[id]/scans`.
  *
  * Two stacked sections:
- *   1. Trend chart of TurfScore + TurfReach over time (last 26 entries).
+ *   1. Trend chart of TurfScore + Top-3 Win Rate over time (last 26 entries).
  *   2. Full table of every scan for the client, with PDF + view links.
  *
  * The chart renders the most recent N scans newest-on-the-right; the table
@@ -43,7 +43,7 @@ export default async function ScanHistoryPage({
   const { data: rawScans } = await supabase
     .from('scans')
     .select(
-      'id, scan_type, status, completed_at, created_at, turf_score, top3_win_rate, turf_radius_units, failed_points, total_points'
+      'id, scan_type, status, completed_at, created_at, turf_score, turf_reach, turf_rank, momentum, failed_points, total_points'
     )
     .eq('client_id', id)
     .order('completed_at', { ascending: false, nullsFirst: false })
@@ -57,8 +57,9 @@ export default async function ScanHistoryPage({
         | 'completed_at'
         | 'created_at'
         | 'turf_score'
-        | 'top3_win_rate'
-        | 'turf_radius_units'
+        | 'turf_reach'
+        | 'turf_rank'
+        | 'momentum'
         | 'failed_points'
         | 'total_points'
       >[]
@@ -86,14 +87,18 @@ export default async function ScanHistoryPage({
     completedAt: s.completed_at,
     createdAt: s.created_at,
     turfScore: s.turf_score === null ? null : Number(s.turf_score),
-    top3WinRate: s.top3_win_rate === null ? null : Number(s.top3_win_rate),
-    turfRadiusUnits: s.turf_radius_units,
+    turfReach: s.turf_reach === null ? null : Number(s.turf_reach),
+    turfRank: s.turf_rank === null ? null : Number(s.turf_rank),
+    momentum: s.momentum === null ? null : Number(s.momentum),
     failedPoints: s.failed_points,
     totalPoints: s.total_points,
     hasInsight: insightScanIds.has(s.id),
   }));
 
   // Trend chart: only complete scans, oldest-first, capped at TREND_LIMIT.
+  // Plots TurfScore (left axis, composite 0-100) + TurfReach % (right
+  // axis, 0-100). The chart's `top3Pct` field is plumbed with TurfReach
+  // values — name preserved in the component for binding compatibility.
   const trendPoints: TrendPoint[] = scans
     .filter((s) => s.status === 'complete' && s.completed_at)
     .slice(0, TREND_LIMIT)
@@ -102,7 +107,7 @@ export default async function ScanHistoryPage({
       scanId: s.id,
       completedAt: s.completed_at!,
       turfScore: s.turf_score === null ? null : Number(s.turf_score),
-      top3Pct: Number(s.top3_win_rate ?? 0),
+      top3Pct: Number(s.turf_reach ?? 0),
     }));
 
   const completedCount = trendPoints.length;
@@ -141,7 +146,7 @@ export default async function ScanHistoryPage({
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-display text-lg font-bold">
-                TurfScore & TurfReach trend
+                TurfScore & 3-Pack Win Rate trend
               </h3>
               <p className="text-xs text-zinc-500 mt-0.5">
                 Last {Math.min(scans.length, TREND_LIMIT)} complete scans.
@@ -153,11 +158,7 @@ export default async function ScanHistoryPage({
         </div>
 
         {/* Table */}
-        <ScanHistoryTable
-          clientId={client.id}
-          rows={tableRows}
-          serviceRadiusMiles={client.service_radius_miles ?? undefined}
-        />
+        <ScanHistoryTable clientId={client.id} rows={tableRows} />
       </div>
     </div>
   );

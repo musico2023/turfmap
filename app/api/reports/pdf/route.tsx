@@ -15,11 +15,10 @@ import { TurfReport, type TurfReportData } from '@/components/pdf/TurfReport';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
-import { turfScore, OUT_OF_PACK_RANK } from '@/lib/metrics/turfScore';
-import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
-import { packStrength } from '@/lib/metrics/packStrength';
-import { top3Rate } from '@/lib/metrics/top3Rate';
-import { turfRadius } from '@/lib/metrics/turfRadius';
+import { turfReach } from '@/lib/metrics/turfReach';
+import { turfRank } from '@/lib/metrics/turfRank';
+import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
+import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import type {
   ClientRow,
   ScanPointRow,
@@ -87,23 +86,19 @@ export async function GET(req: Request) {
   }));
   const ranks = points.map((p) => p.rank);
 
-  // Compute metrics from the persisted scan row when available, fall back to
-  // recomputing from points if some scans pre-date the metric-persisting code.
+  // Read persisted columns when populated; recompute from scan_points
+  // as a defensive fallback during the score-redesign transition.
+  const reach =
+    scan.turf_reach != null
+      ? Number(scan.turf_reach)
+      : turfReach(ranks, scan.total_points ?? 81);
+  const rank =
+    scan.turf_rank != null ? Number(scan.turf_rank) : turfRank(ranks);
   const score =
-    scan.turf_score !== null && scan.turf_score !== undefined
+    scan.turf_score != null
       ? Number(scan.turf_score)
-      : turfScore(ranks);
-  const t3 = scan.top3_win_rate ?? top3Rate(ranks);
-  const radiusUnits =
-    scan.turf_radius_units ??
-    turfRadius(
-      points.map((p) => ({
-        point: { x: p.grid_x, y: p.grid_y },
-        rank: p.rank,
-      })),
-      9,
-      OUT_OF_PACK_RANK
-    );
+      : composeTurfScore(reach, rank);
+  const band = getTurfScoreBand(score);
 
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
@@ -144,12 +139,11 @@ export async function GET(req: Request) {
       dfsCostCents: scan.dfs_cost_cents ?? 0,
     },
     metrics: {
-      turfScore: turfScoreDisplay(score),
-      packStrength: packStrength(ranks),
-      top3Pct: Number(t3),
-      radiusMiles:
-        Number(radiusUnits ?? 0) *
-        ((client.service_radius_miles ?? 1.6) / 4),
+      turfScore: score,
+      turfScoreBand: { label: band.label, tone: band.tone },
+      turfReach: reach,
+      turfRank: rank,
+      momentum: scan.momentum != null ? Number(scan.momentum) : null,
     },
     cells,
     competitors,

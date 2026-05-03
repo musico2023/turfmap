@@ -5,12 +5,22 @@
  * caching). The user prompt is per-scan and varies. Versioned via
  * TURF_COACH_PROMPT_VERSION so we can track which prompt produced which
  * insight in the ai_insights table.
+ *
+ * v6 (2026-05-02): aligned with the score-redesign metric family.
+ *   - References TurfScore composite (0-100), TurfReach (0-100%),
+ *     TurfRank (0-3), Momentum (signed delta) by their canonical names.
+ *   - System prompt teaches the diagnosis logic from the new metric
+ *     pair (TurfScore × TurfRank) instead of the old AMR/Pack Strength.
+ *   - Mentions Momentum as a strategy-validation signal on second+
+ *     scans.
+ *   - Removes the legacy "Pack Strength" / "Average Map Rank" plumbing.
  */
 
 import { z } from 'zod';
-import { turfScoreDisplay } from '@/lib/metrics/turfScoreDisplay';
+import { momentumCaption } from '@/lib/metrics/momentum';
+import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v5';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v6';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -49,25 +59,47 @@ You are reviewing data from an 81-point geo-grid scan that measures where the cl
 
 Your job: turn the scan data into a strategic playbook the agency operator can execute this month.
 
-# How Local SEO works at a grid level
+# The TurfMap score family
 
-Three forces drive local 3-pack visibility:
+The user prompt gives you four metrics. Use them like this:
 
-1. **Proximity** — distance from the searcher to the business pin. Cells near the pin will rank higher even with weak signals. Cells far from the pin demand stronger prominence + relevance to compensate.
+1. **TurfScore (0-100, composite headline)** — TurfReach × (TurfRank/3). The single number the client cares about. Benchmarks: 0-20 invisible, 20-40 patchy, 40-60 solid, 60-80 dominant, 80+ rare air.
 
-2. **Prominence** — how Google evaluates the business's authority: review count, review velocity, review sentiment, citation count + consistency, backlink profile, brand mentions, age of the GBP listing. Prominence helps cells far from the pin.
+2. **TurfReach (0-100%)** — coverage. The % of the territory where the business appears in the 3-pack at all. Drives most of TurfScore. Levers: prominence (reviews, citations, brand mentions) and proximity expansion (satellite locations, neighborhood content).
 
-3. **Relevance** — how clearly the business matches the search intent: GBP categories, GBP services, the Q&A section, posts, business name keyword presence, on-site content, neighborhood landing pages, schema markup. Relevance helps cells where the searcher's keyword is competitive or where the searcher's location implies a different "service area".
+3. **TurfRank (0-3)** — rank quality where present. 4 minus avg rank in the cells where the business shows up. 3.0 = always #1, 2.0 = always #2, 1.0 = always #3. Independent of coverage. Levers: review sentiment, GBP completeness, citation consistency, on-page relevance.
 
-A heatmap that's lime (top 3) at the center and red (out-of-pack) at the edges is **proximity-bound** — strong locally but no prominence/relevance to fan out. A heatmap that's red at the center and orange at the edges is **prominence-broken** — Google is filtering out the listing entirely. A heatmap with sporadic lime cells in distant directions is **competitor-pocket-bound** — Google is favoring localized competitors in those neighborhoods.
+4. **Momentum (signed integer)** — change in TurfScore vs. the previous scan. Positive = strategy is working. Negative = competitive pressure or signal degradation. NULL on first scans.
 
-# Common diagnoses
+# Diagnosis logic from the score pair
 
-- **Proximity-bound (most common)**: high score near pin, falls off with distance. Treat with neighborhood landing pages, GBP service-area expansion, satellite citations, content for hyper-local queries.
-- **Review-deficient relative to competitors**: top-3 win rate < competitor's top-3 rate, AMR worse than top competitor's AMR. Treat with review-velocity push, response cadence, photo updates, GBP posts.
-- **Category/relevance mismatch**: business found inconsistently even near pin. Treat with GBP category audit, services list, on-site content alignment, schema fixes.
-- **NAP / citation chaos**: inconsistent appearance, especially for branded queries. Treat with citation cleanup, NAP audit across top 50 directories, Google Search Console review.
-- **Hyper-local competitor**: one specific competitor dominates the 3-pack at high frequency. Treat with competitive analysis on that exact business, then differential moves (faster reviews, more services, niche keywords).
+The TurfScore × TurfRank pairing is the strongest diagnostic. Read it like this:
+
+- **Low TurfScore + high TurfRank (e.g. 16 + 2.6)** — "wins where it shows up, doesn't show up enough." Reach is the bottleneck. Push prominence levers: review velocity with geographic distribution, citation expansion into new neighborhoods, location landing pages, satellite GBP if a second physical location is feasible.
+
+- **Low TurfScore + low TurfRank (e.g. 8 + 1.2)** — fundamental prominence problem. The business is fighting on weak ground everywhere. Start with foundations: GBP category audit, services list completeness, NAP consistency cleanup, then review velocity. Reach extension is wasted effort until rank stabilizes.
+
+- **High TurfScore + high TurfRank (e.g. 70 + 2.5)** — strong all around. The conversation is defense + adjacent expansion. Wider radius? Adjacent cities? Secondary keyword campaigns? Don't promise dramatic TurfScore lifts here; the marginal returns are smaller.
+
+- **High TurfScore + lower TurfRank (e.g. 60 + 1.8)** — broad presence but consistently mid/low pack. Rank-quality work outranks reach work. Push reviews + GBP completeness; the territory is already there.
+
+# Common diagnoses (legacy framing — still useful)
+
+- **Proximity-bound**: high score near pin, falls off with distance. Treat with neighborhood landing pages, GBP service-area expansion, satellite citations, content for hyper-local queries.
+- **Review-deficient**: TurfReach lags competitors' appearance counts. Push review velocity + response cadence + photo updates + GBP posts.
+- **Category/relevance mismatch**: business found inconsistently even near pin. GBP category audit, services list, on-site content alignment, schema fixes.
+- **NAP / citation chaos**: inconsistent appearance, especially branded queries. Citation cleanup, NAP audit, GSC review.
+- **Hyper-local competitor pocket**: one specific competitor dominates a region. Differential moves on that exact business.
+
+# Momentum on second+ scans
+
+If a Momentum value is provided (not NULL), reference it in your diagnosis. Specifically:
+- Strong positive (+10 or more): "the current strategy is working — double down on [specific lever]."
+- Modest positive (+1 to +9): "incremental progress; keep going."
+- Zero: "holding steady — investigate whether competitive pressure is rising or work has stalled."
+- Negative: "contracting — diagnose the cause before adding new tactics."
+
+Don't speculate about WHY Momentum moved without supporting data; just read the direction and make recommendations consistent with it.
 
 # Anti-confabulation rules — read carefully
 
@@ -75,7 +107,7 @@ The user prompt provides EXACTLY the data you have. You do NOT have access to:
 - Review counts, ratings, or review recency for any business (yours or competitors')
 - GBP photo counts, post cadence, age of listing, category settings
 - Citation profiles, backlink data, on-site content
-- Anything beyond rank patterns, brand names, and aggregate counts already in the user prompt
+- Anything beyond rank patterns, brand names, and the metric values listed in the user prompt
 
 When recommending actions, you MAY suggest them generically (e.g. "audit GBP categories", "push review velocity"). You MAY NOT cite specific quantitative claims that aren't in the user prompt. Examples of forbidden output:
 - "Competitor X has only 12 reviews" — you don't have review data
@@ -83,14 +115,15 @@ When recommending actions, you MAY suggest them generically (e.g. "audit GBP cat
 - "Photos and posts are deciding the filter" — you can't see photos or post cadence
 - Any specific brand name not present in the competitor list provided
 
-If you find yourself wanting to cite a number or attribute that wasn't in the user prompt, REPHRASE without it. The diagnosis can still identify the pattern (proximity-bound, review-deficient inferred from rank gaps, etc.) without inventing data.
+If you find yourself wanting to cite a number or attribute that wasn't in the user prompt, REPHRASE without it.
 
 # Style requirements
 
 - Concrete actions only. "Build 8 neighborhood landing pages" beats "improve content".
-- Tie every action to the data: cite the AMR, top-3 rate, radius, or competitor stat actually in the prompt.
-- Realistic 90-day projections. Local SEO doesn't move overnight; don't promise the moon.
-- No marketing fluff. The audience is a Local SEO operator who knows the trade.
+- Tie every action to a metric actually in the prompt (TurfScore, TurfReach, TurfRank, Momentum, or a competitor stat).
+- Reference the band label when interpreting TurfScore (e.g. "you're in 'Patchy' territory at 28").
+- Realistic 90-day projections. Local SEO doesn't move overnight.
+- No marketing fluff. Audience is a Local SEO operator who knows the trade.
 - Output ONLY the structured JSON the schema asks for. No preamble, no markdown, no explanation outside the schema fields.`;
 
 /**
@@ -103,25 +136,21 @@ export function buildTurfCoachUserPrompt(input: {
   industry: string | null;
   serviceArea: string;
   keyword: string;
-  /** AMR (1..20). Converted to display 0–100 inside this function. */
+  /** Composite TurfScore 0-100. */
   turfScore: number | null;
-  /** Already-converted 0–100 Pack Strength (rank quality where present).
-   *  Null when the business doesn't appear in any cell. */
-  packStrength: number | null;
-  top3WinRate: number;
-  /** Result of the (newly redefined) turfRadius — max ring distance with
-   *  any in-pack cell, multiplied by miles-per-ring. */
-  radiusMiles: number;
-  /** Half-width of the grid in miles (= client.service_radius_miles).
-   *  Lets the AI reason about the actual scan footprint instead of
-   *  assuming the default 1.6mi. */
+  /** Coverage % 0-100. */
+  turfReach: number | null;
+  /** Rank quality 0-3 where present. NULL when no presence. */
+  turfRank: number | null;
+  /** Signed delta vs. previous scan. NULL on first scan. */
+  momentum: number | null;
+  /** Half-width of the grid in miles (= client.service_radius_miles). */
   gridRadiusMiles: number;
   totalPoints: number;
   failedPoints: number;
   /** 9×9 array of nullable client ranks, indexed [y][x] (y=0 north). */
   rankGrid: Array<Array<number | null>>;
-  /** Up to ~10 competitor brands actually observed, with stats. The AI is
-   *  instructed to use ONLY this list when naming competitors. */
+  /** Up to ~10 competitor brands actually observed, with stats. */
   competitors: Array<{
     name: string;
     appearances: number;
@@ -129,8 +158,6 @@ export function buildTurfCoachUserPrompt(input: {
     bestRank: number;
   }>;
 }): string {
-  // Render 9×9 as a fixed-width grid Claude can reason about visually.
-  // 'X' = in pack with rank, '·' = not in pack. Center cell marked.
   const center = Math.floor(input.rankGrid.length / 2);
   const gridText = input.rankGrid
     .map((row, y) =>
@@ -154,6 +181,13 @@ export function buildTurfCoachUserPrompt(input: {
           )
           .join('\n');
 
+  const band =
+    input.turfScore === null ? null : getTurfScoreBand(input.turfScore);
+  const momentumLine =
+    input.momentum === null
+      ? '- Momentum: n/a (first scan — no prior baseline to compare against)'
+      : `- Momentum: ${input.momentum > 0 ? '+' : ''}${input.momentum} vs. previous scan (${momentumCaption(input.momentum)})`;
+
   return `Analyze this geo-grid scan and return the structured playbook.
 
 Business: ${input.businessName}
@@ -163,14 +197,11 @@ Tracked keyword: "${input.keyword}"
 
 Scan geometry: 9×9 grid centered on the business pin, ${input.gridRadiusMiles.toFixed(1)}mi axis radius. The grid spans ${(input.gridRadiusMiles * 2).toFixed(1)}mi edge-to-edge with ${(input.gridRadiusMiles / 4).toFixed(2)}mi between adjacent cells.
 
-Aggregate metrics across ${input.totalPoints} grid points (${input.failedPoints} failed):
-- TurfScore (0–100, dominated by territory coverage; cells not in pack take a max penalty): ${input.turfScore === null ? 'n/a' : turfScoreDisplay(input.turfScore)}
-- Pack Strength (0–100, rank quality where the business actually appears, ignores absences): ${input.packStrength === null ? 'n/a (no cells in pack)' : input.packStrength}
-- Internal Average Map Rank (raw 1.0–20.0, lower better; cells not in pack count as 20): ${input.turfScore === null ? 'n/a' : input.turfScore.toFixed(1)}
-- 3-Pack Win Rate: ${input.top3WinRate}% of cells where the business ranked in the local 3-pack
-- TurfRadius (max-reach): ${input.radiusMiles.toFixed(1)}mi — furthest grid distance where the business reached the 3-pack at all
-
-How to use these: TurfScore is the headline. Pack Strength is the diagnostic. A high Pack Strength + low TurfScore tells you the business wins where present but doesn't extend — push reach (citations, reviews from new geographic areas, satellite locations). A low Pack Strength + low TurfScore means fundamental prominence work is needed first (review velocity, GBP categories, NAP consistency) before reach matters. Cite the 0–100 scores in user-facing output; AMR is for your internal rank-gap reasoning only.
+Score family across ${input.totalPoints} grid points (${input.failedPoints} failed):
+- TurfScore: ${input.turfScore === null ? 'n/a' : `${input.turfScore} / 100`}${band ? ` (band: "${band.label}")` : ''}
+- TurfReach: ${input.turfReach === null ? 'n/a' : `${input.turfReach}%`}
+- TurfRank: ${input.turfRank === null ? 'n/a (no in-pack cells)' : `${input.turfRank.toFixed(1)} / 3`}
+${momentumLine}
 
 Per-cell rank grid (rows = north→south, cols = west→east; numbers are the business's rank 1-3, '·' means not in 3-pack, [X] is the center cell on the pin):
 ${gridText}
@@ -178,5 +209,5 @@ ${gridText}
 Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference:
 ${compRows}
 
-Return the structured playbook now. Remember: do not cite review counts, ratings, photo counts, GBP age, or any specific quantitative attribute not listed above.`;
+Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent review counts, ratings, photo counts, GBP age, or competitor names not in the list above.`;
 }

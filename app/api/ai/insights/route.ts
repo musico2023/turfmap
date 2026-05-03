@@ -25,7 +25,8 @@ import {
 } from '@/lib/anthropic/prompts/turfCoach';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
-import { packStrength } from '@/lib/metrics/packStrength';
+import { turfReach } from '@/lib/metrics/turfReach';
+import { turfRank } from '@/lib/metrics/turfRank';
 import type {
   ClientRow,
   ScanRow,
@@ -36,9 +37,6 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const RequestBody = z.object({ scanId: z.string().uuid() });
-
-/** 9×9 grid is 4 rings out from center, so spacing = service_radius / 4. */
-const RINGS_FROM_CENTER = 4;
 
 export async function POST(req: Request) {
   const auth = await requireAgencyUserForApi();
@@ -143,23 +141,28 @@ export async function POST(req: Request) {
     .sort((a, b) => b.appearances - a.appearances || a.avgRank - b.avgRank)
     .slice(0, 10);
 
-  const milesPerRing = (client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER;
-  const radiusMiles = (scan.turf_radius_units ?? 0) * milesPerRing;
-  // Compute Pack Strength inline from scan_points — it's a derived metric
-  // and not stored in the scans table.
+  // New score family. Read persisted columns when populated, recompute
+  // from scan_points as a defensive fallback.
   const ranksFromPoints = points.map(
     (p) => (p.rank as number | null) ?? null
   );
-  const strength = packStrength(ranksFromPoints);
+  const reach =
+    scan.turf_reach != null
+      ? Number(scan.turf_reach)
+      : turfReach(ranksFromPoints, scan.total_points ?? 81);
+  const rank =
+    scan.turf_rank != null ? Number(scan.turf_rank) : turfRank(ranksFromPoints);
+  const compositeScore =
+    scan.turf_score != null ? Number(scan.turf_score) : null;
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: client.business_name,
     industry: client.industry,
     serviceArea: client.address,
     keyword: keyword.keyword,
-    turfScore: scan.turf_score,
-    packStrength: strength,
-    top3WinRate: Number(scan.top3_win_rate ?? 0),
-    radiusMiles,
+    turfScore: compositeScore,
+    turfReach: reach,
+    turfRank: rank,
+    momentum: scan.momentum != null ? Number(scan.momentum) : null,
     gridRadiusMiles: client.service_radius_miles ?? 1.6,
     totalPoints: scan.total_points ?? 81,
     failedPoints: scan.failed_points ?? 0,

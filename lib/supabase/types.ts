@@ -47,7 +47,13 @@ export type ScanRow = {
   scan_type: ScanType;
   grid_size: number | null;
   status: ScanStatus | null;
+  /** New score family (added 2026-05-02 in score-redesign migration). */
   turf_score: number | null;
+  turf_reach: number | null;
+  turf_rank: number | null;
+  momentum: number | null;
+  /** Deprecated: kept for historical safety, do not write to these on
+   *  new scans. Replaced by turf_reach + turf_rank respectively. */
   top3_win_rate: number | null;
   turf_radius_units: number | null;
   total_points: number | null;

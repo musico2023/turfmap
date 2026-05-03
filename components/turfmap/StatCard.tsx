@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip';
+import type { TurfScoreBandTone } from '@/lib/metrics/turfScoreBands';
 
 export type StatCardProps = {
   label: string;
@@ -10,6 +11,14 @@ export type StatCardProps = {
   highlight?: boolean;
   /** Optional methodology tooltip rendered next to the label. */
   tooltip?: React.ReactNode;
+  /** Render large — used for the headline TurfScore card. */
+  variant?: 'standard' | 'hero';
+  /** Categorical band label rendered between value and subtitle, with
+   *  tone-driven color. Used on the TurfScore hero card. */
+  band?: {
+    label: string;
+    tone: TurfScoreBandTone;
+  };
 };
 
 export function StatCard({
@@ -19,10 +28,13 @@ export function StatCard({
   icon: Icon,
   highlight,
   tooltip,
+  variant = 'standard',
+  band,
 }: StatCardProps) {
+  const hero = variant === 'hero';
   return (
     <div
-      className="border rounded-lg p-5 relative"
+      className={`border rounded-lg relative ${hero ? 'p-6' : 'p-5'}`}
       style={{
         background: highlight
           ? 'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)'
@@ -37,15 +49,47 @@ export function StatCard({
           {label}
           {tooltip && <InfoTooltip>{tooltip}</InfoTooltip>}
         </div>
-        <Icon size={14} className="text-zinc-600" />
+        <Icon size={hero ? 16 : 14} className="text-zinc-600" />
       </div>
       <div
-        className="font-display text-4xl font-bold mb-1.5 leading-none"
+        className={`font-display font-bold leading-none ${
+          hero ? 'text-6xl mb-2.5' : 'text-4xl mb-1.5'
+        }`}
         style={{ color: highlight ? 'var(--color-lime)' : 'white' }}
       >
         {value}
       </div>
+      {band && (
+        <div
+          className="text-xs uppercase tracking-[0.18em] font-bold mb-1.5"
+          style={{ color: bandColor(band.tone) }}
+        >
+          {band.label}
+        </div>
+      )}
       <div className="text-xs text-zinc-500 leading-relaxed">{subtitle}</div>
     </div>
   );
+}
+
+/**
+ * Map TurfScore band tone → text color. Single source of truth so the
+ * band label color is consistent everywhere it renders. Lime / green for
+ * top tiers (matches brand accent), red/orange for the alarm tiers.
+ */
+function bandColor(tone: TurfScoreBandTone): string {
+  switch (tone) {
+    case 'critical':
+      return '#ff4d4d'; // red — Invisible
+    case 'weak':
+      return '#ff9f3a'; // orange — Patchy
+    case 'solid':
+      return '#e8e54a'; // amber — Solid
+    case 'strong':
+      return 'var(--color-lime)'; // lime — Dominant
+    case 'elite':
+      return 'var(--color-lime)'; // lime — Rare air
+    default:
+      return '#a1a1aa';
+  }
 }
