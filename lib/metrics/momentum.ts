@@ -10,7 +10,7 @@
  *   current 30, previous 45        → -15  ("Significant pullback")
  *
  * Returns null when there's no previous scan to compare against
- * (renders as "—" with the "Momentum unlocks at your 90-day re-scan"
+ * (renders as "—" with the "Momentum unlocks after your next re-scan"
  * caption on a brand-new client's first scan).
  *
  * Persistence model: stored as `scans.momentum` so the dashboard +
@@ -36,7 +36,7 @@ export function momentum(
 /** Categorical caption for a momentum value (used by dashboard + AI Coach). */
 export function momentumCaption(m: number | null): string {
   if (m === null || m === undefined) {
-    return 'Momentum unlocks at your 90-day re-scan';
+    return 'Momentum unlocks after your next re-scan';
   }
   if (m >= 10) return 'Strong territorial expansion';
   if (m >= 1) return 'Growing';

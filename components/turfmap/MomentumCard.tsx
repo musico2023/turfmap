@@ -9,7 +9,7 @@ import { momentumCaption } from '@/lib/metrics/momentum';
  * are different (signed integer with a "neutral zero" treatment).
  *
  * Empty state (first scan, momentum is null) renders "—" with a caption
- * about unlocking at the 90-day re-scan. The card should be hidden
+ * about unlocking after the next re-scan. The card should be hidden
  * entirely on first scans, but is rendered defensively here in case a
  * caller forgets the conditional — the empty state is at least
  * self-explanatory.
@@ -54,9 +54,10 @@ export function MomentumCard({
         <div className="flex items-center gap-1.5 text-xs tracking-tight text-zinc-400 font-semibold">
           Momentum™
           <InfoTooltip>
-            The change in your TurfScore since your previous scan.
-            Positive numbers mean your visibility is expanding. Updates
-            every 90 days.
+            The change in your TurfScore vs. your previous scan.
+            Positive numbers mean your visibility is expanding. Recalculated
+            on every re-scan; the standard cadence is quarterly (~90 days),
+            but on-demand scans update it immediately too.
           </InfoTooltip>
         </div>
         <Arrow size={14} style={{ color }} />
