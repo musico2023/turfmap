@@ -53,7 +53,7 @@ export function MarketingHero() {
           <p className="text-zinc-300 text-lg md:text-xl leading-relaxed max-w-xl mb-8">
             TurfMap runs an 81-point geo-grid scan across your service area and
             shows you, cell by cell, where you appear in Google&rsquo;s local
-            3-pack. Most home-services businesses are invisible to two-thirds
+            3-pack. Most local businesses are invisible to two-thirds
             of the people searching for them. Find out what your map looks
             like.
           </p>

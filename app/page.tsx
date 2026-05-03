@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'TurfMap™ — See exactly where you rank across your territory',
     description:
-      "An 81-point geo-grid SEO diagnostic for home-services businesses. Find out where you're invisible in your own service area, and what to fix first. From $99.",
+      "An 81-point geo-grid SEO diagnostic for local businesses — clinics, plumbers, dentists, restaurants, retail, anything that depends on Google's local 3-pack. Find out where you're invisible in your own service area, and what to fix first. From $99.",
     url: 'https://turfmap.ai/',
     siteName: 'TurfMap.ai',
     type: 'website',
@@ -171,7 +171,7 @@ export default function MarketingLanding() {
             description="Combines TurfReach and TurfRank into one number. The headline metric you can quote, track, and improve."
             example={
               <>
-                Most home-services businesses we scan land between{' '}
+                Most local businesses we scan land between{' '}
                 <strong className="text-zinc-100">30 and 55</strong> before
                 optimization. Above 60 is uncommon — it usually means the
                 Google Business Profile is well-tuned and the citations are
@@ -217,8 +217,8 @@ export default function MarketingLanding() {
                 },
                 {
                   priority: 'HIGH',
-                  title: 'Claim 8 missing home-services directories',
-                  body: 'Angi, HomeAdvisor, Thumbtack, BBB, and 4 others are entirely absent. Building citation authority on the directories Google cross-references is the fastest TurfReach lever.',
+                  title: 'Claim 8 missing industry directories',
+                  body: 'For this plumber: Angi, HomeAdvisor, Thumbtack, BBB, and 4 others — all absent. The exact list is industry-specific. Citation authority on the directories Google cross-references is the fastest TurfReach lever.',
                 },
                 {
                   priority: 'MEDIUM',
@@ -396,18 +396,14 @@ export default function MarketingLanding() {
                 a: (
                   <>
                     Yes. The Visibility Audit includes a 30-day re-scan, the
-                    Strategy Session includes two (60 + 90 days). For ongoing
-                    monthly tracking, ask us about{' '}
-                    <a
-                      href="https://localleadmachine.io"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-zinc-200 underline-offset-2 underline hover:text-white"
-                    >
-                      Local Lead Machine
-                    </a>{' '}
-                    — our managed monthly service that monitors and acts on
-                    the map every month.
+                    Strategy Session includes two (60 + 90 days). If you want
+                    your map refreshed every month indefinitely — to catch
+                    ranking drops the moment they happen — ask us at checkout
+                    about ongoing monthly tracking. We also offer fully
+                    managed monthly services where we don&rsquo;t just
+                    measure the map, we act on it; the right fit depends on
+                    your category and how much of this you want to handle
+                    yourself.
                   </>
                 ),
               },
@@ -418,11 +414,14 @@ export default function MarketingLanding() {
                     NAP is short for Name, Address, Phone — the three pieces
                     of business contact data that Google cross-references
                     across hundreds of directories (Apple Maps, Yelp, Bing,
-                    Yellow Pages, home-services ones like Angi, HomeAdvisor,
-                    Thumbtack, etc.). When NAP isn&rsquo;t consistent across
-                    those directories, Google trusts your listing less,
-                    which suppresses your appearance in the local 3-pack.
-                    Every Visibility Audit includes a full NAP scan.
+                    Yellow Pages, plus industry-specific ones — Angi and
+                    HomeAdvisor for home services, ZocDoc and Healthgrades
+                    for medical, OpenTable and Tripadvisor for restaurants,
+                    and so on). When NAP isn&rsquo;t consistent across those
+                    directories, Google trusts your listing less, which
+                    suppresses your appearance in the local 3-pack. Every
+                    Visibility Audit includes a full NAP scan tuned to your
+                    category.
                   </>
                 ),
               },
@@ -454,7 +453,7 @@ export default function MarketingLanding() {
                       Fourdots Digital
                     </a>{' '}
                     — a Toronto-based agency that&rsquo;s been doing local SEO
-                    for home-services businesses since 2018. We built TurfMap
+                    for service businesses since 2018. We built TurfMap
                     because the off-the-shelf rank trackers our clients were
                     using told them they ranked #1 from their office and
                     didn&rsquo;t mention they were invisible 3km down the
