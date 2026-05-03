@@ -40,6 +40,21 @@ export type TrackedKeywordRow = {
   created_at: string | null;
 };
 
+/** Public share link for a scan — see /share/<id>. */
+export type ScanShareLinkRow = {
+  id: string;
+  scan_id: string;
+  created_by: string | null;
+  created_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  view_count: number | null;
+  last_viewed_at: string | null;
+  agency_label: string | null;
+  cta_text: string | null;
+  cta_url: string | null;
+};
+
 export type ScanRow = {
   id: string;
   client_id: string;

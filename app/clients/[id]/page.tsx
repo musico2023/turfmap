@@ -28,6 +28,7 @@ import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { InfoTooltip } from '@/components/turfmap/InfoTooltip';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import { ScanButton } from '@/components/turfmap/ScanButton';
+import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
@@ -274,19 +275,22 @@ export default async function ClientDashboardPage({
               <History size={12} /> History
             </Link>
             {latestScan && (
-              <a
-                href={`/api/reports/pdf?scanId=${latestScan.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700"
-                style={{
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text, white)',
-                  background: 'var(--color-card)',
-                }}
-              >
-                <Download size={12} /> PDF
-              </a>
+              <>
+                <a
+                  href={`/api/reports/pdf?scanId=${latestScan.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    color: 'var(--color-text, white)',
+                    background: 'var(--color-card)',
+                  }}
+                >
+                  <Download size={12} /> PDF
+                </a>
+                <ShareLinkButton scanId={latestScan.id} />
+              </>
             )}
             <ScanButton
               clientId={client.id}
