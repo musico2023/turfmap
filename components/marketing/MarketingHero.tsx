@@ -107,7 +107,7 @@ export function MarketingHero() {
           >
             <div className="flex items-center justify-between mb-3">
               <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
-                Sample · Pediatric clinic, midtown
+                Sample · Plumber, midtown
               </div>
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-500">
                 <span

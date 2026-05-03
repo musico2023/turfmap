@@ -212,17 +212,17 @@ export default function MarketingLanding() {
               {[
                 {
                   priority: 'HIGH',
-                  title: 'Add Midtown listing on Apple Maps via multi-location claim',
-                  body: 'Apple Maps currently misattributes your Midtown location to a sibling address, suppressing proximity signals across the northern grid.',
+                  title: 'Verify your Apple Maps listing — currently unverified',
+                  body: 'iPhone users searching from the northern half of your service area get directed to a verified competitor. Verifying the listing is a 5-minute fix that immediately reclaims those cells.',
                 },
                 {
                   priority: 'HIGH',
-                  title: 'Claim 8 missing health-vertical directories',
-                  body: 'Healthgrades, ZocDoc, Vitals, WebMD, and 4 others are entirely absent. Building citation authority here is the fastest TurfReach lever.',
+                  title: 'Claim 8 missing home-services directories',
+                  body: 'Angi, HomeAdvisor, Thumbtack, BBB, and 4 others are entirely absent. Building citation authority on the directories Google cross-references is the fastest TurfReach lever.',
                 },
                 {
                   priority: 'MEDIUM',
-                  title: 'Normalize address format on Bing, RateMDs, MapQuest',
+                  title: 'Normalize address format on Bing, Yelp, MapQuest',
                   body: 'Three directories show abbreviated or malformed address strings. Fixing NAP consistency reduces noise that suppresses trust signals.',
                 },
               ].map((a, i) => (
@@ -418,11 +418,11 @@ export default function MarketingLanding() {
                     NAP is short for Name, Address, Phone — the three pieces
                     of business contact data that Google cross-references
                     across hundreds of directories (Apple Maps, Yelp, Bing,
-                    Yellow Pages, vertical-specific ones like Healthgrades or
-                    Angi, etc.). When NAP isn&rsquo;t consistent across those
-                    directories, Google trusts your listing less, which
-                    suppresses your appearance in the local 3-pack. Every
-                    Visibility Audit includes a full NAP scan.
+                    Yellow Pages, home-services ones like Angi, HomeAdvisor,
+                    Thumbtack, etc.). When NAP isn&rsquo;t consistent across
+                    those directories, Google trusts your listing less,
+                    which suppresses your appearance in the local 3-pack.
+                    Every Visibility Audit includes a full NAP scan.
                   </>
                 ),
               },
