@@ -15,12 +15,14 @@ import { ChevronLeft, ExternalLink } from 'lucide-react';
 import { Header } from '@/components/turfmap/Header';
 import { ClientSettingsForm } from '@/components/turfmap/ClientSettingsForm';
 import { KeywordsManager } from '@/components/turfmap/KeywordsManager';
+import { LocationsManager } from '@/components/turfmap/LocationsManager';
 import {
   ClientUsersManager,
   type ClientUserRow,
 } from '@/components/turfmap/ClientUsersManager';
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { listLocations } from '@/lib/supabase/locations';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
@@ -33,7 +35,7 @@ export default async function ClientSettingsPage({
   const me = await requireAgencyUserOrRedirect(`/clients/${id}/settings`);
   const supabase = getServerSupabase();
 
-  const [{ data: client }, { data: keywords }, { data: portalUsers }] =
+  const [{ data: client }, { data: keywords }, { data: portalUsers }, locations] =
     await Promise.all([
       supabase
         .from('clients')
@@ -53,6 +55,7 @@ export default async function ClientSettingsPage({
         .eq('client_id', id)
         .order('invited_at', { ascending: false, nullsFirst: false })
         .returns<ClientUserRow[]>(),
+      listLocations(supabase, id),
     ]);
 
   if (!client) notFound();
@@ -88,6 +91,7 @@ export default async function ClientSettingsPage({
 
         <div className="space-y-6">
           <ClientSettingsForm client={client} />
+          <LocationsManager clientId={client.id} locations={locations} />
           <KeywordsManager clientId={client.id} keywords={keywords ?? []} />
           <ClientUsersManager
             clientId={client.id}

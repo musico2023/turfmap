@@ -6,6 +6,10 @@ import { Activity, Radio, Search } from 'lucide-react';
 
 export type ScanButtonProps = {
   clientId: string;
+  /** Optional — which physical location to scan. Defaults to the client's
+   *  primary location server-side when not supplied. Multi-location clients
+   *  pass the active location's id from the dashboard. */
+  locationId?: string | null;
   /** Only the primary keyword is scanned in v1 — passed for the optimistic UI label. */
   keywordLabel?: string;
 };
@@ -16,7 +20,7 @@ export type ScanButtonProps = {
  * because we're synchronous all the way through DFS — the button blocks
  * during that window.
  */
-export function ScanButton({ clientId, keywordLabel }: ScanButtonProps) {
+export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isScanning, setIsScanning] = useState(false);
@@ -31,7 +35,7 @@ export function ScanButton({ clientId, keywordLabel }: ScanButtonProps) {
       const res = await fetch('/api/scans/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId }),
+        body: JSON.stringify({ clientId, locationId: locationId ?? undefined }),
       });
       // Read as text first so we can produce a useful error if Vercel
       // returns an HTML error page (function timeout, OOM, build error)

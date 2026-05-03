@@ -7,6 +7,7 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 import { Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { listLocations, resolveLocation } from '@/lib/supabase/locations';
 import type {
   ClientRow,
   ScanPointRow,
@@ -29,6 +30,7 @@ import { InfoTooltip } from '@/components/turfmap/InfoTooltip';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import { ScanButton } from '@/components/turfmap/ScanButton';
 import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
+import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
@@ -39,10 +41,13 @@ const RINGS_FROM_CENTER = 4;
 
 export default async function ClientDashboardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ location?: string }>;
 }) {
   const { id } = await params;
+  const { location: locationParam } = await searchParams;
   const me = await requireAgencyUserOrRedirect(`/clients/${id}`);
   const supabase = getServerSupabase();
 
@@ -53,31 +58,57 @@ export default async function ClientDashboardPage({
     .maybeSingle<ClientRow>();
   if (!client) notFound();
 
+  // Multi-location resolution: if `?location=<id>` is in the URL, scope
+  // the dashboard to that location; otherwise default to the client's
+  // primary location. All scan / keyword / scan_points / ai_insights
+  // queries below filter by the resolved location_id.
+  const locations = await listLocations(supabase, id);
+  const activeLocation =
+    (await resolveLocation(supabase, id, locationParam ?? null)) ??
+    locations[0] ??
+    null;
+
   const { data: latestScan } = await supabase
     .from('scans')
     .select('*')
     .eq('client_id', id)
     .eq('status', 'complete')
+    .eq('location_id', activeLocation?.id ?? '')
     .order('completed_at', { ascending: false })
     .limit(1)
     .maybeSingle<ScanRow>();
 
   // Show the keyword tied to the latest scan if there is one; otherwise fall
-  // back to the client's primary keyword so brand-new clients still see what
-  // will be tracked.
+  // back to a primary keyword for the active location (or any keyword on
+  // this client if the location has none yet).
   const { data: keyword } = latestScan
     ? await supabase
         .from('tracked_keywords')
         .select('*')
         .eq('id', latestScan.keyword_id)
         .maybeSingle<TrackedKeywordRow>()
-    : await supabase
-        .from('tracked_keywords')
-        .select('*')
-        .eq('client_id', id)
-        .order('is_primary', { ascending: false })
-        .limit(1)
-        .maybeSingle<TrackedKeywordRow>();
+    : activeLocation
+      ? await (async () => {
+          const { data: locKw } = await supabase
+            .from('tracked_keywords')
+            .select('*')
+            .eq('client_id', id)
+            .eq('location_id', activeLocation.id)
+            .order('is_primary', { ascending: false })
+            .limit(1)
+            .maybeSingle<TrackedKeywordRow>();
+          if (locKw) return { data: locKw };
+          // Fallback: any keyword on this client (legacy rows without
+          // a location_id, or before this location had its own keywords).
+          return await supabase
+            .from('tracked_keywords')
+            .select('*')
+            .eq('client_id', id)
+            .order('is_primary', { ascending: false })
+            .limit(1)
+            .maybeSingle<TrackedKeywordRow>();
+        })()
+      : { data: null };
 
   const { data: rawPoints } = latestScan
     ? await supabase
@@ -140,6 +171,7 @@ export default async function ClientDashboardPage({
     .from('scans')
     .select('id', { count: 'exact', head: true })
     .eq('client_id', id)
+    .eq('location_id', activeLocation?.id ?? '')
     .eq('status', 'complete');
   const isFirstScan = (completedScanCount ?? 0) <= 1;
 
@@ -208,6 +240,20 @@ export default async function ClientDashboardPage({
         </div>
       )}
 
+      {/* Location switcher — only renders for multi-location clients */}
+      {locations.length > 1 && (
+        <div
+          className="border-b px-8 py-3"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <LocationSwitcher
+            clientId={client.id}
+            locations={locations}
+            activeLocationId={activeLocation?.id ?? null}
+          />
+        </div>
+      )}
+
       {/* Business setup bar */}
       <div
         className="border-b px-8 py-4 grid grid-cols-12 gap-4 items-center"
@@ -219,6 +265,11 @@ export default async function ClientDashboardPage({
           </div>
           <div className="text-sm font-medium text-zinc-100">
             {client.business_name}
+            {activeLocation && !activeLocation.is_primary && (
+              <span className="text-zinc-500 font-normal text-xs ml-1.5">
+                · {activeLocation.label || activeLocation.city || 'Location'}
+              </span>
+            )}
           </div>
         </div>
         <div className="col-span-3">
@@ -227,7 +278,7 @@ export default async function ClientDashboardPage({
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
             <MapPin size={13} className="text-zinc-500" />
-            {client.address}
+            {activeLocation?.address ?? client.address}
           </div>
         </div>
         <div className="col-span-3">
@@ -294,6 +345,7 @@ export default async function ClientDashboardPage({
             )}
             <ScanButton
               clientId={client.id}
+              locationId={activeLocation?.id ?? null}
               keywordLabel={keyword?.keyword}
             />
           </div>
@@ -316,13 +368,13 @@ export default async function ClientDashboardPage({
               </h3>
               <p className="text-xs text-zinc-500 inline-flex items-center gap-1.5">
                 9×9 geo-grid · 81 search points ·{' '}
-                {client.service_radius_miles ?? 1.6}mi radius · UULE-based
+                {activeLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6}mi radius · UULE-based
                 <InfoTooltip width="w-72">
                   Each of the 81 cells is one Google search executed from a
                   specific GPS coordinate (UULE = Google&rsquo;s URL parameter
                   for &ldquo;simulate this search from this location&rdquo;).
                   Spacing between cells is{' '}
-                  {((client.service_radius_miles ?? 1.6) / RINGS_FROM_CENTER).toFixed(2)}{' '}
+                  {(((activeLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6)) / RINGS_FROM_CENTER).toFixed(2)}{' '}
                   mi on this grid.
                 </InfoTooltip>
               </p>
