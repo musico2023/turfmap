@@ -32,6 +32,7 @@ import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { resolveLocation } from '@/lib/supabase/locations';
 import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import { runScanForLocation } from '@/lib/scans/runScan';
+import { getRescanCapStatus } from '@/lib/scans/rateLimit';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 // Avoid IPv6 ENOTFOUND flakes on dual-stack networks.
@@ -144,6 +145,22 @@ async function runScanTrigger(req: Request) {
     return NextResponse.json(
       { error: 'no tracked keyword found for this location' },
       { status: 400 }
+    );
+  }
+
+  // Rate limit: 3 on-demand scans per location per rolling 24h. Live
+  // Mode scans cost ~$0.16 each, and same-day rescans don't surface
+  // useful score movement (the 12h momentum window already swallows
+  // them). The cap protects unit economics while leaving room for the
+  // operator to legitimately re-scan after a real GBP/citation change.
+  const cap = await getRescanCapStatus(supabase, location.id);
+  if (cap.atCap) {
+    return NextResponse.json(
+      {
+        error: `Rate limit: ${cap.limit} on-demand scans per location per 24 hours. Next slot available ${cap.nextAvailableAt ?? 'soon'}.`,
+        rateLimit: cap,
+      },
+      { status: 429 }
     );
   }
 

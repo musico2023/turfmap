@@ -35,6 +35,7 @@ import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
+import { getRescanCapStatus } from '@/lib/scans/rateLimit';
 
 // Default 9×9 grid is 4 rings out from the center cell, so spacing per ring
 // is `service_radius_miles / 4`. Falls back to the v1 default of 1.6mi /
@@ -175,6 +176,14 @@ export default async function ClientDashboardPage({
     .eq('location_id', activeLocation?.id ?? '')
     .eq('status', 'complete');
   const isFirstScan = (completedScanCount ?? 0) <= 1;
+
+  // Rescan cap status — disables the Re-scan turf button when this
+  // location has hit 3 on-demand scans in the last 24h. Server-fetched
+  // here so the button can render its disabled state without a round-
+  // trip; the trigger route also enforces the cap defensively.
+  const rescanCap = activeLocation
+    ? await getRescanCapStatus(supabase, activeLocation.id)
+    : null;
 
   // Curated mode: if the agency has explicitly tracked competitor brands for
   // this client (rows in the `competitors` table), surface ALL of them in the
@@ -348,6 +357,7 @@ export default async function ClientDashboardPage({
               clientId={client.public_id}
               locationId={activeLocation?.id ?? null}
               keywordLabel={keyword?.keyword}
+              rescanCap={rescanCap}
             />
           </div>
         </div>

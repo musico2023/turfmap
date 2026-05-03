@@ -2,7 +2,14 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Radio, Search } from 'lucide-react';
+import { Activity, Lock, Radio, Search } from 'lucide-react';
+
+export type RescanCap = {
+  count: number;
+  limit: number;
+  atCap: boolean;
+  nextAvailableAt: string | null;
+};
 
 export type ScanButtonProps = {
   clientId: string;
@@ -12,6 +19,10 @@ export type ScanButtonProps = {
   locationId?: string | null;
   /** Only the primary keyword is scanned in v1 — passed for the optimistic UI label. */
   keywordLabel?: string;
+  /** Server-fetched cap status for THIS location's last 24h of on-demand
+   *  scans. Drives the disabled state + the X/N badge under the button.
+   *  Optional for back-compat; absence = no rate-limit display. */
+  rescanCap?: RescanCap | null;
 };
 
 /**
@@ -19,14 +30,27 @@ export type ScanButtonProps = {
  * server component re-fetches the latest scan. The whole flow takes ~15-30s
  * because we're synchronous all the way through DFS — the button blocks
  * during that window.
+ *
+ * Rate-limit UX: the dashboard pre-fetches the rolling-24h scan count for
+ * this location and passes it as `rescanCap`. When at the cap (3/3 in v1),
+ * the button renders disabled with "Daily limit reached · next at HH:MM"
+ * so the operator knows why and when. Server-side enforcement still
+ * applies — the button is just a faster signal than waiting for a 429.
  */
-export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonProps) {
+export function ScanButton({
+  clientId,
+  locationId,
+  keywordLabel,
+  rescanCap,
+}: ScanButtonProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const busy = isScanning || isPending;
+  const atCap = rescanCap?.atCap === true;
+  const disabled = busy || atCap;
 
   const onClick = async () => {
     setError(null);
@@ -41,9 +65,9 @@ export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonPro
       // returns an HTML error page (function timeout, OOM, build error)
       // instead of our JSON envelope.
       const text = await res.text();
-      let data: { error?: string } | null = null;
+      let data: { error?: string; rateLimit?: RescanCap } | null = null;
       try {
-        data = JSON.parse(text) as { error?: string };
+        data = JSON.parse(text) as { error?: string; rateLimit?: RescanCap };
       } catch {
         // Non-JSON response — most likely a Vercel infra error page.
         const snippet = text.slice(0, 140).replace(/\s+/g, ' ').trim();
@@ -54,6 +78,16 @@ export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonPro
         return;
       }
       if (!res.ok) {
+        // 429 sends back the cap object; refresh the page so the
+        // server-rendered button picks up the new disabled state.
+        if (res.status === 429) {
+          setError(
+            data?.error ??
+              'rate limit reached for this location — try again later'
+          );
+          startTransition(() => router.refresh());
+          return;
+        }
         setError(data?.error ?? `scan failed (HTTP ${res.status})`);
         setIsScanning(false);
         return;
@@ -72,18 +106,28 @@ export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonPro
       <button
         type="button"
         onClick={onClick}
-        disabled={busy}
+        disabled={disabled}
         className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
         style={{
-          background: 'var(--color-lime)',
-          color: 'black',
-          boxShadow: '0 4px 16px #c5ff3a30',
+          background: atCap ? 'var(--color-card)' : 'var(--color-lime)',
+          color: atCap ? '#a1a1aa' : 'black',
+          boxShadow: atCap ? 'none' : '0 4px 16px #c5ff3a30',
+          border: atCap ? '1px solid var(--color-border)' : 'none',
         }}
+        title={
+          atCap
+            ? `Daily on-demand scan limit reached (${rescanCap?.count}/${rescanCap?.limit}). Next slot ${formatNextAvailable(rescanCap?.nextAvailableAt) ?? 'soon'}.`
+            : undefined
+        }
       >
         {busy ? (
           <>
             <Activity size={15} strokeWidth={2.75} className="animate-pulse" />
             Scanning territory…
+          </>
+        ) : atCap ? (
+          <>
+            <Lock size={13} strokeWidth={2.5} /> Daily limit reached
           </>
         ) : keywordLabel ? (
           <>
@@ -95,6 +139,16 @@ export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonPro
           </>
         )}
       </button>
+      {rescanCap && !atCap && rescanCap.count > 0 && (
+        <span className="text-[10px] font-mono text-zinc-600">
+          {rescanCap.count} of {rescanCap.limit} on-demand scans used (24h)
+        </span>
+      )}
+      {atCap && (
+        <span className="text-[10px] font-mono text-zinc-500">
+          next slot {formatNextAvailable(rescanCap?.nextAvailableAt) ?? 'soon'}
+        </span>
+      )}
       {error && (
         <span className="text-[11px] text-red-400 font-mono max-w-xs text-right">
           {error}
@@ -102,4 +156,17 @@ export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonPro
       )}
     </div>
   );
+}
+
+/** "in 4h 12m" or null when no timestamp. */
+function formatNextAvailable(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const ms = t - Date.now();
+  if (ms <= 0) return 'now';
+  const hours = Math.floor(ms / (60 * 60 * 1000));
+  const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  if (hours <= 0) return `in ${minutes}m`;
+  return `in ${hours}h ${minutes}m`;
 }
