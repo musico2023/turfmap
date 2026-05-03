@@ -30,6 +30,14 @@ const PatchBody = z
     longitude: z.number().min(-180).max(180),
     pin_lat: z.number().min(-90).max(90).nullable(),
     pin_lng: z.number().min(-180).max(180).nullable(),
+    // Structured NAP fields for BrightLocal Listings audit. Nullable so an
+    // operator can clear a field that was set in error.
+    phone: z.string().min(4).max(40).nullable(),
+    street_address: z.string().min(1).max(200).nullable(),
+    city: z.string().min(1).max(120).nullable(),
+    region: z.string().min(1).max(120).nullable(),
+    postcode: z.string().min(1).max(20).nullable(),
+    country_code: z.string().length(3, 'ISO-3166-1 alpha-3 (e.g. USA)').nullable(),
     industry: z.string().max(80).nullable(),
     service_radius_miles: z.number().min(0.1).max(10),
     primary_color: z.string().regex(HEX_COLOR, 'must be hex like #c5ff3a'),

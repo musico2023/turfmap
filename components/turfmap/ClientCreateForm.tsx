@@ -35,6 +35,15 @@ type Form = {
   address: string;
   latitude: string;
   longitude: string;
+  /** Structured NAP fields — required for BrightLocal citation audits.
+   *  Kept separate from the freeform `address` field above (which is used
+   *  for geocoding). BrightLocal's Listings API needs them broken out. */
+  phone: string;
+  street_address: string;
+  city: string;
+  region: string;
+  postcode: string;
+  country_code: string;
   industry: string;
   service_radius_miles: string;
   primary_color: string;
@@ -50,6 +59,12 @@ const initial: Form = {
   address: '',
   latitude: '',
   longitude: '',
+  phone: '',
+  street_address: '',
+  city: '',
+  region: '',
+  postcode: '',
+  country_code: 'USA',
   industry: '',
   service_radius_miles: '1.6',
   primary_color: '#c5ff3a',
@@ -159,6 +174,14 @@ export function ClientCreateForm() {
       address: form.address.trim(),
       latitude: lat,
       longitude: lng,
+      // Structured NAP fields — go through whether or not they're filled,
+      // so the create endpoint stores them. Empty strings → null at the route.
+      phone: form.phone.trim() || null,
+      street_address: form.street_address.trim() || null,
+      city: form.city.trim() || null,
+      region: form.region.trim() || null,
+      postcode: form.postcode.trim() || null,
+      country_code: form.country_code.trim().toUpperCase() || 'USA',
       service_radius_miles: Number(form.service_radius_miles),
       primary_color: form.primary_color.trim() || '#c5ff3a',
       keyword: {
@@ -299,6 +322,76 @@ export function ClientCreateForm() {
             />
           </Field>
         </div>
+      </Section>
+
+      {/* Structured NAP fields — required by BrightLocal Listings API. */}
+      <Section
+        title="Citation NAP fields"
+        subtitle="Used for BrightLocal citation audits. Address fields above are kept for geocoding; these are the structured equivalents that get sent to directory APIs."
+      >
+        <Field label="Phone" required help="E.164 preferred, e.g. +1-416-555-0100">
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={(e) => update('phone', e.target.value)}
+            placeholder="+1-416-555-0100"
+            required
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Street address" required help="Street + number only (no city/state/zip)">
+          <input
+            type="text"
+            value={form.street_address}
+            onChange={(e) => update('street_address', e.target.value)}
+            placeholder="100 Queen St W"
+            required
+            className={inputClass}
+          />
+        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="City" required>
+            <input
+              type="text"
+              value={form.city}
+              onChange={(e) => update('city', e.target.value)}
+              placeholder="Toronto"
+              required
+              className={inputClass}
+            />
+          </Field>
+          <Field label="State / region" required>
+            <input
+              type="text"
+              value={form.region}
+              onChange={(e) => update('region', e.target.value)}
+              placeholder="ON"
+              required
+              className={inputClass}
+            />
+          </Field>
+          <Field label="ZIP / postcode" required>
+            <input
+              type="text"
+              value={form.postcode}
+              onChange={(e) => update('postcode', e.target.value)}
+              placeholder="M5H 2N2"
+              required
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <Field label="Country code" help="ISO-3166-1 alpha-3 (USA, CAN, GBR, …)">
+          <input
+            type="text"
+            value={form.country_code}
+            onChange={(e) =>
+              update('country_code', e.target.value.toUpperCase().slice(0, 3))
+            }
+            maxLength={3}
+            className={`${inputClass} font-mono uppercase`}
+          />
+        </Field>
       </Section>
 
       {/* Tracking keyword */}

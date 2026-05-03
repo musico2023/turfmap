@@ -36,6 +36,14 @@ type Form = {
   address: string;
   latitude: string;
   longitude: string;
+  // Structured NAP — required for BrightLocal citation audits, optional
+  // here to support pre-NAP-migration clients.
+  phone: string;
+  street_address: string;
+  city: string;
+  region: string;
+  postcode: string;
+  country_code: string;
   industry: string;
   service_radius_miles: string;
   primary_color: string;
@@ -49,6 +57,12 @@ function formFromClient(c: ClientRow): Form {
     address: c.address,
     latitude: String(c.latitude),
     longitude: String(c.longitude),
+    phone: c.phone ?? '',
+    street_address: c.street_address ?? '',
+    city: c.city ?? '',
+    region: c.region ?? '',
+    postcode: c.postcode ?? '',
+    country_code: c.country_code ?? 'USA',
     industry: c.industry ?? '',
     service_radius_miles: String(c.service_radius_miles ?? 1.6),
     primary_color: c.primary_color ?? '#c5ff3a',
@@ -100,6 +114,23 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
     if (form.address !== original.address) patch.address = form.address.trim();
     if (form.latitude !== original.latitude) patch.latitude = lat;
     if (form.longitude !== original.longitude) patch.longitude = lng;
+    // NAP fields — empty string clears (null) so operator can blank a wrong value.
+    if (form.phone !== original.phone)
+      patch.phone = form.phone.trim() === '' ? null : form.phone.trim();
+    if (form.street_address !== original.street_address)
+      patch.street_address =
+        form.street_address.trim() === '' ? null : form.street_address.trim();
+    if (form.city !== original.city)
+      patch.city = form.city.trim() === '' ? null : form.city.trim();
+    if (form.region !== original.region)
+      patch.region = form.region.trim() === '' ? null : form.region.trim();
+    if (form.postcode !== original.postcode)
+      patch.postcode = form.postcode.trim() === '' ? null : form.postcode.trim();
+    if (form.country_code !== original.country_code)
+      patch.country_code =
+        form.country_code.trim() === ''
+          ? null
+          : form.country_code.trim().toUpperCase().slice(0, 3);
     if (form.industry !== original.industry)
       patch.industry = form.industry.trim() === '' ? null : form.industry.trim();
     if (form.service_radius_miles !== original.service_radius_miles)
@@ -213,6 +244,72 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
             />
           </Field>
         </div>
+      </Section>
+
+      <Section title="Citation NAP fields">
+        <p className="text-xs text-zinc-500 -mt-2 mb-1">
+          Required for BrightLocal citation audits. Address fields above are
+          kept for geocoding; these are the structured equivalents that get
+          sent to directory APIs.
+        </p>
+        <Field label="Phone" help="E.164 preferred, e.g. +1-416-555-0100">
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={(e) => update('phone', e.target.value)}
+            placeholder="+1-416-555-0100"
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Street address" help="Street + number only (no city/state/zip)">
+          <input
+            type="text"
+            value={form.street_address}
+            onChange={(e) => update('street_address', e.target.value)}
+            placeholder="100 Queen St W"
+            className={inputClass}
+          />
+        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="City">
+            <input
+              type="text"
+              value={form.city}
+              onChange={(e) => update('city', e.target.value)}
+              placeholder="Toronto"
+              className={inputClass}
+            />
+          </Field>
+          <Field label="State / region">
+            <input
+              type="text"
+              value={form.region}
+              onChange={(e) => update('region', e.target.value)}
+              placeholder="ON"
+              className={inputClass}
+            />
+          </Field>
+          <Field label="ZIP / postcode">
+            <input
+              type="text"
+              value={form.postcode}
+              onChange={(e) => update('postcode', e.target.value)}
+              placeholder="M5H 2N2"
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <Field label="Country code" help="ISO-3166-1 alpha-3 (USA, CAN, GBR, …)">
+          <input
+            type="text"
+            value={form.country_code}
+            onChange={(e) =>
+              update('country_code', e.target.value.toUpperCase().slice(0, 3))
+            }
+            maxLength={3}
+            className={`${inputClass} font-mono uppercase`}
+          />
+        </Field>
       </Section>
 
       <Section title="White-label + billing">

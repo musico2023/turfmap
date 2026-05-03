@@ -31,6 +31,18 @@ const CreateClientBody = z.object({
   address: z.string().min(4).max(400),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
+  // Structured NAP fields — required by BrightLocal Listings API. Optional
+  // here so older API consumers don't break, but the create form sends them.
+  phone: z.string().min(4).max(40).optional().nullable(),
+  street_address: z.string().min(1).max(200).optional().nullable(),
+  city: z.string().min(1).max(120).optional().nullable(),
+  region: z.string().min(1).max(120).optional().nullable(),
+  postcode: z.string().min(1).max(20).optional().nullable(),
+  country_code: z
+    .string()
+    .length(3, 'ISO-3166-1 alpha-3 (e.g. USA)')
+    .optional()
+    .nullable(),
   industry: z.string().max(80).optional().nullable(),
   service_radius_miles: z.number().min(0.1).max(10).optional(),
   primary_color: z
@@ -77,6 +89,12 @@ export async function POST(req: Request) {
       address: parsed.address,
       latitude: parsed.latitude,
       longitude: parsed.longitude,
+      phone: parsed.phone ?? null,
+      street_address: parsed.street_address ?? null,
+      city: parsed.city ?? null,
+      region: parsed.region ?? null,
+      postcode: parsed.postcode ?? null,
+      country_code: parsed.country_code ?? 'USA',
       industry: parsed.industry ?? null,
       service_radius_miles: parsed.service_radius_miles ?? 1.6,
       primary_color: parsed.primary_color ?? '#c5ff3a',
