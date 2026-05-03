@@ -25,21 +25,34 @@ export function OrderSuccessForm({
   tier,
   sessionId,
   keywordCount,
+  prefillEmail,
 }: {
   tier: string | null;
   sessionId: string | null;
   keywordCount: number;
+  /** Buyer email captured server-side from the Stripe Checkout session.
+   *  When non-null, used to pre-fill the email field — saves the
+   *  buyer typing it again. They can still edit if they want a
+   *  different delivery address. */
+  prefillEmail: string | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
   const [keywords, setKeywords] = useState<string[]>(
     Array(keywordCount).fill('')
   );
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(prefillEmail ?? '');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set on successful fulfillment — used to link the buyer straight
+   *  to their dashboard. Null on partial-failure or pre-Stripe-wired
+   *  scenarios where the email path is still our best fallback. */
+  const [publicId, setPublicId] = useState<string | null>(null);
+  /** Optional human-readable note from the fulfill API (used for the
+   *  "partial scan failure" / "already fulfilled" cases). */
+  const [partialMessage, setPartialMessage] = useState<string | null>(null);
 
   const setKeywordAt = (idx: number, value: string) => {
     setKeywords((prev) => {
@@ -85,24 +98,47 @@ export function OrderSuccessForm({
           phone: phone.trim() || null,
         }),
       });
-      // 404 here is expected during the pre-launch period before
-      // /api/orders/fulfill is wired up. Surface a helpful message
-      // rather than the raw status.
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        public_id?: string;
+        primary_scan_id?: string | null;
+        already_fulfilled?: boolean;
+        partial?: boolean;
+        message?: string;
+      };
+
+      // 409 = already fulfilled. Treat as success — show the
+      // fulfilled state with whatever client_id we got back.
+      if (res.status === 409 && data.already_fulfilled) {
+        setPublicId(typeof data.public_id === 'string' ? data.public_id : null);
+        setDone(true);
+        setBusy(false);
+        return;
+      }
+
+      // 404 still possible in the unlikely case the migration hasn't
+      // landed yet (e.g. local dev pre-0008-apply). Helpful fallback
+      // copy that points the buyer at email-based recovery.
       if (res.status === 404) {
         setError(
-          "Order intake isn't wired yet. We saw your payment — email anthony@fourdots.io with these details and we'll fire your scan within the hour."
+          "Order intake isn't fully wired yet. We saw your payment — email anthony@fourdots.io with these details and we'll fire your scan manually."
         );
         setBusy(false);
         return;
       }
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-      };
+
       if (!res.ok) {
         setError(data.error ?? `submit failed (HTTP ${res.status})`);
         setBusy(false);
         return;
       }
+
+      // Capture public_id so the success state can link the buyer
+      // straight to their scan dashboard. Falls back to the email-
+      // delivery message when not present.
+      setPublicId(typeof data.public_id === 'string' ? data.public_id : null);
+      setPartialMessage(typeof data.message === 'string' ? data.message : null);
       setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -120,17 +156,35 @@ export function OrderSuccessForm({
         }}
       >
         <div className="font-display text-2xl font-bold mb-3">
-          Scan firing now.
+          {publicId ? 'Your TurfMap is ready.' : 'Scan firing now.'}
         </div>
         <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">
-          We&rsquo;ll send your TurfMap to{' '}
-          <span className="font-mono text-zinc-100">{email}</span> in under a
-          minute. You can close this tab.
+          {partialMessage ?? (
+            <>
+              We&rsquo;ve sent the link to{' '}
+              <span className="font-mono text-zinc-100">{email}</span>. You
+              can also bookmark this page or click below to open your
+              dashboard now.
+            </>
+          )}
         </p>
+        {publicId && (
+          <a
+            href={`/portal/${publicId}`}
+            className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-3 px-5 transition-all whitespace-nowrap hover:brightness-110"
+            style={{
+              background: 'var(--color-lime)',
+              color: 'black',
+              boxShadow: '0 6px 20px #c5ff3a40',
+            }}
+          >
+            Open my TurfMap →
+          </a>
+        )}
         {tier !== 'scan' && (
-          <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto">
+          <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">
             Your strategist will email separately within 2 business days with
-            the written diagnosis
+            the diagnosis
             {tier === 'strategy' && ' and a calendar link to book your call'}.
           </p>
         )}

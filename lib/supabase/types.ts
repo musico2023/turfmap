@@ -12,6 +12,33 @@ export type ScanStatus = 'queued' | 'running' | 'complete' | 'failed';
 export type ScanFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly';
 export type ClientStatus = 'active' | 'paused' | 'churned';
 
+/** Three-state billing-mode for a client (added in migration 0008).
+ *  Drives whether scheduled scans fire and whether Stripe owns the
+ *  subscription state. See migration 0008 for the canonical
+ *  semantics. */
+export type BillingMode =
+  | 'agency_managed'
+  | 'one_time'
+  | 'self_serve_subscription';
+
+/** Mirrored from Stripe's `Subscription.status` field. Null for any
+ *  client that isn't on a recurring plan. See migration 0008 for the
+ *  CHECK constraint covering this set. */
+export type SubscriptionStatus =
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'unpaid'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'paused';
+
+/** Audit-tier + monitoring-tier ids. The five SKUs the public
+ *  marketing tripwire offers. Mirrored on lead_orders.tier and
+ *  /api/checkout/[tier]'s URL parameter. */
+export type Tier = 'scan' | 'audit' | 'strategy' | 'pulse' | 'pulse_plus';
+
 export type ClientRow = {
   id: string;
   /** Short (10-char) random user-facing identifier used in all URLs +
@@ -42,7 +69,22 @@ export type ClientRow = {
   logo_url: string | null;
   status: ClientStatus | null;
   monthly_price_cents: number | null;
+  /** Stripe Customer object id. Set on first Checkout session for this
+   *  client. Pre-migration-0008 this column existed but only for
+   *  agency-managed clients with manual Stripe links; post-0008 it's
+   *  also populated for self-serve buyers via the order-fulfill
+   *  pipeline + Stripe webhook. */
   stripe_customer_id: string | null;
+  /** Three-state billing flag (added in migration 0008). Drives
+   *  scheduled-scan eligibility + checkout flow. Defaults to
+   *  'agency_managed' for backward compat. */
+  billing_mode: BillingMode;
+  /** Stripe Subscription id. Only set when billing_mode is
+   *  'self_serve_subscription'. Null otherwise. */
+  stripe_subscription_id: string | null;
+  /** Mirrored from Stripe webhook events. Null for non-subscription
+   *  billing modes. */
+  subscription_status: SubscriptionStatus | null;
   onboarded_at: string | null;
   created_at: string | null;
 };
@@ -231,4 +273,38 @@ export type ScanPointRow = {
   competitors: unknown | null;
   raw_response: unknown | null;
   created_at: string | null;
+};
+
+/** Lifecycle of a Stripe Checkout session for a self-serve buyer.
+ *
+ *  - `pending`   : Stripe redirected to /order/success; row created
+ *                  on first page load. Buyer hasn't yet submitted the
+ *                  business-details form.
+ *  - `fulfilled` : /api/orders/fulfill completed successfully — a
+ *                  clients row was created, the scan was triggered,
+ *                  and the delivery email was queued.
+ *  - `failed`    : /api/orders/fulfill threw; surface in the support
+ *                  queue for manual recovery.
+ */
+export type LeadOrderStatus = 'pending' | 'fulfilled' | 'failed';
+
+/** A self-serve buyer's Stripe Checkout session. One row per session;
+ *  unique by stripe_session_id. Created idempotently on the
+ *  /order/success page load and updated by /api/orders/fulfill.
+ *  Added in migration 0008. */
+export type LeadOrderRow = {
+  id: string;
+  stripe_session_id: string;
+  tier: Tier;
+  email: string | null;
+  /** Set once fulfillment creates the corresponding clients row.
+   *  NULL means the buyer paid but never completed the form. */
+  client_id: string | null;
+  status: LeadOrderStatus;
+  /** JSON blob mirrored from Stripe — typically
+   *  { stripe_customer_id, payment_status, amount_total, currency }. */
+  stripe_metadata: unknown | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 };
