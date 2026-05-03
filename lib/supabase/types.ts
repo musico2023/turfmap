@@ -115,12 +115,32 @@ export type NapAuditCitation = {
   name: string | null;
   address: string | null;
   phone: string | null;
-  status: 'matched' | 'mismatch' | 'unverified';
+  /** Citation match status:
+   *    matched       — listing's NAP matches the audited location
+   *    mismatch      — listing exists but its NAP differs from the audited
+   *                    location AND from every sibling location (real
+   *                    inconsistency operator should fix)
+   *    sibling_match — listing exists but matches a SIBLING location's NAP,
+   *                    not the audited location's. Treated as
+   *                    missing-from-this-location (the sibling's listing
+   *                    occupies the directory but this storefront has no
+   *                    listing of its own). Not flagged as an inconsistency.
+   *    unverified    — directory returned a profile but with insufficient
+   *                    NAP fields to compare. */
+  status: 'matched' | 'mismatch' | 'sibling_match' | 'unverified';
 };
 
 export type NapAuditMissing = {
   directory: string;
   priority: 'high' | 'medium' | 'low';
+  /** Optional context: when a sibling location's listing occupies this
+   *  directory, the active location is still missing — but the operator
+   *  should know they need to add this location alongside the existing
+   *  sibling listing rather than create a fresh one. */
+  occupied_by_sibling?: {
+    sibling_label?: string | null;
+    sibling_address?: string | null;
+  };
 };
 
 export type NapAuditFindings = {

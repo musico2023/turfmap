@@ -323,27 +323,45 @@ export async function pollAuditResults(
   return { status, perDirectory, allReady };
 }
 
+/** Sibling location info passed to summarizeFindings — same NAP shape
+ *  as BusinessProfile, plus an optional label so we can surface "found
+ *  Wychwood listing here, not Don Mills" context. */
+export type SiblingLocation = BusinessProfile & {
+  label?: string | null;
+};
+
 /**
  * Convert raw per-directory results into the structured findings shape
- * we persist + feed to the AI Coach. Compares each found citation's
- * NAP fields to the canonical business and tags inconsistencies.
+ * we persist + feed to the AI Coach.
+ *
+ * Sibling-aware classification: a citation whose NAP matches a sibling
+ * location's NAP (not the audited canonical) is flagged as
+ * `sibling_match` — the directory has a listing for the brand, but it's
+ * for the wrong storefront. These are NOT inconsistencies (the sibling
+ * listing is correct, just not for this location); they ARE counted as
+ * missing-from-this-location since the audited storefront still has no
+ * listing of its own. Without this distinction, multi-location brands
+ * see false "wrong address" inconsistencies for every directory where
+ * only the sibling is listed — which is exactly what Anthony saw in
+ * Kidcrew's North York audit (Bing/RateMDs/MapQuest were flagged for
+ * showing 1440 Bathurst, the legitimate Wychwood address).
  */
 export function summarizeFindings(
   perDirectory: AuditStatusSummary['perDirectory'],
-  canonical: BusinessProfile
+  canonical: BusinessProfile,
+  siblings: readonly SiblingLocation[] = []
 ): NapAuditFindings {
   const citations: NapAuditCitation[] = [];
   const inconsistencies: NapAuditInconsistency[] = [];
   const missing: NapAuditMissing[] = [];
 
-  const canonicalAddress = [
-    canonical.street_address,
-    canonical.city,
-    canonical.region,
-    canonical.postcode,
-  ]
-    .filter(Boolean)
-    .join(', ');
+  const canonicalAddress = composeAddress(canonical);
+  const siblingProfiles = siblings.map((s) => ({
+    label: s.label ?? null,
+    name: s.name,
+    address: composeAddress(s),
+    phone: s.telephone,
+  }));
 
   for (const d of perDirectory) {
     if (!d.ready) continue;
@@ -363,49 +381,116 @@ export function summarizeFindings(
     const foundAddress = (found.address as string) ?? null;
     const foundPhone = (found.phone as string) ?? null;
 
-    const citationStatus = computeCitationStatus(
+    // 1. Match against canonical first.
+    const canonicalStatus = computeCitationStatus(
       { name: foundName, address: foundAddress, phone: foundPhone },
       { name: canonical.name, address: canonicalAddress, phone: canonical.telephone }
     );
+
+    // 2. If not a clean match against canonical, check siblings before
+    //    declaring a real mismatch.
+    let siblingHit: (typeof siblingProfiles)[number] | null = null;
+    if (canonicalStatus !== 'matched' && canonicalStatus !== 'unverified') {
+      siblingHit =
+        siblingProfiles.find((s) =>
+          isSiblingMatch(
+            { name: foundName, address: foundAddress, phone: foundPhone },
+            s
+          )
+        ) ?? null;
+    }
+
+    const finalStatus: NapAuditCitation['status'] = siblingHit
+      ? 'sibling_match'
+      : canonicalStatus;
+
     citations.push({
       directory: d.directory,
       url,
       name: foundName,
       address: foundAddress,
       phone: foundPhone,
-      status: citationStatus,
+      status: finalStatus,
     });
 
-    if (foundName && !sameLoose(foundName, canonical.name)) {
-      inconsistencies.push({
-        field: 'name',
-        canonical: canonical.name,
-        found: foundName,
-        citation_url: url,
+    if (siblingHit) {
+      // Brand has a listing here — but for the sibling, not this
+      // location. Treat as missing for THIS storefront (low priority
+      // since the brand isn't entirely absent), with sibling context
+      // for the AI Coach to reason about.
+      missing.push({
         directory: d.directory,
+        priority: 'low',
+        occupied_by_sibling: {
+          sibling_label: siblingHit.label,
+          sibling_address: siblingHit.address,
+        },
       });
+      continue;
     }
-    if (foundAddress && !sameLoose(foundAddress, canonicalAddress)) {
-      inconsistencies.push({
-        field: 'address',
-        canonical: canonicalAddress,
-        found: foundAddress,
-        citation_url: url,
-        directory: d.directory,
-      });
-    }
-    if (foundPhone && !samePhone(foundPhone, canonical.telephone)) {
-      inconsistencies.push({
-        field: 'phone',
-        canonical: canonical.telephone,
-        found: foundPhone,
-        citation_url: url,
-        directory: d.directory,
-      });
+
+    // 3. Real mismatch (no sibling alibi) — record specific field issues.
+    if (finalStatus === 'mismatch') {
+      if (foundName && !sameLoose(foundName, canonical.name)) {
+        inconsistencies.push({
+          field: 'name',
+          canonical: canonical.name,
+          found: foundName,
+          citation_url: url,
+          directory: d.directory,
+        });
+      }
+      if (foundAddress && !sameLoose(foundAddress, canonicalAddress)) {
+        inconsistencies.push({
+          field: 'address',
+          canonical: canonicalAddress,
+          found: foundAddress,
+          citation_url: url,
+          directory: d.directory,
+        });
+      }
+      if (foundPhone && !samePhone(foundPhone, canonical.telephone)) {
+        inconsistencies.push({
+          field: 'phone',
+          canonical: canonical.telephone,
+          found: foundPhone,
+          citation_url: url,
+          directory: d.directory,
+        });
+      }
     }
   }
 
   return { citations, inconsistencies, missing };
+}
+
+function composeAddress(p: {
+  street_address: string;
+  city: string;
+  region: string;
+  postcode: string;
+}): string {
+  return [p.street_address, p.city, p.region, p.postcode]
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** Loose sibling matcher — when the found address roughly matches a
+ *  sibling's address OR the found phone matches the sibling's phone,
+ *  we treat the directory listing as belonging to that sibling. Address
+ *  is the strongest discriminator; phone is a fallback because most
+ *  multi-location brands share a single inbound number. */
+function isSiblingMatch(
+  found: { name: string | null; address: string | null; phone: string | null },
+  sibling: { name: string; address: string; phone: string }
+): boolean {
+  const addrMatch =
+    found.address && sameLoose(found.address, sibling.address);
+  const phoneMatch =
+    found.phone && samePhone(found.phone, sibling.phone);
+  // Address is decisive. Phone alone isn't enough (siblings might share
+  // a switchboard). Name is too noisy across siblings of the same brand.
+  return Boolean(addrMatch || (phoneMatch && found.address));
 }
 
 // ─── Comparators ──────────────────────────────────────────────────────────

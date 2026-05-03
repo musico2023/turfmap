@@ -19,12 +19,17 @@ import {
   pollAuditResults,
   summarizeFindings,
   type BusinessProfile,
+  type SiblingLocation,
 } from '@/lib/brightlocal/client';
 import {
   getDirectoriesForIndustry,
   inferProfileForIndustry,
 } from '@/lib/brightlocal/directories';
-import { resolveLocation } from '@/lib/supabase/locations';
+import {
+  listLocations,
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -292,7 +297,24 @@ export async function maybeFinalizeNapAudit(
       );
       if (!business) return null;
 
-      const findings = summarizeFindings(summary.perDirectory, business);
+      // Sibling locations: every other location of the same brand.
+      // Citations whose NAP matches a sibling won't be flagged as
+      // inconsistencies — they're correctly the sibling's listing,
+      // just not this location's.
+      const allLocations = await listLocations(supabase, clientId);
+      const siblings: SiblingLocation[] = [];
+      for (const l of allLocations) {
+        if (l.id === location.id) continue;
+        const siblingBp = locationToBusinessProfile(client.business_name, l);
+        if (!siblingBp) continue;
+        siblings.push({ ...siblingBp, label: locationDisplayLabel(l) });
+      }
+
+      const findings = summarizeFindings(
+        summary.perDirectory,
+        business,
+        siblings
+      );
       const totalCitations = findings.citations.length;
       const inconsistenciesCount = findings.inconsistencies.length;
       const missingHigh = findings.missing.filter(

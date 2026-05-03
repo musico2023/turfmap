@@ -29,6 +29,7 @@ import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
 import { maybeFinalizeNapAudit, maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
 import {
+  listLocations,
   locationDisplayLabel,
   resolveLocation,
 } from '@/lib/supabase/locations';
@@ -201,10 +202,9 @@ export async function POST(req: Request) {
   // storefront it's reasoning about. For single-location clients this
   // ends up as just "Kidcrew Medical"; for multi-location it becomes
   // "Kidcrew Medical (Wychwood)" so cross-sibling reasoning is unambiguous.
-  const businessLabel =
-    scanLocation && scanLocation.is_primary === false
-      ? `${client.business_name} (${locationDisplayLabel(scanLocation)})`
-      : client.business_name;
+  const businessLabel = scanLocation
+    ? `${client.business_name} (${locationDisplayLabel(scanLocation)})`
+    : client.business_name;
   const serviceArea =
     scanLocation?.address ?? client.address ?? '(unknown service area)';
   const gridRadiusMiles = Number(
@@ -212,6 +212,19 @@ export async function POST(req: Request) {
       client.service_radius_miles ??
       1.6
   );
+
+  // Sibling locations: every other location of the same brand. Passed to
+  // the prompt so Claude scopes recommendations to the audited location
+  // and doesn't mistake a legitimate sibling listing for an inconsistency.
+  // Only sent when there's actually a sibling — single-location clients
+  // skip this section entirely.
+  const allLocations = scanLocation ? await listLocations(supabase, client.id) : [];
+  const siblingLocations = allLocations
+    .filter((l) => l.id !== scanLocation?.id)
+    .map((l) => ({
+      label: locationDisplayLabel(l),
+      address: l.address ?? '(no address)',
+    }));
 
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: businessLabel,
@@ -223,6 +236,7 @@ export async function POST(req: Request) {
     turfRank: rank,
     momentum: scan.momentum != null ? Number(scan.momentum) : null,
     gridRadiusMiles,
+    siblingLocations,
     totalPoints: scan.total_points ?? 81,
     failedPoints: scan.failed_points ?? 0,
     rankGrid,
