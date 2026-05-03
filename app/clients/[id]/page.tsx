@@ -424,6 +424,7 @@ export default async function ClientDashboardPage({
             subtitle="Composite visibility score"
             icon={Target}
             highlight
+            fillPct={latestScan ? score : null}
             band={latestScan ? { label: band.label, tone: band.tone } : undefined}
             tooltip={
               <>

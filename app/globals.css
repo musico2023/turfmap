@@ -49,9 +49,16 @@
 .animate-scan-sweep { animation: scan-sweep 1.6s ease-in-out infinite; }
 .animate-blink { animation: blink 1.2s steps(2) infinite; }
 
+/* Heatmap scope-readout grid. Two stacked linear-gradients paint a 60px
+ * cell grid in faint lime on top of the dark canvas — reads as instrument
+ * gridlines without competing with the rank cells. Opacity tuned to
+ * "barely-perceptible" (~0.06) so the eye registers structure but reads
+ * the rank circles as the foreground. The HeatmapGrid component MUST
+ * use `backgroundColor:` (not the `background:` shorthand) on the inline
+ * style or this background-image gets nuked. */
 .grid-bg {
   background-image:
-    linear-gradient(rgba(197,255,58,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(197,255,58,0.03) 1px, transparent 1px);
+    linear-gradient(rgba(197,255,58,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(197,255,58,0.06) 1px, transparent 1px);
   background-size: 60px 60px;
 }

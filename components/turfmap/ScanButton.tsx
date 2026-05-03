@@ -118,6 +118,19 @@ export function ScanButton({
     <Search size={14} strokeWidth={2.75} />
   );
 
+  // At-cap appearance — base secondary variant, then layered with an
+  // amber-tinted style override so it reads as an active *constraint*
+  // (operationally meaningful: "you're rate-limited, here's when you
+  // can scan again") rather than a default disabled/dim button. Pre-
+  // bump it blended into the chrome row and operators didn't notice.
+  const atCapStyle = atCap
+    ? {
+        background: '#1a1308',
+        borderColor: '#3a2a0a',
+        color: '#f5b651',
+      }
+    : undefined;
+
   return (
     <div className="flex flex-col items-end gap-1.5">
       <Button
@@ -128,6 +141,7 @@ export function ScanButton({
         loading={busy}
         loadingLabel="Scanning territory…"
         leftIcon={icon}
+        style={atCapStyle}
         title={
           atCap
             ? `Daily on-demand scan limit reached (${rescanCap?.count}/${rescanCap?.limit}). Next slot ${formatNextAvailable(rescanCap?.nextAvailableAt) ?? 'soon'}.`
@@ -142,7 +156,13 @@ export function ScanButton({
         </span>
       )}
       {atCap && (
-        <span className="text-[10px] font-mono text-zinc-500">
+        // Amber-tinted caption pairs visually with the at-cap button, so
+        // the "next slot in Xh Ym" reads as one constraint group rather
+        // than orphan chrome text below an unrelated button.
+        <span
+          className="text-[10px] font-mono"
+          style={{ color: '#c89545' }}
+        >
           next slot {formatNextAvailable(rescanCap?.nextAvailableAt) ?? 'soon'}
         </span>
       )}

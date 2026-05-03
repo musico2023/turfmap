@@ -19,6 +19,13 @@ export type StatCardProps = {
     label: string;
     tone: TurfScoreBandTone;
   };
+  /** 0–100 fill percentage. When provided on the `hero` variant, renders
+   *  a thin lime vertical bar on the card's left edge — a redundant
+   *  visualization of the headline number that reads as a meter. The
+   *  bar's height is `fillPct%` of the inner card height, drawn
+   *  bottom-aligned so empty space sits at the top (lower scores look
+   *  visibly low). */
+  fillPct?: number | null;
 };
 
 export function StatCard({
@@ -30,11 +37,17 @@ export function StatCard({
   tooltip,
   variant = 'standard',
   band,
+  fillPct,
 }: StatCardProps) {
   const hero = variant === 'hero';
+  const showFill =
+    hero && typeof fillPct === 'number' && Number.isFinite(fillPct);
+  const clampedFill = showFill
+    ? Math.max(0, Math.min(100, fillPct as number))
+    : 0;
   return (
     <div
-      className={`border rounded-lg relative ${hero ? 'p-6' : 'p-5'}`}
+      className={`border rounded-lg relative overflow-hidden ${hero ? 'p-6' : 'p-5'}`}
       style={{
         background: highlight
           ? 'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)'
@@ -44,6 +57,27 @@ export function StatCard({
           : 'var(--color-border)',
       }}
     >
+      {showFill && (
+        // Vertical scope-readout meter pinned to the inside-left edge of
+        // the card. Bottom-aligned (filling upward as the score climbs)
+        // so a low score reads as visually low rather than as a stalk
+        // floating mid-card. Uses the brand lime + a soft glow rather
+        // than a hard rectangle so it reads as an indicator, not chrome.
+        <div
+          className="absolute left-0 top-0 bottom-0 w-1 pointer-events-none"
+          aria-hidden
+        >
+          <div
+            className="absolute left-0 right-0 bottom-0 transition-[height] duration-700 ease-out"
+            style={{
+              height: `${clampedFill}%`,
+              background:
+                'linear-gradient(to top, var(--color-lime) 0%, #c5ff3acc 100%)',
+              boxShadow: '0 0 12px #c5ff3a55',
+            }}
+          />
+        </div>
+      )}
       <div className="flex items-center justify-between mb-3">
         {/* Score names render as written (PascalCase, no space) — no
          *  CSS uppercase transform. Other in-app labels (column

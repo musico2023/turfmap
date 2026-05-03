@@ -68,8 +68,12 @@ export function HeatmapGrid({ cells, animateReveal = true }: HeatmapGridProps) {
 
   return (
     <div
+      // grid-bg paints the faint 60px scope-readout lime grid via two
+      // stacked linear-gradients (see globals.css). MUST use
+      // `backgroundColor` here, not the `background` shorthand — the
+      // shorthand resets background-image and the grid disappears.
       className="relative aspect-square w-full max-w-2xl mx-auto rounded-md overflow-hidden grid-bg"
-      style={{ background: 'var(--color-grid-bg)' }}
+      style={{ backgroundColor: 'var(--color-grid-bg)' }}
     >
       <svg
         className="absolute inset-0 w-full h-full"
