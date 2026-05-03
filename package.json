@@ -13,7 +13,8 @@
     "seed:ivys-competitors": "tsx scripts/seed-ivys-touch-competitors.ts",
     "scan:kidcrew": "tsx scripts/scan-kidcrew.ts",
     "seed:kidcrew-competitors": "tsx scripts/seed-kidcrew-competitors.ts",
-    "init:storage": "tsx scripts/init-storage.ts"
+    "init:storage": "tsx scripts/init-storage.ts",
+    "bl:directories": "tsx scripts/list-bl-directories.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

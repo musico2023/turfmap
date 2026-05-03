@@ -22,10 +22,16 @@
  *   debugging — the audit still proceeds on the slugs that were accepted.
  */
 
+// All slugs below are verified against BrightLocal's canonical
+// /data/v1/listings/directories endpoint (run via `npm run bl:directories`
+// for ground truth). Don't add a slug to this file without confirming it
+// exists there — BL rejects unknown ones at initiate time.
 const UNIVERSAL_CORE = [
   'google',
   'bing',
-  'apple-maps',
+  // BL's slug for Apple's listing service is just `apple` (https://maps.apple.com),
+  // not `apple-maps`. Confirmed against canonical directory list 2026-05-03.
+  'apple',
   'facebook',
   'yelp',
   'yellowpages',
@@ -56,9 +62,12 @@ const PROFILES = {
     'vitals',
     'ratemds',
     'zocdoc',
-    'doctor-com',
+    // BL slug is `doctor` (URL: https://www.doctor.com), not `doctor-com`.
+    'doctor',
     'webmd',
-    'sharecare',
+    // `sharecare` isn't in BL's canonical list; `wellness` is the closest
+    // general-health analogue (https://www.wellness.com).
+    'wellness',
     'mapquest',
   ],
 
@@ -69,9 +78,12 @@ const PROFILES = {
     'avvo',
     'justia',
     'findlaw',
-    'lawyers-com',
+    // BL slug is `lawyers` (URL: https://www.lawyers.com), not `lawyers-com`.
+    'lawyers',
     'martindale',
-    'superlawyers',
+    // `superlawyers` isn't in BL's canonical list; `attorneypages` is the
+    // closest US legal-directory analogue.
+    'attorneypages',
   ],
 
   /** Restaurants / cafes / bars / bakeries / catering. */
@@ -91,20 +103,27 @@ const PROFILES = {
   'real-estate': [
     ...UNIVERSAL_CORE,
     'zillow',
-    'realtor-com',
-    'trulia',
+    // BL slug is `realtor` (URL: https://www.realtor.com), not `realtor-com`.
+    'realtor',
     'redfin',
     'mapquest',
+    // `trulia` isn't in BL's canonical list (Zillow Group folded it into
+    // their network); `apartments` (https://www.apartments.com) is the
+    // best replacement for residential property listings.
+    'apartments',
   ],
 
   /** Auto sales / repair / detailing / tire / etc. */
   automotive: [
     ...UNIVERSAL_CORE,
-    'cars-com',
-    'autotrader',
+    // BL slug is `cars` (URL: https://www.cars.com), not `cars-com`.
+    'cars',
     'cargurus',
     'edmunds',
-    'kbb',
+    // `autotrader` and `kbb` aren't in BL's canonical list. `dealerrater`
+    // and `mechanicadvisor` are the strongest automotive replacements.
+    'dealerrater',
+    'mechanicadvisor',
     'mapquest',
   ],
 
