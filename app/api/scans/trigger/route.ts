@@ -31,6 +31,7 @@ import { turfRank } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { momentum as computeMomentum } from '@/lib/metrics/momentum';
 import { maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
+import { resolveLocation } from '@/lib/supabase/locations';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 // Avoid IPv6 ENOTFOUND flakes on dual-stack networks.
@@ -65,14 +66,14 @@ export async function POST(req: Request) {
 async function runScanTrigger(req: Request) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
-  let body: { clientId?: string; keywordId?: string };
+  let body: { clientId?: string; keywordId?: string; locationId?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
   }
 
-  const { clientId, keywordId } = body;
+  const { clientId, keywordId, locationId } = body;
   if (!clientId) {
     return NextResponse.json(
       { error: 'clientId is required' },
@@ -82,7 +83,10 @@ async function runScanTrigger(req: Request) {
 
   const supabase = getServerSupabase();
 
-  // 1. Load client (need lat/lng + business name for the matcher)
+  // 1. Load client (need business_name for the matcher) + resolve which
+  //    location to scan (explicit locationId, or the client's primary).
+  //    Multi-location clients (post-migration 0006) scan one location
+  //    per request — each location has its own grid and audit.
   const { data: client, error: clientErr } = await supabase
     .from('clients')
     .select('*')
@@ -92,6 +96,25 @@ async function runScanTrigger(req: Request) {
     return NextResponse.json(
       { error: `client not found: ${clientErr?.message ?? clientId}` },
       { status: 404 }
+    );
+  }
+  const location = await resolveLocation(supabase, clientId, locationId ?? null);
+  if (!location) {
+    return NextResponse.json(
+      {
+        error:
+          'no location found for this client — add at least one location in settings before scanning',
+      },
+      { status: 400 }
+    );
+  }
+  if (location.latitude == null || location.longitude == null) {
+    return NextResponse.json(
+      {
+        error:
+          "location is missing coordinates — fill in the address (auto-geocodes) or set lat/lng manually in the location's settings",
+      },
+      { status: 400 }
     );
   }
 
@@ -113,11 +136,12 @@ async function runScanTrigger(req: Request) {
     );
   }
 
-  // 3. Insert scan row in 'running' status
+  // 3. Insert scan row in 'running' status, pinned to this location.
   const { data: scanRow, error: insErr } = await supabase
     .from('scans')
     .insert({
       client_id: clientId,
+      location_id: location.id,
       keyword_id: keywordRow.id,
       scan_type: 'on_demand',
       grid_size: 9,
@@ -134,12 +158,14 @@ async function runScanTrigger(req: Request) {
   }
   const scanId = scanRow.id;
 
-  // 4. Generate grid + run scan
+  // 4. Generate grid + run scan against the LOCATION's coords (not the
+  //    legacy client.latitude/longitude which might still mirror an old
+  //    primary-location value).
   const points = generateGridCoordinates({
-    centerLat: Number(client.latitude),
-    centerLng: Number(client.longitude),
+    centerLat: Number(location.latitude),
+    centerLng: Number(location.longitude),
     gridSize: 9,
-    radiusMiles: Number(client.service_radius_miles ?? 1.6),
+    radiusMiles: Number(location.service_radius_miles ?? 1.6),
   });
 
   const firstWord = client.business_name.split(/\s+/)[0]?.toLowerCase() ?? '';
@@ -237,12 +263,14 @@ async function runScanTrigger(req: Request) {
     })
     .eq('id', scanId);
 
-  // Auto-trigger a NAP audit if there isn't a recent one for this client.
-  // Awaits the BL initiate fan-out (~1-2s for ≤15 directories); the audit
-  // then progresses asynchronously inside BrightLocal and gets finalized
+  // Auto-trigger a NAP audit for THIS location if there isn't a recent
+  // one. Multi-location clients get one audit per location since each
+  // storefront has its own NAP and citation footprint. Awaits the BL
+  // initiate fan-out (~1-2s for ≤15 directories); the audit then
+  // progresses asynchronously inside BrightLocal and gets finalized
   // lazily on the next AI Coach generation. Failures are absorbed inside
   // the helper so the scan response is unaffected.
-  await maybeRunNapAudit(supabase, clientId, auth.id);
+  await maybeRunNapAudit(supabase, clientId, auth.id, location.id);
 
   return NextResponse.json({
     scanId,

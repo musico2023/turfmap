@@ -28,6 +28,10 @@ import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
 import { maybeFinalizeNapAudit, maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
+import {
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
 import type {
   ClientRow,
   ScanRow,
@@ -91,6 +95,15 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
+  // Resolve the location this scan was run against. Multi-location
+  // clients have one location per scan; legacy scans without a
+  // location_id fall back to the client's primary.
+  const scanLocation = await resolveLocation(
+    supabase,
+    client.id,
+    scan.location_id ?? null
+  );
 
   // 2. Pull scan_points + build the 9×9 client rank grid + observed
   //    competitor leaderboard (top 10 by appearance count). The grid lets
@@ -161,14 +174,14 @@ export async function POST(req: Request) {
   const compositeScore =
     scan.turf_score != null ? Number(scan.turf_score) : null;
 
-  // NAP audit grounding (self-healing).
+  // NAP audit grounding (self-healing), scoped to the scan's LOCATION.
   //
-  // Step 1: kick off a NAP audit if there isn't a recent one yet. This
-  // covers the case where the operator filled in structured NAP fields
-  // AFTER the most recent scan ran, so the scan trigger silently skipped.
-  // No-op when a recent audit exists or NAP fields aren't populated.
-  // Returns in ~1-2s (BL initiate fan-out).
-  await maybeRunNapAudit(supabase, client.id, auth.id);
+  // Step 1: kick off a NAP audit if there isn't a recent one yet for
+  // this specific location. Covers the case where the operator filled
+  // in structured NAP fields AFTER the most recent scan ran, so the
+  // scan trigger silently skipped. No-op when a recent audit exists or
+  // NAP fields aren't populated. Returns in ~1-2s (BL initiate fan-out).
+  await maybeRunNapAudit(supabase, client.id, auth.id, scanLocation?.id ?? null);
 
   // Step 2: if there's now a running audit (just kicked off, or kicked off
   // by the prior scan), poll BrightLocal in a loop until it's ready — up
@@ -181,18 +194,35 @@ export async function POST(req: Request) {
   // the route's 300s maxDuration cap.
   const napAudit = await maybeFinalizeNapAudit(supabase, client.id, {
     waitForReadyMs: 240_000,
+    locationId: scanLocation?.id ?? null,
   });
 
+  // Compose business + location label so the AI Coach knows WHICH
+  // storefront it's reasoning about. For single-location clients this
+  // ends up as just "Kidcrew Medical"; for multi-location it becomes
+  // "Kidcrew Medical (Wychwood)" so cross-sibling reasoning is unambiguous.
+  const businessLabel =
+    scanLocation && scanLocation.is_primary === false
+      ? `${client.business_name} (${locationDisplayLabel(scanLocation)})`
+      : client.business_name;
+  const serviceArea =
+    scanLocation?.address ?? client.address ?? '(unknown service area)';
+  const gridRadiusMiles = Number(
+    scanLocation?.service_radius_miles ??
+      client.service_radius_miles ??
+      1.6
+  );
+
   const userPrompt = buildTurfCoachUserPrompt({
-    businessName: client.business_name,
+    businessName: businessLabel,
     industry: client.industry,
-    serviceArea: client.address,
+    serviceArea,
     keyword: keyword.keyword,
     turfScore: compositeScore,
     turfReach: reach,
     turfRank: rank,
     momentum: scan.momentum != null ? Number(scan.momentum) : null,
-    gridRadiusMiles: client.service_radius_miles ?? 1.6,
+    gridRadiusMiles,
     totalPoints: scan.total_points ?? 81,
     failedPoints: scan.failed_points ?? 0,
     rankGrid,

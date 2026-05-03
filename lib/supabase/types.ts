@@ -15,24 +15,24 @@ export type ClientStatus = 'active' | 'paused' | 'churned';
 export type ClientRow = {
   id: string;
   business_name: string;
-  /** Single-string canonical address kept for display/back-compat.
-   *  Structured fields below are required for any BrightLocal NAP audit. */
+  /** Legacy/deprecated location columns — kept as deprecated mirrors of
+   *  the primary client_locations row for backward-compat with code paths
+   *  written before migration 0006. New code reads/writes through
+   *  client_locations. A follow-up migration will drop them once every
+   *  read site has been migrated. */
   address: string;
-  /** All five fields below were added in migration 0005 for BrightLocal
-   *  Listings API NAP matching. Nullable for backward-compat with rows
-   *  seeded before the migration; the audit endpoint guards on presence. */
   phone: string | null;
   street_address: string | null;
   city: string | null;
   region: string | null;
   postcode: string | null;
-  /** ISO-3166-1 alpha-3 (e.g. 'USA', 'GBR'). Defaults to 'USA'. */
   country_code: string | null;
   latitude: number;
   longitude: number;
   pin_lat: number | null;
   pin_lng: number | null;
   service_radius_miles: number | null;
+  /** Brand-level fields — stay on clients permanently. */
   industry: string | null;
   primary_color: string | null;
   logo_url: string | null;
@@ -43,9 +43,39 @@ export type ClientRow = {
   created_at: string | null;
 };
 
+/** A physical location of a client (added in migration 0006). One client
+ *  has N locations; exactly one is_primary. NAP fields, scan-grid coords,
+ *  and service radius live here, NOT on clients. */
+export type ClientLocationRow = {
+  id: string;
+  client_id: string;
+  /** Operator-facing short name (e.g. "Wychwood"). Defaults to `city` when null. */
+  label: string | null;
+  is_primary: boolean;
+  address: string | null;
+  street_address: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country_code: string | null;
+  phone: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  pin_lat: number | null;
+  pin_lng: number | null;
+  service_radius_miles: number | null;
+  /** Optional Google Business Profile URL for this location. */
+  gbp_url: string | null;
+  created_at: string | null;
+};
+
 export type TrackedKeywordRow = {
   id: string;
   client_id: string;
+  /** Added in migration 0006: which location does this keyword belong to.
+   *  Multi-location clients have different keywords per location. Existing
+   *  rows are backfilled to the client's primary location. */
+  location_id: string | null;
   keyword: string;
   is_primary: boolean | null;
   scan_frequency: ScanFrequency | null;
@@ -53,8 +83,9 @@ export type TrackedKeywordRow = {
 };
 
 // Note: clients table also gains structured NAP columns in migration 0005
-// (phone + street_address + city + region + postcode + country_code).
-// Added there because BrightLocal Listings API requires them broken out.
+// (phone + street_address + city + region + postcode + country_code), and
+// migration 0006 moves those into client_locations as the canonical
+// source — clients still mirrors them as deprecated fields.
 
 /** Citation audit history — see lib/brightlocal/client.ts. Operator-only. */
 export type NapAuditStatus = 'pending' | 'running' | 'complete' | 'failed';
@@ -101,6 +132,10 @@ export type NapAuditFindings = {
 export type NapAuditRow = {
   id: string;
   client_id: string;
+  /** Added in migration 0006: which location was audited. Each location
+   *  has its own NAP and is audited independently. Existing rows are
+   *  backfilled to the client's primary location. */
+  location_id: string | null;
   triggered_by: string | null;
   created_at: string | null;
   status: NapAuditStatus;
@@ -135,6 +170,10 @@ export type ScanShareLinkRow = {
 export type ScanRow = {
   id: string;
   client_id: string;
+  /** Added in migration 0006: which physical location this scan was run
+   *  against. Each location has its own scan grid + heatmap. Existing
+   *  rows are backfilled to the client's primary location. */
+  location_id: string | null;
   keyword_id: string;
   scan_type: ScanType;
   grid_size: number | null;
