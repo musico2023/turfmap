@@ -305,6 +305,34 @@ function priorityColors(p: 'HIGH' | 'MEDIUM' | 'LOW'): { bg: string; fg: string 
   return { bg: '#3a3a3a', fg: '#999' };
 }
 
+function ReportHeader({
+  data,
+  pageLabel,
+}: {
+  data: TurfReportData;
+  pageLabel?: string;
+}) {
+  return (
+    <View style={styles.header} fixed>
+      <View style={styles.brand}>
+        <View style={styles.logoBox}>
+          <Text style={styles.logoX}>+</Text>
+        </View>
+        <View>
+          <Text style={styles.brandTitle}>TurfMap™</Text>
+          <Text style={styles.brandSub}>
+            {pageLabel ?? 'GEO-GRID INTELLIGENCE'}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.headerRight}>
+        <Text>{data.client.businessName}</Text>
+        <Text>{new Date(data.scan.completedAt).toISOString().slice(0, 10)}</Text>
+      </View>
+    </View>
+  );
+}
+
 export function TurfReport({ data }: { data: TurfReportData }) {
   return (
     <Document
@@ -312,22 +340,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
       author="TurfMap.ai · Local Lead Machine"
     >
       <Page size="LETTER" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.brand}>
-            <View style={styles.logoBox}>
-              <Text style={styles.logoX}>+</Text>
-            </View>
-            <View>
-              <Text style={styles.brandTitle}>TurfMap™</Text>
-              <Text style={styles.brandSub}>GEO-GRID INTELLIGENCE</Text>
-            </View>
-          </View>
-          <View style={styles.headerRight}>
-            <Text>An exclusive feature of Local Lead Machine</Text>
-            <Text>{new Date(data.scan.completedAt).toISOString().slice(0, 10)}</Text>
-          </View>
-        </View>
+        <ReportHeader data={data} />
 
         {/* Business meta */}
         <View style={styles.metaRow}>
@@ -417,9 +430,24 @@ export function TurfReport({ data }: { data: TurfReportData }) {
           </View>
         </View>
 
-        {/* AI Coach insight (if available) */}
-        {data.insight && (
-          <View style={styles.coach}>
+        {/* Footer (page 1) */}
+        <View style={styles.footer} fixed>
+          <Text>© Local Lead Machine · TurfMap™ proprietary technology of Fourdots Digital</Text>
+          <Text>
+            Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
+          </Text>
+        </View>
+      </Page>
+
+      {/* Page 2 — AI Coach playbook on its own page so it never gets
+          clipped by page 1's heatmap+metrics. Only renders when an
+          insight exists; clients without a generated playbook get a
+          single-page report. */}
+      {data.insight && (
+        <Page size="LETTER" style={styles.page}>
+          <ReportHeader data={data} pageLabel="AI COACH PLAYBOOK" />
+
+          <View style={[styles.coach, { marginTop: 0 }]}>
             <Text style={styles.coachTitle}>TurfMap AI Coach Playbook</Text>
             <Text style={styles.coachDiagnosis}>{data.insight.diagnosis}</Text>
 
@@ -451,16 +479,16 @@ export function TurfReport({ data }: { data: TurfReportData }) {
               </Text>
             )}
           </View>
-        )}
 
-        {/* Footer */}
-        <View style={styles.footer} fixed>
-          <Text>© Local Lead Machine · TurfMap™ proprietary technology of Fourdots Digital</Text>
-          <Text>
-            Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
-          </Text>
-        </View>
-      </Page>
+          {/* Footer (page 2 — same shape as page 1) */}
+          <View style={styles.footer} fixed>
+            <Text>© Local Lead Machine · TurfMap™ proprietary technology of Fourdots Digital</Text>
+            <Text>
+              Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
+            </Text>
+          </View>
+        </Page>
+      )}
     </Document>
   );
 }
