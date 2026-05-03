@@ -15,7 +15,19 @@ export type ClientStatus = 'active' | 'paused' | 'churned';
 export type ClientRow = {
   id: string;
   business_name: string;
+  /** Single-string canonical address kept for display/back-compat.
+   *  Structured fields below are required for any BrightLocal NAP audit. */
   address: string;
+  /** All five fields below were added in migration 0005 for BrightLocal
+   *  Listings API NAP matching. Nullable for backward-compat with rows
+   *  seeded before the migration; the audit endpoint guards on presence. */
+  phone: string | null;
+  street_address: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  /** ISO-3166-1 alpha-3 (e.g. 'USA', 'GBR'). Defaults to 'USA'. */
+  country_code: string | null;
   latitude: number;
   longitude: number;
   pin_lat: number | null;
@@ -38,6 +50,71 @@ export type TrackedKeywordRow = {
   is_primary: boolean | null;
   scan_frequency: ScanFrequency | null;
   created_at: string | null;
+};
+
+// Note: clients table also gains structured NAP columns in migration 0005
+// (phone + street_address + city + region + postcode + country_code).
+// Added there because BrightLocal Listings API requires them broken out.
+
+/** Citation audit history — see lib/brightlocal/client.ts. Operator-only. */
+export type NapAuditStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+/** One BrightLocal request_id per directory in an audit's fan-out. */
+export type NapAuditRequest = {
+  directory: string;
+  request_id: string;
+};
+
+export type NapAuditRejected = {
+  directory: string;
+  error: string;
+};
+
+export type NapAuditInconsistency = {
+  field: 'name' | 'address' | 'phone';
+  canonical: string;
+  found: string;
+  citation_url: string;
+  directory: string;
+};
+
+export type NapAuditCitation = {
+  directory: string;
+  url: string;
+  name: string | null;
+  address: string | null;
+  phone: string | null;
+  status: 'matched' | 'mismatch' | 'unverified';
+};
+
+export type NapAuditMissing = {
+  directory: string;
+  priority: 'high' | 'medium' | 'low';
+};
+
+export type NapAuditFindings = {
+  citations: NapAuditCitation[];
+  inconsistencies: NapAuditInconsistency[];
+  missing: NapAuditMissing[];
+};
+
+export type NapAuditRow = {
+  id: string;
+  client_id: string;
+  triggered_by: string | null;
+  created_at: string | null;
+  status: NapAuditStatus;
+  /** Per-directory request_id map. Used to resume polling. */
+  brightlocal_requests: NapAuditRequest[] | null;
+  /** Directories BL rejected at initiate time. */
+  brightlocal_rejected: NapAuditRejected[] | null;
+  total_citations: number | null;
+  inconsistencies_count: number | null;
+  missing_high_priority_count: number | null;
+  findings: NapAuditFindings | null;
+  raw_response: unknown;
+  completed_at: string | null;
+  error_message: string | null;
 };
 
 /** Public share link for a scan — see /share/<id>. */

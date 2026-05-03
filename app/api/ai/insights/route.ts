@@ -29,6 +29,8 @@ import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
 import type {
   ClientRow,
+  NapAuditFindings,
+  NapAuditRow,
   ScanRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
@@ -154,6 +156,30 @@ export async function POST(req: Request) {
     scan.turf_rank != null ? Number(scan.turf_rank) : turfRank(ranksFromPoints);
   const compositeScore =
     scan.turf_score != null ? Number(scan.turf_score) : null;
+
+  // Optional: pull most recent COMPLETE NAP audit for this client. Stale-but-
+  // complete audits are still useful — citations rot slowly. We don't gate
+  // on age in v1; if Anthony decides freshness matters we'd add a 90-day
+  // window here.
+  const { data: latestNap } = await supabase
+    .from('nap_audits')
+    .select('id, status, completed_at, findings')
+    .eq('client_id', client.id)
+    .eq('status', 'complete')
+    .not('findings', 'is', null)
+    .order('completed_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle<
+      Pick<NapAuditRow, 'id' | 'status' | 'completed_at' | 'findings'>
+    >();
+  const napAudit =
+    latestNap && latestNap.findings
+      ? {
+          findings: latestNap.findings as NapAuditFindings,
+          completedAt: latestNap.completed_at,
+        }
+      : null;
+
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: client.business_name,
     industry: client.industry,
@@ -168,6 +194,7 @@ export async function POST(req: Request) {
     failedPoints: scan.failed_points ?? 0,
     rankGrid,
     competitors: competitorList,
+    napAudit,
   });
 
   // 3. Call Sonnet 4.6 with structured output + prompt caching

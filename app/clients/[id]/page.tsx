@@ -5,7 +5,7 @@ import Link from 'next/link';
 // every scan. force-dynamic also kills any Next.js Data Cache layer that
 // might serve stale Supabase responses after a metric-definition change.
 export const dynamic = 'force-dynamic';
-import { Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
+import { Compass, Crown, Download, History, MapPin, Radio, Settings, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type {
   ClientRow,
@@ -273,6 +273,16 @@ export default async function ClientDashboardPage({
               }}
             >
               <History size={12} /> History
+            </Link>
+            <Link
+              href={`/clients/${client.id}/nap-audit`}
+              className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-card)',
+              }}
+            >
+              <Radio size={12} /> NAP audit
             </Link>
             {latestScan && (
               <>
