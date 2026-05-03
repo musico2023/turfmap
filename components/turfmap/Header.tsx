@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Crosshair } from 'lucide-react';
 import { SignOutButton } from './SignOutButton';
 
@@ -9,9 +10,17 @@ export function Header({ userEmail }: { userEmail?: string | null } = {}) {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
+          {/* Brand mark links back to the agency home (/clients). Pre-
+           * marketing-launch this was a static block; now `/` is the
+           * public landing page so authed users need an explicit path
+           * back to their console from any sub-route. */}
+          <Link
+            href="/clients"
+            className="flex items-center gap-2.5 group"
+            aria-label="TurfMap — agency home"
+          >
             <div
-              className="w-9 h-9 rounded-md flex items-center justify-center"
+              className="w-9 h-9 rounded-md flex items-center justify-center transition-shadow group-hover:shadow-[0_0_32px_#c5ff3a55]"
               style={{
                 background: 'var(--color-lime)',
                 boxShadow: '0 0 24px #c5ff3a40',
@@ -33,7 +42,7 @@ export function Header({ userEmail }: { userEmail?: string | null } = {}) {
                 Geo-grid intelligence
               </div>
             </div>
-          </div>
+          </Link>
         </div>
         <div className="flex items-center gap-5 text-xs">
           <div className="flex items-center gap-1.5 text-zinc-400">
