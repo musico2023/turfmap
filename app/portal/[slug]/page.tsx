@@ -23,6 +23,12 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { SignOutButton } from '@/components/turfmap/SignOutButton';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
+import {
+  listLocations,
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
+import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import type {
   ScanPointRow,
   ScanRow,
@@ -48,10 +54,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function ClientPortalPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ location?: string }>;
 }) {
   const { slug } = await params;
+  const { location: locationParam } = await searchParams;
   const supabase = getServerSupabase();
 
   // Tolerant client lookup — accepts the short public_id (default
@@ -95,10 +104,23 @@ export default async function ClientPortalPage({
   }
   // ───────────────────────────────────────────────────────────────────────────
 
+  // Multi-location: resolve which storefront the portal is showing.
+  // ?location=<id> wins; otherwise default to the brand's primary
+  // location. The same LocationSwitcher used on the operator dashboard
+  // also renders for client portals — collapses to nothing when the
+  // brand has only one location, becomes a searchable dropdown when it
+  // has many (Anthony's franchise client has 58).
+  const locations = await listLocations(supabase, clientUuid);
+  const activeLocation =
+    (await resolveLocation(supabase, clientUuid, locationParam ?? null)) ??
+    locations[0] ??
+    null;
+
   const { data: latestScan } = await supabase
     .from('scans')
     .select('*')
     .eq('client_id', client.id)
+    .eq('location_id', activeLocation?.id ?? '')
     .eq('status', 'complete')
     .order('completed_at', { ascending: false })
     .limit(1)
@@ -148,6 +170,7 @@ export default async function ClientPortalPage({
     .from('scans')
     .select('id', { count: 'exact', head: true })
     .eq('client_id', client.id)
+    .eq('location_id', activeLocation?.id ?? '')
     .eq('status', 'complete');
   const isFirstScan = (completedScanCount ?? 0) <= 1;
 
@@ -190,6 +213,23 @@ export default async function ClientPortalPage({
         isAgencyPreview={isAgencyPreview}
       />
 
+      {/* Location switcher — only renders when the brand has > 1
+          location. The slug in pathname matches whatever the URL has
+          (UUID or public_id), so the switcher's basePath will preserve
+          /portal/<slug> and just swap the ?location query param. */}
+      {locations.length > 1 && (
+        <div
+          className="border-b px-8 py-3"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <LocationSwitcher
+            clientId={slug}
+            locations={locations}
+            activeLocationId={activeLocation?.id ?? null}
+          />
+        </div>
+      )}
+
       {latestScan && isFirstScan && (
         <div
           className="px-8 py-3 border-b flex items-center gap-3 text-xs"
@@ -221,6 +261,11 @@ export default async function ClientPortalPage({
           </div>
           <div className="text-sm font-medium text-zinc-100">
             {client.business_name}
+            {activeLocation && !activeLocation.is_primary && (
+              <span className="text-zinc-500 font-normal text-xs ml-1.5">
+                · {locationDisplayLabel(activeLocation)}
+              </span>
+            )}
           </div>
         </div>
         <div className="col-span-4">
@@ -229,7 +274,7 @@ export default async function ClientPortalPage({
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
             <MapPin size={13} className="text-zinc-500" />
-            {client.address}
+            {activeLocation?.address ?? client.address}
           </div>
         </div>
         <div className="col-span-4">
@@ -257,7 +302,7 @@ export default async function ClientPortalPage({
               </h3>
               <p className="text-xs text-zinc-500">
                 9×9 geo-grid · 81 search points ·{' '}
-                {client.service_radius_miles ?? 1.6}mi radius
+                {activeLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6}mi radius
               </p>
             </div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
