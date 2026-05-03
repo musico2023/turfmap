@@ -44,6 +44,7 @@ import {
 import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
+import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
@@ -229,6 +230,7 @@ export default async function PerScanPage({
           >
             <Download size={12} /> PDF
           </a>
+          <ShareLinkButton scanId={scan.id} />
         </div>
       </div>
 
