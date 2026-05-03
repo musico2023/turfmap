@@ -33,6 +33,16 @@
  *     (the sibling's listing is correct) but DO mean the audited
  *     location is missing from that directory and should be added
  *     alongside the existing sibling listing.
+ *
+ * v9 (2026-05-03): score history + noise-vs-signal reasoning.
+ *   - User prompt now includes the last 7 distinct scan-day TurfScores
+ *     for this location ("Score history" section) so Claude has trend
+ *     context, not just a single momentum number.
+ *   - System prompt teaches Claude to distinguish day-over-day
+ *     movement from same-day rescan jitter — momentum is computed
+ *     against the most recent scan ≥ 12h older, but the operator can
+ *     still see noise in the score history if they ran multiple scans
+ *     in one day.
  */
 
 import { z } from 'zod';
@@ -40,7 +50,7 @@ import { momentumCaption } from '@/lib/metrics/momentum';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import type { NapAuditFindings } from '@/lib/supabase/types';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v8';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v9';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -111,15 +121,23 @@ The TurfScore × TurfRank pairing is the strongest diagnostic. Read it like this
 - **NAP / citation chaos**: inconsistent appearance, especially branded queries. Citation cleanup, NAP audit, GSC review.
 - **Hyper-local competitor pocket**: one specific competitor dominates a region. Differential moves on that exact business.
 
-# Momentum on second+ scans
+# Momentum + Score history on second+ scans
 
-If a Momentum value is provided (not NULL), reference it in your diagnosis. Specifically:
-- Strong positive (+10 or more): "the current strategy is working — double down on [specific lever]."
-- Modest positive (+1 to +9): "incremental progress; keep going."
-- Zero: "holding steady — investigate whether competitive pressure is rising or work has stalled."
-- Negative: "contracting — diagnose the cause before adding new tactics."
+Two pieces of trend data may be in the user prompt:
 
-Don't speculate about WHY Momentum moved without supporting data; just read the direction and make recommendations consistent with it.
+1. **Momentum** — a single signed integer comparing this scan's TurfScore to the most recent scan at least 12 hours older. Designed to filter out same-day rescan noise (operator iterating on GBP edits, re-running after a failed scan, etc.).
+2. **Score history** — the last 7 distinct scan-day TurfScores. Each row is the latest scan completed on that calendar day. Use this to gauge whether Momentum reflects a real trend or a single-snapshot blip.
+
+Read them together:
+- Momentum +10 with a flat 14/15/14/15/40 history = score JUST jumped. Real movement, but only one data point at the new level — recommend continuing whatever caused it; project a CAUTIOUS 90-day impact (the new score may revert).
+- Momentum +10 with a steady 25→30→35→40 history = sustained trend. Confidently project continued upward movement.
+- Momentum 0 with a flat 15/15/15/14/15 history = holding steady — investigate whether competitive pressure is rising or work has stalled.
+- Momentum negative with a declining history = contracting — diagnose the cause before adding new tactics.
+- Momentum NULL = no comparable prior scan (first scan of the location, or all prior scans were within 12h). Don't fabricate a trend; treat as a baseline reading.
+
+Do NOT cite same-day score jitter as if it were progress. If the score history shows multiple readings on the same day with different scores, that's measurement noise (Google's local pack returns vary by query batching + competitor rotation), not strategic movement.
+
+Don't speculate about WHY Momentum moved without supporting data; just read the direction + history consistency and make recommendations consistent with it.
 
 # Anti-confabulation rules — read carefully
 
@@ -176,6 +194,13 @@ export type SiblingLocationContext = {
   address: string;
 };
 
+export type ScoreHistoryEntry = {
+  /** YYYY-MM-DD scan date (latest scan from that calendar day). */
+  date: string;
+  /** TurfScore 0-100 for that day. */
+  score: number;
+};
+
 export function buildTurfCoachUserPrompt(input: {
   businessName: string;
   industry: string | null;
@@ -216,6 +241,11 @@ export function buildTurfCoachUserPrompt(input: {
    *  treat sibling-address citations as missing-this-location, not as
    *  inconsistencies. */
   siblingLocations?: SiblingLocationContext[];
+  /** Last N (~7) distinct scan-day TurfScores for this location, oldest
+   *  first, newest last. Each entry is the LATEST scan from that
+   *  calendar day so same-day rescan noise doesn't pollute the history.
+   *  Empty array hides the "## Score history" section. */
+  scoreHistory?: ScoreHistoryEntry[];
 }): string {
   const center = Math.floor(input.rankGrid.length / 2);
   const gridText = input.rankGrid
@@ -267,8 +297,32 @@ ${gridText}
 
 Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference:
 ${compRows}
-${renderSiblingsSection(input.siblingLocations ?? [])}${renderNapAuditSection(input.napAudit)}
+${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderNapAuditSection(input.napAudit)}
 Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}`;
+}
+
+/** Score history block — last 7 distinct scan-day TurfScores. Renders
+ *  empty when there's no comparable history (first-ever scan). */
+function renderScoreHistorySection(
+  history: readonly ScoreHistoryEntry[]
+): string {
+  if (history.length === 0) return '';
+  // Last entry is the current scan; mark it explicitly so Claude knows
+  // which row corresponds to "now" vs. prior baselines.
+  const rows = history
+    .map((h, idx) => {
+      const isLatest = idx === history.length - 1;
+      return `  - ${h.date}: TurfScore ${h.score}${isLatest ? ' (this scan)' : ''}`;
+    })
+    .join('\n');
+  return `
+
+## Score history (one reading per scan-day, newest last)
+
+${rows}
+
+If multiple scans were run on the same calendar day, only the latest one for that day is shown — same-day jitter is filtered out so the trend reflects real day-over-day movement.
+`;
 }
 
 /** Sibling location context block. Empty when single-location. */

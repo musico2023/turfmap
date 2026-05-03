@@ -226,6 +226,37 @@ export async function POST(req: Request) {
       address: l.address ?? '(no address)',
     }));
 
+  // Score history: last ~7 distinct scan-days for THIS location, with
+  // the latest scan from each day. We fetch a bigger sample (last 30
+  // complete scans) and dedupe to one row per calendar day so same-day
+  // rescan jitter doesn't crowd out real history. Newest last so the
+  // prompt reads chronologically.
+  const { data: historyRows } = scanLocation
+    ? await supabase
+        .from('scans')
+        .select('completed_at, turf_score')
+        .eq('client_id', client.id)
+        .eq('location_id', scanLocation.id)
+        .eq('status', 'complete')
+        .not('turf_score', 'is', null)
+        .order('completed_at', { ascending: false })
+        .limit(30)
+        .returns<Array<{ completed_at: string; turf_score: number }>>()
+    : { data: null };
+  const byDay = new Map<string, number>(); // date → latest score that day
+  for (const r of historyRows ?? []) {
+    if (!r.completed_at || r.turf_score == null) continue;
+    const date = r.completed_at.slice(0, 10); // YYYY-MM-DD (UTC date)
+    if (!byDay.has(date)) {
+      // Rows came back DESC; the first one we see for a day is the latest.
+      byDay.set(date, Number(r.turf_score));
+    }
+  }
+  const scoreHistory = [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-7) // last 7 distinct days
+    .map(([date, score]) => ({ date, score }));
+
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: businessLabel,
     industry: client.industry,
@@ -237,6 +268,7 @@ export async function POST(req: Request) {
     momentum: scan.momentum != null ? Number(scan.momentum) : null,
     gridRadiusMiles,
     siblingLocations,
+    scoreHistory,
     totalPoints: scan.total_points ?? 81,
     failedPoints: scan.failed_points ?? 0,
     rankGrid,

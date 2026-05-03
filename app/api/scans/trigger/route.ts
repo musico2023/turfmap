@@ -238,11 +238,19 @@ async function runScanTrigger(req: Request) {
   const score = composeTurfScore(reach, rank);
   const found = scan.results.filter((r) => r.businessFound).length;
 
-  // Previous complete scan for THIS location (post-migration 0006).
-  // We also accept legacy scans without location_id as the location's
-  // own history — they were backfilled to the primary location, so for
-  // the primary they're correct prior scans; for non-primary locations
-  // they're filtered out by the location_id match.
+  // Previous complete scan for THIS location, ignoring any scans within
+  // the last 12 hours — those are likely same-day rescans and produce
+  // noisy momentum (operator testing GBP edits, re-running after a
+  // failed scan, etc.). The 12h threshold draws a clean line between
+  // "operator iterating" and "real day-over-day signal."
+  //
+  // Result: if the operator runs 5 scans in a single day, all five
+  // compare their momentum against yesterday's (or earlier) baseline,
+  // not against each other. Same-day variance shows up as a flat trend
+  // line in the Score history rather than fake +/- swings.
+  const TWELVE_HOURS_AGO = new Date(
+    Date.now() - 12 * 60 * 60 * 1000
+  ).toISOString();
   const { data: prevScan } = await supabase
     .from('scans')
     .select('turf_score')
@@ -250,6 +258,7 @@ async function runScanTrigger(req: Request) {
     .eq('location_id', location.id)
     .eq('status', 'complete')
     .neq('id', scanId)
+    .lt('completed_at', TWELVE_HOURS_AGO)
     .order('completed_at', { ascending: false })
     .limit(1)
     .maybeSingle<{ turf_score: number | null }>();
