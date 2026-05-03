@@ -1,8 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Activity } from 'lucide-react';
+import {
+  buttonStyles,
+  buttonIconSize,
+  SIZE_ICON,
+  type ButtonSize,
+  type ButtonVariant,
+  type ButtonStyleOptions,
+} from './buttonStyles';
 
 /**
  * Shared button primitive for TurfMap.
@@ -27,112 +35,22 @@ import { Activity } from 'lucide-react';
  * `<LinkButton>` instead — it shares the same styling but renders as
  * a Next.js Link element so navigation, prefetching, and middle-click
  * behavior all work natively.
+ *
+ * The pure styling helpers (`buttonStyles`, `buttonIconSize`, the
+ * `Button{Variant,Size,StyleOptions}` types) live in
+ * `./buttonStyles.ts` so server components can call them without
+ * crossing the `'use client'` boundary. They're re-exported here for
+ * call-site convenience, but server components MUST import them from
+ * `./buttonStyles` directly.
  */
 
-export type ButtonVariant =
-  | 'primary'
-  | 'secondary'
-  | 'ai'
-  | 'ghost'
-  | 'destructive';
-
-export type ButtonSize = 'sm' | 'md' | 'lg';
-
-const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'px-2.5 py-1 text-[11px] gap-1.5',
-  md: 'px-3 py-2 text-xs gap-1.5',
-  lg: 'px-5 py-2.5 text-sm gap-2',
+export {
+  buttonStyles,
+  buttonIconSize,
+  type ButtonSize,
+  type ButtonVariant,
+  type ButtonStyleOptions,
 };
-
-const SIZE_ICON: Record<ButtonSize, number> = { sm: 11, md: 12, lg: 14 };
-
-type VariantSpec = {
-  base: string;
-  style?: CSSProperties;
-};
-
-const VARIANT: Record<ButtonVariant, VariantSpec> = {
-  primary: {
-    base: [
-      'rounded-md font-bold flex items-center justify-center transition-all whitespace-nowrap',
-      'hover:brightness-110',
-      'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100',
-    ].join(' '),
-    style: {
-      background: 'var(--color-lime)',
-      color: 'black',
-      boxShadow: '0 4px 16px #c5ff3a30',
-    },
-  },
-  secondary: {
-    base: [
-      'rounded-md font-bold border flex items-center transition-colors whitespace-nowrap',
-      'hover:border-zinc-700',
-      'disabled:opacity-50 disabled:cursor-not-allowed',
-    ].join(' '),
-    style: {
-      background: 'var(--color-card)',
-      borderColor: 'var(--color-border)',
-      color: '#e4e4e7',
-    },
-  },
-  ai: {
-    base: [
-      'rounded-md font-bold border flex items-center transition-all whitespace-nowrap',
-      'hover:brightness-110',
-      'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100',
-    ].join(' '),
-    style: {
-      background: '#0a0f04',
-      color: 'var(--color-lime)',
-      borderColor: 'var(--color-border-bright)',
-    },
-  },
-  ghost: {
-    base: [
-      'rounded-md font-mono flex items-center transition-colors whitespace-nowrap',
-      'text-zinc-500 hover:text-zinc-300',
-      'disabled:opacity-50 disabled:cursor-not-allowed',
-    ].join(' '),
-  },
-  destructive: {
-    base: [
-      'rounded-md font-bold border flex items-center transition-colors whitespace-nowrap',
-      'text-zinc-400 hover:text-red-400 hover:border-red-900',
-      'disabled:opacity-50 disabled:cursor-not-allowed',
-    ].join(' '),
-    style: {
-      background: 'var(--color-card)',
-      borderColor: 'var(--color-border)',
-    },
-  },
-};
-
-export type ButtonStyleOptions = {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  className?: string;
-};
-
-/**
- * Compute the className + inline style pair for a given variant+size.
- * Useful when a `<Link>` or other non-button element needs the visual
- * styling without wrapping it in `<Button>`. Prefer `<LinkButton>`
- * for navigation-style buttons.
- */
-export function buttonStyles({
-  variant = 'primary',
-  size = 'md',
-  className = '',
-}: ButtonStyleOptions): { className: string; style: CSSProperties } {
-  const v = VARIANT[variant];
-  const composed = `${v.base} ${SIZE_CLASSES[size]} ${className}`.trim();
-  return { className: composed, style: v.style ?? {} };
-}
-
-export function buttonIconSize(size: ButtonSize = 'md'): number {
-  return SIZE_ICON[size];
-}
 
 // ─── <Button> ────────────────────────────────────────────────────────────
 
