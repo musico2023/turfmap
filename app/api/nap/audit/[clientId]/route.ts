@@ -29,6 +29,7 @@ import {
   initiateCitationAudit,
   type BusinessProfile,
 } from '@/lib/brightlocal/client';
+import { getDirectoriesForIndustry } from '@/lib/brightlocal/directories';
 import type { ClientRow, NapAuditRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -116,7 +117,11 @@ export async function POST(
   };
 
   try {
-    const result = await initiateCitationAudit(business);
+    // Industry-aware directory set: pediatric clinic → medical directories,
+    // plumber → home-services, etc. Falls back to a tight universal set when
+    // industry isn't filled in.
+    const directories = getDirectoriesForIndustry(client.industry);
+    const result = await initiateCitationAudit(business, directories);
     await supabase
       .from('nap_audits')
       .update({

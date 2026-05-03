@@ -15,6 +15,10 @@ import {
   summarizeFindings,
   type BusinessProfile,
 } from '@/lib/brightlocal/client';
+import {
+  getDirectoriesForIndustry,
+  inferProfileForIndustry,
+} from '@/lib/brightlocal/directories';
 import type {
   ClientRow,
   NapAuditFindings,
@@ -99,11 +103,13 @@ export async function maybeRunNapAudit(
     return { ran: false, reason: `recent audit already ${recent.status}` };
   }
 
-  // 2. Pull client + verify NAP fields are populated.
+  // 2. Pull client + verify NAP fields are populated. Industry comes
+  //    along so we can pick the right directory set per vertical (a
+  //    pediatric clinic shouldn't be audited against Angi/Houzz/etc.).
   const { data: client } = await supabase
     .from('clients')
     .select(
-      'business_name, phone, street_address, city, region, postcode, country_code'
+      'business_name, phone, street_address, city, region, postcode, country_code, industry'
     )
     .eq('id', clientId)
     .maybeSingle<
@@ -116,6 +122,7 @@ export async function maybeRunNapAudit(
         | 'region'
         | 'postcode'
         | 'country_code'
+        | 'industry'
       >
     >();
   if (!client) {
@@ -125,6 +132,8 @@ export async function maybeRunNapAudit(
   if (!business) {
     return { ran: false, reason: 'client missing structured NAP fields' };
   }
+  const directories = getDirectoriesForIndustry(client.industry);
+  const profile = inferProfileForIndustry(client.industry);
 
   // 3. Insert a pending audit row first so we have a stable id even if
   //    BL's initiate fan-out throws.
@@ -144,18 +153,21 @@ export async function maybeRunNapAudit(
     };
   }
 
-  // 4. Fan out. Catch all errors so the caller (scan trigger) never sees them.
+  // 4. Fan out across the industry-tuned directory set. Catch all errors
+  //    so the caller (scan trigger or AI Coach) never sees them.
   try {
-    const result = await initiateCitationAudit(business);
+    const result = await initiateCitationAudit(business, directories);
     await supabase
       .from('nap_audits')
       .update({
         status: 'running',
         brightlocal_requests: result.requests,
         brightlocal_rejected: result.rejected,
+        // Stash the profile name in error_message-adjacent JSON for now;
+        // a dedicated column can come later if we surface it in a UI.
       })
       .eq('id', row.id);
-    return { ran: true, auditId: row.id };
+    return { ran: true, auditId: row.id, reason: `profile: ${profile}` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await supabase
