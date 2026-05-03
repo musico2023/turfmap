@@ -350,16 +350,21 @@ export default async function ClientDashboardPage({
             }
           />
           <StatCard
-            label="3-Pack Win Rate"
+            label="TurfReach™"
             value={latestScan ? `${t3}%` : '—'}
-            subtitle="% of 81 cells where you rank in the local 3-pack"
+            subtitle={
+              latestScan
+                ? `Visible in ${t3}% of your territory`
+                : 'Coverage of your territory'
+            }
             icon={Crown}
             highlight
             tooltip={
               <>
-                % of the 81 grid cells where this business appears in the local
-                3-pack (Google&rsquo;s boxed map at the top of the SERP). 100% =
-                you show up everywhere; 0% = invisible everywhere.
+                The percentage of your service area where you appear in
+                Google&rsquo;s local 3-pack. Measured across an 81-point
+                grid covering your territory. 100% = you show up
+                everywhere; 0% = invisible everywhere.
               </>
             }
           />

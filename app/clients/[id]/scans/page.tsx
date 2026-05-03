@@ -2,7 +2,7 @@
  * Scan history page — `/clients/[id]/scans`.
  *
  * Two stacked sections:
- *   1. Trend chart of TurfScore + Top-3 Win Rate over time (last 26 entries).
+ *   1. Trend chart of TurfScore + TurfReach over time (last 26 entries).
  *   2. Full table of every scan for the client, with PDF + view links.
  *
  * The chart renders the most recent N scans newest-on-the-right; the table
@@ -141,7 +141,7 @@ export default async function ScanHistoryPage({
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-display text-lg font-bold">
-                TurfScore & 3-Pack Win Rate trend
+                TurfScore & TurfReach trend
               </h3>
               <p className="text-xs text-zinc-500 mt-0.5">
                 Last {Math.min(scans.length, TREND_LIMIT)} complete scans.

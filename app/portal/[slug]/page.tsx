@@ -272,9 +272,13 @@ export default async function ClientPortalPage({
             icon={Award}
           />
           <StatCard
-            label="3-Pack Win Rate"
+            label="TurfReach™"
             value={latestScan ? `${t3}%` : '—'}
-            subtitle="% of 81 cells where you rank in the local 3-pack"
+            subtitle={
+              latestScan
+                ? `Visible in ${t3}% of your territory`
+                : 'Coverage of your territory'
+            }
             icon={Crown}
             highlight
           />

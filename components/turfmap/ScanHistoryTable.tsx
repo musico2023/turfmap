@@ -66,7 +66,7 @@ export function ScanHistoryTable({
             <th className="text-left font-semibold px-4 py-3">Date (UTC)</th>
             <th className="text-left font-semibold px-4 py-3">Type</th>
             <th className="text-right font-semibold px-4 py-3">TurfScore</th>
-            <th className="text-right font-semibold px-4 py-3">Top-3 %</th>
+            <th className="text-right font-semibold px-4 py-3">Reach</th>
             <th className="text-right font-semibold px-4 py-3">Radius</th>
             <th className="text-right font-semibold px-4 py-3">Failed</th>
             <th className="text-center font-semibold px-4 py-3">Coach</th>

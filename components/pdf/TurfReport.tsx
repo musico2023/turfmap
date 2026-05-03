@@ -372,9 +372,9 @@ export function TurfReport({ data }: { data: TurfReportData }) {
               <Text style={styles.metricSub}>0–100 · rank quality where you appear</Text>
             </View>
             <View style={styles.metricCardHi}>
-              <Text style={styles.metricLabel}>3-PACK WIN RATE</Text>
+              <Text style={styles.metricLabel}>TURFREACH</Text>
               <Text style={styles.metricValueLime}>{data.metrics.top3Pct}%</Text>
-              <Text style={styles.metricSub}>% of 81 cells where you rank in the local 3-pack</Text>
+              <Text style={styles.metricSub}>Visible in {data.metrics.top3Pct}% of your territory</Text>
             </View>
             <View style={styles.metricCard}>
               <Text style={styles.metricLabel}>TURFRADIUS</Text>

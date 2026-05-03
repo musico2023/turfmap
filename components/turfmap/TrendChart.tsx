@@ -1,7 +1,7 @@
 /**
  * Pure-SVG dual-axis trend chart for scan history.
  *
- * Plots TurfScore (0–100, higher-is-better, left axis) and 3-Pack Win Rate %
+ * Plots TurfScore (0–100, higher-is-better, left axis) and TurfReach %
  * (also higher-is-better, right axis) on a shared time axis. Both lines move
  * UP for "things got better" — intentional: makes the trend readable without
  * the viewer having to remember which axis inverts. No charting library
@@ -110,7 +110,7 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
       viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
       className="w-full"
       role="img"
-      aria-label="TurfScore and 3-Pack Win Rate trend"
+      aria-label="TurfScore and TurfReach trend"
     >
       {/* horizontal gridlines */}
       {[0, 0.25, 0.5, 0.75, 1].map((f, i) => (
@@ -207,7 +207,7 @@ export function TrendChart({ points, height = 220 }: TrendChartProps) {
         textAnchor="end"
         fontFamily="var(--font-mono), monospace"
       >
-        Top-3 Win % (higher is better)
+        TurfReach % (higher is better)
       </text>
 
       {/* x-axis date labels */}

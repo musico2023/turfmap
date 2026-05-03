@@ -294,9 +294,9 @@ export default async function PerScanPage({
             icon={Award}
           />
           <StatCard
-            label="3-Pack Win Rate"
+            label="TurfReach™"
             value={`${t3}%`}
-            subtitle="% of 81 cells where you rank in the local 3-pack"
+            subtitle={`Visible in ${t3}% of your territory`}
             icon={Crown}
             highlight
           />
