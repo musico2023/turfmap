@@ -32,6 +32,7 @@ import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import { ScanButton } from '@/components/turfmap/ScanButton';
 import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
+import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
@@ -500,15 +501,15 @@ export default async function ClientDashboardPage({
             />
           </a>
         </span>
-        <span className="font-mono">
-          {latestScan
-            ? `Scan ${latestScan.id.slice(0, 8)} · ${
-                latestScan.failed_points ?? 0
-              } failed pts · $${(
-                (latestScan.dfs_cost_cents ?? 0) / 100
-              ).toFixed(2)} DFS`
-            : 'Awaiting first scan'}
-        </span>
+        {latestScan ? (
+          <InternalsFooter
+            scanId={latestScan.id}
+            failedPoints={latestScan.failed_points ?? 0}
+            dfsCostCents={latestScan.dfs_cost_cents ?? 0}
+          />
+        ) : (
+          <span className="font-mono text-zinc-700">Awaiting first scan</span>
+        )}
       </footer>
     </div>
   );

@@ -46,6 +46,7 @@ import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
 // 9×9 grid = 4 rings out from center; spacing = service_radius / 4.
@@ -323,10 +324,11 @@ export default async function PerScanPage({
         <span>
           TurfMap™ is proprietary technology of Fourdots Digital
         </span>
-        <span className="font-mono">
-          Scan {scan.id.slice(0, 8)} · {scan.failed_points ?? 0} failed pts ·
-          ${((scan.dfs_cost_cents ?? 0) / 100).toFixed(2)} DFS
-        </span>
+        <InternalsFooter
+          scanId={scan.id}
+          failedPoints={scan.failed_points ?? 0}
+          dfsCostCents={scan.dfs_cost_cents ?? 0}
+        />
       </footer>
     </div>
   );
