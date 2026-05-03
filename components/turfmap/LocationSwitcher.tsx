@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { MapPin } from 'lucide-react';
 import type { ClientLocationRow } from '@/lib/supabase/types';
 
@@ -11,18 +12,30 @@ export type LocationSwitcherProps = {
 };
 
 /**
- * Pill-row switcher rendered above the dashboard for multi-location
- * clients. Hidden when the client has ≤ 1 location to keep single-
- * location flows visually unchanged.
+ * Pill-row switcher for multi-location clients. Renders above any page
+ * that scopes its content to a single location (dashboard, settings).
+ * Hidden when the client has ≤ 1 location to keep single-location flows
+ * visually unchanged.
  *
- * Each pill links to `?location=<id>` — the dashboard reads that and
- * scopes its scans/keywords/AI Coach data to the selected location.
+ * Each pill keeps the operator on the CURRENT pathname (settings stays
+ * on settings, dashboard stays on dashboard) and just swaps the
+ * `?location=<id>` query param so the page re-fetches its data scoped
+ * to the new location.
  */
 export function LocationSwitcher({
   clientId,
   locations,
   activeLocationId,
 }: LocationSwitcherProps) {
+  // Preserve the current sub-page (e.g. /clients/:id/settings) so
+  // switching locations doesn't throw the operator back to the dashboard.
+  // Falls back to /clients/:id if usePathname returns something unexpected.
+  const pathname = usePathname();
+  const basePath =
+    pathname && pathname.startsWith(`/clients/${clientId}`)
+      ? pathname
+      : `/clients/${clientId}`;
+
   if (locations.length <= 1) return null;
 
   return (
@@ -36,7 +49,7 @@ export function LocationSwitcher({
         return (
           <Link
             key={loc.id}
-            href={`/clients/${clientId}?location=${loc.id}`}
+            href={`${basePath}?location=${loc.id}`}
             className="px-3 py-1.5 rounded-md text-xs font-mono border transition-colors flex items-center gap-1.5"
             style={{
               borderColor: isActive
