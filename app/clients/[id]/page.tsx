@@ -281,15 +281,15 @@ export default async function ClientDashboardPage({
             {activeLocation?.address ?? client.address}
           </div>
         </div>
-        <div className="col-span-3">
+        <div className="col-span-2">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Tracking Keyword
           </div>
-          <div className="text-sm font-mono text-zinc-200">
+          <div className="text-sm font-mono text-zinc-200 truncate">
             {keyword?.keyword ?? '—'}
           </div>
         </div>
-        <div className="col-span-3 flex flex-col items-end gap-2">
+        <div className="col-span-4 flex flex-col items-end gap-2">
           <div className="text-xs text-zinc-500 font-mono">
             {latestScan ? (
               <>
@@ -304,10 +304,10 @@ export default async function ClientDashboardPage({
               <>No scans yet</>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2 flex-wrap">
             <Link
               href={`/clients/${client.id}/settings`}
-              className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700"
+              className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
               style={{
                 borderColor: 'var(--color-border)',
                 background: 'var(--color-card)',
@@ -317,7 +317,7 @@ export default async function ClientDashboardPage({
             </Link>
             <Link
               href={`/clients/${client.id}/scans`}
-              className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700"
+              className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
               style={{
                 borderColor: 'var(--color-border)',
                 background: 'var(--color-card)',
@@ -331,7 +331,7 @@ export default async function ClientDashboardPage({
                   href={`/api/reports/pdf?scanId=${latestScan.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700"
+                  className="px-3 py-2 rounded-md text-xs font-bold border transition-colors flex items-center gap-1.5 hover:border-zinc-700 whitespace-nowrap"
                   style={{
                     borderColor: 'var(--color-border)',
                     color: 'var(--color-text, white)',

@@ -73,7 +73,7 @@ export function ScanButton({ clientId, locationId, keywordLabel }: ScanButtonPro
         type="button"
         onClick={onClick}
         disabled={busy}
-        className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
         style={{
           background: 'var(--color-lime)',
           color: 'black',
