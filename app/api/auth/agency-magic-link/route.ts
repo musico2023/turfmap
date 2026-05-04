@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "this email isn't on the TurfMap account list. To get TurfMap access, sign up at turfmap.ai. If you're a Local Lead Machine client, your account manager will send a separate portal link.",
+            "this email isn't on the TurfMap account list. To get TurfMap access, sign up at turfmap.ai.",
         },
         { status: 403 }
       );
