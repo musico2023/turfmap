@@ -1,10 +1,17 @@
 /**
  * Idempotently create the Supabase Storage buckets TurfMap needs.
  *
- *   client-logos: public read (so the white-label portal can show the
- *   logo without auth), writes restricted to service-role (no RLS
- *   policies on insert == only service-role keys succeed). Files live
- *   under <client_id>/<filename>.
+ *   client-logos      : public read (so the white-label portal can
+ *                       show the logo without auth), writes restricted
+ *                       to service-role. Files live under
+ *                       <client_id>/<filename>.
+ *
+ *   audit-deliveries  : public read with UUID-based paths (unguessable),
+ *                       writes restricted to service-role. The
+ *                       customized PDFs that get sent to Visibility
+ *                       Audit / Strategy Session buyers live here.
+ *                       Path: <lead_order_id>.pdf — re-generation
+ *                       overwrites in place so old links keep working.
  *
  * Run with:  npm run init:storage
  */
@@ -24,6 +31,12 @@ const BUCKETS = [
       'image/webp',
       'image/svg+xml',
     ],
+  },
+  {
+    id: 'audit-deliveries',
+    public: true,
+    fileSizeLimit: 10 * 1024 * 1024, // 10 MB — PDFs with embedded SVGs
+    allowedMimeTypes: ['application/pdf'],
   },
 ];
 

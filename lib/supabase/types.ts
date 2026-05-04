@@ -291,7 +291,8 @@ export type LeadOrderStatus = 'pending' | 'fulfilled' | 'failed';
 /** A self-serve buyer's Stripe Checkout session. One row per session;
  *  unique by stripe_session_id. Created idempotently on the
  *  /order/success page load and updated by /api/orders/fulfill.
- *  Added in migration 0008. */
+ *  Added in migration 0008; extended in 0009 with the strategist-
+ *  managed audit-delivery workflow columns. */
 export type LeadOrderRow = {
   id: string;
   stripe_session_id: string;
@@ -304,7 +305,23 @@ export type LeadOrderRow = {
   /** JSON blob mirrored from Stripe — typically
    *  { stripe_customer_id, payment_status, amount_total, currency }. */
   stripe_metadata: unknown | null;
+  /** Operator scratch space for free-text notes during manual
+   *  recovery (existed pre-0009; not the strategist deliverable). */
   notes: string | null;
+  /** ─── Strategist-managed audit-delivery workflow (added in 0009) ───
+   *  Only populated for tier IN ('audit', 'strategy') — the human-
+   *  touch tiers. TurfScan ($99) stays null forever. */
+  /** Markdown-formatted notes the strategist authors after the live
+   *  call. Rendered into the customized PDF + visible on the
+   *  /clients/audits/[id] detail page. */
+  strategist_notes: string | null;
+  /** Supabase Storage path to the customized PDF (auto-PDF + the
+   *  strategist notes appended). Generated on demand from the audit-
+   *  delivery detail page. Re-generating overwrites this value. */
+  delivery_pdf_url: string | null;
+  /** Stamped when the operator marks the order as delivered. Once
+   *  set, the row drops out of the agency-side "in progress" queue. */
+  delivered_at: string | null;
   created_at: string;
   updated_at: string;
 };

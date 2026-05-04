@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronRight, Crosshair, Plus } from 'lucide-react';
+import { ChevronRight, Crosshair, FileText, Plus } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type { ClientRow } from '@/lib/supabase/types';
 import { Header } from '@/components/turfmap/Header';
@@ -28,14 +28,24 @@ export default async function AgencyHomePage() {
               {list.length} client{list.length === 1 ? '' : 's'} on TurfMap.
             </p>
           </div>
-          <LinkButton
-            variant="primary"
-            size="md"
-            href="/clients/new"
-            leftIcon={<Plus size={14} strokeWidth={2.75} />}
-          >
-            Add client
-          </LinkButton>
+          <div className="flex items-center gap-2">
+            <LinkButton
+              variant="secondary"
+              size="md"
+              href="/clients/audits"
+              leftIcon={<FileText size={14} strokeWidth={2.5} />}
+            >
+              Audit deliveries
+            </LinkButton>
+            <LinkButton
+              variant="primary"
+              size="md"
+              href="/clients/new"
+              leftIcon={<Plus size={14} strokeWidth={2.75} />}
+            >
+              Add client
+            </LinkButton>
+          </div>
         </div>
 
         {list.length === 0 ? (

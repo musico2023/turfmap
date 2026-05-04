@@ -172,6 +172,70 @@ const styles = StyleSheet.create({
     borderTop: `1px solid ${C.border}`,
   },
 
+  // ─── Strategist-notes page (added 0009) ─────────────────────────
+  notesIntro: {
+    fontSize: 8,
+    color: C.textDim,
+    marginBottom: 14,
+    lineHeight: 1.5,
+  },
+  notesBody: {
+    paddingTop: 4,
+  },
+  notesH1: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: C.text,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  notesH2: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: C.text,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  notesH3: {
+    fontSize: 9,
+    fontWeight: 700,
+    color: C.lime,
+    marginTop: 8,
+    marginBottom: 3,
+  },
+  notesP: {
+    fontSize: 9,
+    color: C.text,
+    lineHeight: 1.5,
+    marginBottom: 4,
+  },
+  notesListItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 3,
+    paddingLeft: 4,
+  },
+  notesBulletMarker: {
+    fontSize: 9,
+    color: C.lime,
+    width: 12,
+  },
+  notesNumberMarker: {
+    fontSize: 9,
+    color: C.lime,
+    fontWeight: 700,
+    width: 16,
+  },
+  notesListText: {
+    fontSize: 9,
+    color: C.text,
+    lineHeight: 1.5,
+    flex: 1,
+  },
+  notesSpacer: {
+    height: 6,
+  },
+
   footer: {
     position: 'absolute',
     bottom: 24,
@@ -214,6 +278,11 @@ export type TurfReportData = {
     actions: Array<{ priority: 'HIGH' | 'MEDIUM' | 'LOW'; action: string; why: string }>;
     projectedImpact: string | null;
   } | null;
+  /** Optional strategist-authored notes (markdown), rendered on a
+   *  dedicated page after the AI Coach playbook. Populated for the
+   *  Visibility Audit ($499) and Strategy Session ($1,497) tier
+   *  customized PDFs; null for everything else. */
+  strategistNotes?: string | null;
 };
 
 function rankColor(rank: number | null): string {
@@ -489,6 +558,134 @@ export function TurfReport({ data }: { data: TurfReportData }) {
           </View>
         </Page>
       )}
+
+      {/* Page 3 (optional) — Strategist notes. Only renders for the
+          Visibility Audit + Strategy Session customized PDFs (the
+          /api/audits/[id]/generate-pdf path). The standard auto-PDF
+          path passes strategistNotes=undefined and this page is
+          skipped. */}
+      {data.strategistNotes && data.strategistNotes.trim().length > 0 && (
+        <Page size="LETTER" style={styles.page}>
+          <ReportHeader data={data} pageLabel="STRATEGIST NOTES" />
+
+          <View style={styles.coach}>
+            <Text style={styles.coachTitle}>
+              From Your TurfMap Strategist
+            </Text>
+            <Text style={styles.notesIntro}>
+              Diagnosis + recommendations from your live session, written
+              for your specific business and territory.
+            </Text>
+
+            <View style={styles.notesBody}>
+              {parseNotesBlocks(data.strategistNotes).map((block, i) =>
+                renderNotesBlock(block, i)
+              )}
+            </View>
+          </View>
+
+          <View style={styles.footer} fixed>
+            <Text>TurfMap™ — proprietary technology of Fourdots Digital</Text>
+            <Text>
+              Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
+            </Text>
+          </View>
+        </Page>
+      )}
     </Document>
   );
+}
+
+// ─── Strategist-notes markdown rendering ─────────────────────────────────
+
+type NotesBlock =
+  | { type: 'h1'; text: string }
+  | { type: 'h2'; text: string }
+  | { type: 'h3'; text: string }
+  | { type: 'bullet'; text: string }
+  | { type: 'numbered'; n: string; text: string }
+  | { type: 'p'; text: string }
+  | { type: 'spacer' };
+
+/** Block-level markdown parser tuned for strategist notes. Recognizes
+ *  headers (#, ##, ###), bullet lists (-, *), numbered lists (N.) and
+ *  paragraphs. Inline emphasis (** _ *) is intentionally NOT parsed
+ *  in v1 — the markers pass through as literals; strategist writes
+ *  in plain prose. Phase 2 can layer inline rendering when needed. */
+function parseNotesBlocks(md: string): NotesBlock[] {
+  const lines = md.split('\n');
+  const blocks: NotesBlock[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      // Collapse runs of empty lines into a single spacer.
+      const last = blocks[blocks.length - 1];
+      if (last && last.type !== 'spacer') {
+        blocks.push({ type: 'spacer' });
+      }
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      blocks.push({ type: 'h3', text: line.slice(4) });
+    } else if (line.startsWith('## ')) {
+      blocks.push({ type: 'h2', text: line.slice(3) });
+    } else if (line.startsWith('# ')) {
+      blocks.push({ type: 'h1', text: line.slice(2) });
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      blocks.push({ type: 'bullet', text: line.slice(2) });
+    } else {
+      const m = line.match(/^(\d+)\.\s+(.*)$/);
+      if (m) {
+        blocks.push({ type: 'numbered', n: m[1], text: m[2] });
+      } else {
+        blocks.push({ type: 'p', text: line });
+      }
+    }
+  }
+  return blocks;
+}
+
+function renderNotesBlock(block: NotesBlock, key: number) {
+  switch (block.type) {
+    case 'h1':
+      return (
+        <Text key={key} style={styles.notesH1}>
+          {block.text}
+        </Text>
+      );
+    case 'h2':
+      return (
+        <Text key={key} style={styles.notesH2}>
+          {block.text}
+        </Text>
+      );
+    case 'h3':
+      return (
+        <Text key={key} style={styles.notesH3}>
+          {block.text}
+        </Text>
+      );
+    case 'bullet':
+      return (
+        <View key={key} style={styles.notesListItem}>
+          <Text style={styles.notesBulletMarker}>•</Text>
+          <Text style={styles.notesListText}>{block.text}</Text>
+        </View>
+      );
+    case 'numbered':
+      return (
+        <View key={key} style={styles.notesListItem}>
+          <Text style={styles.notesNumberMarker}>{block.n}.</Text>
+          <Text style={styles.notesListText}>{block.text}</Text>
+        </View>
+      );
+    case 'p':
+      return (
+        <Text key={key} style={styles.notesP}>
+          {block.text}
+        </Text>
+      );
+    case 'spacer':
+      return <View key={key} style={styles.notesSpacer} />;
+  }
 }
