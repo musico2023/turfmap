@@ -18,7 +18,7 @@ export default async function NewClientPage() {
       <Header userEmail={me.email} />
       <div className="px-8 py-6">
         <Link
-          href="/"
+          href="/clients"
           className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1 mb-3"
         >
           <ChevronLeft size={12} /> Back to clients

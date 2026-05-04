@@ -1,117 +1,875 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ChevronRight, Crosshair, Plus } from 'lucide-react';
-import { getServerSupabase } from '@/lib/supabase/server';
-import type { ClientRow } from '@/lib/supabase/types';
-import { Header } from '@/components/turfmap/Header';
-import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
+import {
+  ArrowRight,
+  Compass,
+  Crown,
+  Eye,
+  FileText,
+  Gift,
+  MapPin,
+  Sparkles,
+  Target,
+  Zap,
+} from 'lucide-react';
+import { MarketingNav } from '@/components/marketing/MarketingNav';
+import { MarketingHero } from '@/components/marketing/MarketingHero';
+import { Section } from '@/components/marketing/Section';
+import { PricingCards } from '@/components/marketing/PricingCards';
+import { MonitoringCards } from '@/components/marketing/MonitoringCards';
+import { FAQAccordion } from '@/components/marketing/FAQAccordion';
+import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { LinkButton } from '@/components/ui/Button';
 
-export default async function AgencyHomePage() {
-  const me = await requireAgencyUserOrRedirect('/');
-  const supabase = getServerSupabase();
-  const { data: clients } = await supabase
-    .from('clients')
-    .select('*')
-    .order('created_at', { ascending: false });
+export const metadata: Metadata = {
+  title: 'TurfMap™ — See exactly where you rank across your territory',
+  description:
+    "TurfMap runs an 81-point geo-grid scan across your service area and shows you, cell by cell, where you appear in Google's local 3-pack. Local SEO diagnostic for service businesses. Delivered in seconds. From $99.",
+  openGraph: {
+    title: 'TurfMap™ — See exactly where you rank across your territory',
+    description:
+      "An 81-point geo-grid SEO diagnostic for local businesses — clinics, plumbers, dentists, restaurants, retail, anything that depends on Google's local 3-pack. Find out where you're invisible in your own service area, and what to fix first. From $99.",
+    url: 'https://turfmap.ai/',
+    siteName: 'TurfMap.ai',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'TurfMap™ — See exactly where you rank',
+    description:
+      'An 81-point geo-grid SEO diagnostic. From $99, delivered in seconds.',
+  },
+};
 
-  const list = (clients ?? []) as ClientRow[];
-
+/**
+ * Public marketing landing page. Replaces the previous root which was
+ * the agency client-list (now at /clients).
+ *
+ * No auth check here on purpose — this is the conversion surface for
+ * cold prospects. Authed agency users hitting / will see the marketing
+ * page too; the top nav surfaces a "Sign in" link and the Header in
+ * /clients lets them get back to the console.
+ *
+ * Section structure (matches the n=01..07 numbering used in the
+ * eyebrow tags) maps to the prompt's required pattern:
+ *   01 — Hero
+ *   02 — Problem (why one rank check isn't enough)
+ *   03 — Score anatomy (TurfReach / TurfRank / TurfScore explained)
+ *   04 — What's in each tier
+ *   05 — Pricing (Stripe Checkout)
+ *   06 — FAQ
+ *   07 — Closing CTA
+ */
+export default function MarketingLanding() {
   return (
     <div className="min-h-screen w-full text-white">
-      <Header userEmail={me.email} />
+      <MarketingNav />
 
-      <div className="px-8 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="font-display text-2xl font-bold">Agency clients</h1>
-            <p className="text-xs text-zinc-500 mt-1">
-              {list.length} client{list.length === 1 ? '' : 's'} on TurfMap.
-            </p>
-          </div>
-          <LinkButton
-            variant="primary"
-            size="md"
-            href="/clients/new"
-            leftIcon={<Plus size={14} strokeWidth={2.75} />}
-          >
-            Add client
-          </LinkButton>
+      {/* 01 — Hero (custom layout, doesn't use Section wrapper) */}
+      <MarketingHero />
+
+      {/* 02 — Problem */}
+      <Section
+        id="section-02"
+        n={2}
+        eyebrow="The problem"
+        heading={
+          <>
+            You checked your rank <em>once.</em>{' '}From your office.
+            That&rsquo;s one search out of 81.
+          </>
+        }
+        intro={
+          <>
+            Google personalizes local results by physical location. Someone
+            searching from across town sees a completely different 3-pack than
+            someone next door. A single rank check from your laptop tells you
+            almost nothing about whether your service-area neighbors can find
+            you.
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8">
+          <CompareCard
+            title="What most rank trackers tell you"
+            tone="muted"
+            badge="One number"
+            body={
+              <>
+                <span className="font-mono text-zinc-300">
+                  &ldquo;You rank #2 for plumber toronto.&rdquo;
+                </span>{' '}
+                Useful only if your business operates from a single point and
+                every customer searches from that same point. Neither is true.
+              </>
+            }
+          />
+          <CompareCard
+            title="What TurfMap tells you"
+            tone="bright"
+            badge="81 cell-level results"
+            body={
+              <>
+                <span className="font-mono text-zinc-100">
+                  &ldquo;You rank #1 in 12 cells, #2 in 14, #3 in 11, and don&rsquo;t
+                  appear at all in 44.&rdquo;
+                </span>{' '}
+                Now you know the shape of your territory: where you dominate,
+                where you fade, and where your competitors own the conversation.
+              </>
+            }
+          />
+        </div>
+      </Section>
+
+      {/* 03 — Score anatomy */}
+      <Section
+        id="section-03"
+        n={3}
+        eyebrow="What you'll see"
+        heading={
+          <>
+            Three numbers tell you everything you need to know — and{' '}
+            <em>where to act first.</em>
+          </>
+        }
+        intro="Every TurfMap returns the same three computed metrics. They're not vanity numbers — they map directly to specific fixes."
+        tint
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
+          <ScoreCard
+            icon={Compass}
+            name="TurfReach"
+            tagline="How much of your area you cover"
+            range="0 – 100%"
+            description="The percentage of your 81 grid cells where you appear in the local 3-pack at all."
+            example={
+              <>
+                A TurfReach of <strong className="text-zinc-100">35%</strong>{' '}
+                means two-thirds of nearby searchers don&rsquo;t see you when
+                they search for your service.
+              </>
+            }
+            bands={[
+              { range: '< 20%', label: 'Invisible', color: '#ff4d4d' },
+              { range: '20–40%', label: 'Patchy', color: '#ff9f3a' },
+              { range: '40–60%', label: 'Solid', color: '#e8e54a' },
+              { range: '60–80%', label: 'Dominant', color: '#c5ff3a' },
+              { range: '80+%', label: 'Saturated', color: '#f5c842' },
+            ]}
+          />
+          <ScoreCard
+            icon={Crown}
+            name="TurfRank"
+            tagline="Where you sit when you do appear"
+            range="1.0 – 3.0"
+            description="The 3-pack has three slots. TurfRank is your average position across the cells where you actually appear. 3.0 = always #1, 1.0 = always #3."
+            example={
+              <>
+                TurfRank <strong className="text-zinc-100">1.4</strong> means
+                you&rsquo;re scraping the bottom of the pack — usually #3,
+                often beneath competitors who optimized harder.
+              </>
+            }
+            bands={[
+              { range: '< 1.0', label: 'Edge of pack', color: '#ff4d4d' },
+              { range: '1.0–1.5', label: 'Bottom-pack', color: '#ff9f3a' },
+              { range: '1.5–2.0', label: 'Mid-pack', color: '#e8e54a' },
+              { range: '2.0–2.5', label: 'Top-pack', color: '#c5ff3a' },
+              { range: '2.5+', label: 'Position #1', color: '#f5c842' },
+            ]}
+          />
+          <ScoreCard
+            icon={Target}
+            name="TurfScore"
+            tagline="Composite visibility"
+            range="0 – 100"
+            description="Combines TurfReach and TurfRank into one number. The headline metric you can quote, track, and improve."
+            example={
+              <>
+                Most local businesses we scan land between{' '}
+                <strong className="text-zinc-100">30 and 55</strong> before
+                optimization. Above 60 is uncommon — it usually means the
+                Google Business Profile is well-tuned and the citations are
+                clean.
+              </>
+            }
+            bands={[
+              { range: '0–20', label: 'Invisible', color: '#ff4d4d' },
+              { range: '20–40', label: 'Patchy', color: '#ff9f3a' },
+              { range: '40–60', label: 'Solid', color: '#e8e54a' },
+              { range: '60–80', label: 'Dominant', color: '#c5ff3a' },
+              { range: '80+', label: 'Rare air', color: '#f5c842' },
+            ]}
+            highlight
+          />
         </div>
 
-        {list.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {list.map((c) => (
-              <Link
-                key={c.id}
-                href={`/clients/${c.public_id}`}
-                className="border rounded-lg p-5 transition-colors hover:border-zinc-700 group"
-                style={{
-                  background: 'var(--color-card)',
-                  borderColor: 'var(--color-border)',
-                }}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
-                    {c.industry ?? 'Local business'}
-                  </div>
-                  <ChevronRight
-                    size={16}
-                    className="text-zinc-600 group-hover:text-zinc-300 transition-colors"
-                  />
-                </div>
-                <div className="font-display text-lg font-semibold leading-snug mb-1">
-                  {c.business_name}
-                </div>
-                <div className="text-xs text-zinc-500 truncate">
-                  {c.address}
-                </div>
-                <div className="mt-4 flex items-center gap-2 text-[11px] font-mono text-zinc-600">
-                  <span
-                    className="inline-block w-1.5 h-1.5 rounded-full"
-                    style={{
-                      background:
-                        c.status === 'active'
-                          ? 'var(--color-lime)'
-                          : '#666',
-                    }}
-                  />
-                  <span className="uppercase tracking-wider">
-                    {c.status ?? 'unknown'}
-                  </span>
-                </div>
-              </Link>
-            ))}
+        {/* AI Coach preview */}
+        <div className="mt-12">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex items-center gap-2">
+            <Sparkles size={11} style={{ color: 'var(--color-lime)' }} />
+            Plus: AI Coach
           </div>
-        )}
+          <div
+            className="border rounded-lg p-5 md:p-6"
+            style={{
+              background: '#0a0f04',
+              borderColor: 'var(--color-border-bright)',
+            }}
+          >
+            <p className="text-zinc-300 leading-relaxed mb-4 max-w-3xl">
+              Every scan is followed by a strategic readout: a one-paragraph
+              diagnosis of what&rsquo;s actually causing the gap, plus three
+              prioritized actions specific to your business and category. Not
+              generic SEO advice — a read of your map.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[
+                {
+                  priority: 'HIGH',
+                  title: 'Verify your Apple Maps listing — currently unverified',
+                  body: 'iPhone users searching from the northern half of your service area get directed to a verified competitor. Verifying the listing is a 5-minute fix that immediately reclaims those cells.',
+                },
+                {
+                  priority: 'HIGH',
+                  title: 'Claim 8 missing industry directories',
+                  body: 'For this plumber: Angi, HomeAdvisor, Thumbtack, BBB, and 4 others — all absent. The exact list is industry-specific. Citation authority on the directories Google cross-references is the fastest TurfReach lever.',
+                },
+                {
+                  priority: 'MEDIUM',
+                  title: 'Normalize address format on Bing, Yelp, MapQuest',
+                  body: 'Three directories show abbreviated or malformed address strings. Fixing NAP consistency reduces noise that suppresses trust signals.',
+                },
+              ].map((a, i) => (
+                <div
+                  key={i}
+                  className="border rounded-md p-4"
+                  style={{
+                    background: 'var(--color-bg)',
+                    borderColor: 'var(--color-border)',
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className="text-[9px] font-mono uppercase font-bold tracking-[0.18em] px-1.5 py-0.5 rounded"
+                      style={{
+                        background:
+                          a.priority === 'HIGH' ? '#1a2010' : '#221a08',
+                        color:
+                          a.priority === 'HIGH'
+                            ? 'var(--color-lime)'
+                            : '#f5b651',
+                        border: `1px solid ${a.priority === 'HIGH' ? 'var(--color-border-bright)' : '#3a2a0a'}`,
+                      }}
+                    >
+                      {a.priority}
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-600">
+                      #{i + 1}
+                    </span>
+                  </div>
+                  <div className="font-display font-bold text-sm leading-snug mb-2 text-zinc-100">
+                    {a.title}
+                  </div>
+                  <p className="text-xs text-zinc-500 leading-relaxed">
+                    {a.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {/* Grounding callout — articulates what makes this AI Coach
+             *  different from generic SEO chatbots. Inline within the
+             *  same panel (not a separate card) so it reads as a
+             *  closing note on the sample output. Lime ⚡ + slightly
+             *  brighter foreground than the "sample output" line so the
+             *  eye lands here too. */}
+            <div
+              className="mt-4 pt-4 border-t flex items-start gap-2.5"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <Zap
+                size={13}
+                strokeWidth={2.5}
+                className="flex-shrink-0 mt-0.5"
+                style={{ color: 'var(--color-lime)' }}
+              />
+              <div className="text-xs leading-relaxed text-zinc-400">
+                <span
+                  className="font-semibold"
+                  style={{ color: 'var(--color-lime)' }}
+                >
+                  Grounded in real data.
+                </span>{' '}
+                Every recommendation cites the specific directories you&rsquo;re
+                missing from, the inconsistencies in your business listing,
+                and the moves that map to your industry. No generic SEO advice
+                — real audit findings, prioritized.
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-600 font-mono mt-3">
+              Sample output. Your actions will be specific to your business,
+              category, and what your map reveals.
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      {/* 04 — What's in each tier */}
+      <Section
+        id="section-04"
+        n={4}
+        eyebrow="Three tiers"
+        heading={
+          <>
+            Buy the level of help that matches <em>how serious you are</em>{' '}
+            about fixing this.
+          </>
+        }
+        intro="$99 if you just want to see your map. $499 if you want a strategist's read on it live. $1,497 if you want three keywords scanned and a deeper session to walk the whole picture."
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
+          <TierBrief
+            label="$99 · TurfScan"
+            who="For: business owners who want the data."
+            description="The map, the three scores, an auto-NAP citation check, and an AI Coach playbook of the top three things to fix — grounded in your real audit data. Self-serve, no human time."
+          />
+          <TierBrief
+            label="$499 · Visibility Audit"
+            who="For: businesses that want to know what's broken."
+            description="Everything in TurfScan, plus a per-vertical NAP audit, a full breakdown of your 3 nearest competitors with heatmap overlay, a 30-minute clarity session with a TurfMap strategist (live competitor teardown + diagnosis), a customized branded PDF with strategist notes after the call, and a 30-day re-scan."
+            highlight
+          />
+          <TierBrief
+            label="$1,497 · Strategy Session"
+            who="For: operators ready to invest in the full picture."
+            description="Three TurfMap scans across different keywords or service variations, three competitor deep-dives with annotated GBP teardowns, a 60-minute strategy session with a TurfMap strategist, a branded comparative report covering all three angles, and two re-scans (60 + 90 days) to track progress."
+          />
+        </div>
+      </Section>
+
+      {/* 05 — Pricing (Stripe checkout)
+       *
+       * Two-subsection layout:
+       *   ─ One-time audits (3 cards: $99 / $499 / $1,497)
+       *   ─ Continuous monitoring (2 cards: Pulse $39 / Pulse+ $89)
+       *
+       * Plus a per-location add-on callout and an attach-banner that
+       * dangles 30 free days of Pulse on top of any audit purchase.
+       *
+       * The H2 captures the funnel: pick the audit, then keep watching.
+       * Intro line is the agency-comparison anchor — most agencies
+       * charge $1.5K-$2.5K just to look, TurfMap starts at $99.
+       */}
+      <Section
+        id="section-05"
+        n={5}
+        eyebrow="Pricing"
+        heading={
+          <>
+            Pick your audit. Then <em>keep watching.</em>
+          </>
+        }
+        intro={
+          <>
+            Most agencies charge{' '}
+            <span className="text-zinc-200 font-semibold">$1,500–$2,500+</span>{' '}
+            before they&rsquo;ll even look at your map pack. TurfMap starts
+            at <span style={{ color: 'var(--color-lime)' }}>$99</span>.
+          </>
+        }
+        tint
+      >
+        <SubsectionHeader
+          title="One-time audits"
+          subhead="One scan, full diagnosis. Pick your depth."
+        />
+        <PricingCards />
+
+        <div className="mt-20">
+          <SubsectionHeader
+            title="Continuous monitoring"
+            subhead="Keep watching your territory. Cancel anytime."
+          />
+          <MonitoringCards />
+        </div>
+
+        {/* Per-location add-on. Linear pricing — no tier-jump tax for
+         *  multi-location operators. The whole reason the schema is
+         *  multi-location-native is so franchise / multi-clinic /
+         *  multi-storefront operators can layer locations as needed. */}
+        <div
+          className="mt-10 mx-auto max-w-3xl rounded-lg border p-5 flex items-start gap-3"
+          style={{
+            background: 'var(--color-bg)',
+            borderColor: 'var(--color-border)',
+          }}
+        >
+          <MapPin
+            size={18}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div className="text-sm text-zinc-300 leading-relaxed">
+            <span className="font-semibold text-zinc-100">
+              Multiple locations? Add them linearly.
+            </span>{' '}
+            <span className="text-zinc-400">
+              <span className="font-mono">+$19/mo</span> per additional
+              location on Pulse,{' '}
+              <span className="font-mono">+$29/mo</span> on Pulse+. No tier
+              ladders, no per-location penalties.
+            </span>
+          </div>
+        </div>
+
+        {/* Attach banner. Marketing's lead-magnet hook: any audit
+         *  purchase comes with 30 free days of Pulse on top. The trial
+         *  auto-cancels unless the buyer keeps it (no
+         *  drip-into-charge-without-warning trickery). Implementation
+         *  note: this requires the Stripe checkout to attach a
+         *  subscription with `trial_period_days: 30` to the one-time
+         *  payment session — not yet wired, so for now the banner is a
+         *  promise we'll honor manually until the trial-attachment
+         *  flow is built. */}
+        <div
+          className="mt-5 mx-auto max-w-3xl rounded-lg p-5 flex items-start gap-3"
+          style={{
+            background: '#0d130a',
+            border: '1px solid var(--color-border-bright)',
+          }}
+        >
+          <Gift
+            size={18}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div className="text-sm text-zinc-300 leading-relaxed">
+            <span
+              className="font-semibold"
+              style={{ color: 'var(--color-lime)' }}
+            >
+              Buy any audit, get 30 days of Pulse free.
+            </span>{' '}
+            <span className="text-zinc-400">
+              Cancel anytime — keep watching only if you want to.
+            </span>
+          </div>
+        </div>
+
+        <p className="text-xs text-zinc-600 font-mono mt-10 text-center">
+          All prices in USD. Refund policy: full refund within 24h if you
+          haven&rsquo;t received your scan yet.
+        </p>
+      </Section>
+
+      {/* 06 — FAQ */}
+      <Section
+        id="section-06"
+        n={6}
+        eyebrow="Common questions"
+        heading={
+          <>
+            Things people ask before <em>they buy.</em>
+          </>
+        }
+      >
+        <div className="mt-6">
+          <FAQAccordion
+            items={[
+              {
+                q: 'How long does it take to receive my TurfMap?',
+                a: (
+                  <>
+                    The scan itself finishes in under a minute — we run all 81
+                    queries in parallel against Google&rsquo;s local-pack feed.
+                    After you fill in your business details on the order form,
+                    you&rsquo;ll get an email with a link to your map and your
+                    AI Coach playbook. The Visibility Audit and Strategy
+                    Session add the strategist&rsquo;s written diagnosis,
+                    which lands within 2 business days.
+                  </>
+                ),
+              },
+              {
+                q: 'What keyword should I pick?',
+                a: (
+                  <>
+                    Pick the most-searched term someone in your service area
+                    would type to find a business like yours. For a plumber,
+                    that&rsquo;s usually <code>plumber [city]</code> — not your
+                    business name, not a niche service. If you&rsquo;re unsure,
+                    pick what you&rsquo;d type if you needed your own service
+                    in a city you don&rsquo;t live in. The Strategy Session
+                    scans three keywords so you can compare.
+                  </>
+                ),
+              },
+              {
+                q: 'Is this US-only?',
+                a: (
+                  <>
+                    No. TurfMap works anywhere Google&rsquo;s local 3-pack
+                    works — US, Canada, UK, Australia, EU, and most of the
+                    rest of the world. The grid is centered on your business
+                    address regardless of country.
+                  </>
+                ),
+              },
+              {
+                q: "What if I'm not in any of the cells?",
+                a: (
+                  <>
+                    Your map will show 81 red cells and a TurfScore of 0. That
+                    is genuinely useful information — it tells you the
+                    optimization gap is total, not partial, and the AI Coach
+                    will give you a foundational checklist (verify GBP, fix
+                    NAP, file primary citations) instead of the
+                    fine-tuning advice it would otherwise produce. No tier is
+                    refunded on the basis of a low score; the diagnostic is
+                    the product.
+                  </>
+                ),
+              },
+              {
+                q: 'Can I rerun the scan later?',
+                a: (
+                  <>
+                    Yes. The Visibility Audit includes a 30-day re-scan, the
+                    Strategy Session includes two (60 + 90 days). If you want
+                    your map refreshed every month indefinitely — to catch
+                    ranking drops the moment they happen — ask us at checkout
+                    about ongoing monthly tracking. We also offer fully
+                    managed monthly services where we don&rsquo;t just
+                    measure the map, we act on it; the right fit depends on
+                    your category and how much of this you want to handle
+                    yourself.
+                  </>
+                ),
+              },
+              {
+                q: 'What does NAP mean?',
+                a: (
+                  <>
+                    NAP is short for Name, Address, Phone — the three pieces
+                    of business contact data that Google cross-references
+                    across hundreds of directories (Apple Maps, Yelp, Bing,
+                    Yellow Pages, plus industry-specific ones — Angi and
+                    HomeAdvisor for home services, ZocDoc and Healthgrades
+                    for medical, OpenTable and Tripadvisor for restaurants,
+                    and so on). When NAP isn&rsquo;t consistent across those
+                    directories, Google trusts your listing less, which
+                    suppresses your appearance in the local 3-pack. Every
+                    Visibility Audit includes a full NAP scan tuned to your
+                    category.
+                  </>
+                ),
+              },
+              {
+                q: 'What is the local 3-pack?',
+                a: (
+                  <>
+                    The three Google Maps results that appear at the top of
+                    the page when you search for a local service (e.g.{' '}
+                    <code>plumber toronto</code>). It&rsquo;s the most
+                    valuable real estate in local search — the businesses
+                    that land in the 3-pack capture the majority of clicks
+                    and calls. TurfMap measures, cell by cell, whether you
+                    appear there.
+                  </>
+                ),
+              },
+              {
+                q: "Who's behind TurfMap?",
+                a: (
+                  <>
+                    TurfMap is built and operated by{' '}
+                    <a
+                      href="https://fourdots.io"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-200 underline-offset-2 underline hover:text-white"
+                    >
+                      Fourdots Digital
+                    </a>{' '}
+                    — a Toronto-based agency that&rsquo;s been doing local SEO
+                    for service businesses since 2018. We built TurfMap
+                    because the off-the-shelf rank trackers our clients were
+                    using told them they ranked #1 from their office and
+                    didn&rsquo;t mention they were invisible 3km down the
+                    road. So we built one that does.
+                  </>
+                ),
+              },
+            ]}
+          />
+        </div>
+      </Section>
+
+      {/* 07 — Closing CTA */}
+      <Section
+        id="section-07"
+        n={7}
+        eyebrow="Last call"
+        heading={
+          <>
+            See your map. Then decide <em>what to do about it.</em>
+          </>
+        }
+        intro="If you make it to the end of this page, you already suspect you've got a visibility problem. Worst case: $99 confirms it. Best case: you find a quick fix that pays for itself in one new customer."
+      >
+        <div className="flex flex-wrap items-center gap-3 mt-8">
+          <LinkButton
+            variant="primary"
+            size="lg"
+            href="#section-05"
+            rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
+          >
+            Order your TurfMap audit
+          </LinkButton>
+          <LinkButton variant="ghost" size="lg" href="/login">
+            I&rsquo;m an existing customer
+          </LinkButton>
+        </div>
+        {/* Trust strip — three short reassurances anchoring the closing
+         *  CTA. Pre-fix these sat as three independent cards on the
+         *  section's transparent surface and visually orphaned from
+         *  the heading/CTA above. Now wrapped in a single tinted
+         *  container with a small eyebrow so they read as the closing
+         *  beat of the section, not a separate row of widgets. The
+         *  inner cards lose their individual borders/backgrounds and
+         *  become flush items inside the unifying container. */}
+        <div
+          className="mt-10 rounded-lg p-6 md:p-8"
+          style={{
+            background: 'var(--color-card)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-5 flex items-center gap-1.5">
+            <span style={{ color: 'var(--color-lime)' }}>·</span>
+            Why this is real software, not a PDF mill
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 text-sm">
+            <TrustInline icon={Eye} label="Real searches">
+              81 actual Google queries per scan, not estimates.
+            </TrustInline>
+            <TrustInline icon={FileText} label="Real deliverable">
+              Branded PDF report you can keep, share, or hand to a freelancer.
+            </TrustInline>
+            <TrustInline icon={Sparkles} label="Built by operators">
+              By the agency that uses it on its own clients every day.
+            </TrustInline>
+          </div>
+        </div>
+      </Section>
+
+      <MarketingFooter />
+    </div>
+  );
+}
+
+// ─── Sub-components used inline above ─────────────────────────────────────
+
+/**
+ * Subsection header used inside Section 05 to split "One-time audits"
+ * from "Continuous monitoring." Smaller than the section H2 — uses the
+ * same eyebrow + heading pattern as Section but at a level down so the
+ * eye reads "this is one section split into two product groupings,"
+ * not "two top-level sections jammed together."
+ */
+function SubsectionHeader({
+  title,
+  subhead,
+}: {
+  title: string;
+  subhead: string;
+}) {
+  return (
+    <div className="mt-10 mb-2 max-w-3xl">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-2">
+        <span style={{ color: 'var(--color-lime)' }}>·</span> {title}
+      </div>
+      <p className="font-display text-xl md:text-2xl font-bold text-zinc-100 leading-tight">
+        {subhead}
+      </p>
+    </div>
+  );
+}
+
+function CompareCard({
+  title,
+  tone,
+  badge,
+  body,
+}: {
+  title: string;
+  tone: 'muted' | 'bright';
+  badge: string;
+  body: React.ReactNode;
+}) {
+  const bright = tone === 'bright';
+  return (
+    <div
+      className="border rounded-lg p-6"
+      style={{
+        background: bright ? 'var(--color-card-glow)' : 'var(--color-card)',
+        borderColor: bright
+          ? 'var(--color-border-bright)'
+          : 'var(--color-border)',
+      }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">
+          {title}
+        </div>
+        <span
+          className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded"
+          style={{
+            background: bright ? '#1a2010' : 'var(--color-bg)',
+            color: bright ? 'var(--color-lime)' : '#a1a1aa',
+            border: `1px solid ${bright ? 'var(--color-border-bright)' : 'var(--color-border)'}`,
+          }}
+        >
+          {badge}
+        </span>
+      </div>
+      <p className="text-zinc-300 leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+function ScoreCard({
+  icon: Icon,
+  name,
+  tagline,
+  range,
+  description,
+  example,
+  bands,
+  highlight = false,
+}: {
+  icon: typeof Compass;
+  name: string;
+  tagline: string;
+  range: string;
+  description: string;
+  example: React.ReactNode;
+  bands: { range: string; label: string; color: string }[];
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className="border rounded-lg p-6 flex flex-col"
+      style={{
+        background: highlight ? 'var(--color-card-glow)' : 'var(--color-bg)',
+        borderColor: highlight
+          ? 'var(--color-border-bright)'
+          : 'var(--color-border)',
+      }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <Icon size={18} className="text-zinc-500" />
+        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600">
+          {range}
+        </span>
+      </div>
+      <div className="font-display text-2xl font-bold mb-1">
+        {name}
+        <span
+          className="text-xs align-top ml-0.5"
+          style={{ color: 'var(--color-lime)' }}
+        >
+          ™
+        </span>
+      </div>
+      <div className="text-xs text-zinc-400 mb-4">{tagline}</div>
+      <p className="text-sm text-zinc-300 leading-relaxed mb-3">{description}</p>
+      <p className="text-sm text-zinc-400 leading-relaxed mb-5">
+        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-zinc-500 mr-2">
+          E.g.
+        </span>
+        {example}
+      </p>
+      <div className="mt-auto pt-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-2">
+          Bands
+        </div>
+        <div className="space-y-1">
+          {bands.map((b) => (
+            <div key={b.label} className="flex items-center justify-between text-xs">
+              <span className="font-mono text-zinc-600">{b.range}</span>
+              <span className="font-mono font-semibold" style={{ color: b.color }}>
+                {b.label}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function EmptyState() {
+function TierBrief({
+  label,
+  who,
+  description,
+  highlight = false,
+}: {
+  label: string;
+  who: string;
+  description: string;
+  highlight?: boolean;
+}) {
   return (
     <div
-      className="border rounded-lg p-12 flex flex-col items-center text-center"
+      className="border rounded-lg p-6"
       style={{
-        background: 'var(--color-card)',
-        borderColor: 'var(--color-border)',
+        background: highlight ? 'var(--color-card-glow)' : 'var(--color-card)',
+        borderColor: highlight
+          ? 'var(--color-border-bright)'
+          : 'var(--color-border)',
       }}
     >
       <div
-        className="w-16 h-16 rounded-full flex items-center justify-center mb-5 border border-zinc-800"
-        style={{ background: '#0a0a0a' }}
+        className="font-display text-lg font-bold mb-2"
+        style={{ color: highlight ? 'var(--color-lime)' : 'white' }}
       >
-        <Crosshair size={28} className="text-zinc-600" strokeWidth={1.5} />
+        {label}
       </div>
-      <h4 className="font-display text-xl font-semibold text-zinc-300">
-        No clients yet
-      </h4>
-      <p className="text-sm text-zinc-500 mt-2 max-w-sm">
-        Run <span className="font-mono text-zinc-300">npm run test-scan</span>{' '}
-        to seed a test client and its first scan.
-      </p>
+      <div className="text-xs text-zinc-500 font-mono uppercase tracking-wider mb-3">
+        {who}
+      </div>
+      <p className="text-sm text-zinc-300 leading-relaxed">{description}</p>
+    </div>
+  );
+}
+
+/**
+ * Inline trust item — used inside the unifying Section 07 container.
+ * Replaces the previous standalone-card Trust component which created
+ * the visual orphaning issue. No individual border/background; the
+ * item relies on the parent container for chrome.
+ */
+function TrustInline({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: typeof Eye;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon size={14} style={{ color: 'var(--color-lime)' }} />
+        <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">
+          {label}
+        </div>
+      </div>
+      <p className="text-zinc-400 leading-relaxed">{children}</p>
     </div>
   );
 }
