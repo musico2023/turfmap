@@ -129,6 +129,7 @@ export async function GET(req: Request) {
       businessName: client.business_name,
       address: client.address,
       industry: client.industry,
+      logoUrl: client.logo_url ?? null,
     },
     keyword: keyword.keyword,
     scan: {

@@ -48,6 +48,7 @@ import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { ClientBrandMark } from '@/components/turfmap/ClientBrandMark';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
 export const dynamic = 'force-dynamic';
@@ -236,13 +237,22 @@ export default async function PublicSharePage({
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
-          <div className="text-sm font-medium text-zinc-100">
-            {client.business_name}
-            {scanLocation && !scanLocation.is_primary && (
-              <span className="text-zinc-500 font-normal text-xs ml-1.5">
-                · {locationDisplayLabel(scanLocation)}
+          <div className="flex items-center gap-2.5">
+            <ClientBrandMark
+              logoUrl={client.logo_url}
+              businessName={client.business_name}
+              size={28}
+            />
+            <div className="text-sm font-medium text-zinc-100 min-w-0">
+              <span className="truncate block">
+                {client.business_name}
+                {scanLocation && !scanLocation.is_primary && (
+                  <span className="text-zinc-500 font-normal text-xs ml-1.5">
+                    · {locationDisplayLabel(scanLocation)}
+                  </span>
+                )}
               </span>
-            )}
+            </div>
           </div>
         </div>
         <div className="col-span-4">

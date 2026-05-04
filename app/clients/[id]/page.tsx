@@ -33,6 +33,7 @@ import { ScanButton } from '@/components/turfmap/ScanButton';
 import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
 import { KeywordSwitcher } from '@/components/turfmap/KeywordSwitcher';
+import { ClientBrandMark } from '@/components/turfmap/ClientBrandMark';
 import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
 import { LinkButton } from '@/components/ui/Button';
 import { buttonStyles } from '@/components/ui/buttonStyles';
@@ -311,13 +312,22 @@ export default async function ClientDashboardPage({
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
-          <div className="text-sm font-medium text-zinc-100">
-            {client.business_name}
-            {activeLocation && !activeLocation.is_primary && (
-              <span className="text-zinc-500 font-normal text-xs ml-1.5">
-                · {activeLocation.label || activeLocation.city || 'Location'}
+          <div className="flex items-center gap-2.5">
+            <ClientBrandMark
+              logoUrl={client.logo_url}
+              businessName={client.business_name}
+              size={28}
+            />
+            <div className="text-sm font-medium text-zinc-100 min-w-0">
+              <span className="truncate block">
+                {client.business_name}
+                {activeLocation && !activeLocation.is_primary && (
+                  <span className="text-zinc-500 font-normal text-xs ml-1.5">
+                    · {activeLocation.label || activeLocation.city || 'Location'}
+                  </span>
+                )}
               </span>
-            )}
+            </div>
           </div>
         </div>
         <div className="col-span-3">

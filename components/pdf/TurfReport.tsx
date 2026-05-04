@@ -20,6 +20,7 @@ import {
   Circle,
   Line,
   G,
+  Image,
 } from '@react-pdf/renderer';
 
 // Color tokens duplicated from globals.css. react-pdf evaluates outside the
@@ -69,7 +70,30 @@ const styles = StyleSheet.create({
   logoX: { color: '#000', fontSize: 14, fontWeight: 700 },
   brandTitle: { fontSize: 16, fontWeight: 700, color: C.text },
   brandSub: { fontSize: 7, color: C.textMuted, letterSpacing: 1.6 },
-  headerRight: { fontSize: 8, color: C.textMuted },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerRightText: { fontSize: 8, color: C.textMuted, textAlign: 'right' },
+  clientLogo: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    backgroundColor: '#0a0a0a',
+    border: `1px solid ${C.border}`,
+    padding: 2,
+    objectFit: 'contain',
+  },
+  clientLetter: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    backgroundColor: C.lime,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clientLetterText: { color: '#000', fontSize: 14, fontWeight: 700 },
 
   metaRow: {
     flexDirection: 'row',
@@ -187,7 +211,15 @@ const styles = StyleSheet.create({
 });
 
 export type TurfReportData = {
-  client: { businessName: string; address: string; industry: string | null };
+  client: {
+    businessName: string;
+    address: string;
+    industry: string | null;
+    /** Public URL of the uploaded client logo (Supabase storage). Null
+     *  when no logo has been set — the header falls back to a TurfMap-
+     *  lime square with the first letter of the business name. */
+    logoUrl: string | null;
+  };
   keyword: string;
   scan: {
     id: string;
@@ -326,9 +358,44 @@ function ReportHeader({
         </View>
       </View>
       <View style={styles.headerRight}>
-        <Text>{data.client.businessName}</Text>
-        <Text>{new Date(data.scan.completedAt).toISOString().slice(0, 10)}</Text>
+        <View style={styles.headerRightText}>
+          <Text>{data.client.businessName}</Text>
+          <Text>{new Date(data.scan.completedAt).toISOString().slice(0, 10)}</Text>
+        </View>
+        <ClientBrandMark
+          logoUrl={data.client.logoUrl}
+          businessName={data.client.businessName}
+        />
       </View>
+    </View>
+  );
+}
+
+/**
+ * PDF-side counterpart to components/turfmap/ClientBrandMark.tsx —
+ * separate because react-pdf has its own primitives (Image, View, Text)
+ * and can't share the HTML/CSS DOM component. Same fallback contract:
+ * uploaded logo if present, otherwise lime square with the first
+ * letter of the business name.
+ *
+ * react-pdf's <Image> fetches the URL server-side at render time, so
+ * the Supabase storage bucket must serve the logo as a public asset
+ * (which client-logos already does — see api/clients/[id]/logo/route.ts).
+ */
+function ClientBrandMark({
+  logoUrl,
+  businessName,
+}: {
+  logoUrl: string | null;
+  businessName: string;
+}) {
+  if (logoUrl) {
+    return <Image src={logoUrl} style={styles.clientLogo} />;
+  }
+  const initial = (businessName.trim().charAt(0) || 'T').toUpperCase();
+  return (
+    <View style={styles.clientLetter}>
+      <Text style={styles.clientLetterText}>{initial}</Text>
     </View>
   );
 }
