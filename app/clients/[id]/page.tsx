@@ -38,7 +38,7 @@ import { LinkButton } from '@/components/ui/Button';
 import { buttonStyles } from '@/components/ui/buttonStyles';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
-import { getRescanCapStatus } from '@/lib/scans/rateLimit';
+import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
 
 // Default 9×9 grid is 4 rings out from the center cell, so spacing per ring
 // is `service_radius_miles / 4`. Falls back to the v1 default of 1.6mi /
@@ -206,9 +206,14 @@ export default async function ClientDashboardPage({
   // location has hit 3 on-demand scans in the last 24h. Server-fetched
   // here so the button can render its disabled state without a round-
   // trip; the trigger route also enforces the cap defensively.
-  const rescanCap = activeLocation
-    ? await getRescanCapStatus(supabase, activeLocation.id)
-    : null;
+  //
+  // Owner bypass: skip the prefetch entirely for staff in the bypass
+  // set so the button never reads as disabled. ScanButton treats null
+  // rescanCap as "no rate-limit display" (per its prop doc).
+  const rescanCap =
+    activeLocation && !shouldBypassRescanCap(me.email)
+      ? await getRescanCapStatus(supabase, activeLocation.id)
+      : null;
 
   // Competitors: automatic discovery by default; per-location manual
   // override when the operator has explicitly added competitors via the
