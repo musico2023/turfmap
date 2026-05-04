@@ -6,9 +6,17 @@ import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
 
-// Common picks. The form accepts any free-text value — these are just
-// suggestions surfaced via <datalist>.
+// Industry suggestions for the <datalist>. Form still accepts any
+// free-text value, but these are the ones that map cleanly to a
+// BrightLocal directory profile (lib/brightlocal/directories.ts).
+// Anything outside this list silently falls back to the home-services
+// profile, which usually-but-not-always produces sensible NAP audits.
+//
+// Order: highest-frequency operator picks first within each profile,
+// then groups roughly by profile so the dropdown reads as a natural
+// menu of "what kind of business is this?"
 const INDUSTRY_SUGGESTIONS = [
+  // ─── Home services (default fallback profile) ───────────────────
   'plumbing',
   'hvac',
   'roofing',
@@ -29,7 +37,34 @@ const INDUSTRY_SUGGESTIONS = [
   'painting',
   'flooring',
   'drywall',
+  // ─── Medical / healthcare profile ───────────────────────────────
+  'medical',
+  'dental',
+  'chiropractic',
+  'veterinary',
+  'pediatric',
+  'optometry',
+  'physical therapy',
   'home healthcare',
+  // ─── Legal profile ──────────────────────────────────────────────
+  'law firm',
+  'attorney',
+  // ─── Food / restaurant profile ──────────────────────────────────
+  // (cafe / bakery / dessert spots all key off the regex matching
+  // 'cafe' or 'bakery' — so "dessert cafe" maps correctly.)
+  'restaurant',
+  'cafe',
+  'bakery',
+  'catering',
+  'pizza',
+  // ─── Real estate profile ────────────────────────────────────────
+  'real estate',
+  'realtor',
+  // ─── Automotive profile ─────────────────────────────────────────
+  'auto repair',
+  'auto body',
+  'car wash',
+  'detailing',
 ];
 
 type Form = {
@@ -285,12 +320,16 @@ export function ClientCreateForm() {
             className={inputClass}
           />
         </Field>
-        <Field label="Address" required>
+        <Field
+          label="Address"
+          required
+          help="Street + city + region. Skip the postal code — it sometimes confuses the geocoder."
+        >
           <input
             type="text"
             value={form.address}
             onChange={(e) => update('address', e.target.value)}
-            placeholder="100 Queen St W, Toronto, ON M5H 2N2"
+            placeholder="100 Queen St W, Toronto, ON"
             required
             className={inputClass}
           />
@@ -345,13 +384,24 @@ export function ClientCreateForm() {
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Industry" help="Optional. Free-text — pick a suggestion or type your own.">
+          <Field
+            label="Industry"
+            help={
+              <>
+                Drives which directories the NAP audit checks (e.g.
+                Healthgrades for medical, OpenTable for restaurants,
+                Angi for home services) + tunes AI Coach recommendations.
+                Pick a suggestion or type your own. Unknown industries
+                fall back to the home-services directory set.
+              </>
+            }
+          >
             <input
               type="text"
               list="industry-suggestions"
               value={form.industry}
               onChange={(e) => update('industry', e.target.value)}
-              placeholder="plumbing"
+              placeholder="plumbing, restaurant, dental, law firm…"
               className={inputClass}
               autoComplete="off"
             />
@@ -493,13 +543,20 @@ function GeocodeStatus({
           </span>
         )}
         {state.status === 'found' && (
-          <span className="inline-flex items-start gap-1.5 text-zinc-300">
+          // `flex` (not inline-flex) + `min-w-0` on the row so the
+          // truncate target inherits a real bounded width. Long
+          // Nominatim-normalized addresses (e.g. "1440 Bathurst Street,
+          // The Annex, Toronto, Old Toronto, Ontario, M5R 3J3, Canada")
+          // were overflowing past the parent into the override-coords
+          // toggle button on the right. Pre-fix the inline-flex didn't
+          // establish a width context for `truncate`.
+          <span className="flex items-start gap-1.5 text-zinc-300 min-w-0">
             <Check
               size={12}
               className="flex-shrink-0 mt-0.5"
               style={{ color: 'var(--color-lime)' }}
             />
-            <span className="truncate">
+            <span className="truncate min-w-0 flex-1">
               <span style={{ color: 'var(--color-lime)' }}>
                 {state.lat.toFixed(5)}, {state.lng.toFixed(5)}
               </span>
