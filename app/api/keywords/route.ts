@@ -101,11 +101,14 @@ export async function POST(req: Request) {
     .single<TrackedKeywordRow>();
 
   if (error) {
-    // 23505 = unique_violation in Postgres
+    // 23505 = unique_violation in Postgres. Post-migration 0010 the
+    // unique is (client_id, location_id, keyword) — so the violation
+    // means this exact keyword is already tracked AT THIS LOCATION.
+    // The same keyword can be added to a sibling location.
     const code = (error as { code?: string }).code;
     if (code === '23505') {
       return NextResponse.json(
-        { error: 'this keyword is already tracked for this client' },
+        { error: 'this keyword is already tracked for this location' },
         { status: 409 }
       );
     }

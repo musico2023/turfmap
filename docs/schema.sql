@@ -47,6 +47,10 @@ create table tracked_keywords (
   scan_frequency text check (scan_frequency in ('daily', 'weekly', 'biweekly', 'monthly')) default 'weekly',
   created_at timestamptz default now(),
   unique(client_id, keyword)
+  -- Note: this is the Phase-1 form. Migration 0010 changes the
+  -- unique to (client_id, location_id, keyword) post-multi-location
+  -- support. schema.sql is intentionally not kept in sync with
+  -- migrations — the migration files are authoritative.
 );
 
 create index idx_tracked_keywords_client_id on tracked_keywords(client_id);
