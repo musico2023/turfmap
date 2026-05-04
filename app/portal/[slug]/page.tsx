@@ -5,8 +5,11 @@
  * renders, with three differences:
  *   1. Internal cost data (DFS cost cents) is hidden from the footer.
  *   2. Internal scan controls (Re-scan / scan ID) are hidden.
- *   3. The client's `primary_color` overrides the brand lime accent across
- *      anything that reads `var(--color-lime)`.
+ *
+ * White-label scope is just the logo. Per-client brand-accent
+ * customization was removed — every portal renders with TurfMap's
+ * standard lime + dark surfaces so an un-customized portal still
+ * looks intentional rather than like a half-finished setup.
  *
  * v1 scope: `[slug]` is the client UUID. Phase 4 may swap to a friendly
  * subdomain or a `clients.slug` column.
@@ -196,19 +199,11 @@ export default async function ClientPortalPage({
         }>()
     : { data: null };
 
-  // Apply per-client brand color via a CSS variable override on the wrapper.
-  const accent = client.primary_color ?? '#c5ff3a';
-  const wrapperStyle = {
-    // overrides anything that reads var(--color-lime)
-    ['--color-lime' as string]: accent,
-  } as React.CSSProperties;
-
   return (
-    <div className="min-h-screen w-full text-white" style={wrapperStyle}>
+    <div className="min-h-screen w-full text-white">
       <PortalHeader
         businessName={client.business_name}
         logoUrl={client.logo_url}
-        accent={accent}
         userEmail={user.email ?? null}
         isAgencyPreview={isAgencyPreview}
       />
@@ -239,7 +234,7 @@ export default async function ClientPortalPage({
             color: '#a1a1aa',
           }}
         >
-          <Sparkles size={14} style={{ color: accent }} />
+          <Sparkles size={14} style={{ color: 'var(--color-lime)' }} />
           <span>
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
@@ -433,13 +428,11 @@ export default async function ClientPortalPage({
 function PortalHeader({
   businessName,
   logoUrl,
-  accent,
   userEmail,
   isAgencyPreview,
 }: {
   businessName: string;
   logoUrl: string | null;
-  accent: string;
   userEmail: string | null;
   isAgencyPreview: boolean;
 }) {
@@ -457,7 +450,7 @@ function PortalHeader({
             alt={businessName}
             className="w-9 h-9 rounded-md object-contain p-0.5"
             style={{
-              boxShadow: `0 0 24px ${accent}40`,
+              boxShadow: '0 0 24px #c5ff3a40',
               background: '#0a0a0a',
             }}
           />
@@ -465,8 +458,8 @@ function PortalHeader({
           <div
             className="w-9 h-9 rounded-md flex items-center justify-center font-display font-bold text-black"
             style={{
-              background: accent,
-              boxShadow: `0 0 24px ${accent}40`,
+              background: 'var(--color-lime)',
+              boxShadow: '0 0 24px #c5ff3a40',
             }}
           >
             {initial}

@@ -7,65 +7,83 @@ import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
 import { InfoTooltip } from './InfoTooltip';
 
-// Industry suggestions for the <datalist>. Form still accepts any
-// free-text value, but these are the ones that map cleanly to a
-// BrightLocal directory profile (lib/brightlocal/directories.ts).
-// Anything outside this list silently falls back to the home-services
-// profile, which usually-but-not-always produces sensible NAP audits.
+// Grouped industry options for the <select>. Each group corresponds
+// to a BrightLocal directory profile (lib/brightlocal/directories.ts):
+// home-services, medical-healthcare, legal, food-restaurant,
+// real-estate, automotive. Within a group, every option string
+// matches the BL inference regex and routes to the same profile —
+// so the granular value (e.g. "hvac" vs "plumbing") survives in
+// AI Coach prompts but the NAP audit fires the right directory set
+// regardless of pick.
 //
-// Order: highest-frequency operator picks first within each profile,
-// then groups roughly by profile so the dropdown reads as a natural
-// menu of "what kind of business is this?"
-const INDUSTRY_SUGGESTIONS = [
-  // ─── Home services (default fallback profile) ───────────────────
-  'plumbing',
-  'hvac',
-  'roofing',
-  'electrical',
-  'landscaping',
-  'pest control',
-  'cleaning',
-  'garage doors',
-  'locksmith',
-  'septic services',
-  'pool maintenance',
-  'tree care',
-  'appliance repair',
-  'concrete',
-  'fencing',
-  'pressure washing',
-  'window cleaning',
-  'painting',
-  'flooring',
-  'drywall',
-  // ─── Medical / healthcare profile ───────────────────────────────
-  'medical',
-  'dental',
-  'chiropractic',
-  'veterinary',
-  'pediatric',
-  'optometry',
-  'physical therapy',
-  'home healthcare',
-  // ─── Legal profile ──────────────────────────────────────────────
-  'law firm',
-  'attorney',
-  // ─── Food / restaurant profile ──────────────────────────────────
-  // (cafe / bakery / dessert spots all key off the regex matching
-  // 'cafe' or 'bakery' — so "dessert cafe" maps correctly.)
-  'restaurant',
-  'cafe',
-  'bakery',
-  'catering',
-  'pizza',
-  // ─── Real estate profile ────────────────────────────────────────
-  'real estate',
-  'realtor',
-  // ─── Automotive profile ─────────────────────────────────────────
-  'auto repair',
-  'auto body',
-  'car wash',
-  'detailing',
+// Closed set, no free-text. Operators previously typed unsupported
+// categories (e.g. "desserts") that silently fell back to home-
+// services. The <select> makes that impossible — every choice
+// produces a correct audit.
+type IndustryGroup = {
+  label: string;
+  options: string[];
+};
+
+const INDUSTRY_GROUPS: IndustryGroup[] = [
+  {
+    label: 'Home services',
+    options: [
+      'plumbing',
+      'hvac',
+      'roofing',
+      'electrical',
+      'landscaping',
+      'pest control',
+      'cleaning',
+      'garage doors',
+      'locksmith',
+      'septic services',
+      'pool maintenance',
+      'tree care',
+      'appliance repair',
+      'concrete',
+      'fencing',
+      'pressure washing',
+      'window cleaning',
+      'painting',
+      'flooring',
+      'drywall',
+    ],
+  },
+  {
+    label: 'Medical & healthcare',
+    options: [
+      'medical',
+      'dental',
+      'chiropractic',
+      'veterinary',
+      'pediatric',
+      'optometry',
+      'physical therapy',
+      'home healthcare',
+    ],
+  },
+  {
+    label: 'Legal',
+    options: ['law firm', 'attorney'],
+  },
+  {
+    label: 'Food & restaurant',
+    // Note: "dessert cafe" / "ice cream parlor" buyers should pick
+    // 'cafe' or 'bakery' — the BL regex matches those tokens and
+    // routes to the food-restaurant profile (TripAdvisor, OpenTable,
+    // Foursquare, Zomato, DoorDash, Grubhub).
+    options: ['restaurant', 'cafe', 'bakery', 'catering', 'pizza'],
+  },
+  {
+    label: 'Real estate',
+    options: ['real estate', 'realtor'],
+  },
+  {
+    label: 'Automotive',
+    options: ['auto repair', 'auto body', 'car wash', 'detailing'],
+  },
 ];
 
 type Form = {
@@ -84,7 +102,6 @@ type Form = {
   country_code: string;
   industry: string;
   service_radius_miles: string;
-  primary_color: string;
   /** User-facing dollar amount (e.g. "3500" or "3500.00"). Converted to
    *  integer cents on submit to match the DB column. */
   monthly_price_dollars: string;
@@ -105,7 +122,6 @@ const initial: Form = {
   country_code: 'USA',
   industry: '',
   service_radius_miles: '1.6',
-  primary_color: '#c5ff3a',
   monthly_price_dollars: '',
   keyword: '',
   scan_frequency: 'weekly',
@@ -247,7 +263,10 @@ export function ClientCreateForm() {
       postcode: form.postcode.trim() || null,
       country_code: form.country_code.trim().toUpperCase() || 'USA',
       service_radius_miles: Number(form.service_radius_miles),
-      primary_color: form.primary_color.trim() || '#c5ff3a',
+      // primary_color intentionally omitted — the API defaults it to
+      // '#c5ff3a' server-side, matching the logo-only white-label
+      // policy. The picker was removed so operators can't override
+      // back to a clashing hex.
       keyword: {
         keyword: form.keyword.trim(),
         scan_frequency: form.scan_frequency,
@@ -389,28 +408,30 @@ export function ClientCreateForm() {
             label="Industry"
             tooltip={
               <>
-                Drives which directories the NAP audit checks (e.g.
-                Healthgrades for medical, OpenTable for restaurants,
-                Angi for home services) + tunes AI Coach recommendations.
-                Pick a suggestion or type your own. Unknown industries
-                fall back to the home-services directory set.
+                Drives which directories the NAP audit checks
+                (Healthgrades for medical, OpenTable for restaurants,
+                Angi for home services, etc.) and tunes the AI Coach
+                recommendations to your category. Closed list — every
+                option routes cleanly to a known directory profile.
               </>
             }
           >
-            <input
-              type="text"
-              list="industry-suggestions"
+            <select
               value={form.industry}
               onChange={(e) => update('industry', e.target.value)}
-              placeholder="plumbing, restaurant, dental, law firm…"
               className={inputClass}
-              autoComplete="off"
-            />
-            <datalist id="industry-suggestions">
-              {INDUSTRY_SUGGESTIONS.map((i) => (
-                <option key={i} value={i} />
+            >
+              <option value="">— Select an industry —</option>
+              {INDUSTRY_GROUPS.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
-            </datalist>
+            </select>
           </Field>
           <Field label="Service radius (mi)" help="Default 1.6 fits a 9×9 / 0.4mi grid">
             <input
@@ -455,28 +476,12 @@ export function ClientCreateForm() {
         </Field>
       </Section>
 
-      {/* White-label + billing */}
-      <Section title="White-label + billing">
-        <Field
-          label="Brand accent color"
-          help="Hex like #c5ff3a — used in their portal."
-        >
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={form.primary_color}
-              onChange={(e) => update('primary_color', e.target.value)}
-              className={`${inputClass} font-mono`}
-            />
-            <div
-              className="w-9 h-9 rounded border"
-              style={{
-                background: form.primary_color,
-                borderColor: 'var(--color-border)',
-              }}
-            />
-          </div>
-        </Field>
+      {/* Billing — logo upload is handled on /clients/[id]/settings
+       *  after the row exists (LogoUploader needs the client UUID for
+       *  the storage path). Brand-accent color was removed: every
+       *  portal renders with the standard TurfMap lime + dark surfaces
+       *  with only the logo varying per client. */}
+      <Section title="Billing">
         <Field label="Monthly price (USD)" help="Optional. Stored as integer cents internally.">
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">
