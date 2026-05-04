@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Mail, Plus, Trash2 } from 'lucide-react';
+import { Activity, Check, Copy, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 export type ClientUserRow = {
@@ -14,22 +14,22 @@ export type ClientUserRow = {
 };
 
 export type ClientUsersManagerProps = {
-  /** Canonical client UUID. Used as `client_id` in both the agency
-   *  API (POST /api/client_users) and the portal magic-link API
-   *  (POST /api/auth/magic-link). The settings page passes
-   *  `client.id` here — NOT the public-id slug — because both
-   *  endpoints look up client_users by UUID. */
+  /** Canonical client UUID. Used as `client_id` in the agency API
+   *  (POST /api/client_users). The settings page passes `client.id`. */
   clientId: string;
+  /** Public-id slug used to construct the portal sign-in URL the
+   *  operator hands to the invitee. Exposed separately because the
+   *  agency API keys off UUID but the URL the user visits should be
+   *  the short slug. */
+  clientPublicId: string;
   users: ClientUserRow[];
 };
 
-/** Soft cap mirrored client-side from app/api/client_users/route.ts.
- *  The server enforces this; the UI just disables the form so the
- *  operator gets immediate feedback rather than waiting for a 400. */
 const PORTAL_USERS_PER_CLIENT = 5;
 
 export function ClientUsersManager({
   clientId,
+  clientPublicId,
   users,
 }: ClientUsersManagerProps) {
   const router = useRouter();
@@ -39,10 +39,22 @@ export function ClientUsersManager({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<'add' | string | null>(null);
+  const [copiedAt, setCopiedAt] = useState<string | null>(null);
 
   const refresh = () => startTransition(() => router.refresh());
 
   const atCap = users.length >= PORTAL_USERS_PER_CLIENT;
+
+  const portalLoginUrl = (() => {
+    if (typeof window === 'undefined') {
+      // SSR pass — use a relative path so the URL is whatever the
+      // current origin is at click time. The actual click only fires
+      // client-side anyway; this branch is just to keep the component
+      // happy during the server render.
+      return `/portal/${clientPublicId}/login`;
+    }
+    return `${window.location.origin}/portal/${clientPublicId}/login`;
+  })();
 
   const onAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,26 +71,16 @@ export function ClientUsersManager({
           email: newEmail.trim(),
         }),
       });
-      const data = (await res.json()) as {
-        error?: string;
-        invite_sent?: boolean;
-        invite_error?: string | null;
-      };
+      const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? `request failed (HTTP ${res.status})`);
         return;
       }
       const added = newEmail.trim().toLowerCase();
       setNewEmail('');
-      if (data.invite_sent === false) {
-        setNotice(
-          `${added} added — but the invite email failed to send (${
-            data.invite_error ?? 'unknown'
-          }). Use Resend to retry.`
-        );
-      } else {
-        setNotice(`Invite sent to ${added}.`);
-      }
+      setNotice(
+        `${added} can now access the portal. Copy the sign-in link below and share it with them — they'll request a magic link from there.`
+      );
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -87,30 +89,44 @@ export function ClientUsersManager({
     }
   };
 
-  const onResend = async (id: string, email: string) => {
+  const onCopyLink = async (rowId: string) => {
     setError(null);
     setNotice(null);
-    setBusy(`resend:${id}`);
     try {
-      // Hits the public portal magic-link endpoint — same code path the
-      // user would invoke from /portal/<id>/login. Gated by client_users
-      // membership server-side (which the row trivially satisfies).
-      const res = await fetch('/api/auth/magic-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: clientId, email }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setError(data.error ?? `resend failed (HTTP ${res.status})`);
-        return;
-      }
-      setNotice(`Invite re-sent to ${email}.`);
-      refresh();
+      await navigator.clipboard.writeText(portalLoginUrl);
+      setCopiedAt(rowId);
+      // Auto-clear the "copied" pill after a beat so the icon flips
+      // back. Two seconds is long enough to register, short enough to
+      // not feel sticky.
+      setTimeout(
+        () => setCopiedAt((curr) => (curr === rowId ? null : curr)),
+        2000
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
+      setError(
+        `clipboard write failed — copy this URL manually: ${portalLoginUrl}`
+      );
+      // Surface the underlying error too in case it's something other
+      // than a permissions denial.
+      console.warn('clipboard write failed:', e);
+    }
+  };
+
+  const onCopyShared = async () => {
+    setError(null);
+    setNotice(null);
+    try {
+      await navigator.clipboard.writeText(portalLoginUrl);
+      setCopiedAt('__shared__');
+      setTimeout(
+        () => setCopiedAt((curr) => (curr === '__shared__' ? null : curr)),
+        2000
+      );
+    } catch (e) {
+      setError(
+        `clipboard write failed — copy this URL manually: ${portalLoginUrl}`
+      );
+      console.warn('clipboard write failed:', e);
     }
   };
 
@@ -148,9 +164,10 @@ export function ClientUsersManager({
         <div>
           <h3 className="font-display text-lg font-bold">Portal users</h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Adding an email both grants portal access and sends a
-            magic-link invite. Up to {PORTAL_USERS_PER_CLIENT} users
-            per client.
+            Adding an email grants portal access. Copy the sign-in
+            link below and share it with the user — they request a
+            magic link from there. Up to {PORTAL_USERS_PER_CLIENT}{' '}
+            users per client.
           </p>
         </div>
         <span
@@ -165,11 +182,47 @@ export function ClientUsersManager({
         </span>
       </div>
 
+      {/* Shared portal sign-in URL — same for every user on this client.
+          Big enough to read, with a one-click copy button so the
+          operator can paste it into Slack/email without selecting and
+          copying manually. */}
+      <div
+        className="mb-5 px-3 py-2.5 rounded-md border flex items-center gap-3"
+        style={{
+          background: 'var(--color-bg)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold whitespace-nowrap">
+          Sign-in link
+        </span>
+        <span className="font-mono text-xs text-zinc-300 truncate flex-1">
+          {portalLoginUrl}
+        </span>
+        <button
+          type="button"
+          onClick={onCopyShared}
+          className="text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1.5 text-xs font-mono whitespace-nowrap"
+          title="Copy portal sign-in link"
+        >
+          {copiedAt === '__shared__' ? (
+            <>
+              <Check size={12} style={{ color: 'var(--color-lime)' }} />
+              <span style={{ color: 'var(--color-lime)' }}>copied</span>
+            </>
+          ) : (
+            <>
+              <Copy size={12} /> copy
+            </>
+          )}
+        </button>
+      </div>
+
       <div className="space-y-2 mb-5">
         {users.length === 0 ? (
           <div className="text-xs text-zinc-600 italic">
-            No portal users yet. Add one below — they&rsquo;ll receive
-            a magic-link invite immediately.
+            No portal users yet. Add an email below to grant access,
+            then share the sign-in link with them.
           </div>
         ) : (
           users.map((u) => (
@@ -189,19 +242,18 @@ export function ClientUsersManager({
                   ? `last seen ${new Date(u.last_login_at).toISOString().slice(0, 10)}`
                   : u.invited_at
                     ? `invited ${new Date(u.invited_at).toISOString().slice(0, 10)}`
-                    : 'never invited'}
+                    : 'not signed in yet'}
               </span>
               <button
                 type="button"
-                onClick={() => onResend(u.id, u.email)}
-                disabled={busy === `resend:${u.id}` || busy === 'add'}
-                title="Re-send magic-link invite"
-                className="text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-50"
+                onClick={() => onCopyLink(u.id)}
+                title="Copy portal sign-in link to share with this user"
+                className="text-zinc-500 hover:text-zinc-200 transition-colors"
               >
-                {busy === `resend:${u.id}` ? (
-                  <Activity size={14} className="animate-pulse" />
+                {copiedAt === u.id ? (
+                  <Check size={14} style={{ color: 'var(--color-lime)' }} />
                 ) : (
-                  <Mail size={14} />
+                  <Copy size={14} />
                 )}
               </button>
               <button

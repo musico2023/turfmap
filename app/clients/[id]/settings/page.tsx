@@ -175,6 +175,7 @@ export default async function ClientSettingsPage({
           />
           <ClientUsersManager
             clientId={client.id}
+            clientPublicId={client.public_id}
             users={portalUsers ?? []}
           />
           <DeleteClientCard

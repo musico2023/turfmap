@@ -1,39 +1,39 @@
 /**
- * POST /api/client_users — add a portal user (email-only, no password)
- * AND immediately send them a magic-link invite.
+ * POST /api/client_users — add a portal user (email-only, no password).
  *
- * The portal sign-in flow is magic-link — no password is set. Adding a
- * row to client_users grants this email permission to view the client
- * portal; the OTP send that follows means the new user gets an invite
- * in their inbox without the operator having to walk them through the
- * /portal/<id>/login form. Without that auto-invite, the operator
- * would add an email here and… nothing would happen — the user has to
- * separately discover the portal URL and request a link themselves.
+ * Side effect: ONLY whitelists the email. The portal sign-in flow is
+ * magic-link, but Supabase's PKCE-based OTP can't be initiated from
+ * the operator's session for delivery to a different recipient — the
+ * code verifier ends up in the OPERATOR's cookies, so when the invitee
+ * clicks the email link in their own browser they hit "PKCE code
+ * verifier not found in storage". Instead, the recipient initiates
+ * their own sign-in by visiting /portal/<public_id>/login and typing
+ * their email; the existing /api/auth/magic-link path works because
+ * the same browser owns the verifier.
+ *
+ * The settings UI exposes a "Copy sign-in link" button so the operator
+ * can paste a stable URL into Slack/email/etc.; that's the v1 invite
+ * UX. True auto-invite will return when Resend is wired (CLAUDE.md
+ * Phase 3) — we'll generate a magic-link via admin.generateLink and
+ * email it ourselves, sidestepping PKCE entirely.
  *
  * Body: { client_id, email }
  *
  * Constraints:
  *   - PORTAL_USERS_PER_CLIENT cap (currently 5). One brand rarely needs
- *     more than owner + ops + marketing; capping it here prevents
- *     abuse and keeps this from becoming a "share with your whole
- *     org" feature.
+ *     more than owner + ops + marketing.
  *   - client_users has a `unique(email)` constraint at the DB level
- *     (one email = one client account). Trying to add the same email
- *     twice across clients returns 409 with a friendly error.
+ *     (one email = one client account). Returns 409 with a friendly
+ *     error on duplicate.
  */
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 
 export const runtime = 'nodejs';
 
-/** Soft cap on portal users per client. Keeps this from sliding into
- *  "share with the whole org" territory and matches the realistic
- *  number of stakeholders on a small business team (owner + ops +
- *  marketing typically). Adjust here if it ever needs to grow. */
 const PORTAL_USERS_PER_CLIENT = 5;
 
 const Body = z.object({
@@ -60,8 +60,6 @@ export async function POST(req: Request) {
   const supabase = getServerSupabase();
   const email = parsed.email.trim().toLowerCase();
 
-  // Cap check — count existing users for this client BEFORE inserting
-  // so we don't have to roll back. Using head:true keeps it light.
   const { count: existingCount } = await supabase
     .from('client_users')
     .select('id', { count: 'exact', head: true })
@@ -98,46 +96,5 @@ export async function POST(req: Request) {
     );
   }
 
-  // Fire the magic-link invite. Done after the insert so the OTP
-  // callback resolves to a member that already exists. Failure here
-  // does NOT roll back the insert — the row is the source of truth
-  // for "is this email allowed in the portal"; a transient email
-  // delivery problem shouldn't undo the access grant. We surface
-  // `invite_sent: false` so the UI can prompt the operator to resend.
-  let inviteSent = true;
-  let inviteError: string | null = null;
-  try {
-    const authClient = await getAuthSupabase();
-    const origin = req.headers.get('origin') ?? new URL(req.url).origin;
-    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(
-      `/portal/${parsed.client_id}`
-    )}`;
-    const { error: otpErr } = await authClient.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: redirectTo,
-        shouldCreateUser: true,
-      },
-    });
-    if (otpErr) {
-      inviteSent = false;
-      inviteError = otpErr.message;
-    } else {
-      // Stamp invited_at so the UI shows "invited <date>" rather than
-      // "never invited".
-      await supabase
-        .from('client_users')
-        .update({ invited_at: new Date().toISOString() })
-        .eq('id', (data as { id: string }).id);
-    }
-  } catch (e) {
-    inviteSent = false;
-    inviteError = e instanceof Error ? e.message : String(e);
-  }
-
-  return NextResponse.json({
-    ...data,
-    invite_sent: inviteSent,
-    invite_error: inviteError,
-  });
+  return NextResponse.json(data);
 }
