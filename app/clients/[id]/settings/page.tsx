@@ -11,8 +11,9 @@
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ChevronLeft, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ExternalLink, UserPlus } from 'lucide-react';
 import { Header } from '@/components/turfmap/Header';
+import { InfoTooltip } from '@/components/turfmap/InfoTooltip';
 import { ClientSettingsForm } from '@/components/turfmap/ClientSettingsForm';
 import { KeywordsManager } from '@/components/turfmap/KeywordsManager';
 import { LocationsManager } from '@/components/turfmap/LocationsManager';
@@ -108,14 +109,31 @@ export default async function ClientSettingsPage({
               individually per card.
             </p>
           </div>
-          <Link
-            href={`/portal/${client.public_id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-          >
-            Open white-label portal <ExternalLink size={11} />
-          </Link>
+          <div className="flex items-center gap-4">
+            <a
+              href="#portal-users"
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+            >
+              <UserPlus size={11} /> Add portal user
+            </a>
+            <span className="inline-flex items-center gap-1.5">
+              <Link
+                href={`/portal/${client.public_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+              >
+                View client portal <ExternalLink size={11} />
+              </Link>
+              <InfoTooltip>
+                Opens the customer-facing dashboard in a new tab —
+                exactly what {client.business_name}&rsquo;s portal users
+                see when they sign in. Useful for previewing the
+                deliverable before sending invites or sharing the
+                report URL with stakeholders.
+              </InfoTooltip>
+            </span>
+          </div>
         </div>
 
         {locations.length > 1 && (
