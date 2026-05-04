@@ -32,6 +32,7 @@ import {
   resolveLocation,
 } from '@/lib/supabase/locations';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
+import { KeywordSwitcher } from '@/components/turfmap/KeywordSwitcher';
 import type {
   ScanPointRow,
   ScanRow,
@@ -60,10 +61,10 @@ export default async function ClientPortalPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ location?: string }>;
+  searchParams: Promise<{ location?: string; keyword?: string }>;
 }) {
   const { slug } = await params;
-  const { location: locationParam } = await searchParams;
+  const { location: locationParam, keyword: keywordParam } = await searchParams;
   const supabase = getServerSupabase();
 
   // Tolerant client lookup — accepts the short public_id (default
@@ -119,23 +120,63 @@ export default async function ClientPortalPage({
     locations[0] ??
     null;
 
-  const { data: latestScan } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('client_id', client.id)
-    .eq('location_id', activeLocation?.id ?? '')
-    .eq('status', 'complete')
-    .order('completed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<ScanRow>();
-
-  const { data: keyword } = latestScan
+  // Per-location keyword list — drives the KeywordSwitcher and lets us
+  // resolve which keyword's scan to show. Mirror of the operator
+  // dashboard's resolution at app/clients/[id]/page.tsx so portal +
+  // dashboard render the same scan for the same (location, keyword).
+  const { data: locationKeywords } = activeLocation
     ? await supabase
         .from('tracked_keywords')
-        .select('*')
-        .eq('id', latestScan.keyword_id)
-        .maybeSingle<TrackedKeywordRow>()
+        .select('id, keyword, is_primary')
+        .eq('client_id', client.id)
+        .eq('location_id', activeLocation.id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+        .returns<
+          Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>[]
+        >()
     : { data: null };
+  const keywordList = locationKeywords ?? [];
+
+  let activeKeyword:
+    | Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>
+    | null = null;
+  if (keywordParam) {
+    activeKeyword =
+      keywordList.find((k) => k.id === keywordParam) ?? null;
+  }
+  if (!activeKeyword) {
+    activeKeyword =
+      keywordList.find((k) => k.is_primary) ?? keywordList[0] ?? null;
+  }
+  if (!activeKeyword) {
+    // Legacy fallback — keyword without location_id, surfaced so the
+    // portal isn't empty during the brief migration window.
+    const { data: anyKw } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword, is_primary')
+      .eq('client_id', client.id)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+      .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>>();
+    activeKeyword = anyKw ?? null;
+  }
+
+  const { data: latestScan } = activeKeyword
+    ? await supabase
+        .from('scans')
+        .select('*')
+        .eq('client_id', client.id)
+        .eq('location_id', activeLocation?.id ?? '')
+        .eq('keyword_id', activeKeyword.id)
+        .eq('status', 'complete')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<ScanRow>()
+    : { data: null };
+
+  // Keyword displayed in headers = the resolved active keyword.
+  const keyword = activeKeyword;
 
   const { data: rawPoints } = latestScan
     ? await supabase
@@ -169,12 +210,18 @@ export default async function ClientPortalPage({
   const band = getTurfScoreBand(score);
   const momentumValue =
     latestScan?.momentum != null ? Number(latestScan.momentum) : null;
-  const { count: completedScanCount } = await supabase
-    .from('scans')
-    .select('id', { count: 'exact', head: true })
-    .eq('client_id', client.id)
-    .eq('location_id', activeLocation?.id ?? '')
-    .eq('status', 'complete');
+  // Per (location, keyword) scan count — gates the "Baseline scan
+  // complete" banner so it only fires for the keyword the user is
+  // actually viewing. Mirrors the operator dashboard.
+  const { count: completedScanCount } = activeKeyword
+    ? await supabase
+        .from('scans')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', client.id)
+        .eq('location_id', activeLocation?.id ?? '')
+        .eq('keyword_id', activeKeyword.id)
+        .eq('status', 'complete')
+    : { count: 0 };
   const isFirstScan = (completedScanCount ?? 0) <= 1;
 
   const ownNamePattern = new RegExp(
@@ -208,19 +255,26 @@ export default async function ClientPortalPage({
         isAgencyPreview={isAgencyPreview}
       />
 
-      {/* Location switcher — only renders when the brand has > 1
-          location. The slug in pathname matches whatever the URL has
-          (UUID or public_id), so the switcher's basePath will preserve
-          /portal/<slug> and just swap the ?location query param. */}
-      {locations.length > 1 && (
+      {/* Location + keyword switchers — share one strip so the strip
+          itself only mounts when at least one switcher has more than
+          one option. The slug in pathname matches whatever the URL
+          has (UUID or public_id), so each switcher's basePath
+          preserves /portal/<slug> and just swaps the relevant query
+          param (?location=... / ?keyword=...). */}
+      {(locations.length > 1 || keywordList.length > 1) && (
         <div
-          className="border-b px-8 py-3"
+          className="border-b px-8 py-3 flex items-center gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <LocationSwitcher
             clientId={slug}
             locations={locations}
             activeLocationId={activeLocation?.id ?? null}
+          />
+          <KeywordSwitcher
+            clientId={slug}
+            keywords={keywordList}
+            activeKeywordId={activeKeyword?.id ?? null}
           />
         </div>
       )}
