@@ -32,6 +32,7 @@ import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import { ScanButton } from '@/components/turfmap/ScanButton';
 import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
+import { KeywordSwitcher } from '@/components/turfmap/KeywordSwitcher';
 import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
 import { LinkButton } from '@/components/ui/Button';
 import { buttonStyles } from '@/components/ui/buttonStyles';
@@ -49,10 +50,10 @@ export default async function ClientDashboardPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ location?: string }>;
+  searchParams: Promise<{ location?: string; keyword?: string }>;
 }) {
   const { id: clientParam } = await params;
-  const { location: locationParam } = await searchParams;
+  const { location: locationParam, keyword: keywordParam } = await searchParams;
   const me = await requireAgencyUserOrRedirect(`/clients/${clientParam}`);
   const supabase = getServerSupabase();
 
@@ -72,47 +73,69 @@ export default async function ClientDashboardPage({
     locations[0] ??
     null;
 
-  const { data: latestScan } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('client_id', id)
-    .eq('status', 'complete')
-    .eq('location_id', activeLocation?.id ?? '')
-    .order('completed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<ScanRow>();
-
-  // Show the keyword tied to the latest scan if there is one; otherwise fall
-  // back to a primary keyword for the active location (or any keyword on
-  // this client if the location has none yet).
-  const { data: keyword } = latestScan
+  // Per-location keyword list — drives the KeywordSwitcher and lets us
+  // resolve which keyword's scan to show. Each (location, keyword) pair
+  // has its own scan history; the dashboard only renders one at a time.
+  const { data: locationKeywords } = activeLocation
     ? await supabase
         .from('tracked_keywords')
+        .select('id, keyword, is_primary')
+        .eq('client_id', id)
+        .eq('location_id', activeLocation.id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+        .returns<
+          Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>[]
+        >()
+    : { data: null };
+  const keywordList = locationKeywords ?? [];
+
+  // Resolve the active keyword:
+  //   1. ?keyword=<id> if present and matches a keyword on this location
+  //   2. The location's primary keyword
+  //   3. The first keyword on the location
+  //   4. Or any keyword on this client (covers legacy rows w/o location_id)
+  let activeKeyword:
+    | Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>
+    | null = null;
+  if (keywordParam) {
+    activeKeyword =
+      keywordList.find((k) => k.id === keywordParam) ?? null;
+  }
+  if (!activeKeyword) {
+    activeKeyword =
+      keywordList.find((k) => k.is_primary) ?? keywordList[0] ?? null;
+  }
+  if (!activeKeyword) {
+    // Legacy fallback — keyword without location_id, surfaced so the
+    // dashboard isn't empty during the brief migration window.
+    const { data: anyKw } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword, is_primary')
+      .eq('client_id', id)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+      .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>>();
+    activeKeyword = anyKw ?? null;
+  }
+
+  // Latest scan for this (location, keyword) pair specifically.
+  const { data: latestScan } = activeKeyword
+    ? await supabase
+        .from('scans')
         .select('*')
-        .eq('id', latestScan.keyword_id)
-        .maybeSingle<TrackedKeywordRow>()
-    : activeLocation
-      ? await (async () => {
-          const { data: locKw } = await supabase
-            .from('tracked_keywords')
-            .select('*')
-            .eq('client_id', id)
-            .eq('location_id', activeLocation.id)
-            .order('is_primary', { ascending: false })
-            .limit(1)
-            .maybeSingle<TrackedKeywordRow>();
-          if (locKw) return { data: locKw };
-          // Fallback: any keyword on this client (legacy rows without
-          // a location_id, or before this location had its own keywords).
-          return await supabase
-            .from('tracked_keywords')
-            .select('*')
-            .eq('client_id', id)
-            .order('is_primary', { ascending: false })
-            .limit(1)
-            .maybeSingle<TrackedKeywordRow>();
-        })()
-      : { data: null };
+        .eq('client_id', id)
+        .eq('status', 'complete')
+        .eq('location_id', activeLocation?.id ?? '')
+        .eq('keyword_id', activeKeyword.id)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<ScanRow>()
+    : { data: null };
+
+  // Full keyword row tied to the displayed scan — already resolved above
+  // since the latest scan was queried by activeKeyword.id.
+  const keyword = activeKeyword;
 
   const { data: rawPoints } = latestScan
     ? await supabase
@@ -253,16 +276,23 @@ export default async function ClientDashboardPage({
         </div>
       )}
 
-      {/* Location switcher — only renders for multi-location clients */}
-      {locations.length > 1 && (
+      {/* Location + keyword switchers — share one strip so they don't
+          bloat the header on multi-keyword single-location clients.
+          Each component self-hides when it has ≤ 1 entry to surface. */}
+      {(locations.length > 1 || keywordList.length > 1) && (
         <div
-          className="border-b px-8 py-3"
+          className="border-b px-8 py-3 flex items-center gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <LocationSwitcher
             clientId={client.public_id}
             locations={locations}
             activeLocationId={activeLocation?.id ?? null}
+          />
+          <KeywordSwitcher
+            clientId={client.public_id}
+            keywords={keywordList}
+            activeKeywordId={activeKeyword?.id ?? null}
           />
         </div>
       )}
@@ -350,6 +380,7 @@ export default async function ClientDashboardPage({
             <ScanButton
               clientId={client.public_id}
               locationId={activeLocation?.id ?? null}
+              keywordId={activeKeyword?.id ?? null}
               keywordLabel={latestScan ? keyword?.keyword : undefined}
               rescanCap={rescanCap}
             />

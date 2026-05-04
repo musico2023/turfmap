@@ -18,7 +18,14 @@ export type ScanButtonProps = {
    *  primary location server-side when not supplied. Multi-location clients
    *  pass the active location's id from the dashboard. */
   locationId?: string | null;
-  /** Only the primary keyword is scanned in v1 — passed for the optimistic UI label. */
+  /** Optional — which keyword to scan. Defaults to the location's primary
+   *  keyword server-side when omitted. The dashboard passes the active
+   *  keyword id so re-scanning targets whichever keyword the operator is
+   *  currently viewing. */
+  keywordId?: string | null;
+  /** Drives the button label (Re-scan vs Run TurfScan) and the icon.
+   *  Pass when a prior scan exists for the active (location, keyword)
+   *  pair; omit otherwise. */
   keywordLabel?: string;
   /** Server-fetched cap status for THIS location's last 24h of on-demand
    *  scans. Drives the disabled state + the X/N badge under the button.
@@ -41,6 +48,7 @@ export type ScanButtonProps = {
 export function ScanButton({
   clientId,
   locationId,
+  keywordId,
   keywordLabel,
   rescanCap,
 }: ScanButtonProps) {
@@ -60,7 +68,11 @@ export function ScanButton({
       const res = await fetch('/api/scans/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, locationId: locationId ?? undefined }),
+        body: JSON.stringify({
+          clientId,
+          locationId: locationId ?? undefined,
+          keywordId: keywordId ?? undefined,
+        }),
       });
       // Read as text first so we can produce a useful error if Vercel
       // returns an HTML error page (function timeout, OOM, build error)
