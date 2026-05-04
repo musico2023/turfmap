@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
+import { InfoTooltip } from './InfoTooltip';
 
 // Industry suggestions for the <datalist>. Form still accepts any
 // free-text value, but these are the ones that map cleanly to a
@@ -386,7 +387,7 @@ export function ClientCreateForm() {
         <div className="grid grid-cols-2 gap-3">
           <Field
             label="Industry"
-            help={
+            tooltip={
               <>
                 Drives which directories the NAP audit checks (e.g.
                 Healthgrades for medical, OpenTable for restaurants,
@@ -618,19 +619,30 @@ function Field({
   label,
   required,
   help,
+  tooltip,
   children,
 }: {
   label: string;
   required?: boolean;
+  /** Short inline note rendered to the right of the label. Use for
+   *  one-liner format hints ("E.164 preferred", "Skip the postal
+   *  code"). Anything longer than ~50 chars overflows the row —
+   *  use `tooltip` instead for longer explanations. */
   help?: React.ReactNode;
+  /** Longer explanation surfaced via an (i) icon next to the label.
+   *  Use for "what does this field do" copy that doesn't fit
+   *  inline. Renders the same InfoTooltip pattern used on the
+   *  dashboard score cards. */
+  tooltip?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div>
       <label className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 flex items-center justify-between">
-        <span>
+        <span className="inline-flex items-center gap-1.5">
           {label}
           {required && <span className="text-zinc-600 ml-1">*</span>}
+          {tooltip && <InfoTooltip>{tooltip}</InfoTooltip>}
         </span>
         {help && <span className="text-[10px] normal-case tracking-normal">{help}</span>}
       </label>
