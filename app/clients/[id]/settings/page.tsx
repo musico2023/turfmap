@@ -132,7 +132,7 @@ export default async function ClientSettingsPage({
           <ClientSettingsForm client={client} />
           <LocationsManager clientId={client.public_id} locations={locations} />
           <KeywordsManager
-            clientId={client.public_id}
+            clientId={client.id}
             locationId={activeLocation?.id ?? null}
             locationLabel={
               activeLocation
@@ -156,7 +156,7 @@ export default async function ClientSettingsPage({
             competitors={trackedCompetitors ?? []}
           />
           <ClientUsersManager
-            clientId={client.public_id}
+            clientId={client.id}
             users={portalUsers ?? []}
           />
           <DeleteClientCard
