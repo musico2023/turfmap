@@ -115,26 +115,38 @@ async function runScanTrigger(req: Request) {
 
   // Resolve keyword: provided id, else this location's primary, else any
   // for this client (legacy keywords pre-multi-location had no location_id).
-  const baseQuery = supabase
-    .from('tracked_keywords')
-    .select('id, keyword')
-    .eq('client_id', clientId);
+  //
+  // Each branch builds a fresh query — the supabase-js v2 builder is
+  // mutable, so reusing one base across awaits leaks filters from prior
+  // calls (the fallback would still carry `location_id = X` and find
+  // nothing, defeating the point of falling back).
   let keywordRow: Pick<TrackedKeywordRow, 'id' | 'keyword'> | null = null;
   if (keywordId) {
-    const { data } = await baseQuery
+    const { data } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword')
+      .eq('client_id', clientId)
       .eq('id', keywordId)
       .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
     keywordRow = data ?? null;
   } else {
-    const { data: locKw } = await baseQuery
+    const { data: locKw } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword')
+      .eq('client_id', clientId)
       .eq('location_id', location.id)
       .order('is_primary', { ascending: false })
       .limit(1)
       .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
     keywordRow = locKw ?? null;
     if (!keywordRow) {
-      // Fallback: any keyword on this client (legacy rows w/o location_id).
-      const { data: anyKw } = await baseQuery
+      // Fallback: any keyword on this client (covers legacy rows with
+      // location_id=NULL, plus the brief window between client-create
+      // and the location_id stamp on the primary keyword).
+      const { data: anyKw } = await supabase
+        .from('tracked_keywords')
+        .select('id, keyword')
+        .eq('client_id', clientId)
         .order('is_primary', { ascending: false })
         .limit(1)
         .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();

@@ -350,7 +350,7 @@ export default async function ClientDashboardPage({
             <ScanButton
               clientId={client.public_id}
               locationId={activeLocation?.id ?? null}
-              keywordLabel={keyword?.keyword}
+              keywordLabel={latestScan ? keyword?.keyword : undefined}
               rescanCap={rescanCap}
             />
           </div>

@@ -114,36 +114,45 @@ export async function POST(req: Request) {
   }
 
   // 2. Insert the primary location row. This is the canonical storage
-  //    for NAP + scan-grid data going forward.
-  const { error: locErr } = await supabase.from('client_locations').insert({
-    client_id: client.id,
-    is_primary: true,
-    label: parsed.city ?? null,
-    address: parsed.address,
-    street_address: parsed.street_address ?? null,
-    city: parsed.city ?? null,
-    region: parsed.region ?? null,
-    postcode: parsed.postcode ?? null,
-    country_code: parsed.country_code ?? 'USA',
-    phone: parsed.phone ?? null,
-    latitude: parsed.latitude,
-    longitude: parsed.longitude,
-    service_radius_miles: parsed.service_radius_miles ?? 1.6,
-  });
-  if (locErr) {
+  //    for NAP + scan-grid data going forward. We need the inserted id
+  //    to attach the primary keyword to it (post-migration 0010 keywords
+  //    are scoped per-location; an orphan keyword with location_id=NULL
+  //    won't be picked up by the location-scoped scan-trigger lookup).
+  const { data: location, error: locErr } = await supabase
+    .from('client_locations')
+    .insert({
+      client_id: client.id,
+      is_primary: true,
+      label: parsed.city ?? null,
+      address: parsed.address,
+      street_address: parsed.street_address ?? null,
+      city: parsed.city ?? null,
+      region: parsed.region ?? null,
+      postcode: parsed.postcode ?? null,
+      country_code: parsed.country_code ?? 'USA',
+      phone: parsed.phone ?? null,
+      latitude: parsed.latitude,
+      longitude: parsed.longitude,
+      service_radius_miles: parsed.service_radius_miles ?? 1.6,
+    })
+    .select('id')
+    .single<{ id: string }>();
+  if (locErr || !location) {
     await supabase.from('clients').delete().eq('id', client.id);
     return NextResponse.json(
       {
-        error: `primary location insert failed (client rolled back): ${locErr.message}`,
+        error: `primary location insert failed (client rolled back): ${locErr?.message ?? 'no row'}`,
       },
       { status: 500 }
     );
   }
 
-  // 3. Insert primary keyword. Roll back both the client and its
-  //    primary location on failure (cascade handles the latter).
+  // 3. Insert primary keyword, scoped to the location we just created.
+  //    Roll back both the client and its primary location on failure
+  //    (cascade handles the latter).
   const { error: kwErr } = await supabase.from('tracked_keywords').insert({
     client_id: client.id,
+    location_id: location.id,
     keyword: parsed.keyword.keyword,
     scan_frequency: (parsed.keyword.scan_frequency ?? 'weekly') as ScanFrequency,
     is_primary: parsed.keyword.is_primary ?? true,
