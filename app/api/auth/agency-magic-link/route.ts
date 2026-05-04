@@ -5,9 +5,11 @@
  * Body: { email: string }
  *
  * Pre-checks the email is on the staff list (so a stranger probing the
- * endpoint gets 403 instead of a real signup). On success, Supabase emails
- * the user; the redirect lands them at /auth/callback?next=/, which
- * forwards them to the agency dashboard.
+ * endpoint gets 403 instead of a real signup). On success, Supabase
+ * emails the user; the redirect lands them at
+ * /auth/callback?next=/clients (the agency console root). When the
+ * caller passes an explicit `next` (e.g. for a deep-link sign-in
+ * flow), that takes precedence.
  *
  * This is the agency-side counterpart to /api/auth/magic-link (which
  * targets per-client portal users).
@@ -63,7 +65,11 @@ export async function POST(req: Request) {
 
   const auth = await getAuthSupabase();
   const origin = req.headers.get('origin') ?? new URL(req.url).origin;
-  const next = parsed.next ?? '/';
+  // Default landing is the agency console root (`/clients`) post-
+  // marketing-launch — the bare `/` is now the public landing page,
+  // so a magic link without an explicit next would otherwise drop
+  // the staff member on the marketing surface they don't need.
+  const next = parsed.next ?? '/clients';
   const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
 
   const { error: otpErr } = await auth.auth.signInWithOtp({
