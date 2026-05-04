@@ -4,21 +4,31 @@
  *
  * Body: { email: string }
  *
- * Pre-checks the email is on the staff list (so a stranger probing the
- * endpoint gets 403 instead of a real signup). On success, Supabase
- * emails the user; the redirect lands them at
+ * Two gates, both return 403:
+ *   1. The email is on a Fourdots agency domain (lib/auth/agencyDomains).
+ *      Sign-in to TurfMap is staff-only; clients use the per-portal
+ *      magic link at /portal/<id>/login, and prospective customers
+ *      need to subscribe (or buy a one-off) before getting access.
+ *   2. The email is on the `users` table (defense in depth — covers
+ *      the edge case of a Fourdots address that hasn't been provisioned
+ *      as staff yet).
+ *
+ * On success, Supabase emails the user; the redirect lands them at
  * /auth/callback?next=/clients (the agency console root). When the
  * caller passes an explicit `next` (e.g. for a deep-link sign-in
  * flow), that takes precedence.
  *
  * This is the agency-side counterpart to /api/auth/magic-link (which
- * targets per-client portal users).
+ * targets per-client portal users — that endpoint has its own gate
+ * via the client_users membership table and intentionally has no
+ * domain restriction).
  */
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
 
 export const runtime = 'nodejs';
 
@@ -45,8 +55,25 @@ export async function POST(req: Request) {
     );
   }
 
-  const admin = getServerSupabase();
   const email = parsed.email.trim().toLowerCase();
+
+  // Gate 1: Fourdots-domain check. TurfMap sign-in is staff-only.
+  // Clients access their portal via /portal/<id>/login (different
+  // endpoint, different membership table); prospective customers need
+  // to subscribe before getting agency access.
+  if (!isAgencyDomainEmail(email)) {
+    return NextResponse.json(
+      {
+        error:
+          "TurfMap sign-in is for Fourdots staff. If you're a Local Lead Machine client, your account manager will send your portal link. To get TurfMap access, subscribe at localleadmachine.io.",
+      },
+      { status: 403 }
+    );
+  }
+
+  // Gate 2: users-table membership. Defense in depth — a Fourdots
+  // address that hasn't been provisioned as staff still gets blocked.
+  const admin = getServerSupabase();
   const { data: row } = await admin
     .from('users')
     .select('id, email')

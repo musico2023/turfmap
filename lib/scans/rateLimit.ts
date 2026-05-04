@@ -18,6 +18,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseLike = SupabaseClient<any, any, any>;
@@ -26,32 +27,17 @@ export const ON_DEMAND_SCANS_PER_24H = 3;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Agency-domain operators are exempt from the on-demand scan cap.
- * Anyone signed in with a Fourdots address (the agency that owns
- * TurfMap) needs to be able to fire as many scans as it takes
- * during sales demos, client onboarding, and metric debugging without
- * waiting on the rolling-24h window. Costs are still tracked per-scan
- * via dfs_cost_cents — exemption here is only about the rate limit,
- * not about visibility into spend.
- *
- * Domain-based (not email-based) so adding a new staff member doesn't
- * require updating this list — they get bypass by virtue of having an
- * agency email. Both .io and .ca are included since both Fourdots
- * addresses are in active use.
+ * Agency-domain operators are exempt from the on-demand scan cap. The
+ * domain set lives in lib/auth/agencyDomains so the same check governs
+ * both rate-limit bypass and sign-in eligibility (a single change
+ * updates both surfaces). Costs are still tracked per-scan via
+ * dfs_cost_cents — exemption here is only about the rate limit, not
+ * about visibility into spend.
  */
-const RATE_LIMIT_BYPASS_DOMAINS = new Set<string>([
-  'fourdots.io',
-  'fourdots.ca',
-]);
-
 export function shouldBypassRescanCap(
   email: string | null | undefined
 ): boolean {
-  if (!email) return false;
-  const at = email.lastIndexOf('@');
-  if (at < 0) return false;
-  const domain = email.slice(at + 1).trim().toLowerCase();
-  return RATE_LIMIT_BYPASS_DOMAINS.has(domain);
+  return isAgencyDomainEmail(email);
 }
 
 export type RescanCapStatus = {
