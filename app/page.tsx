@@ -6,7 +6,6 @@ import {
   Crown,
   Eye,
   FileText,
-  Gift,
   MapPin,
   Sparkles,
   Target,
@@ -327,7 +326,28 @@ export default function MarketingLanding() {
             about fixing this.
           </>
         }
-        intro="$99 if you just want to see your map. $499 if you want a strategist's read on it live. $1,497 if you want three keywords scanned and a deeper session to walk the whole picture."
+        intro={
+          // Stacked-line treatment: each price tier on its own row,
+          // mono-bullet prefix to anchor the price visually. The
+          // marketing-team brief flagged the original run-on
+          // sentence as hard to scan; a 3-line block lets the
+          // reader compare prices in parallel.
+          <span className="block space-y-1.5">
+            <span className="block">
+              <span style={{ color: 'var(--color-lime)' }}>$99</span>{' '}
+              if you just want to see your map.
+            </span>
+            <span className="block">
+              <span style={{ color: 'var(--color-lime)' }}>$499</span>{' '}
+              if you want a strategist&rsquo;s read on it live.
+            </span>
+            <span className="block">
+              <span style={{ color: 'var(--color-lime)' }}>$1,497</span>{' '}
+              if you want three keywords scanned and a deeper session
+              to walk the whole picture.
+            </span>
+          </span>
+        }
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
           <TierBrief
@@ -424,39 +444,16 @@ export default function MarketingLanding() {
           </div>
         </div>
 
-        {/* Attach banner. Marketing's lead-magnet hook: any audit
-         *  purchase comes with 30 free days of Pulse on top. The trial
-         *  auto-cancels unless the buyer keeps it (no
-         *  drip-into-charge-without-warning trickery). Implementation
-         *  note: this requires the Stripe checkout to attach a
-         *  subscription with `trial_period_days: 30` to the one-time
-         *  payment session — not yet wired, so for now the banner is a
-         *  promise we'll honor manually until the trial-attachment
-         *  flow is built. */}
-        <div
-          className="mt-5 mx-auto max-w-3xl rounded-lg p-5 flex items-start gap-3"
-          style={{
-            background: '#0d130a',
-            border: '1px solid var(--color-border-bright)',
-          }}
-        >
-          <Gift
-            size={18}
-            className="flex-shrink-0 mt-0.5"
-            style={{ color: 'var(--color-lime)' }}
-          />
-          <div className="text-sm text-zinc-300 leading-relaxed">
-            <span
-              className="font-semibold"
-              style={{ color: 'var(--color-lime)' }}
-            >
-              Buy any audit, get 30 days of Pulse free.
-            </span>{' '}
-            <span className="text-zinc-400">
-              Cancel anytime — keep watching only if you want to.
-            </span>
-          </div>
-        </div>
+        {/* The 30-day-Pulse-free attach offer is now surfaced inline
+         *  inside each audit pricing card's bonus row (Gift icon +
+         *  lime "+ 30 days of TurfMap Pulse — free"). The standalone
+         *  banner that used to live here was duplicating the same
+         *  promise twice on the same page; per marketing-team review,
+         *  the per-card bullets do the work and the banner became
+         *  noise. The implementation note about wiring the Stripe
+         *  trial_period_days attachment now lives in the ScanButton/
+         *  PricingCards bonus comment.
+         */}
 
         <p className="text-xs text-zinc-600 font-mono mt-10 text-center">
           All prices in USD. Refund policy: full refund within 24h if you

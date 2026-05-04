@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react';
 import { Activity } from 'lucide-react';
 import {
   buttonStyles,
@@ -121,6 +121,12 @@ export type LinkButtonProps = {
   rightIcon?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Optional inline style override — merged on top of the variant's
+   *  default styles. Mirrors the same affordance `<Button>` already
+   *  exposes; useful for one-off context-specific tweaks (e.g. the
+   *  hero's secondary CTA needs a brighter border + slightly lighter
+   *  background to be legible on the bare-page hero surface). */
+  style?: CSSProperties;
   target?: string;
   rel?: string;
   title?: string;
@@ -134,6 +140,7 @@ export function LinkButton({
   rightIcon,
   children,
   className = '',
+  style,
   target,
   rel,
   title,
@@ -146,7 +153,7 @@ export function LinkButton({
       rel={rel}
       title={title}
       className={styles.className}
-      style={styles.style}
+      style={{ ...styles.style, ...style }}
     >
       {leftIcon && (
         <span className="flex-shrink-0 inline-flex items-center">

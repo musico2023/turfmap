@@ -67,7 +67,27 @@ export function MarketingHero() {
             >
               Order your TurfMap audit
             </LinkButton>
-            <LinkButton variant="secondary" size="lg" href="#section-02">
+            {/* Secondary CTA bumped one step brighter than the default
+             *  `secondary` variant so it reads as a real button on the
+             *  hero's bare-page surface (var(--color-bg) #0a0a0a). The
+             *  default secondary uses var(--color-card) #0d0d0d which
+             *  almost disappears against the hero. We bump the bg one
+             *  shade up + thicken the border + lighten its color so
+             *  the edge is legible — but keep the lime CTA visually
+             *  dominant (no background fill change, no font weight
+             *  bump). Other secondary CTAs across the site are sitting
+             *  on already-tinted card surfaces so they don't need the
+             *  override. */}
+            <LinkButton
+              variant="secondary"
+              size="lg"
+              href="#section-02"
+              style={{
+                background: '#161616',
+                borderColor: '#3f3f46',
+                borderWidth: '2px',
+              }}
+            >
               How it works
             </LinkButton>
           </div>
