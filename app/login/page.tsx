@@ -43,7 +43,12 @@ export default async function AgencyLoginPage({
           </div>
         </div>
 
-        <LoginForm initialError={error ?? null} next={next ?? '/'} />
+        {/* Default `next` is the agency console root — `/clients` post-
+         *  marketing-launch (the bare `/` is now the public marketing
+         *  page). Pre-set `next` query params still take precedence,
+         *  so deep-linked auth flows like `/login?next=/clients/abc/settings`
+         *  keep working. */}
+        <LoginForm initialError={error ?? null} next={next ?? '/clients'} />
 
         <div
           className="mt-8 pt-5 border-t text-[10px] text-zinc-600 leading-relaxed flex items-start gap-3"

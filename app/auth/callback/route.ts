@@ -16,9 +16,14 @@ export const runtime = 'nodejs';
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
-  const nextRaw = url.searchParams.get('next') ?? '/';
-  // Only allow same-origin redirects — protects against open-redirect abuse.
-  const next = nextRaw.startsWith('/') ? nextRaw : '/';
+  // Default agency landing is `/clients` post-marketing-launch — `/` is
+  // the public marketing surface now and would orphan a staff member
+  // who completed their magic-link login. Portal flows always set an
+  // explicit `next=/portal/<slug>` so they bypass this default.
+  const nextRaw = url.searchParams.get('next') ?? '/clients';
+  // Only allow same-origin redirects — protects against open-redirect
+  // abuse via tampered `next` query params.
+  const next = nextRaw.startsWith('/') ? nextRaw : '/clients';
 
   if (!code) {
     return NextResponse.redirect(
@@ -55,8 +60,10 @@ function redirectWithError(next: string, msg: string): string {
     return `/portal/${slug}/login?error=${encodeURIComponent(msg)}`;
   }
   // Agency-side default — preserve `next` so they land where they were
-  // headed after a successful retry.
+  // headed after a successful retry. Skip the `next` query param when
+  // it's already the default (`/clients`) — login form will fall back
+  // to its own default and we keep the URL clean.
   const params = new URLSearchParams({ error: msg });
-  if (next && next !== '/') params.set('next', next);
+  if (next && next !== '/clients' && next !== '/') params.set('next', next);
   return `/login?${params.toString()}`;
 }

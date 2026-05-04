@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>TurfMap logo render</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700&display=block" rel="stylesheet">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: white;
+    font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  }
+  body {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  /* Inline SVG sized at 800x200 so screenshot picks up exactly. */
+  svg { display: block; }
+</style>
+</head>
+<body>
+  <svg width="800" height="200" viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- Lime square -->
+    <rect x="20" y="32" width="136" height="136" rx="28" fill="#c5ff3a"/>
+
+    <!-- Crosshair (fill-only) -->
+    <circle cx="88" cy="100" r="32" fill="#000"/>
+    <circle cx="88" cy="100" r="25" fill="#c5ff3a"/>
+    <rect x="84.5" y="68"  width="7"  height="14" rx="3.5" fill="#000"/>
+    <rect x="84.5" y="118" width="7"  height="14" rx="3.5" fill="#000"/>
+    <rect x="68"   y="96.5" width="14" height="7" rx="3.5" fill="#000"/>
+    <rect x="118"  y="96.5" width="14" height="7" rx="3.5" fill="#000"/>
+
+    <!-- Wordmark — Bricolage Grotesque Bold loaded from Google Fonts -->
+    <text x="190"
+          y="135"
+          font-family="'Bricolage Grotesque', system-ui, sans-serif"
+          font-size="100"
+          font-weight="700"
+          letter-spacing="-2"
+          fill="#0a0a0a">TurfMap</text>
+
+    <!-- Lime ™ superscript -->
+    <text x="615"
+          y="78"
+          font-family="'Bricolage Grotesque', system-ui, sans-serif"
+          font-size="32"
+          font-weight="700"
+          fill="#c5ff3a">™</text>
+  </svg>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Lime square. -->
+  <rect width="512" height="512" rx="96" fill="#c5ff3a"/>
+
+  <!-- Crosshair built from filled shapes (not strokes) so ImageMagick
+       renders it reliably. The lucide Crosshair (24x24) is scaled to
+       roughly 50% of the canvas: outer ring + 4 cardinal ticks +
+       center dot, all centered at (256, 256). -->
+
+  <!-- Outer ring: big circle minus inner circle (donut). -->
+  <circle cx="256" cy="256" r="120" fill="#000"/>
+  <circle cx="256" cy="256" r="94" fill="#c5ff3a"/>
+
+  <!-- Four cardinal tick marks. Width 27, length 43, rounded ends. -->
+  <rect x="243" y="138" width="27" height="50" rx="13" fill="#000"/>
+  <rect x="243" y="324" width="27" height="50" rx="13" fill="#000"/>
+  <rect x="138" y="243" width="50" height="27" rx="13" fill="#000"/>
+  <rect x="324" y="243" width="50" height="27" rx="13" fill="#000"/>
+</svg>
