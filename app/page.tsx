@@ -411,7 +411,6 @@ export default function MarketingLanding() {
         <PathHeader
           letter="A"
           category="One-time audits"
-          heading="Want a one-time diagnosis?"
           body={
             <>
               Get an audit. We scan your territory, diagnose what&rsquo;s
@@ -454,7 +453,6 @@ export default function MarketingLanding() {
         <PathHeader
           letter="B"
           category="Continuous monitoring"
-          heading="Want continuous improvement?"
           body={
             <>
               Get a subscription. We track your visibility weekly, alert
@@ -731,6 +729,13 @@ export default function MarketingLanding() {
  * lime "Path A" / "Path B" eyebrow is the strongest visual signal
  * that there are two distinct paths, not one continuous list.
  *
+ * Earlier iterations had an H3 question between the eyebrow and the
+ * body ("Want a one-time diagnosis?" / "Want continuous improvement?")
+ * but it competed with the section H2 — three heading layers (H2 +
+ * eyebrow + H3) overstacked the section. Dropped: structure is now
+ * eyebrow → body paragraph → cards, with the section H2 carrying
+ * the framing ("Two paths. Pick the one that fits how you work.").
+ *
  * Replaced the earlier `SubsectionHeader` (which only carried a
  * title + sub-head) — the path framing needs a body paragraph and,
  * on Path A, a small competitive-comparison sub-line.
@@ -738,13 +743,11 @@ export default function MarketingLanding() {
 function PathHeader({
   letter,
   category,
-  heading,
   body,
   comparison,
 }: {
   letter: 'A' | 'B';
   category: string;
-  heading: string;
   body: React.ReactNode;
   /** Optional small sub-line beneath the body. Used on Path A for
    *  the agency-cost comparison anchor. */
@@ -757,9 +760,6 @@ function PathHeader({
         <span className="text-zinc-700">·</span>
         <span>{category}</span>
       </div>
-      <h3 className="font-display text-2xl md:text-3xl font-bold text-zinc-100 leading-tight mb-3">
-        {heading}
-      </h3>
       <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
         {body}
       </p>
