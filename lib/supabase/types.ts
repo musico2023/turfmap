@@ -112,6 +112,14 @@ export type ClientLocationRow = {
   service_radius_miles: number | null;
   /** Optional Google Business Profile URL for this location. */
   gbp_url: string | null;
+  /** Per-location NAP re-sync counter (added in migration 0012). Resets
+   *  at the start of each quarter via cron. Used by the §6 re-sync
+   *  gate to enforce the 3-onboarding + 3-quarterly free cap before
+   *  the operator is charged for over-cap BL re-syncs. */
+  citation_resync_count: number | null;
+  /** ISO timestamp of the next quarterly counter reset. Null until the
+   *  first re-sync sets the quarterly window start. */
+  citation_resync_quota_resets_at: string | null;
   created_at: string | null;
 };
 
@@ -305,6 +313,95 @@ export type LeadOrderRow = {
    *  { stripe_customer_id, payment_status, amount_total, currency }. */
   stripe_metadata: unknown | null;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ─── Citations (BrightLocal Citation Builder, migration 0012) ─────────────
+
+/** Per-directory submission status as stored in
+ *  `citation_orders.per_directory[]`. The shape is vendor-agnostic so
+ *  we can swap BL → Yext / Synup later without re-shaping the column.
+ *
+ *  status:
+ *   - pending      — queued at vendor, not yet submitted
+ *   - submitted    — sent to the directory; awaiting acceptance
+ *   - live         — directory accepted + listing is publicly visible
+ *   - needs_review — directory requires extra action (owner-verification
+ *                    postcard, phone code, manual claim) — operator
+ *                    must intervene
+ *   - failed       — directory rejected the submission terminally
+ */
+export type CitationDirectoryStatus =
+  | 'pending'
+  | 'submitted'
+  | 'live'
+  | 'needs_review'
+  | 'failed';
+
+export type CitationDirectoryEntry = {
+  /** Vendor-canonical directory slug (e.g. 'bing', 'yelp', 'apple-maps'). */
+  directory: string;
+  status: CitationDirectoryStatus;
+  submitted_at: string | null;
+  live_at: string | null;
+  /** Public URL of the live listing. Null until status='live'. */
+  url: string | null;
+  /** Reason for needs_review or failed. Surfaced verbatim in the
+   *  operator-facing dashboard panel. */
+  message: string | null;
+};
+
+export type CitationOrderStatus =
+  | 'queued'
+  | 'in_progress'
+  | 'complete'
+  | 'partial'
+  | 'failed';
+
+/** Snapshot of the buyer's onboarding profile at submit time. Stored on
+ *  citation_orders.submitted_profile so a NAP edit on the client row
+ *  doesn't retroactively change what we sent to BL — and the §6
+ *  re-sync gate can compute exactly which fields changed since the
+ *  last submission. */
+export type CitationSubmittedProfile = {
+  business_name: string;
+  street_address: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country_code: string | null;
+  phone: string | null;
+  website: string | null;
+  /** Primary GBP category. */
+  primary_category: string | null;
+  /** Up to ~9 additional GBP categories. */
+  additional_categories: string[] | null;
+  /** Plain-text description, ~500 chars. */
+  description: string | null;
+  /** Hours payload, BL-shaped — keyed by day, each value is "HH:MM-HH:MM"
+   *  or "closed" or "24h". */
+  hours: Record<string, string> | null;
+  /** Public URLs of photos hosted in the client-logos bucket (or
+   *  another asset bucket if we add one later). */
+  photo_urls: string[] | null;
+};
+
+/** A single citation-build order. One row per (location, vendor order).
+ *  Re-orders after churn create new rows; the partial unique constraint
+ *  in 0012 prevents duplicate live orders for the same location. */
+export type CitationOrderRow = {
+  id: string;
+  client_id: string;
+  location_id: string;
+  brightlocal_order_id: string | null;
+  status: CitationOrderStatus;
+  per_directory: CitationDirectoryEntry[];
+  wholesale_cents: number | null;
+  billed_cents: number | null;
+  maintenance_paused: boolean;
+  submitted_profile: CitationSubmittedProfile | null;
+  error: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
+import { pauseClientCitationMaintenance } from '@/lib/citations/maintenance';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import type { ClientRow } from '@/lib/supabase/types';
 
@@ -144,6 +145,23 @@ export async function PATCH(
       console.error(
         `[/api/clients/${id}] primary location dual-write failed:`,
         locErr.message
+      );
+    }
+  }
+
+  // Tier-downgrade hook — when status flips to 'churned', pause
+  // ongoing citation maintenance (BL stops being charged for sync;
+  // existing live citations stay live but no longer update). The
+  // Stripe webhook (item 2 in the roadmap) plumbs the same helper
+  // for buyer-side cancellations once that lands.
+  if (parsed.status === 'churned' && existing.status !== 'churned') {
+    const { paused, blFailures } = await pauseClientCitationMaintenance(
+      supabase,
+      id
+    );
+    if (paused > 0) {
+      console.log(
+        `[/api/clients/${id}] paused ${paused} citation_orders on churn (BL failures: ${blFailures.length})`
       );
     }
   }

@@ -10,6 +10,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { listLocations, resolveLocation } from '@/lib/supabase/locations';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import type {
+  CitationOrderRow,
   ClientRow,
   ScanPointRow,
   ScanRow,
@@ -38,6 +39,7 @@ import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
 import { LinkButton } from '@/components/ui/Button';
 import { buttonStyles } from '@/components/ui/buttonStyles';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { CitationsPanel } from '@/components/turfmap/CitationsPanel';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
 
@@ -215,6 +217,28 @@ export default async function ClientDashboardPage({
     activeLocation && !shouldBypassRescanCap(me.email)
       ? await getRescanCapStatus(supabase, activeLocation.id)
       : null;
+
+  // Citations panel state. Fetch the open (non-paused, non-failed)
+  // citation order for this (client, location). Null when no order
+  // exists yet — panel renders the "Set up citations" CTA in that
+  // case. Subscription / agency-managed clients only — one_time
+  // clients don't get the panel.
+  const showCitationsPanel =
+    client.billing_mode === 'self_serve_subscription' ||
+    client.billing_mode === 'agency_managed';
+  const { data: citationOrder } =
+    showCitationsPanel && activeLocation
+      ? await supabase
+          .from('citation_orders')
+          .select('*')
+          .eq('client_id', id)
+          .eq('location_id', activeLocation.id)
+          .eq('maintenance_paused', false)
+          .neq('status', 'failed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<CitationOrderRow>()
+      : { data: null };
 
   // Competitors: automatic discovery by default; per-location manual
   // override when the operator has explicitly added competitors via the
@@ -530,6 +554,18 @@ export default async function ClientDashboardPage({
             scanComplete={Boolean(latestScan)}
           />
         </div>
+
+        {/* Citations panel — Pulse+ / agency-managed clients only.
+         *  When no citation order exists yet, the panel surfaces a
+         *  "Set up citations" CTA pointing at the onboarding form. */}
+        {showCitationsPanel && (
+          <div className="col-span-12">
+            <CitationsPanel
+              order={citationOrder ?? null}
+              clientPublicId={client.public_id}
+            />
+          </div>
+        )}
       </div>
 
       <footer

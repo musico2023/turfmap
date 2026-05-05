@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/weekly-scans",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron/poll-citations",
+      "schedule": "0 */6 * * *"
     }
   ]
 }
