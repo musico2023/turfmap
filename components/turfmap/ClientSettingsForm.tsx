@@ -78,7 +78,33 @@ type FillState =
   | { status: 'filled'; filled: number }
   | { status: 'failed'; error: string };
 
-export function ClientSettingsForm({ client }: { client: ClientRow }) {
+/** Cost-preview shape returned by /api/citations/resync-cost. */
+type ResyncEstimate = {
+  free: boolean;
+  quota: { used: number; cap: number; remaining: number; atCap: boolean };
+  changedFields: string[];
+  directoryCount: number;
+  costCents: number;
+  perDirectoryCents: number;
+};
+
+export function ClientSettingsForm({
+  client,
+  primaryLocationId,
+  pulsePlusActive,
+}: {
+  client: ClientRow;
+  /** UUID of the client's primary location row. Drives the citation
+   *  re-sync gate — NAP edits dual-write to this location, and the
+   *  cost-preview endpoint reads its quota counter. Null only when
+   *  the client has no locations yet (shouldn't happen post-onboarding). */
+  primaryLocationId?: string | null;
+  /** True when the client is on a subscription tier that includes
+   *  citation maintenance (Pulse+, agency-managed). When false, the
+   *  re-sync gate is bypassed entirely — NAP edits save normally
+   *  with no cost preview. */
+  pulsePlusActive?: boolean;
+}) {
   const router = useRouter();
   const [original] = useState<Form>(() => formFromClient(client));
   const [form, setForm] = useState<Form>(() => formFromClient(client));
@@ -87,6 +113,13 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
   const [submitting, setSubmitting] = useState(false);
   const [fillState, setFillState] = useState<FillState>({ status: 'idle' });
   const [, startTransition] = useTransition();
+
+  // Re-sync gate state — when set, the confirm modal renders. Stays
+  // null on non-Pulse+ clients (the gate is bypassed) or when the
+  // current dirty diff doesn't include any high-churn fields.
+  const [pendingResync, setPendingResync] = useState<ResyncEstimate | null>(
+    null
+  );
 
   const update = <K extends keyof Form>(k: K, v: Form[K]) => {
     setForm((s) => ({ ...s, [k]: v }));
@@ -237,6 +270,73 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
 
     if (Object.keys(patch).length === 0) return;
 
+    // Citation re-sync gate. When Pulse+ is active and the dirty diff
+    // includes high-churn NAP fields, hit the cost-preview endpoint
+    // first and pop the confirm modal. The actual save fires from the
+    // modal's "Confirm" handler (commitSave below).
+    const highChurnChanged =
+      'business_name' in patch ||
+      'street_address' in patch ||
+      'city' in patch ||
+      'region' in patch ||
+      'postcode' in patch ||
+      'country_code' in patch ||
+      'phone' in patch;
+    if (pulsePlusActive && primaryLocationId && highChurnChanged) {
+      setSubmitting(true);
+      try {
+        const res = await fetch('/api/citations/resync-cost', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location_id: primaryLocationId,
+            proposed_profile: {
+              business_name: form.business_name.trim(),
+              street_address: form.street_address.trim() || null,
+              city: form.city.trim() || null,
+              region: form.region.trim() || null,
+              postcode: form.postcode.trim() || null,
+              country_code:
+                form.country_code.trim().toUpperCase().slice(0, 3) || null,
+              phone: form.phone.trim() || null,
+            },
+          }),
+        });
+        const estimate = (await res.json()) as ResyncEstimate & {
+          error?: string;
+        };
+        if (!res.ok) {
+          setError(estimate.error ?? `cost preview failed (HTTP ${res.status})`);
+          setSubmitting(false);
+          return;
+        }
+        if (estimate.changedFields.length === 0 || estimate.directoryCount === 0) {
+          // No-op re-sync (no actual high-churn change vs the order's
+          // submitted profile, or no open order to update). Save
+          // normally without surfacing a modal.
+          await commitSave(patch);
+          return;
+        }
+        setPendingResync(estimate);
+        setSubmitting(false);
+        return;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    // No re-sync gate — straight save.
+    await commitSave(patch);
+  };
+
+  /**
+   * Persist the patch via PATCH /api/clients/[id]. Shared helper used
+   * both by the no-gate path (one_time / Pulse / no high-churn change)
+   * AND by the modal-confirm path on Pulse+ clients.
+   */
+  const commitSave = async (patch: Record<string, unknown>) => {
     setSubmitting(true);
     try {
       const res = await fetch(`/api/clients/${client.id}`, {
@@ -259,7 +359,113 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
     }
   };
 
+  /**
+   * Modal-confirm path: re-sync gate showed cost, operator clicked
+   * Confirm. Save the PATCH, then trigger /api/citations/resync to
+   * fire the BL update + decrement quota / charge invoice.
+   */
+  const confirmResyncAndSave = async () => {
+    if (!pendingResync || !primaryLocationId) {
+      setPendingResync(null);
+      return;
+    }
+    const estimate = pendingResync;
+    setPendingResync(null);
+
+    // Rebuild the patch from current form state (operator may have
+    // tweaked between cost-preview and confirm — rare but possible).
+    const patch: Record<string, unknown> = {};
+    if (form.business_name !== original.business_name)
+      patch.business_name = form.business_name.trim();
+    if (form.address !== original.address) patch.address = form.address.trim();
+    if (form.latitude !== original.latitude) patch.latitude = Number(form.latitude);
+    if (form.longitude !== original.longitude) patch.longitude = Number(form.longitude);
+    if (form.phone !== original.phone)
+      patch.phone = form.phone.trim() === '' ? null : form.phone.trim();
+    if (form.street_address !== original.street_address)
+      patch.street_address =
+        form.street_address.trim() === '' ? null : form.street_address.trim();
+    if (form.city !== original.city)
+      patch.city = form.city.trim() === '' ? null : form.city.trim();
+    if (form.region !== original.region)
+      patch.region = form.region.trim() === '' ? null : form.region.trim();
+    if (form.postcode !== original.postcode)
+      patch.postcode = form.postcode.trim() === '' ? null : form.postcode.trim();
+    if (form.country_code !== original.country_code)
+      patch.country_code =
+        form.country_code.trim() === ''
+          ? null
+          : form.country_code.trim().toUpperCase().slice(0, 3);
+    if (form.industry !== original.industry)
+      patch.industry = form.industry.trim() === '' ? null : form.industry.trim();
+    if (form.service_radius_miles !== original.service_radius_miles)
+      patch.service_radius_miles = Number(form.service_radius_miles);
+    if (form.status !== original.status) patch.status = form.status;
+    if (form.monthly_price_dollars !== original.monthly_price_dollars) {
+      if (form.monthly_price_dollars.trim() === '') {
+        patch.monthly_price_cents = null;
+      } else {
+        const dollars = Number(form.monthly_price_dollars);
+        patch.monthly_price_cents = Math.round(dollars * 100);
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      // 1. Save NAP changes via PATCH /api/clients/[id].
+      const patchRes = await fetch(`/api/clients/${client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const patchData = (await patchRes.json()) as { error?: string };
+      if (!patchRes.ok) {
+        setError(patchData.error ?? `save failed (HTTP ${patchRes.status})`);
+        setSubmitting(false);
+        return;
+      }
+
+      // 2. Fire the citation re-sync.
+      const resyncRes = await fetch('/api/citations/resync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location_id: primaryLocationId,
+          proposed_profile: {
+            business_name: form.business_name.trim(),
+            street_address: form.street_address.trim() || null,
+            city: form.city.trim() || null,
+            region: form.region.trim() || null,
+            postcode: form.postcode.trim() || null,
+            country_code:
+              form.country_code.trim().toUpperCase().slice(0, 3) || null,
+            phone: form.phone.trim() || null,
+          },
+          confirmed_cost_cents: estimate.costCents,
+        }),
+      });
+      const resyncData = (await resyncRes.json()) as { error?: string };
+      if (!resyncRes.ok) {
+        // NAP saved but resync trigger failed. Don't roll back the
+        // NAP write — the operator's edit is more important than
+        // the BL sync. Surface the error so operator can retry from
+        // the citations panel later.
+        setError(
+          `NAP saved, but citation re-sync failed: ${resyncData.error ?? `HTTP ${resyncRes.status}`}. Retry from the Citations panel.`
+        );
+      } else {
+        setSavedAt(Date.now());
+      }
+      startTransition(() => router.refresh());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
+    <>
     <form onSubmit={onSubmit} className="space-y-6 max-w-3xl">
       <Section title="Business">
         <Field label="Business name" required>
@@ -438,6 +644,141 @@ export function ClientSettingsForm({ client }: { client: ClientRow }) {
         </Button>
       </div>
     </form>
+    {pendingResync && (
+      <ResyncConfirmModal
+        estimate={pendingResync}
+        onCancel={() => setPendingResync(null)}
+        onConfirm={confirmResyncAndSave}
+        submitting={submitting}
+      />
+    )}
+    </>
+  );
+}
+
+/**
+ * Citation re-sync confirmation modal. Renders only when high-churn
+ * NAP fields changed AND the client is on Pulse+ AND there's an open
+ * citation order to update. Shows cost (or "free, X of N quarterly"),
+ * the changed fields, and Cancel / Confirm buttons. Confirm proceeds
+ * with the save + BL update; Cancel discards the modal but leaves the
+ * form state dirty so the operator can edit further.
+ */
+function ResyncConfirmModal({
+  estimate,
+  onCancel,
+  onConfirm,
+  submitting,
+}: {
+  estimate: ResyncEstimate;
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+}) {
+  const dollars = (estimate.costCents / 100).toFixed(2);
+  const perDirDollars = (estimate.perDirectoryCents / 100).toFixed(2);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="relative max-w-md w-full rounded-lg border p-6"
+        style={{
+          background: 'var(--color-card)',
+          borderColor: 'var(--color-border-bright)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-display text-lg font-bold mb-2">
+          Citation re-sync
+        </h3>
+        <p className="text-sm text-zinc-300 leading-relaxed mb-4">
+          You&rsquo;re changing{' '}
+          <span className="text-zinc-100 font-semibold">
+            {estimate.changedFields.join(', ')}
+          </span>
+          . We&rsquo;ll push the new values to{' '}
+          <span className="font-mono text-zinc-100">
+            {estimate.directoryCount} citation{estimate.directoryCount === 1 ? '' : 's'}
+          </span>
+          .
+        </p>
+
+        {estimate.free ? (
+          <div
+            className="rounded border px-3 py-2.5 mb-5 text-xs"
+            style={{
+              background: 'var(--color-card-glow)',
+              borderColor: 'var(--color-border-bright)',
+              color: 'var(--color-lime)',
+            }}
+          >
+            <strong className="font-semibold">Free.</strong>{' '}
+            <span className="text-zinc-300">
+              {estimate.quota.remaining} of {estimate.quota.cap} re-syncs
+              remaining this quarter.
+            </span>
+          </div>
+        ) : (
+          <div
+            className="rounded border px-3 py-2.5 mb-5 text-xs"
+            style={{
+              background: 'rgba(255, 159, 58, 0.06)',
+              borderColor: 'rgba(255, 159, 58, 0.3)',
+              color: '#ffb86b',
+            }}
+          >
+            <div className="font-semibold mb-1">
+              Over quarterly cap — billed on next invoice
+            </div>
+            <div className="text-zinc-300 leading-relaxed">
+              <span className="font-mono text-zinc-100">
+                {estimate.directoryCount} × ${perDirDollars}/directory ={' '}
+                <span style={{ color: '#ffb86b' }}>${dollars}</span>
+              </span>
+              <br />
+              Free quota resets next quarter (
+              {estimate.quota.cap} re-syncs).
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="text-xs px-3 py-2 rounded transition-colors"
+            style={{
+              background: 'transparent',
+              color: '#a1a1aa',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={submitting}
+            className="text-xs font-bold px-3 py-2 rounded transition-all hover:brightness-110 disabled:opacity-60"
+            style={{
+              background: 'var(--color-lime)',
+              color: 'black',
+              boxShadow: '0 4px 14px #c5ff3a30',
+            }}
+          >
+            {submitting
+              ? 'Saving…'
+              : estimate.free
+                ? 'Confirm and save'
+                : `Confirm — $${dollars}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

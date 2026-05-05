@@ -147,7 +147,18 @@ export default async function ClientSettingsPage({
         )}
 
         <div className="space-y-6">
-          <ClientSettingsForm client={client} />
+          <ClientSettingsForm
+            client={client}
+            primaryLocationId={
+              locations.find((l) => l.is_primary)?.id ??
+              locations[0]?.id ??
+              null
+            }
+            pulsePlusActive={
+              client.billing_mode === 'self_serve_subscription' ||
+              client.billing_mode === 'agency_managed'
+            }
+          />
           <LocationsManager clientId={client.public_id} locations={locations} />
           <KeywordsManager
             clientId={client.id}
