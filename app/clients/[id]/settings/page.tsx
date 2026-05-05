@@ -28,8 +28,10 @@ import {
 } from '@/components/turfmap/ClientUsersManager';
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { SubscriptionPanel } from '@/components/turfmap/SubscriptionPanel';
+import { TierOverrideCard } from '@/components/turfmap/TierOverrideCard';
 import { AlertPrefsCard } from '@/components/turfmap/AlertPrefsCard';
 import { ExportsCard } from '@/components/turfmap/ExportsCard';
+import { canAccessExports, resolveTier } from '@/lib/subscription/tier';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { listLocations, resolveLocation } from '@/lib/supabase/locations';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
@@ -106,6 +108,13 @@ export default async function ClientSettingsPage({
   const subscriptionSummary = showSubscriptionPanel
     ? await loadSubscriptionSummary(client.stripe_subscription_id as string)
     : null;
+
+  // Tier-driven gating for Pulse+-only cards on the settings page.
+  // Recurring-tier clients see the tier override card; Pulse+ unlocks
+  // the alert-prefs + exports surfaces.
+  const tierForGating = resolveTier(client);
+  const isRecurring = client.billing_mode !== 'one_time';
+  const showExports = canAccessExports(tierForGating);
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -206,28 +215,38 @@ export default async function ClientSettingsPage({
             clientPublicId={client.public_id}
             users={portalUsers ?? []}
           />
-          {/* AlertPrefsCard + ExportsCard render only on subscription
-           *  / agency-managed clients — one_time clients (TurfScan /
-           *  Audit / Strategy buyers) bought a one-shot product and
-           *  don't have alert or recurring-export entitlements. The
-           *  same showSubscriptionPanel gate covers both since both
-           *  features are part of the recurring tier value prop. */}
-          {showSubscriptionPanel && (
-            <>
-              <AlertPrefsCard
-                clientId={client.id}
-                initialPrefs={client.alert_prefs ?? null}
-                initialSlackWebhookUrl={client.slack_webhook_url ?? null}
-              />
-              <ExportsCard
-                clientId={client.id}
-                clientPublicId={client.public_id}
-                initialLookerToken={client.looker_token ?? null}
-                appOrigin={
-                  process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai'
-                }
-              />
-            </>
+          {/* Tier override card — recurring clients only. one_time
+           *  clients (TurfScan / Audit / Strategy buyers) don't have a
+           *  recurring tier to set. Drives the gating across the
+           *  Pulse+ surfaces below + the dashboard's CitationsPanel. */}
+          {isRecurring && (
+            <TierOverrideCard
+              clientId={client.public_id}
+              initialTier={client.tier}
+            />
+          )}
+          {/* AlertPrefsCard renders on any recurring-tier client —
+           *  basic alerts (score movement, weekly competitor digest)
+           *  ship to Pulse, granular toggles unlock for Pulse+ inside
+           *  the card itself. one_time clients don't see it. */}
+          {isRecurring && (
+            <AlertPrefsCard
+              clientId={client.id}
+              tier={tierForGating}
+              initialPrefs={client.alert_prefs ?? null}
+              initialSlackWebhookUrl={client.slack_webhook_url ?? null}
+            />
+          )}
+          {/* ExportsCard is Pulse+ only — exports are gated. */}
+          {showExports && (
+            <ExportsCard
+              clientId={client.id}
+              clientPublicId={client.public_id}
+              initialLookerToken={client.looker_token ?? null}
+              appOrigin={
+                process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai'
+              }
+            />
           )}
           {showSubscriptionPanel && (
             <SubscriptionPanel

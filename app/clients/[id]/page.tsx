@@ -42,6 +42,7 @@ import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { CitationsPanel } from '@/components/turfmap/CitationsPanel';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
+import { canAccessCitations, resolveTier } from '@/lib/subscription/tier';
 
 // Default 9×9 grid is 4 rings out from the center cell, so spacing per ring
 // is `service_radius_miles / 4`. Falls back to the v1 default of 1.6mi /
@@ -221,11 +222,11 @@ export default async function ClientDashboardPage({
   // Citations panel state. Fetch the open (non-paused, non-failed)
   // citation order for this (client, location). Null when no order
   // exists yet — panel renders the "Set up citations" CTA in that
-  // case. Subscription / agency-managed clients only — one_time
-  // clients don't get the panel.
-  const showCitationsPanel =
-    client.billing_mode === 'self_serve_subscription' ||
-    client.billing_mode === 'agency_managed';
+  // case. Pulse+ only — citations are part of the Pulse+ feature set
+  // (managed citation building is a premium-tier deliverable). Pulse
+  // and one_time clients don't see the panel.
+  const tierForGating = resolveTier(client);
+  const showCitationsPanel = canAccessCitations(tierForGating);
   const { data: citationOrder } =
     showCitationsPanel && activeLocation
       ? await supabase

@@ -52,7 +52,10 @@ import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { ClientBillingPanel } from '@/components/turfmap/ClientBillingPanel';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
+import { resolveTier } from '@/lib/subscription/tier';
+import { loadSubscriptionSummary } from '@/lib/stripe/subscription';
 
 export const dynamic = 'force-dynamic';
 
@@ -231,6 +234,16 @@ export default async function ClientPortalPage({
   const competitors = aggregateCompetitors(points, points.length || 1, {
     excludeNamePattern: ownNamePattern,
   });
+
+  // Billing panel data — loaded only for self-serve subscriptions.
+  // Agency-managed clients show a static "managed by your account
+  // team" row; one_time buyers don't see the panel at all.
+  const portalTier = resolveTier(client);
+  const showBillingPanel = client.billing_mode !== 'one_time';
+  const billingSummary =
+    showBillingPanel && client.stripe_subscription_id
+      ? await loadSubscriptionSummary(client.stripe_subscription_id)
+      : null;
 
   const { data: insightRow } = latestScan
     ? await supabase
@@ -447,6 +460,16 @@ export default async function ClientPortalPage({
             scanComplete={Boolean(latestScan)}
           />
         </div>
+
+        {showBillingPanel && (
+          <div className="col-span-12">
+            <ClientBillingPanel
+              clientId={clientUuid}
+              tier={portalTier}
+              summary={billingSummary}
+            />
+          </div>
+        )}
       </div>
 
       <footer

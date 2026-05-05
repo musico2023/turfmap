@@ -24,6 +24,16 @@ export type BillingMode =
 /** Mirrored from Stripe's `Subscription.status` field. Null for any
  *  client that isn't on a recurring plan. See migration 0008 for the
  *  CHECK constraint covering this set. */
+/** Pulse / Pulse+ tier — the recurring-subscription level on this
+ *  client (added in migration 0014). Drives the agency dashboard's
+ *  tier toggle + the per-feature gating for Pulse+-only surfaces
+ *  (citations, exports, granular alerts, 10-keyword cap).
+ *
+ *  NULL when the client has no recurring tier (one_time clients).
+ *  Resolved from Stripe webhook events going forward, but operators
+ *  can override manually via /api/clients/[id]/tier. */
+export type SubscriptionTier = 'pulse' | 'pulse_plus';
+
 export type SubscriptionStatus =
   | 'trialing'
   | 'active'
@@ -85,6 +95,10 @@ export type ClientRow = {
   /** Mirrored from Stripe webhook events. Null for non-subscription
    *  billing modes. */
   subscription_status: SubscriptionStatus | null;
+  /** Pulse / Pulse+ recurring tier (added in migration 0014).
+   *  Drives feature gating + the agency tier toggle. NULL on
+   *  one_time clients. */
+  tier: SubscriptionTier | null;
   /** Per-client alert preferences (added in migration 0013). JSONB
    *  blob with the toggles + thresholds described in AlertPrefs. The
    *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs

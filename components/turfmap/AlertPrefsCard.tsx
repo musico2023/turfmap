@@ -2,10 +2,11 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell } from 'lucide-react';
+import { Bell, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { withAlertPrefDefaults } from '@/lib/alerts/prefs';
-import type { AlertPrefs } from '@/lib/supabase/types';
+import { canAccessGranularAlerts } from '@/lib/subscription/tier';
+import type { AlertPrefs, SubscriptionTier } from '@/lib/supabase/types';
 
 /**
  * Per-client alert preferences card on the settings page.
@@ -24,13 +25,20 @@ import type { AlertPrefs } from '@/lib/supabase/types';
  */
 export function AlertPrefsCard({
   clientId,
+  tier,
   initialPrefs,
   initialSlackWebhookUrl,
 }: {
   clientId: string;
+  /** Recurring tier — drives which alert toggles are unlocked. Pulse
+   *  gets score-movement + weekly-summary; Pulse+ unlocks granular
+   *  alerts (competitor entries, momentum reversal, cell changes) +
+   *  Slack delivery. */
+  tier: SubscriptionTier | null;
   initialPrefs: AlertPrefs | null;
   initialSlackWebhookUrl: string | null;
 }) {
+  const granularUnlocked = canAccessGranularAlerts(tier);
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -141,18 +149,21 @@ export function AlertPrefsCard({
           help="Email when a new competitor brand enters your 3-pack."
           on={prefs.competitor_entries_email}
           onChange={(v) => update('competitor_entries_email', v)}
+          locked={!granularUnlocked}
         />
         <Toggle
           label="Momentum reversal"
           help="Email when momentum flips positive ↔ negative."
           on={prefs.momentum_reversal_email}
           onChange={(v) => update('momentum_reversal_email', v)}
+          locked={!granularUnlocked}
         />
         <Toggle
           label="Cell-level changes"
           help="Email a per-cell movement summary after each scan. Noisy — opt-in."
           on={prefs.cell_changes_email}
           onChange={(v) => update('cell_changes_email', v)}
+          locked={!granularUnlocked}
         />
         <Toggle
           label="Weekly competitor summary"
@@ -164,7 +175,21 @@ export function AlertPrefsCard({
 
       <div className="border-t pt-4 mt-4" style={{ borderColor: 'var(--color-border)' }}>
         <label className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 flex items-center justify-between">
-          <span>Slack webhook URL</span>
+          <span className="flex items-center gap-1.5">
+            Slack webhook URL
+            {!granularUnlocked && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-bold"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  color: '#a1a1aa',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                }}
+              >
+                PULSE+
+              </span>
+            )}
+          </span>
           <span className="text-[10px] normal-case tracking-normal text-zinc-600">
             Slack → Apps → Incoming Webhooks → copy URL
           </span>
@@ -176,8 +201,13 @@ export function AlertPrefsCard({
             setSlackUrl(e.target.value);
             setSavedAt(null);
           }}
-          placeholder="https://hooks.slack.com/services/T0/B0/xyz"
-          className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+          disabled={!granularUnlocked}
+          placeholder={
+            granularUnlocked
+              ? 'https://hooks.slack.com/services/T0/B0/xyz'
+              : 'Upgrade to Pulse+ to enable Slack delivery'
+          }
+          className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <p className="text-[11px] text-zinc-600 mt-1.5 leading-relaxed">
           When set, all enabled alerts also POST to this Slack
@@ -215,30 +245,60 @@ function Toggle({
   help,
   on,
   onChange,
+  locked,
 }: {
   label: string;
   help: React.ReactNode;
   on: boolean;
   onChange: (next: boolean) => void;
+  /** Pulse+-only toggle on a Pulse plan: render as disabled with a
+   *  PULSE+ pill, ignore changes. */
+  locked?: boolean;
 }) {
   return (
     <label
-      className="flex items-start gap-3 cursor-pointer px-3 py-2.5 rounded-md border transition-colors"
+      className={`flex items-start gap-3 px-3 py-2.5 rounded-md border transition-colors ${locked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
       style={{
-        background: on ? 'var(--color-card-glow)' : 'var(--color-bg)',
-        borderColor: on
-          ? 'var(--color-border-bright)'
-          : 'var(--color-border)',
+        background:
+          locked
+            ? 'rgba(255, 255, 255, 0.02)'
+            : on
+              ? 'var(--color-card-glow)'
+              : 'var(--color-bg)',
+        borderColor:
+          !locked && on
+            ? 'var(--color-border-bright)'
+            : 'var(--color-border)',
+        opacity: locked ? 0.6 : 1,
       }}
     >
       <input
         type="checkbox"
-        checked={on}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 w-4 h-4 cursor-pointer accent-[var(--color-lime)]"
+        checked={locked ? false : on}
+        disabled={locked}
+        onChange={(e) => {
+          if (locked) return;
+          onChange(e.target.checked);
+        }}
+        className="mt-0.5 w-4 h-4 accent-[var(--color-lime)] disabled:cursor-not-allowed"
       />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-zinc-100">{label}</div>
+        <div className="text-sm font-medium text-zinc-100 flex items-center gap-1.5">
+          {label}
+          {locked && (
+            <span
+              className="px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-1"
+              style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                color: '#a1a1aa',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+              }}
+            >
+              <Lock size={9} />
+              PULSE+
+            </span>
+          )}
+        </div>
         <div className="text-xs text-zinc-500 leading-relaxed mt-0.5">
           {help}
         </div>

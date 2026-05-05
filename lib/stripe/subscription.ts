@@ -151,6 +151,106 @@ export async function loadSubscriptionSummary(
 }
 
 /**
+ * Create a Stripe Customer Portal session for a client. Returns the
+ * hosted-portal URL to redirect the user to.
+ *
+ * The Customer Portal is Stripe's hosted UI for invoice access,
+ * payment-method updates, plan changes (where configured at the
+ * Stripe-account level), and cancellation. Honors Subscription
+ * Schedules — a "cancel" inside the committed first phase applies
+ * cancel_at_period_end at the end of the schedule's current phase
+ * rather than the immediate billing period.
+ */
+export async function createBillingPortalSession(args: {
+  customerId: string;
+  returnUrl: string;
+}): Promise<
+  | { ok: true; url: string }
+  | {
+      ok: false;
+      kind: 'stripe_not_configured' | 'remote_error';
+      message: string;
+    }
+> {
+  const stripe = await getStripe();
+  if (!stripe) {
+    return {
+      ok: false,
+      kind: 'stripe_not_configured',
+      message: 'STRIPE_SECRET_KEY is not set',
+    };
+  }
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: args.customerId,
+      return_url: args.returnUrl,
+    });
+    return { ok: true, url: session.url };
+  } catch (e) {
+    return {
+      ok: false,
+      kind: 'remote_error',
+      message: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
+ * Swap a subscription's price (and therefore tier) inline via the
+ * Stripe API. Used by the Pulse → Pulse+ upgrade button on the
+ * portal. Stripe handles proration — the buyer is charged
+ * immediately for the prorated cost difference, then continues at
+ * the new price going forward.
+ *
+ * Assumes the subscription has exactly one item (true for our
+ * tier model — each subscription is one Price). proration_behavior
+ * 'always_invoice' creates an invoice that bills immediately rather
+ * than queueing for next cycle.
+ */
+export async function updateSubscriptionPrice(args: {
+  subscriptionId: string;
+  newPriceId: string;
+}): Promise<
+  | { ok: true; subscriptionId: string }
+  | {
+      ok: false;
+      kind: 'stripe_not_configured' | 'remote_error' | 'no_items';
+      message: string;
+    }
+> {
+  const stripe = await getStripe();
+  if (!stripe) {
+    return {
+      ok: false,
+      kind: 'stripe_not_configured',
+      message: 'STRIPE_SECRET_KEY is not set',
+    };
+  }
+  try {
+    const sub = await stripe.subscriptions.retrieve(args.subscriptionId);
+    const item = sub.items.data[0];
+    if (!item) {
+      return {
+        ok: false,
+        kind: 'no_items',
+        message: `subscription ${args.subscriptionId} has no items`,
+      };
+    }
+    await stripe.subscriptions.update(args.subscriptionId, {
+      items: [{ id: item.id, price: args.newPriceId }],
+      proration_behavior: 'always_invoice',
+    });
+    return { ok: true, subscriptionId: args.subscriptionId };
+  } catch (e) {
+    return {
+      ok: false,
+      kind: 'remote_error',
+      message: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
  * Schedule cancellation for the end of the current billing period.
  * No-op if already scheduled. Rejects if the subscription is still
  * in the Subscription Schedule's committed first phase — the route
