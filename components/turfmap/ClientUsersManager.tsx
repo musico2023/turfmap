@@ -71,16 +71,28 @@ export function ClientUsersManager({
           email: newEmail.trim(),
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        invite_sent?: boolean;
+        invite_error?: string | null;
+      };
       if (!res.ok) {
         setError(data.error ?? `request failed (HTTP ${res.status})`);
         return;
       }
       const added = newEmail.trim().toLowerCase();
       setNewEmail('');
-      setNotice(
-        `${added} can now access the portal. Copy the sign-in link below and share it with them — they'll request a magic link from there.`
-      );
+      if (data.invite_sent === false) {
+        // Row created but the email failed. Surface clearly so the
+        // operator can fall back to the Copy-link button below.
+        setNotice(
+          `${added} added — but the invite email failed (${data.invite_error ?? 'unknown'}). Use the copy buttons to share the sign-in link manually.`
+        );
+      } else {
+        setNotice(
+          `Invite sent to ${added}. They'll get an email with a one-click sign-in link.`
+        );
+      }
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -164,10 +176,10 @@ export function ClientUsersManager({
         <div>
           <h3 className="font-display text-lg font-bold">Portal users</h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Adding an email grants portal access. Copy the sign-in
-            link below and share it with the user — they request a
-            magic link from there. Up to {PORTAL_USERS_PER_CLIENT}{' '}
-            users per client.
+            Adding an email grants portal access AND emails the user a
+            one-click sign-in link. Use the copy buttons below to share
+            the sign-in URL manually if needed. Up to{' '}
+            {PORTAL_USERS_PER_CLIENT} users per client.
           </p>
         </div>
         <span

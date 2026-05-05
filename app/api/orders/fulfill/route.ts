@@ -51,6 +51,11 @@ import {
   markLeadOrderFulfilled,
 } from '@/lib/stripe/leadOrders';
 import { STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
+import {
+  sendOrderConfirmation,
+  sendScanReady,
+  sendPulsePlusWelcome,
+} from '@/lib/email/resend';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -238,6 +243,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Send the order-confirmation email NOW, before the scan fires.
+  // The buyer just paid and clicked "submit" on the form — they want
+  // immediate acknowledgement, not silence for 30+ seconds while DFS
+  // runs. The scan-ready email follows after step 8 with the actual
+  // dashboard link. Failures here are logged but don't block the
+  // pipeline (sendOrderConfirmation already swallows errors).
+  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  const dashboardUrl = `${origin}/clients/${client.public_id}`;
+  await sendOrderConfirmation({
+    to: body.email,
+    businessName: body.businessName.trim(),
+    tier: session.tier,
+    dashboardUrl,
+  });
+
   // ─── 6. Insert tracked keywords ────────────────────────────────────────
   // Self-serve subscriptions use weekly cadence (Pulse) or weekly with
   // multi-keyword (Pulse+ — 3 keywords on weekly). One-time tiers also
@@ -301,6 +321,20 @@ export async function POST(req: NextRequest) {
     const errMsg = failedScans.map((r) => (r.ok ? '' : r.error)).join('; ');
     console.error('[orders/fulfill] partial scan failure', errMsg);
     await markLeadOrderFulfilled(supabase, body.sessionId, client.id);
+
+    // Pulse+ welcome still fires on partial failure — the citation-
+    // build onboarding form is independent of scan completion, and the
+    // buyer paid for Pulse+ either way. Scan-ready email is suppressed
+    // here; it'll fire when the retry pipeline (TODO) lands.
+    if (session.tier === 'pulse_plus') {
+      const onboardingUrl = `${origin}/clients/${client.public_id}/settings`;
+      await sendPulsePlusWelcome({
+        to: body.email,
+        businessName: body.businessName.trim(),
+        onboardingUrl,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       partial: true,
@@ -332,11 +366,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ─── 9. (Future, §4) Queue scan-ready email via Resend ─────────────────
-  // TODO: integrate Resend once §4 of the prelaunch buildlist ships.
-  // Will look like: await sendScanReadyEmail({ to: body.email, scanIds, businessName, ... })
-  // For now, scan completion is visible via the success-state UI on
-  // /order/success and the scan link the buyer can bookmark.
+  // ─── 9. Send the scan-ready email + (Pulse+) welcome email ────────────
+  // Both are fire-and-await with errors swallowed inside the senders,
+  // so a transient Resend hiccup doesn't fail the order. The dashboard
+  // success state on /order/success is still the primary delivery path
+  // — email is the secondary "you can come back anytime" handoff.
+  await sendScanReady({
+    to: body.email,
+    businessName: body.businessName.trim(),
+    dashboardUrl,
+  });
+  if (session.tier === 'pulse_plus') {
+    // Pulse+ needs a richer NAP/category profile before BL Citation
+    // Builder can submit. The onboarding-form route doesn't exist yet
+    // (lands with the citation-builder integration), so for now we
+    // route the buyer to the dashboard's settings page where they can
+    // fill in the missing fields manually. Update this URL once the
+    // dedicated onboarding flow ships.
+    const onboardingUrl = `${origin}/clients/${client.public_id}/settings`;
+    await sendPulsePlusWelcome({
+      to: body.email,
+      businessName: body.businessName.trim(),
+      onboardingUrl,
+    });
+  }
 
   const scanIds = scanResults
     .map((r) => (r.ok ? r.scanId : null))
