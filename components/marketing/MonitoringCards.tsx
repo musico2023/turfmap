@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Clock, Loader2 } from 'lucide-react';
 
 /**
  * Continuous-monitoring tier cards (Pulse / Pulse+).
@@ -10,24 +10,38 @@ import { Check, Loader2 } from 'lucide-react';
  * tiers). Pulled into its own component because the data shape is
  * meaningfully different — these tiers are recurring (monthly +
  * annual price displayed on each card), and Pulse+ uses grouped
- * feature lists ("More data", "More integration", "More flexibility")
- * rather than the flat list the audit cards use.
+ * feature lists.
  *
- * Visual hierarchy: Pulse+ is the conversion target so it gets the
- * +8px elevation, lime price color, "Most popular" badge, and primary
- * CTA — same pattern PricingCards uses for the $499 audit. Pulse is
- * the entry stake at $39/mo.
+ * Pulse+ repositioning (2026-05-04): the tier moved from "more
+ * monitoring" to TurfMap's first ACTION tier — citation building
+ * and ongoing maintenance are now bundled into the subscription.
+ *
+ *   - Tagline: "Pulse tells you what's broken. Pulse+ fixes it for you."
+ *   - Pricing: $99/mo with a 3-month minimum subscription, OR
+ *     $79/mo billed annually ($950/year, save $238 / 20%).
+ *   - Feature list restructured into two groups:
+ *       MORE MONITORING (the rank-tracking + integrations bits)
+ *       CITATIONS + MAINTENANCE (the new action layer)
+ *   - Propagation timeline honesty rail rendered on the card —
+ *     non-optional, mandatory visible context. Without it, buyers
+ *     churn at week 2-3 expecting instant results that physically
+ *     can't land before week 4-6.
+ *   - "Weekly automated scans" and "White-label PDF reports" bullets
+ *     are removed. Pulse now has weekly scans (parity with
+ *     BrightLocal Track at $39); white-label PDF was deprecated.
+ *
+ * Pulse (light update in the same change): 3 keywords (was 1) and
+ * weekly scans (was monthly) so it stays competitive against
+ * BrightLocal Track at the same price point.
+ *
+ * Visual hierarchy: Pulse+ is still the conversion target so it
+ * keeps the +8px elevation, lime price color, "Most popular" badge,
+ * and primary CTA.
  *
  * Stripe wiring: each CTA POSTs to /api/checkout/<pulse|pulse_plus>.
- * Until those Stripe products + price IDs are created, the route
- * returns 503 with a human-readable message that the card surfaces
- * inline. Lets us ship the marketing surface immediately and wire
- * billing in a follow-up.
- *
- * Annual billing: shown as a secondary "save 20%" line on each card
- * but not yet wired to a separate Stripe price. The CTA always starts
- * the monthly subscription. Annual checkout flow is a follow-up —
- * needs a billing-cadence toggle + a second price ID per tier.
+ * The Pulse+ monthly Price will be wrapped by a Subscription Schedule
+ * (3-month committed phase, then month-to-month) at the API layer
+ * once the Stripe products exist; this card just initiates checkout.
  */
 
 type MonitoringTier = 'pulse' | 'pulse_plus';
@@ -39,16 +53,33 @@ type FeatureGroup = {
   items: string[];
 };
 
+type HonestyRail = {
+  /** Short heading rendered with the icon. */
+  title: string;
+  /** Body copy beneath the heading. */
+  body: string;
+};
+
 type MonitoringSpec = {
   id: MonitoringTier;
   name: string;
   monthlyPrice: string;
-  annualPriceMonthly: string;
-  annualSavings: string;
+  /** Optional sub-line directly under the price block — used for
+   *  Pulse+ to surface the 3-month minimum at the same glance as the
+   *  price. NOT a footnote; visible inline by design. */
+  monthlySubNote?: string;
+  /** The "or $X/mo billed annually …" line. Free-text so we can
+   *  surface the absolute annual figure + savings amount when the
+   *  tier supports it (Pulse+ shows $79/mo · $950/year · save $238). */
+  annualLine: string;
   tagline: string;
   /** "Everything in Pulse, plus:" line for the upgrade tier */
   inheritsFrom?: string;
   features: FeatureGroup[];
+  /** Optional honesty-rail callout rendered between the bullet list
+   *  and the CTA. Pulse+ uses this for the citation propagation
+   *  timeline. */
+  honestyRail?: HonestyRail;
   cta: string;
   popular?: boolean;
 };
@@ -58,14 +89,13 @@ const TIERS: MonitoringSpec[] = [
     id: 'pulse',
     name: 'TurfMap Pulse',
     monthlyPrice: '$39',
-    annualPriceMonthly: '$31',
-    annualSavings: 'save 20%',
+    annualLine: 'or $31/mo billed annually · save 20%',
     tagline: 'Continuous monitoring of your local SEO territory.',
     features: [
       {
         items: [
-          'Monthly automated TurfMap scan',
-          '1 keyword, 1 location',
+          'Weekly automated TurfMap scan',
+          'Up to 3 keywords, 1 location',
           '9×9 grid covering your service area',
           'Full dashboard — TurfScore, TurfReach, TurfRank, Momentum',
           'Weekly competitor movement summary',
@@ -81,37 +111,39 @@ const TIERS: MonitoringSpec[] = [
   {
     id: 'pulse_plus',
     name: 'TurfMap Pulse+',
-    monthlyPrice: '$89',
-    annualPriceMonthly: '$71',
-    annualSavings: 'save 20%',
-    tagline: 'Professional-tier monitoring for serious operators.',
+    monthlyPrice: '$99',
+    monthlySubNote: '3-month minimum subscription',
+    annualLine: 'or $79/mo billed annually ($950/year — save $238 / 20%)',
+    tagline: "Pulse tells you what's broken. Pulse+ fixes it for you.",
     inheritsFrom: 'Everything in Pulse, plus:',
     features: [
       {
-        group: 'More data',
+        group: 'More monitoring',
         items: [
-          'Weekly automated scans',
-          'Up to 3 keywords',
+          'Up to 10 keywords',
           '12-month historical trend view',
-        ],
-      },
-      {
-        group: 'More integration',
-        items: [
           'Slack integration — alerts and weekly summaries to your channel',
           'Looker Studio + Google Sheets data export',
           'CSV raw data export',
+          'Manual competitor tracking — pick up to 5 competitors',
+          'Granular alerts — competitor entries, score drops, cell-level changes, Momentum reversals',
+          'On-demand AI Coach refresh',
         ],
       },
       {
-        group: 'More flexibility',
+        group: 'Citations + maintenance',
         items: [
-          'Manual competitor tracking — pick up to 5 competitors',
-          'Granular alerts — competitor entries, score drops, cell-level changes, Momentum reversals',
-          'On-demand AI Coach refresh — re-run anytime',
+          'Initial citation building across ~25 industry directories',
+          'Active maintenance and sync on 12 directories',
+          'Per-directory live status in your dashboard',
+          'Aggregator push (Data Axle, Foursquare, Localeze) for downstream propagation',
         ],
       },
     ],
+    honestyRail: {
+      title: 'How citations propagate',
+      body: 'First wave of citations goes live within 2 weeks. Full propagation across all directories takes 6–8 weeks. Score lift typically visible in scans starting week 4 onward.',
+    },
     cta: 'Start Pulse+',
     popular: true,
   },
@@ -197,11 +229,20 @@ function Card({ tier }: { tier: MonitoringSpec }) {
         </span>
         <span className="text-xs text-zinc-500 font-mono">/month</span>
       </div>
+      {/* 3-month-minimum sub-line — visible at same glance as the price.
+          By design NOT a footnote. Operators must see this before they
+          click the CTA so the Stripe Subscription Schedule's committed
+          phase isn't a surprise on the receipt. */}
+      {tier.monthlySubNote && (
+        <div
+          className="text-[11px] font-mono mb-1"
+          style={{ color: '#c89545' }}
+        >
+          {tier.monthlySubNote}
+        </div>
+      )}
       <div className="text-[11px] text-zinc-600 font-mono mb-1">
-        or {tier.annualPriceMonthly}/mo billed annually&nbsp;·&nbsp;
-        <span style={{ color: 'var(--color-lime)' }}>
-          {tier.annualSavings}
-        </span>
+        {tier.annualLine}
       </div>
       <p className="text-sm text-zinc-400 leading-snug mt-3 mb-5">
         {tier.tagline}
@@ -213,7 +254,7 @@ function Card({ tier }: { tier: MonitoringSpec }) {
         </p>
       )}
 
-      <div className="space-y-4 mb-7 flex-1">
+      <div className="space-y-4 mb-5 flex-1">
         {tier.features.map((group, gi) => (
           <div key={gi}>
             {group.group && (
@@ -240,6 +281,35 @@ function Card({ tier }: { tier: MonitoringSpec }) {
           </div>
         ))}
       </div>
+
+      {tier.honestyRail && (
+        // Required propagation-timeline callout. Same visual treatment
+        // as the "Grounded in real data" rail in §03 — small icon,
+        // lime-tinted card-glow background, smaller typography than the
+        // bullets above. Sits between the feature list and the CTA so
+        // the buyer reads it BEFORE clicking.
+        <div
+          className="rounded-md border px-3 py-2.5 mb-6 flex items-start gap-2.5"
+          style={{
+            background: 'var(--color-card-glow)',
+            borderColor: 'var(--color-border-bright)',
+          }}
+        >
+          <Clock
+            size={13}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div>
+            <div className="text-xs font-semibold text-zinc-200 mb-1 leading-snug">
+              {tier.honestyRail.title}
+            </div>
+            <div className="text-[11px] text-zinc-400 leading-snug">
+              {tier.honestyRail.body}
+            </div>
+          </div>
+        </div>
+      )}
 
       <button
         type="button"
