@@ -12,6 +12,14 @@
     {
       "path": "/api/cron/reset-citation-quotas",
       "schedule": "5 0 1 1,4,7,10 *"
+    },
+    {
+      "path": "/api/cron/monthly-pdf",
+      "schedule": "0 9 1 * *"
+    },
+    {
+      "path": "/api/cron/weekly-competitor-summary",
+      "schedule": "0 13 * * 1"
     }
   ]
 }

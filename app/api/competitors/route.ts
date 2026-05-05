@@ -55,6 +55,27 @@ export async function POST(req: Request) {
   const supabase = getServerSupabase();
   const name = parsed.competitor_name.trim();
 
+  // Cap at 5 tracked competitors per location — matches the marketing
+  // copy on Pulse+ ("Manual competitor tracking — pick up to 5
+  // competitors"). Soft cap: enforced server-side, surfaced in the
+  // ClientUsersManager / CompetitorsManager UI for immediate
+  // feedback. Past the cap the operator removes one before adding
+  // another.
+  const COMPETITORS_PER_LOCATION = 5;
+  const { count: existing } = await supabase
+    .from('competitors')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', parsed.client_id)
+    .eq('location_id', parsed.location_id);
+  if ((existing ?? 0) >= COMPETITORS_PER_LOCATION) {
+    return NextResponse.json(
+      {
+        error: `competitor cap reached (${COMPETITORS_PER_LOCATION} per location). Remove an existing competitor before adding "${name}".`,
+      },
+      { status: 400 }
+    );
+  }
+
   const { data, error } = await supabase
     .from('competitors')
     .insert({

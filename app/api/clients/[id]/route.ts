@@ -46,6 +46,28 @@ const PatchBody = z
     logo_url: z.string().url().max(2048).nullable(),
     monthly_price_cents: z.number().int().min(0).nullable(),
     status: z.enum(['active', 'paused', 'churned']),
+    /** Pulse / Pulse+ alert preferences. Partial merge — caller flips
+     *  one toggle without resending the rest; merged against
+     *  existing on the row. */
+    alert_prefs: z
+      .object({
+        score_movement_email: z.boolean().optional(),
+        score_movement_threshold: z.number().int().min(1).max(100).optional(),
+        competitor_entries_email: z.boolean().optional(),
+        momentum_reversal_email: z.boolean().optional(),
+        cell_changes_email: z.boolean().optional(),
+        weekly_competitor_summary_email: z.boolean().optional(),
+      })
+      .partial(),
+    /** Slack incoming-webhook URL. null clears. Slack-host-validated. */
+    slack_webhook_url: z
+      .string()
+      .url()
+      .regex(
+        /^https:\/\/hooks\.slack\.com\//,
+        'must be a https://hooks.slack.com/... URL'
+      )
+      .nullable(),
   })
   .partial()
   // At least one field — empty body is a useless call.
@@ -113,9 +135,20 @@ export async function PATCH(
     if (k in parsed) locationPatch[k] = (parsed as Record<string, unknown>)[k];
   }
 
+  // Merge alert_prefs against the existing row's value so a PATCH
+  // with `{ alert_prefs: { score_movement_email: false } }` flips one
+  // toggle without erasing the other keys.
+  const updateBody: Record<string, unknown> = { ...parsed };
+  if (parsed.alert_prefs && existing.alert_prefs) {
+    updateBody.alert_prefs = {
+      ...existing.alert_prefs,
+      ...parsed.alert_prefs,
+    };
+  }
+
   const { data: updated, error } = await supabase
     .from('clients')
-    .update(parsed)
+    .update(updateBody)
     .eq('id', id)
     .select('*')
     .maybeSingle<ClientRow>();

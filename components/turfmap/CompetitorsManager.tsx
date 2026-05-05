@@ -52,6 +52,10 @@ export function CompetitorsManager({
   const [busy, setBusy] = useState<'add' | string | null>(null);
 
   const refresh = () => startTransition(() => router.refresh());
+  // Mirrors the server-side cap in app/api/competitors/route.ts —
+  // matches the Pulse+ marketing promise of "up to 5 competitors."
+  const COMPETITORS_PER_LOCATION = 5;
+  const atCap = competitors.length >= COMPETITORS_PER_LOCATION;
 
   const onAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,22 +114,34 @@ export function CompetitorsManager({
         borderColor: 'var(--color-border)',
       }}
     >
-      <div className="mb-4">
-        <h3 className="font-display text-lg font-bold">
-          Tracked competitors
-          {locationLabel && (
-            <span className="text-xs text-zinc-500 font-normal ml-2">
-              · {locationLabel}
-            </span>
-          )}
-        </h3>
-        <p className="text-xs text-zinc-500 mt-0.5 max-w-2xl">
-          Leave empty for automatic discovery — every brand observed in
-          the local 3-pack populates the dashboard. Add specific brands
-          here to track them even when they don&rsquo;t appear in this
-          location&rsquo;s scans (useful when you know a competitor exists
-          but want to verify their territory presence).
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-bold">
+            Tracked competitors
+            {locationLabel && (
+              <span className="text-xs text-zinc-500 font-normal ml-2">
+                · {locationLabel}
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-zinc-500 mt-0.5 max-w-2xl">
+            Leave empty for automatic discovery — every brand observed in
+            the local 3-pack populates the dashboard. Add specific brands
+            here to track them even when they don&rsquo;t appear in this
+            location&rsquo;s scans (useful when you know a competitor exists
+            but want to verify their territory presence).
+          </p>
+        </div>
+        <span
+          className="text-[10px] uppercase tracking-[0.18em] font-semibold px-2 py-1 rounded font-mono whitespace-nowrap"
+          style={{
+            background: atCap ? '#1a1308' : 'var(--color-bg)',
+            color: atCap ? '#f5b651' : '#a1a1aa',
+            border: `1px solid ${atCap ? '#3a2a0a' : 'var(--color-border)'}`,
+          }}
+        >
+          {competitors.length} / {COMPETITORS_PER_LOCATION}
+        </span>
       </div>
 
       {error && (
@@ -183,15 +199,19 @@ export function CompetitorsManager({
           type="text"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          placeholder="Competitor brand name (e.g. Kindercare Pediatrics)"
-          disabled={!locationId}
+          placeholder={
+            atCap
+              ? 'remove a competitor before adding another'
+              : 'Competitor brand name (e.g. Kindercare Pediatrics)'
+          }
+          disabled={!locationId || atCap}
           className="col-span-10 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50"
         />
         <Button
           type="submit"
           variant="primary"
           size="md"
-          disabled={!newName.trim() || !locationId}
+          disabled={!newName.trim() || !locationId || atCap}
           loading={busy === 'add'}
           leftIcon={<Plus size={12} strokeWidth={2.75} />}
           className="col-span-2"

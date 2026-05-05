@@ -38,6 +38,7 @@ import { turfRank } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { momentum as computeMomentum } from '@/lib/metrics/momentum';
 import { maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
+import { dispatchScanAlerts } from '@/lib/alerts/postScan';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -231,6 +232,26 @@ export async function runScanForLocation(
 
   // 7. Auto-fire NAP audit for THIS location (best-effort; absorbed errors).
   await maybeRunNapAudit(supabase, client.id, triggeredBy, location.id);
+
+  // 8. Dispatch alerts based on score / momentum / competitor / cell
+  //    diff against the prior scan. Best-effort — never fails the
+  //    scan return path. Lives behind a separate try so a Resend or
+  //    Slack hiccup doesn't poison cron's scan-status reporting.
+  try {
+    await dispatchScanAlerts(supabase, {
+      clientId: client.id,
+      locationId: location.id,
+      keywordId: keyword.id,
+      currentScanId: scanId,
+      currentScore: score,
+      currentMomentum: momentumValue,
+    });
+  } catch (e) {
+    console.error(
+      '[runScan] post-scan alert dispatch failed (non-fatal):',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
 
   return {
     ok: true,

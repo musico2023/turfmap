@@ -85,8 +85,46 @@ export type ClientRow = {
   /** Mirrored from Stripe webhook events. Null for non-subscription
    *  billing modes. */
   subscription_status: SubscriptionStatus | null;
+  /** Per-client alert preferences (added in migration 0013). JSONB
+   *  blob with the toggles + thresholds described in AlertPrefs. The
+   *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs
+   *  fills any missing keys for backward compat. */
+  alert_prefs: AlertPrefs | null;
+  /** Slack incoming-webhook URL. Operator pastes it from Slack's
+   *  Apps → Incoming Webhooks UI. We POST alerts to this URL. Null
+   *  means Slack delivery is disabled for this client. */
+  slack_webhook_url: string | null;
+  /** Looker Studio access token. Per-client random string the
+   *  operator generates from the Exports card; Looker authenticates
+   *  on token alone. Null means Looker export is disabled. */
+  looker_token: string | null;
+  /** Per-alert-type debounce map: alert_type → last-fired-iso.
+   *  Keeps a flapping score from re-firing the same alert on every
+   *  scan inside a short window. */
+  alerts_last_fired_at: Record<string, string> | null;
   onboarded_at: string | null;
   created_at: string | null;
+};
+
+/** Per-client alert preferences. Stored as JSONB on
+ *  clients.alert_prefs so adding new alert types doesn't require a
+ *  schema migration. */
+export type AlertPrefs = {
+  /** Email when |score - prior_score| ≥ score_movement_threshold. */
+  score_movement_email: boolean;
+  score_movement_threshold: number;
+  /** Email when a NEW competitor brand enters the 3-pack on this
+   *  scan (not seen in the prior scan's local pack). */
+  competitor_entries_email: boolean;
+  /** Email when momentum flips sign (positive → negative or vice
+   *  versa). */
+  momentum_reversal_email: boolean;
+  /** Email when individual grid cells change rank by >= 1 position.
+   *  OFF by default — extremely noisy. */
+  cell_changes_email: boolean;
+  /** Weekly digest email summarizing competitor movement (separate
+   *  from the per-scan competitor_entries alerts above). */
+  weekly_competitor_summary_email: boolean;
 };
 
 /** A physical location of a client (added in migration 0006). One client
