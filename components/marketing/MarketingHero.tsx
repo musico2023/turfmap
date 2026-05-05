@@ -180,7 +180,13 @@ function ScoreReadout({
           : 'var(--color-border)',
       }}
     >
-      <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">
+      {/* Score names render as written (PascalCase, no space) — no
+       *  CSS uppercase transform. Matches the dashboard StatCard
+       *  treatment so "TurfScore™" reads identically across the
+       *  marketing hero and the in-app score cards. Other in-page
+       *  labels (column headers, tier eyebrows) keep their uppercase
+       *  styling — this is specific to the proper-noun score family. */}
+      <div className="text-[10px] tracking-tight text-zinc-400 font-semibold">
         {label}
       </div>
       <div
