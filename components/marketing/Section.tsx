@@ -44,7 +44,7 @@ export function Section({
   return (
     <section
       id={id}
-      className="border-b py-20 md:py-28 px-6 md:px-12"
+      className="border-b py-20 md:py-28 px-6 md:px-12 scroll-mt-24"
       style={{
         borderColor: 'var(--color-border)',
         background: tint ? 'var(--color-card)' : 'transparent',

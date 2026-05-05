@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${bricolage.variable} ${geist.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${bricolage.variable} ${geist.variable} ${jetbrainsMono.variable} h-full antialiased scroll-smooth`}
     >
       <body className="min-h-full bg-[#0a0a0a] text-white font-sans">
         {children}
