@@ -62,7 +62,7 @@ export function MarketingHero() {
             <LinkButton
               variant="primary"
               size="lg"
-              href="#section-05"
+              href="#section-04"
               rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
             >
               Order your TurfMap audit

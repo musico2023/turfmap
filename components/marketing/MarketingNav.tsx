@@ -71,7 +71,7 @@ export function MarketingNav() {
             How it works
           </a>
           <a
-            href="#section-05"
+            href="#section-04"
             className="text-zinc-400 hover:text-zinc-100 transition-colors"
           >
             Pricing
@@ -90,7 +90,7 @@ export function MarketingNav() {
           >
             Sign in
           </Link>
-          <LinkButton variant="primary" size="md" href="#section-05">
+          <LinkButton variant="primary" size="md" href="#section-04">
             Order audit
           </LinkButton>
         </div>

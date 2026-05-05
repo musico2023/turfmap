@@ -67,7 +67,7 @@ import { NextRequest, NextResponse } from 'next/server';
  *     redirect time; the order-success page reads it to fetch the
  *     line-item / customer email and pre-fills the scan-trigger form.
  *
- * Cancel URL: /#section-05  — deposits the user back on the pricing
+ * Cancel URL: /#section-04  — deposits the user back on the pricing
  *   section so they don't lose their place.
  */
 
@@ -165,7 +165,7 @@ export async function POST(
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${origin}/order/success?tier=${tierParam}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/#section-05`,
+      cancel_url: `${origin}/#section-04`,
       // Capture the buyer's email up-front so the post-purchase form
       // can pre-fill it. allow_promotion_codes lets us run launch
       // discounts without rebuilding.

@@ -49,15 +49,18 @@ export const metadata: Metadata = {
  * page too; the top nav surfaces a "Sign in" link and the Header in
  * /clients lets them get back to the console.
  *
- * Section structure (matches the n=01..07 numbering used in the
- * eyebrow tags) maps to the prompt's required pattern:
+ * Section structure (matches the n=01..06 numbering used in the
+ * eyebrow tags):
  *   01 — Hero
  *   02 — Problem (why one rank check isn't enough)
  *   03 — Score anatomy (TurfReach / TurfRank / TurfScore explained)
- *   04 — What's in each tier
- *   05 — Pricing (Stripe Checkout)
- *   06 — FAQ
- *   07 — Closing CTA
+ *   04 — Pricing (Stripe Checkout — two-paths layout)
+ *   05 — FAQ
+ *   06 — Closing CTA
+ *
+ * The old section-04 ("Three tiers" — three audit-tier briefs)
+ * was removed: it overlapped with section-04's Path A (one-time
+ * audits) which already covers the same three SKUs in more depth.
  */
 export default function MarketingLanding() {
   return (
@@ -315,61 +318,7 @@ export default function MarketingLanding() {
         </div>
       </Section>
 
-      {/* 04 — What's in each tier */}
-      <Section
-        id="section-04"
-        n={4}
-        eyebrow="Three tiers"
-        heading={
-          <>
-            Buy the level of help that matches <em>how serious you are</em>{' '}
-            about fixing this.
-          </>
-        }
-        intro={
-          // Stacked-line treatment: each price tier on its own row,
-          // mono-bullet prefix to anchor the price visually. The
-          // marketing-team brief flagged the original run-on
-          // sentence as hard to scan; a 3-line block lets the
-          // reader compare prices in parallel.
-          <span className="block space-y-1.5">
-            <span className="block">
-              <span style={{ color: 'var(--color-lime)' }}>$99</span>{' '}
-              if you just want to see your map.
-            </span>
-            <span className="block">
-              <span style={{ color: 'var(--color-lime)' }}>$499</span>{' '}
-              if you want a strategist&rsquo;s read on it live.
-            </span>
-            <span className="block">
-              <span style={{ color: 'var(--color-lime)' }}>$1,497</span>{' '}
-              if you want three keywords scanned and a deeper session
-              to walk the whole picture.
-            </span>
-          </span>
-        }
-      >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-8">
-          <TierBrief
-            label="$99 · TurfScan"
-            who="For: business owners who want the data."
-            description="The map, the three scores, an auto-NAP citation check, and an AI Coach playbook of the top three things to fix — grounded in your real audit data. Self-serve, no human time."
-          />
-          <TierBrief
-            label="$499 · Visibility Audit"
-            who="For: businesses that want to know what's broken."
-            description="Everything in TurfScan, plus a per-vertical NAP audit, a full breakdown of your 3 nearest competitors with heatmap overlay, a 30-minute clarity session with a TurfMap strategist (live competitor teardown + diagnosis), a customized branded PDF with strategist notes after the call, and a 30-day re-scan."
-            highlight
-          />
-          <TierBrief
-            label="$1,497 · Strategy Session"
-            who="For: operators ready to invest in the full picture."
-            description="Three TurfMap scans across different keywords or service variations, three competitor deep-dives with annotated GBP teardowns, a 60-minute strategy session with a TurfMap strategist, a branded comparative report covering all three angles, and two re-scans (60 + 90 days) to track progress."
-          />
-        </div>
-      </Section>
-
-      {/* 05 — Pricing (Stripe checkout)
+      {/* 04 — Pricing (Stripe checkout)
        *
        * Two-paths layout. Buyers self-sort by buying mode (one-time
        * vs. recurring) BEFORE comparing within a path. Previously the
@@ -397,8 +346,8 @@ export default function MarketingLanding() {
        * for the audit buyer, not the subscription buyer.
        */}
       <Section
-        id="section-05"
-        n={5}
+        id="section-04"
+        n={4}
         eyebrow="Pricing"
         heading={
           <>
@@ -499,10 +448,10 @@ export default function MarketingLanding() {
         </p>
       </Section>
 
-      {/* 06 — FAQ */}
+      {/* 05 — FAQ */}
       <Section
-        id="section-06"
-        n={6}
+        id="section-05"
+        n={5}
         eyebrow="Common questions"
         heading={
           <>
@@ -642,10 +591,10 @@ export default function MarketingLanding() {
         </div>
       </Section>
 
-      {/* 07 — Closing CTA */}
+      {/* 06 — Closing CTA */}
       <Section
-        id="section-07"
-        n={7}
+        id="section-06"
+        n={6}
         eyebrow="Last call"
         heading={
           <>
@@ -658,7 +607,7 @@ export default function MarketingLanding() {
           <LinkButton
             variant="primary"
             size="lg"
-            href="#section-05"
+            href="#section-04"
             rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
           >
             Order your TurfMap audit
@@ -930,41 +879,6 @@ function ScoreCard({
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function TierBrief({
-  label,
-  who,
-  description,
-  highlight = false,
-}: {
-  label: string;
-  who: string;
-  description: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className="border rounded-lg p-6"
-      style={{
-        background: highlight ? 'var(--color-card-glow)' : 'var(--color-card)',
-        borderColor: highlight
-          ? 'var(--color-border-bright)'
-          : 'var(--color-border)',
-      }}
-    >
-      <div
-        className="font-display text-lg font-bold mb-2"
-        style={{ color: highlight ? 'var(--color-lime)' : 'white' }}
-      >
-        {label}
-      </div>
-      <div className="text-xs text-zinc-500 font-mono uppercase tracking-wider mb-3">
-        {who}
-      </div>
-      <p className="text-sm text-zinc-300 leading-relaxed">{description}</p>
     </div>
   );
 }
