@@ -371,17 +371,30 @@ export default function MarketingLanding() {
 
       {/* 05 — Pricing (Stripe checkout)
        *
-       * Two-subsection layout:
-       *   ─ One-time audits (3 cards: $99 / $499 / $1,497)
-       *   ─ Continuous monitoring (2 cards: Pulse $39 / Pulse+ $99
-       *     with 3-month minimum, or $79/mo billed annually)
+       * Two-paths layout. Buyers self-sort by buying mode (one-time
+       * vs. recurring) BEFORE comparing within a path. Previously the
+       * five tiers stacked in a single sequence under one H2 ("Pick
+       * your audit. Then keep watching."), which produced choice
+       * paralysis between fundamentally different products.
        *
-       * Plus a per-location add-on callout and an attach-banner that
-       * dangles 30 free days of Pulse on top of any audit purchase.
+       *   PATH A — One-time audits (3 cards: $99 / $499 / $1,497).
+       *            For buyers who want a diagnosis to take to a team
+       *            or vendor.
+       *   PATH B — Continuous monitoring (2 cards: Pulse $39, Pulse+
+       *            $99 with 3-month minimum / $79 annual). For buyers
+       *            who want continuous improvement, not a one-shot.
        *
-       * The H2 captures the funnel: pick the audit, then keep watching.
-       * Intro line is the agency-comparison anchor — most agencies
-       * charge $1.5K-$2.5K just to look, TurfMap starts at $99.
+       * Each path has its own header block (eyebrow + H3 + body),
+       * its own card grid, and a small contextual footer note
+       * pointing at Fourdots Digital's Local Lead Machine for
+       * full-service implementation. A subtle horizontal divider
+       * + extra vertical margin between the paths anchors the
+       * separation visually.
+       *
+       * The agency-comparison anchor ("most agencies charge
+       * $1,500-$2,500+") is repositioned from a top-level intro
+       * into Path A's header block — it's specifically a comparison
+       * for the audit buyer, not the subscription buyer.
        */}
       <Section
         id="section-05"
@@ -389,37 +402,75 @@ export default function MarketingLanding() {
         eyebrow="Pricing"
         heading={
           <>
-            Pick your audit. Then <em>keep watching.</em>
-          </>
-        }
-        intro={
-          <>
-            Most agencies charge{' '}
-            <span className="text-zinc-200 font-semibold">$1,500–$2,500+</span>{' '}
-            before they&rsquo;ll even look at your map pack. TurfMap starts
-            at <span style={{ color: 'var(--color-lime)' }}>$99</span>.
+            Two paths. Pick the one that fits <em>how you work.</em>
           </>
         }
         tint
       >
-        <SubsectionHeader
-          title="One-time audits"
-          subhead="One scan, full diagnosis. Pick your depth."
+        {/* PATH A — one-time audits */}
+        <PathHeader
+          letter="A"
+          category="One-time audits"
+          heading="Want a one-time diagnosis?"
+          body={
+            <>
+              Get an audit. We scan your territory, diagnose what&rsquo;s
+              breaking your visibility, and walk you through what to fix
+              — once. Hand the report to your team, share it with a
+              freelancer, or use it to evaluate vendors.
+            </>
+          }
+          comparison={
+            <>
+              Compare: most agencies charge{' '}
+              <span className="text-zinc-300 font-semibold">$1,500–$2,500+</span>{' '}
+              before they&rsquo;ll even look at your map pack. TurfMap audits
+              start at <span style={{ color: 'var(--color-lime)' }}>$99</span>.
+            </>
+          }
         />
         <PricingCards />
+        <PathFooterNote>
+          Audit buyers who decide they want full implementation typically
+          engage{' '}
+          <PathFooterLink href="https://fourdots.io/home-services">
+            Fourdots Digital&rsquo;s Local Lead Machine
+          </PathFooterLink>{' '}
+          for done-for-you local SEO and ad management. We&rsquo;ll discuss
+          options on the strategist call.
+        </PathFooterNote>
 
-        <div className="mt-20">
-          <SubsectionHeader
-            title="Continuous monitoring"
-            subhead="Keep watching your territory. Cancel anytime."
+        {/* Visual break between Path A and Path B. Subtle horizontal
+         *  divider + larger vertical rhythm so the eye registers
+         *  "different mode" not "next item in a list." */}
+        <div className="my-20 max-w-3xl mx-auto">
+          <hr
+            className="border-0 border-t"
+            style={{ borderColor: 'var(--color-border)', opacity: 0.7 }}
           />
-          <MonitoringCards />
         </div>
+
+        {/* PATH B — continuous monitoring */}
+        <PathHeader
+          letter="B"
+          category="Continuous monitoring"
+          heading="Want continuous improvement?"
+          body={
+            <>
+              Get a subscription. We track your visibility weekly, alert
+              you when it shifts, and (on Pulse+) build and maintain
+              citations across ~25 industry directories on your behalf.
+            </>
+          }
+        />
+        <MonitoringCards />
 
         {/* Per-location add-on. Linear pricing — no tier-jump tax for
          *  multi-location operators. The whole reason the schema is
          *  multi-location-native is so franchise / multi-clinic /
-         *  multi-storefront operators can layer locations as needed. */}
+         *  multi-storefront operators can layer locations as needed.
+         *  Lives inside Path B since it only applies to subscription
+         *  tiers. */}
         <div
           className="mt-10 mx-auto max-w-3xl rounded-lg border p-5 flex items-start gap-3"
           style={{
@@ -445,16 +496,13 @@ export default function MarketingLanding() {
           </div>
         </div>
 
-        {/* The 30-day-Pulse-free attach offer is now surfaced inline
-         *  inside each audit pricing card's bonus row (Gift icon +
-         *  lime "+ 30 days of TurfMap Pulse — free"). The standalone
-         *  banner that used to live here was duplicating the same
-         *  promise twice on the same page; per marketing-team review,
-         *  the per-card bullets do the work and the banner became
-         *  noise. The implementation note about wiring the Stripe
-         *  trial_period_days attachment now lives in the ScanButton/
-         *  PricingCards bonus comment.
-         */}
+        <PathFooterNote>
+          Looking for full-service local SEO instead of self-serve
+          monitoring?{' '}
+          <PathFooterLink href="https://fourdots.io/home-services">
+            See Fourdots Digital&rsquo;s Local Lead Machine →
+          </PathFooterLink>
+        </PathFooterNote>
 
         <p className="text-xs text-zinc-600 font-mono mt-10 text-center">
           All prices in USD. Refund policy: full refund within 24h if you
@@ -677,22 +725,88 @@ export default function MarketingLanding() {
  * eye reads "this is one section split into two product groupings,"
  * not "two top-level sections jammed together."
  */
-function SubsectionHeader({
-  title,
-  subhead,
+/**
+ * Section 05 path header. Used twice per page (Path A audits, Path B
+ * subscriptions) to anchor each buying mode with its own intro. The
+ * lime "Path A" / "Path B" eyebrow is the strongest visual signal
+ * that there are two distinct paths, not one continuous list.
+ *
+ * Replaced the earlier `SubsectionHeader` (which only carried a
+ * title + sub-head) — the path framing needs a body paragraph and,
+ * on Path A, a small competitive-comparison sub-line.
+ */
+function PathHeader({
+  letter,
+  category,
+  heading,
+  body,
+  comparison,
 }: {
-  title: string;
-  subhead: string;
+  letter: 'A' | 'B';
+  category: string;
+  heading: string;
+  body: React.ReactNode;
+  /** Optional small sub-line beneath the body. Used on Path A for
+   *  the agency-cost comparison anchor. */
+  comparison?: React.ReactNode;
 }) {
   return (
-    <div className="mt-10 mb-2 max-w-3xl">
-      <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-2">
-        <span style={{ color: 'var(--color-lime)' }}>·</span> {title}
+    <div className="mb-7 max-w-3xl">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex items-center flex-wrap gap-x-2">
+        <span style={{ color: 'var(--color-lime)' }}>Path {letter}</span>
+        <span className="text-zinc-700">·</span>
+        <span>{category}</span>
       </div>
-      <p className="font-display text-xl md:text-2xl font-bold text-zinc-100 leading-tight">
-        {subhead}
+      <h3 className="font-display text-2xl md:text-3xl font-bold text-zinc-100 leading-tight mb-3">
+        {heading}
+      </h3>
+      <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
+        {body}
       </p>
+      {comparison && (
+        <p className="text-xs text-zinc-500 leading-relaxed mt-3">
+          {comparison}
+        </p>
+      )}
     </div>
+  );
+}
+
+/**
+ * Small contextual note beneath each path's card grid. Visually
+ * subtle — same typographic weight as the bottom-of-section refund
+ * line. Reads as a sidebar note, not a sales callout.
+ */
+function PathFooterNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs text-zinc-600 mt-8 text-center max-w-3xl mx-auto leading-relaxed">
+      {children}
+    </p>
+  );
+}
+
+/**
+ * Subtle link styling for the footer-note's "Local Lead Machine"
+ * pointer. Default state is just-slightly-brighter zinc to keep it
+ * understated; underline appears only on hover so the line reads
+ * cleanly at rest.
+ */
+function PathFooterLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
+    >
+      {children}
+    </a>
   );
 }
 
