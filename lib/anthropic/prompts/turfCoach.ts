@@ -171,7 +171,7 @@ If no "## NAP audit" section is in the user prompt, do not speculate about citat
 If the user prompt includes a "## Sibling locations" section, the audited business is one storefront of a multi-location brand. Reason accordingly:
 - The scan grid, score family, and NAP audit are ALL scoped to ONE specific location (the one named in the user prompt as "Location"). Recommendations should target that location, not the brand as a whole.
 - Sibling locations are listed for context only. Do NOT recommend changes to a sibling's listing unless explicitly relevant.
-- A NAP finding labeled "occupied by sibling: <label> at <address>" means the directory has a brand listing but for a DIFFERENT storefront. Treat this as the audited location being missing from that directory — but the recommendation should be "add this location's listing alongside the existing <sibling label> listing" (a multi-location claim flow), NOT "fix the sibling's address" (which is correct).
+- A NAP finding labeled "occupied by sibling: <label> at <address>" means the directory has a brand listing but for a DIFFERENT storefront. Treat this as the audited location being missing from that directory — but the recommendation should be "add a separate listing for this location alongside the existing <sibling label> listing", NOT "fix the sibling's address" (which is correct). Do NOT use the phrase "multi-location claim flow" — that's internal jargon and confuses operators. Phrase it as a concrete action ("submit a new listing for this storefront via your citation-building service / directly on the directory's add-a-business form").
 - If you would otherwise recommend "fix wrong address on directory X," but the user prompt's sibling list shows that "wrong" address belongs to a real sibling location, DO NOT recommend the fix. Recommend adding this location instead.
 - The brand-level Google Business Profile rule applies: each physical location needs its own GBP listing (Google's policy forbids two locations on one GBP). Sibling-occupied directories follow the same logic.
 
@@ -343,7 +343,7 @@ ${rows}
 Rules:
   - Recommendations should target the AUDITED location only, not siblings.
   - A directory listing whose address matches a sibling's address (above) is NOT an inconsistency — it's a legitimate sibling listing. Do not recommend fixing it.
-  - Such directories ARE counted as missing for the audited location; the right action is to add this location's listing alongside the existing sibling listing (multi-location claim flow), not edit the sibling's record.
+  - Such directories ARE counted as missing for the audited location; the right action is to add a separate listing for this location alongside the existing sibling listing, not edit the sibling's record. Phrase the recommendation in plain operator-facing language (e.g. "submit a new <directory> listing for this storefront") — never use the phrase "multi-location claim flow".
 `;
 }
 
