@@ -45,6 +45,7 @@ import { Check, Clock, Loader2 } from 'lucide-react';
  */
 
 type MonitoringTier = 'pulse' | 'pulse_plus';
+type Cadence = 'monthly' | 'annual';
 
 type FeatureGroup = {
   /** Optional sub-heading. Pulse uses a single ungrouped list; Pulse+
@@ -64,14 +65,20 @@ type MonitoringSpec = {
   id: MonitoringTier;
   name: string;
   monthlyPrice: string;
+  /** Headline price when the buyer toggles to annual billing — same
+   *  visual treatment as monthlyPrice when the toggle is on
+   *  'annual'. Pulse: "$31"; Pulse+: "$79". */
+  annualPriceMonthlyEquivalent: string;
+  /** Total annual figure for the small line beneath the price. */
+  annualTotal: string;
+  /** Total annual savings expressed in dollars. */
+  annualSavingsDollars: string;
   /** Optional sub-line directly under the price block — used for
    *  Pulse+ to surface the 3-month minimum at the same glance as the
-   *  price. NOT a footnote; visible inline by design. */
+   *  price. NOT a footnote; visible inline by design.
+   *  Hidden when the buyer toggles to annual (the annual price
+   *  doesn't have the minimum-commitment surface). */
   monthlySubNote?: string;
-  /** The "or $X/mo billed annually …" line. Free-text so we can
-   *  surface the absolute annual figure + savings amount when the
-   *  tier supports it (Pulse+ shows $79/mo · $950/year · save $238). */
-  annualLine: string;
   tagline: string;
   /** "Everything in Pulse, plus:" line for the upgrade tier */
   inheritsFrom?: string;
@@ -89,7 +96,9 @@ const TIERS: MonitoringSpec[] = [
     id: 'pulse',
     name: 'TurfMap Pulse',
     monthlyPrice: '$39',
-    annualLine: 'or $31/mo billed annually · save 20%',
+    annualPriceMonthlyEquivalent: '$31',
+    annualTotal: '$372',
+    annualSavingsDollars: '$96',
     tagline: 'Continuous monitoring of your local SEO territory.',
     features: [
       {
@@ -112,8 +121,10 @@ const TIERS: MonitoringSpec[] = [
     id: 'pulse_plus',
     name: 'TurfMap Pulse+',
     monthlyPrice: '$99',
+    annualPriceMonthlyEquivalent: '$79',
+    annualTotal: '$950',
+    annualSavingsDollars: '$238',
     monthlySubNote: '3-month minimum subscription',
-    annualLine: 'or $79/mo billed annually ($950/year — save $238 / 20%)',
     tagline: "Pulse tells you what's broken. Pulse+ fixes it for you.",
     inheritsFrom: 'Everything in Pulse, plus:',
     features: [
@@ -150,16 +161,120 @@ const TIERS: MonitoringSpec[] = [
 ];
 
 export function MonitoringCards() {
+  // Cadence toggle is hoisted to the parent so both Pulse and Pulse+
+  // cards share state — flipping the toggle once switches both
+  // headline prices simultaneously, which matches the buyer's mental
+  // model ("show me both tiers in annual pricing").
+  const [cadence, setCadence] = useState<Cadence>('monthly');
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch pt-6">
-      {TIERS.map((tier) => (
-        <Card key={tier.id} tier={tier} />
-      ))}
+    <div className="pt-6">
+      <CadenceToggle cadence={cadence} onChange={setCadence} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        {TIERS.map((tier) => (
+          <Card key={tier.id} tier={tier} cadence={cadence} />
+        ))}
+      </div>
     </div>
   );
 }
 
-function Card({ tier }: { tier: MonitoringSpec }) {
+/**
+ * Monthly / annual cadence toggle. Lime accent on the active side,
+ * subtle "save 20%" hint on the annual side so the buyer sees the
+ * incentive without having to flip the toggle to find out. Pill-style
+ * to read as a binary choice rather than a tab nav.
+ */
+function CadenceToggle({
+  cadence,
+  onChange,
+}: {
+  cadence: Cadence;
+  onChange: (next: Cadence) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center mb-6">
+      <div
+        role="radiogroup"
+        aria-label="Billing cadence"
+        className="inline-flex items-center gap-1 p-1 rounded-full border"
+        style={{
+          background: 'var(--color-bg)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <CadenceButton
+          active={cadence === 'monthly'}
+          onClick={() => onChange('monthly')}
+          label="Monthly"
+        />
+        <CadenceButton
+          active={cadence === 'annual'}
+          onClick={() => onChange('annual')}
+          label="Annual"
+          accent="save 20%"
+        />
+      </div>
+    </div>
+  );
+}
+
+function CadenceButton({
+  active,
+  onClick,
+  label,
+  accent,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  accent?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onClick}
+      className="px-4 py-1.5 rounded-full text-xs font-mono font-semibold uppercase tracking-[0.18em] transition-all flex items-center gap-2"
+      style={
+        active
+          ? {
+              background: 'var(--color-lime)',
+              color: 'black',
+              boxShadow: '0 4px 14px #c5ff3a30',
+            }
+          : {
+              background: 'transparent',
+              color: '#a1a1aa',
+            }
+      }
+    >
+      {label}
+      {accent && (
+        <span
+          className="text-[9px] tracking-wider px-1.5 py-0.5 rounded"
+          style={{
+            background: active
+              ? 'rgba(0,0,0,0.15)'
+              : 'rgba(197, 255, 58, 0.12)',
+            color: active ? 'black' : 'var(--color-lime)',
+          }}
+        >
+          {accent}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function Card({
+  tier,
+  cadence,
+}: {
+  tier: MonitoringSpec;
+  cadence: Cadence;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,9 +282,10 @@ function Card({ tier }: { tier: MonitoringSpec }) {
     setError(null);
     setBusy(true);
     try {
-      const res = await fetch(`/api/checkout/${tier.id}`, {
-        method: 'POST',
-      });
+      const res = await fetch(
+        `/api/checkout/${tier.id}?cadence=${cadence}`,
+        { method: 'POST' }
+      );
       const data = (await res.json().catch(() => ({}))) as {
         url?: string;
         error?: string;
@@ -187,6 +303,10 @@ function Card({ tier }: { tier: MonitoringSpec }) {
   };
 
   const popular = tier.popular === true;
+  const isAnnual = cadence === 'annual';
+  const headlinePrice = isAnnual
+    ? tier.annualPriceMonthlyEquivalent
+    : tier.monthlyPrice;
 
   return (
     <div
@@ -225,15 +345,14 @@ function Card({ tier }: { tier: MonitoringSpec }) {
           className="font-display text-5xl font-bold"
           style={{ color: popular ? 'var(--color-lime)' : 'white' }}
         >
-          {tier.monthlyPrice}
+          {headlinePrice}
         </span>
         <span className="text-xs text-zinc-500 font-mono">/month</span>
       </div>
-      {/* 3-month-minimum sub-line — visible at same glance as the price.
-          By design NOT a footnote. Operators must see this before they
-          click the CTA so the Stripe Subscription Schedule's committed
-          phase isn't a surprise on the receipt. */}
-      {tier.monthlySubNote && (
+      {/* 3-month-minimum sub-line — visible at same glance as the
+          price. ONLY shown on the monthly cadence — annual already
+          implicitly commits the buyer for 12 months. */}
+      {tier.monthlySubNote && !isAnnual && (
         <div
           className="text-[11px] font-mono mb-1"
           style={{ color: '#c89545' }}
@@ -242,7 +361,9 @@ function Card({ tier }: { tier: MonitoringSpec }) {
         </div>
       )}
       <div className="text-[11px] text-zinc-600 font-mono mb-1">
-        {tier.annualLine}
+        {isAnnual
+          ? `${tier.annualTotal}/year billed today · save ${tier.annualSavingsDollars}`
+          : `or ${tier.annualPriceMonthlyEquivalent}/mo billed annually (${tier.annualTotal}/year — save ${tier.annualSavingsDollars} / 20%)`}
       </div>
       <p className="text-sm text-zinc-400 leading-snug mt-3 mb-5">
         {tier.tagline}
@@ -331,7 +452,9 @@ function Card({ tier }: { tier: MonitoringSpec }) {
         }
       >
         {busy && <Loader2 size={14} className="animate-spin" />}
-        {busy ? 'Redirecting…' : `${tier.cta} — ${tier.monthlyPrice}/mo`}
+        {busy
+          ? 'Redirecting…'
+          : `${tier.cta} — ${headlinePrice}/mo${isAnnual ? ' (billed yearly)' : ''}`}
       </button>
 
       {error && (

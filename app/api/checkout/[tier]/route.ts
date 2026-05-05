@@ -73,15 +73,31 @@ import { NextRequest, NextResponse } from 'next/server';
 
 type Tier = 'scan' | 'audit' | 'strategy' | 'pulse' | 'pulse_plus';
 
-const TIER_TO_ENV: Record<Tier, string> = {
+type Cadence = 'monthly' | 'annual';
+
+/** One-time tiers map to a single env var (no cadence dimension).
+ *  Subscription tiers map to a (tier, cadence) pair. */
+const ONE_TIME_TIER_TO_ENV: Record<
+  'scan' | 'audit' | 'strategy',
+  string
+> = {
   scan: 'NEXT_PUBLIC_STRIPE_PRICE_SCAN',
   audit: 'NEXT_PUBLIC_STRIPE_PRICE_AUDIT',
   strategy: 'NEXT_PUBLIC_STRIPE_PRICE_STRATEGY',
-  pulse: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY',
-  // Renamed from PULSE_PLUS_MONTHLY to PULSEPLUS_MONTHLY so the env
-  // namespace cleanly separates from the (yet-to-exist) PULSEPLUS_ANNUAL
-  // price; matches the convention specified in the marketing-tier brief.
-  pulse_plus: 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY',
+};
+
+const SUBSCRIPTION_TIER_TO_ENV: Record<
+  'pulse' | 'pulse_plus',
+  Record<Cadence, string>
+> = {
+  pulse: {
+    monthly: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY',
+    annual: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_ANNUAL',
+  },
+  pulse_plus: {
+    monthly: 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY',
+    annual: 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_ANNUAL',
+  },
 };
 
 /** One-time tiers use Stripe `mode: 'payment'`; recurring tiers use
@@ -99,6 +115,25 @@ function isTier(s: string): s is Tier {
   );
 }
 
+function isCadence(s: string | null): s is Cadence {
+  return s === 'monthly' || s === 'annual';
+}
+
+/** Resolves the env var key + price for the (tier, cadence) tuple.
+ *  Returns null on a malformed combination (e.g. cadence on a
+ *  one-time tier — currently rejected; future could allow). */
+function resolvePriceEnv(
+  tier: Tier,
+  cadence: Cadence
+): { envKey: string; priceId: string | undefined } | null {
+  if (tier === 'scan' || tier === 'audit' || tier === 'strategy') {
+    const envKey = ONE_TIME_TIER_TO_ENV[tier];
+    return { envKey, priceId: process.env[envKey] };
+  }
+  const envKey = SUBSCRIPTION_TIER_TO_ENV[tier][cadence];
+  return { envKey, priceId: process.env[envKey] };
+}
+
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ tier: string }> }
@@ -111,9 +146,24 @@ export async function POST(
     );
   }
 
+  // Cadence is read from a query param (POST URL is short, no body
+  // needed for one-time tiers). Defaults to 'monthly' for
+  // subscription tiers when unspecified — preserves back-compat with
+  // marketing CTAs that haven't yet adopted the toggle. One-time
+  // tiers ignore the param.
+  const url = new URL(req.url);
+  const cadenceParam = url.searchParams.get('cadence');
+  const cadence: Cadence = isCadence(cadenceParam) ? cadenceParam : 'monthly';
+
   const secretKey = process.env.STRIPE_SECRET_KEY;
-  const priceEnvKey = TIER_TO_ENV[tierParam];
-  const priceId = process.env[priceEnvKey];
+  const resolved = resolvePriceEnv(tierParam, cadence);
+  if (!resolved) {
+    return NextResponse.json(
+      { error: `unable to resolve price for "${tierParam}" / "${cadence}"` },
+      { status: 400 }
+    );
+  }
+  const { envKey: priceEnvKey, priceId } = resolved;
 
   if (!secretKey) {
     return NextResponse.json(
@@ -127,7 +177,7 @@ export async function POST(
   if (!priceId) {
     return NextResponse.json(
       {
-        error: `Checkout not yet configured for "${tierParam}". Set ${priceEnvKey}.`,
+        error: `Checkout not yet configured for "${tierParam}" (${cadence}). Set ${priceEnvKey}.`,
       },
       { status: 503 }
     );
@@ -176,6 +226,10 @@ export async function POST(
       allow_promotion_codes: true,
       metadata: {
         tier: tierParam,
+        // Stamp cadence on subscription sessions so the
+        // order-fulfill pipeline + Stripe webhook can tell monthly
+        // from annual without re-querying the Price object.
+        ...(isSubscription ? { cadence } : {}),
       },
     });
 
