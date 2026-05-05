@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * Stripe Checkout session bootstrapper.
  *
- * POST /api/checkout/<tier>  — where tier is 'scan' | 'audit' | 'strategy'.
- * Returns { url } pointing at the hosted Stripe Checkout page. Client
- * redirects the browser there.
+ * POST /api/checkout/<tier>  — where tier is 'scan' | 'audit' | 'strategy'
+ *   | 'pulse' | 'pulse_plus'. Returns { url } pointing at the hosted
+ * Stripe Checkout page; client redirects the browser there.
  *
  * This route is *intentionally* defensive about missing env vars: when
  * STRIPE_SECRET_KEY or the per-tier price-id is unset (the expected
@@ -14,10 +14,53 @@ import { NextRequest, NextResponse } from 'next/server';
  * rather than silently failing or 500-ing the user.
  *
  * Required env (set in Vercel + .env.local before launch):
- *   STRIPE_SECRET_KEY                       — server-side, secret
- *   NEXT_PUBLIC_STRIPE_PRICE_SCAN           — price_xxx for $99
- *   NEXT_PUBLIC_STRIPE_PRICE_AUDIT          — price_xxx for $499
- *   NEXT_PUBLIC_STRIPE_PRICE_STRATEGY       — price_xxx for $1,497
+ *   STRIPE_SECRET_KEY                              — server-side, secret
+ *   NEXT_PUBLIC_STRIPE_PRICE_SCAN                  — price_xxx for $99
+ *   NEXT_PUBLIC_STRIPE_PRICE_AUDIT                 — price_xxx for $499
+ *   NEXT_PUBLIC_STRIPE_PRICE_STRATEGY              — price_xxx for $1,497
+ *   NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY         — price_xxx for $39/mo
+ *   NEXT_PUBLIC_STRIPE_PRICE_PULSE_ANNUAL          — price_xxx for $372/year (wiring TBD)
+ *   NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY     — price_xxx for $99/mo
+ *   NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_ANNUAL      — price_xxx for $950/year (wiring TBD)
+ *
+ * ─── Pulse+ 3-month minimum (Subscription Schedules) ──────────────────
+ * Pulse+ on monthly billing requires a 3-month minimum commitment. The
+ * Stripe-native primitive for this is Subscription Schedules:
+ * https://docs.stripe.com/billing/subscriptions/subscription-schedules
+ *
+ * The high-level pattern (to be wired alongside the live Stripe products
+ * — not enabled by this commit because the price IDs don't exist yet):
+ *
+ *   1. The Pulse+ monthly Price ($99/mo, env above) stays as a normal
+ *      recurring Price object in Stripe.
+ *   2. When the buyer completes Stripe Checkout in `mode: subscription`,
+ *      Stripe creates a Subscription. We immediately convert it into a
+ *      two-phase Subscription Schedule:
+ *        Phase 1 — 3 iterations (months) at the Pulse+ monthly Price.
+ *                  Buyer is contractually obligated for all 3 months;
+ *                  cancellation requested in months 1-2 still bills
+ *                  through end of phase 1.
+ *        Phase 2 — month-to-month at the same Price, normal
+ *                  cancel_at_period_end behavior thereafter.
+ *      Reference flow:
+ *        const sub = await stripe.subscriptions.retrieve(<sub_id>);
+ *        await stripe.subscriptionSchedules.create({
+ *          from_subscription: sub.id,
+ *        });
+ *        // then update the schedule with the two-phase plan.
+ *   3. The Pulse+ annual price ($950/year) does NOT need a schedule —
+ *      a 12-month subscription already implicitly commits the buyer.
+ *      Standard cancel_at_period_end applies.
+ *
+ * Cancel UX in the agency dashboard:
+ *   - Phase 1 (months 1-3): "Your minimum commitment ends <date>.
+ *     Cancellation takes effect on that date." Disable immediate-cancel.
+ *   - Phase 2 (month 4+): standard cancel-at-period-end flow.
+ *
+ * The conversion-to-schedule happens in the order-fulfill route (or in
+ * a Stripe webhook handler on `customer.subscription.created`) once the
+ * Pulse+ monthly checkout completes — not in this checkout-bootstrapper
+ * route. This route just opens the checkout session.
  *
  * Success URL: /order/success?tier=<tier>&session_id={CHECKOUT_SESSION_ID}
  *   — the trailing template variable is interpolated by Stripe at
@@ -35,7 +78,10 @@ const TIER_TO_ENV: Record<Tier, string> = {
   audit: 'NEXT_PUBLIC_STRIPE_PRICE_AUDIT',
   strategy: 'NEXT_PUBLIC_STRIPE_PRICE_STRATEGY',
   pulse: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY',
-  pulse_plus: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_PLUS_MONTHLY',
+  // Renamed from PULSE_PLUS_MONTHLY to PULSEPLUS_MONTHLY so the env
+  // namespace cleanly separates from the (yet-to-exist) PULSEPLUS_ANNUAL
+  // price; matches the convention specified in the marketing-tier brief.
+  pulse_plus: 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY',
 };
 
 /** One-time tiers use Stripe `mode: 'payment'`; recurring tiers use

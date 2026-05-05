@@ -373,7 +373,8 @@ export default function MarketingLanding() {
        *
        * Two-subsection layout:
        *   ─ One-time audits (3 cards: $99 / $499 / $1,497)
-       *   ─ Continuous monitoring (2 cards: Pulse $39 / Pulse+ $89)
+       *   ─ Continuous monitoring (2 cards: Pulse $39 / Pulse+ $99
+       *     with 3-month minimum, or $79/mo billed annually)
        *
        * Plus a per-location add-on callout and an attach-banner that
        * dangles 30 free days of Pulse on top of any audit purchase.
