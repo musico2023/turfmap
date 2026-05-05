@@ -409,7 +409,6 @@ export default function MarketingLanding() {
       >
         {/* PATH A — one-time audits */}
         <PathHeader
-          letter="A"
           category="One-time audits"
           body={
             <>
@@ -439,19 +438,11 @@ export default function MarketingLanding() {
           options on the strategist call.
         </PathFooterNote>
 
-        {/* Visual break between Path A and Path B. Subtle horizontal
-         *  divider + larger vertical rhythm so the eye registers
-         *  "different mode" not "next item in a list." */}
-        <div className="my-20 max-w-3xl mx-auto">
-          <hr
-            className="border-0 border-t"
-            style={{ borderColor: 'var(--color-border)', opacity: 0.7 }}
-          />
-        </div>
-
-        {/* PATH B — continuous monitoring */}
+        {/* PATH B — continuous monitoring.
+         *  No standalone <hr> divider — the accent line above the
+         *  Path B label (rendered inside PathHeader) now carries the
+         *  inter-path break visually. */}
         <PathHeader
-          letter="B"
           category="Continuous monitoring"
           body={
             <>
@@ -724,29 +715,34 @@ export default function MarketingLanding() {
  * not "two top-level sections jammed together."
  */
 /**
- * Section 05 path header. Used twice per page (Path A audits, Path B
- * subscriptions) to anchor each buying mode with its own intro. The
- * lime "Path A" / "Path B" eyebrow is the strongest visual signal
- * that there are two distinct paths, not one continuous list.
+ * Section 05 path header. Used twice per page (audits, subscriptions)
+ * to anchor each buying mode as its own visual block.
  *
- * Earlier iterations had an H3 question between the eyebrow and the
- * body ("Want a one-time diagnosis?" / "Want continuous improvement?")
- * but it competed with the section H2 — three heading layers (H2 +
- * eyebrow + H3) overstacked the section. Dropped: structure is now
- * eyebrow → body paragraph → cards, with the section H2 carrying
- * the framing ("Two paths. Pick the one that fits how you work.").
+ * Treatment iteration history:
+ *   - v1: subsection title + sub-head (`SubsectionHeader`).
+ *   - v2: lime "Path A · One-time audits" eyebrow + H3 question +
+ *         body. The H3 overstacked vs. the section H2.
+ *   - v3 (current): lime accent line + larger lime mono label
+ *         ("· ONE-TIME AUDITS") + body. The "Path A/B" dev-spec
+ *         prefix was buyer-noise and dropped. The accent line +
+ *         larger label combination produces a real visual block
+ *         break, not just a typographic flourish — buyers
+ *         scrolling the section now perceive two clearly
+ *         separated paths instead of one continuous list of
+ *         products.
  *
- * Replaced the earlier `SubsectionHeader` (which only carried a
- * title + sub-head) — the path framing needs a body paragraph and,
- * on Path A, a small competitive-comparison sub-line.
+ * The accent line is full-width-of-content (max-w-3xl), 2px tall,
+ * with a subtle lime glow. Top margin is generous (~80px above the
+ * accent line) so the path break reads as a "new section" not "next
+ * item." Doubles as the inter-path separator — the standalone <hr>
+ * divider that used to sit between the two paths was removed since
+ * the accent line above Path B's label now carries that work.
  */
 function PathHeader({
-  letter,
   category,
   body,
   comparison,
 }: {
-  letter: 'A' | 'B';
   category: string;
   body: React.ReactNode;
   /** Optional small sub-line beneath the body. Used on Path A for
@@ -754,11 +750,26 @@ function PathHeader({
   comparison?: React.ReactNode;
 }) {
   return (
-    <div className="mb-7 max-w-3xl">
-      <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex items-center flex-wrap gap-x-2">
-        <span style={{ color: 'var(--color-lime)' }}>Path {letter}</span>
-        <span className="text-zinc-700">·</span>
-        <span>{category}</span>
+    <div className="mt-20 mb-8 max-w-3xl">
+      {/* Lime accent line — full width of content column. 2px with a
+       *  subtle glow so it reads as a deliberate break, not a hairline. */}
+      <div
+        aria-hidden
+        className="h-[2px] w-full mb-6"
+        style={{
+          background: 'var(--color-lime)',
+          boxShadow: '0 0 14px #c5ff3a55',
+        }}
+      />
+      {/* Path label — bumped from eyebrow size to H3-equivalent
+       *  (~18-20px), lime, mono, uppercase tracking. The "·" prefix
+       *  is kept as a soft visual anchor; the "Path A/B" dev-spec
+       *  prefix is dropped. */}
+      <div
+        className="text-base md:text-lg uppercase tracking-[0.22em] font-mono font-semibold mb-4"
+        style={{ color: 'var(--color-lime)' }}
+      >
+        · {category}
       </div>
       <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
         {body}
