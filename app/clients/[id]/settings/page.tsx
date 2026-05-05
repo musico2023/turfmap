@@ -27,11 +27,13 @@ import {
   type ClientUserRow,
 } from '@/components/turfmap/ClientUsersManager';
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
+import { SubscriptionPanel } from '@/components/turfmap/SubscriptionPanel';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { listLocations, resolveLocation } from '@/lib/supabase/locations';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { buildKeywordSuggestions } from '@/lib/keywords/suggestions';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
+import { loadSubscriptionSummary } from '@/lib/stripe/subscription';
 import type { TrackedKeywordRow } from '@/lib/supabase/types';
 
 export default async function ClientSettingsPage({
@@ -89,6 +91,19 @@ export default async function ClientSettingsPage({
         .order('created_at', { ascending: true })
         .returns<TrackedCompetitorRow[]>()
     : { data: [] as TrackedCompetitorRow[] };
+
+  // Self-serve subscription panel — only loads when the client is on
+  // a recurring tier AND we have a Stripe subscription id on the row.
+  // The summary lookup hits Stripe directly each render; that's fine
+  // for this surface (settings page, low traffic) but if we ever
+  // surface this on the dashboard we should mirror via the webhook
+  // (item 2 in the roadmap) and read from the local row instead.
+  const showSubscriptionPanel =
+    client.billing_mode === 'self_serve_subscription' &&
+    Boolean(client.stripe_subscription_id);
+  const subscriptionSummary = showSubscriptionPanel
+    ? await loadSubscriptionSummary(client.stripe_subscription_id as string)
+    : null;
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -189,6 +204,12 @@ export default async function ClientSettingsPage({
             clientPublicId={client.public_id}
             users={portalUsers ?? []}
           />
+          {showSubscriptionPanel && (
+            <SubscriptionPanel
+              clientId={client.id}
+              summary={subscriptionSummary}
+            />
+          )}
           <DeleteClientCard
             clientId={client.public_id}
             businessName={client.business_name}
