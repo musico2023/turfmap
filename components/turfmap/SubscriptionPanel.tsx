@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Lock } from 'lucide-react';
+import { Activity, ExternalLink, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 /**
@@ -46,14 +46,14 @@ export function SubscriptionPanel({
 }: SubscriptionPanelProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'cancel' | 'portal' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const onCancel = async () => {
     setError(null);
     setNotice(null);
-    setBusy(true);
+    setBusy('cancel');
     try {
       const res = await fetch('/api/subscription/cancel', {
         method: 'POST',
@@ -77,7 +77,36 @@ export function SubscriptionPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  };
+
+  // Open the Stripe Customer Portal for this client. Useful for
+  // operator-led support — "buyer says their card expired, let me
+  // jump in and fix it." Same endpoint as the portal-side flow but
+  // gated by agency auth instead of client_users membership.
+  const onOpenPortal = async () => {
+    setError(null);
+    setNotice(null);
+    setBusy('portal');
+    try {
+      const res = await fetch('/api/subscription/billing-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId }),
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        setError(
+          data.error ?? `unable to open billing portal (HTTP ${res.status})`
+        );
+        return;
+      }
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -148,7 +177,7 @@ export function SubscriptionPanel({
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-3 pt-1">
+          <div className="flex items-center justify-end gap-3 pt-1 flex-wrap">
             {error && (
               <span className="text-xs text-red-400 font-mono mr-auto">
                 {error}
@@ -165,13 +194,24 @@ export function SubscriptionPanel({
             <Button
               variant="secondary"
               size="md"
+              onClick={onOpenPortal}
+              disabled={busy !== null}
+              loading={busy === 'portal'}
+              loadingLabel="Opening…"
+              leftIcon={<ExternalLink size={12} />}
+            >
+              Manage billing
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
               onClick={onCancel}
               disabled={
-                busy ||
+                busy !== null ||
                 summary.cancelAtPeriodEnd ||
                 summary.inCommittedPhase
               }
-              loading={busy}
+              loading={busy === 'cancel'}
               loadingLabel="Scheduling…"
               leftIcon={
                 summary.inCommittedPhase ? (

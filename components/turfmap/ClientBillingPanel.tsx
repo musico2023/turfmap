@@ -212,7 +212,7 @@ export function ClientBillingPanel({
             Manage billing
           </Button>
         )}
-        {tier === 'pulse' && (
+        {tier === 'pulse' && summary && summary.ok && (
           <Button
             variant="primary"
             size="md"
