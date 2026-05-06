@@ -121,6 +121,10 @@ export type ClientRow = {
    *  wizard surface (`/api/onboarding/[publicId]`). NULL for clients
    *  not in a wizard flow. Added in migration 0020. */
   onboarding_step: OnboardingStep | null;
+  /** TRUE for rows inserted by outreach enrichment (cold-lead
+   *  campaigns). Hides from agency listing + cron pipelines. Added
+   *  in migration 0021. */
+  is_outreach_lead: boolean;
   /** Per-client alert preferences (added in migration 0013). JSONB
    *  blob with the toggles + thresholds described in AlertPrefs. The
    *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs

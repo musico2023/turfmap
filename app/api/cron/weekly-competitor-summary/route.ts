@@ -59,6 +59,7 @@ export async function GET(req: Request) {
     )
     .in('billing_mode', ['agency_managed', 'self_serve_subscription'])
     .neq('status', 'churned')
+    .eq('is_outreach_lead', false)
     .returns<
       Pick<
         ClientRow,

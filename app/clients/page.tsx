@@ -28,6 +28,9 @@ export default async function AgencyHomePage() {
   const { data: clients } = await supabase
     .from('clients')
     .select('*')
+    // Hide outreach-enrichment rows — those back cold-lead share
+    // links, not real billed clients, and would clutter this listing.
+    .eq('is_outreach_lead', false)
     .order('created_at', { ascending: false });
 
   const list = (clients ?? []) as ClientRow[];

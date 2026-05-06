@@ -86,11 +86,15 @@ async function handle(req: Request) {
   const supabase = getServerSupabase();
 
   // 1. Active clients only. tier + billing_mode pulled so the cap
-  //    helper can resolve the effective tier per client.
+  //    helper can resolve the effective tier per client. Outreach-
+  //    enrichment rows are excluded — those back cold-lead share
+  //    links and aren't billed, so we don't keep burning DFS credits
+  //    re-scanning them.
   const { data: clients, error: cErr } = await supabase
     .from('clients')
     .select('id, business_name, status, tier, billing_mode')
     .eq('status', 'active')
+    .eq('is_outreach_lead', false)
     .returns<
       Pick<
         ClientRow,

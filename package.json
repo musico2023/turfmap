@@ -15,7 +15,8 @@
     "seed:kidcrew-competitors": "tsx scripts/seed-kidcrew-competitors.ts",
     "init:storage": "tsx scripts/init-storage.ts",
     "bl:directories": "tsx scripts/list-bl-directories.ts",
-    "backfill:gbp": "tsx scripts/backfill-gbp.ts"
+    "backfill:gbp": "tsx scripts/backfill-gbp.ts",
+    "enrich:leads": "tsx scripts/enrich-leads.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
