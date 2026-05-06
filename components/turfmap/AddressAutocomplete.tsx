@@ -4,6 +4,40 @@ import { useState, useEffect, useRef } from 'react';
 import { AddressAutofill } from '@mapbox/search-js-react';
 
 /**
+ * TurfMap-matching dark theme for Mapbox suggestion dropdowns.
+ *
+ * Mapbox's @mapbox/search-js-react ships a light-themed dropdown by
+ * default that clashes with our `#0a0a0a` UI. The theme prop accepts
+ * a flat `variables` object that's mapped to CSS custom properties
+ * inside Mapbox's shadow-DOM dropdown — no global CSS injection,
+ * scoped strictly to their suggestion list.
+ *
+ * Variables align with our existing tokens:
+ *   bg / cardBg / border / lime / zinc-100 / zinc-500
+ * — so a future TurfMap palette change ripples here naturally if we
+ * swap to CSS-variable references in a follow-up.
+ */
+const TURFMAP_DARK_THEME = {
+  variables: {
+    colorBackground: '#0d0d0d',
+    colorBackgroundHover: '#161616',
+    colorBackgroundActive: '#1a2010',
+    colorText: '#e4e4e7',
+    colorTextWeak: '#a1a1aa',
+    colorTextActive: '#c5ff3a',
+    colorPrimary: '#c5ff3a',
+    border: '1px solid #27272a',
+    borderRadius: '6px',
+    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6)',
+    font: '"Inter", system-ui, -apple-system, sans-serif',
+    fontWeight: '500',
+    unit: '14px',
+    padding: '0.5em',
+    spacing: '0.5em',
+  },
+} as const;
+
+/**
  * Shared address autocomplete component — wraps an input with the
  * Mapbox AddressAutofill dropdown. As the operator types, Mapbox
  * shows suggestions; on selection we fire onSelect with structured
@@ -118,6 +152,7 @@ export function AddressAutocomplete({
   return (
     <AddressAutofill
       accessToken={token}
+      theme={TURFMAP_DARK_THEME}
       options={{
         country: countries.join(','),
         language: 'en',
