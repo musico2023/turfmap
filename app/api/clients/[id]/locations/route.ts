@@ -12,7 +12,7 @@
  * simple and avoids two geocode hops on the same address.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
@@ -20,6 +20,7 @@ import { listLocations } from '@/lib/supabase/locations';
 import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import { syncExtraLocationQuantity } from '@/lib/stripe/extraLocations';
 import { resolveTier } from '@/lib/subscription/tier';
+import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import type { ClientLocationRow, ClientRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -138,6 +139,27 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  // Google Places enrichment — fire-and-forget after the response.
+  // Looks up the GBP listing for this address, stores place_id, and
+  // writes an initial gbp_signals row. Soft-fails on every branch.
+  // We need the brand name for the search query; fall back to label
+  // or the address if the client row's business_name lookup fails.
+  after(async () => {
+    const { data: cName } = await supabase
+      .from('clients')
+      .select('business_name')
+      .eq('id', clientId)
+      .maybeSingle<{ business_name: string }>();
+    const businessName = cName?.business_name ?? row.label ?? row.address ?? '';
+    if (!businessName) return;
+    await enrichLocationFromOnboarding(supabase, {
+      locationId: row.id,
+      businessName,
+      latitude: row.latitude,
+      longitude: row.longitude,
+    });
+  });
 
   // Per-location billing — bump the extra-location item's quantity on
   // the client's Stripe subscription if applicable. Best-effort: a

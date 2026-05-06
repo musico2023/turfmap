@@ -16,12 +16,13 @@
  * Returns: { id, slug } on success, or { error } on failure.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { getStripe } from '@/lib/stripe/client';
 import { sendStripeSetupLink } from '@/lib/email/resend';
+import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -191,6 +192,18 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
+  // Google Places enrichment for the primary location — fire-and-forget.
+  // Looks up the GBP listing, stores place_id + initial signals snapshot.
+  // Soft-fails on every branch.
+  after(async () => {
+    await enrichLocationFromOnboarding(supabase, {
+      locationId: location.id,
+      businessName: parsed.business_name,
+      latitude: parsed.latitude,
+      longitude: parsed.longitude,
+    });
+  });
 
   // 3. Insert primary keyword, scoped to the location we just created.
   //    Roll back both the client and its primary location on failure

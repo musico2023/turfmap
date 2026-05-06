@@ -33,6 +33,8 @@ import {
   locationDisplayLabel,
   resolveLocation,
 } from '@/lib/supabase/locations';
+import { getLatestSignals } from '@/lib/google/enrich';
+import type { GbpSignalsContext } from '@/lib/anthropic/prompts/turfCoach';
 import type {
   ClientRow,
   ScanRow,
@@ -257,6 +259,32 @@ export async function POST(req: Request) {
     .slice(-7) // last 7 distinct days
     .map(([date, score]) => ({ date, score }));
 
+  // GBP signals — latest Google Places snapshot for this location's
+  // verified listing. Null when no place_id was matched at onboarding
+  // or the signals refresh hasn't run yet. The Coach treats this as
+  // grounded data when present and falls back to generic recommendations
+  // when null, so missing signals never break the playbook.
+  const gbpSignals: GbpSignalsContext | null = scanLocation
+    ? await (async () => {
+        const row = await getLatestSignals(supabase, scanLocation.id);
+        if (!row) return null;
+        const hours = row.regular_opening_hours as
+          | { weekdayDescriptions?: string[] }
+          | null;
+        return {
+          rating: row.rating,
+          reviewCount: row.user_ratings_total,
+          primaryType: row.primary_type,
+          types: row.types,
+          businessStatus: row.business_status,
+          photosCount: row.photos_count,
+          hoursSummary: hours?.weekdayDescriptions ?? null,
+          editorialSummary: row.editorial_summary,
+          fetchedAt: row.fetched_at,
+        };
+      })()
+    : null;
+
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: businessLabel,
     industry: client.industry,
@@ -274,6 +302,7 @@ export async function POST(req: Request) {
     rankGrid,
     competitors: competitorList,
     napAudit,
+    gbpSignals,
   });
 
   // 3. Call Sonnet 4.6 with structured output + prompt caching

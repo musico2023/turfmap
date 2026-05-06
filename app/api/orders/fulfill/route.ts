@@ -34,7 +34,7 @@
  * degradation pattern as /api/checkout/[tier].
  */
 
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, after, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { geocodeAddress } from '@/lib/geocoding/nominatim';
@@ -57,6 +57,7 @@ import {
   sendPulsePlusWelcome,
 } from '@/lib/email/resend';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
+import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -243,6 +244,19 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  // Google Places enrichment — fire-and-forget. Looks up the GBP listing
+  // for the buyer's business, stores place_id + initial signals snapshot
+  // so the AI Coach can cite specific GBP signals. Soft-fails if the API
+  // key isn't configured or the strict-match guardrail rejects.
+  after(async () => {
+    await enrichLocationFromOnboarding(supabase, {
+      locationId: location.id,
+      businessName: body.businessName.trim(),
+      latitude: geocode.lat,
+      longitude: geocode.lng,
+    });
+  });
 
   // Send the order-confirmation email NOW, before the scan fires.
   // The buyer just paid and clicked "submit" on the form — they want
