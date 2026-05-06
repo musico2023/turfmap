@@ -45,6 +45,14 @@ import {
   StripeSetupLinkEmail,
   type StripeSetupLinkEmailProps,
 } from '@/components/email/StripeSetupLinkEmail';
+import {
+  WeeklyCompetitorSummaryEmail,
+  type WeeklyCompetitorSummaryEmailProps,
+} from '@/components/email/WeeklyCompetitorSummaryEmail';
+import {
+  MonthlyPdfEmail,
+  type MonthlyPdfEmailProps,
+} from '@/components/email/MonthlyPdfEmail';
 
 let cached: Resend | null = null;
 
@@ -282,12 +290,75 @@ export async function sendStripeSetupLink(args: {
 }
 
 /**
+ * Weekly competitor summary digest — sent Mondays by the
+ * weekly-competitor-summary cron to Pulse / Pulse+ buyers who
+ * have weekly_competitor_summary_email enabled in their alert prefs.
+ */
+export async function sendWeeklyCompetitorSummary(args: {
+  to: string;
+  businessName: string;
+  entries: string[];
+  exits: string[];
+  persistent: string[];
+  portalUrl: string;
+}): Promise<boolean> {
+  const html = await render(
+    WeeklyCompetitorSummaryEmail({
+      businessName: args.businessName,
+      entries: args.entries,
+      exits: args.exits,
+      persistent: args.persistent,
+      portalUrl: args.portalUrl,
+    } satisfies WeeklyCompetitorSummaryEmailProps)
+  );
+  return sendEmail({
+    to: args.to,
+    subject: `Weekly competitor summary — ${args.businessName}`,
+    html,
+    text:
+      `${args.businessName} — last 7 days.\n` +
+      `New entrants: ${args.entries.join(', ') || 'none'}\n` +
+      `Dropped out: ${args.exits.join(', ') || 'none'}\n` +
+      `Holding ground: ${args.persistent.join(', ') || 'none'}\n` +
+      args.portalUrl,
+  });
+}
+
+/**
+ * Monthly PDF report email — sent on the 1st of each month by the
+ * monthly-pdf cron to Pulse / Pulse+ buyers who have
+ * monthly_pdf_email enabled in their alert prefs. PDF buffer is
+ * passed in as `attachments` so the buyer gets the file alongside
+ * the body copy.
+ */
+export async function sendMonthlyPdf(args: {
+  to: string;
+  businessName: string;
+  scanDate: string;
+  portalUrl: string;
+  pdf: { filename: string; content: Buffer };
+}): Promise<boolean> {
+  const html = await render(
+    MonthlyPdfEmail({
+      businessName: args.businessName,
+      scanDate: args.scanDate,
+      portalUrl: args.portalUrl,
+    } satisfies MonthlyPdfEmailProps)
+  );
+  return sendEmail({
+    to: args.to,
+    subject: `Your monthly TurfMap — ${args.businessName}`,
+    html,
+    text: `Your monthly TurfMap for ${args.businessName} is ready (${args.scanDate}). PDF attached. Dashboard: ${args.portalUrl}`,
+    attachments: [{ filename: args.pdf.filename, content: args.pdf.content }],
+  });
+}
+
+/**
  * Pulse+ welcome email — sent after a successful Pulse+ subscription
- * is created. Points the buyer at the onboarding form (more NAP
- * fields, business hours, photos) needed for the BrightLocal
- * Citation Builder integration. Without those fields, citations
- * can't be submitted, so this email is operationally important —
- * not just a nice-to-have.
+ * is created. Points the buyer at the dashboard while the operator
+ * follows up to gather the categories/hours/photos needed for the
+ * citation build.
  */
 export async function sendPulsePlusWelcome(args: {
   to: string;

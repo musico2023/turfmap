@@ -11,9 +11,9 @@ import type { SubscriptionTier } from '@/lib/supabase/types';
  *
  * Renders only on self_serve_subscription clients with a Stripe
  * subscription. Lets the operator wind down the Stripe sub and flip
- * the row to agency_managed in one shot — for the case where a buyer
- * who came in via the marketing tripwire ($39/$89 self-serve) gets
- * upgraded to a Local Lead Machine custom contract.
+ * the row to agency_managed in one shot — for the case where a
+ * self-serve buyer (Pulse / Pulse+) gets upgraded to a custom
+ * agency contract billed outside Stripe.
  *
  * Two-step UX: button → inline confirmation form (tier + cancel
  * timing) → destructive-styled confirm. We don't show a modal; the

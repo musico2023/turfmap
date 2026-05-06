@@ -20,7 +20,7 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { sendEmail } from '@/lib/email/resend';
+import { sendWeeklyCompetitorSummary } from '@/lib/email/resend';
 import { extractCompetitorNames } from '@/lib/alerts/diff';
 import { withAlertPrefDefaults } from '@/lib/alerts/prefs';
 import type {
@@ -198,47 +198,18 @@ async function sendWeeklySummaryForClient(
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
   const portalUrl = `${origin}/portal/${client.public_id}`;
-  const subject = `Weekly competitor summary — ${client.business_name}`;
-  const html = `<!DOCTYPE html><html><body style="background:#0a0a0a;color:#e4e4e7;font-family:-apple-system,sans-serif;padding:32px;">
-    <table role="presentation" width="100%" style="max-width:560px;margin:0 auto;background:#0d0d0d;border:1px solid #27272a;border-radius:8px;padding:28px;">
-      <tr><td>
-        <span style="display:inline-block;padding:6px 10px;background:#c5ff3a;color:#000;font-weight:700;border-radius:4px;font-size:13px;">TurfMap</span>
-        <h1 style="font-size:22px;color:#ededed;margin:24px 0 12px;">${escapeHtml(client.business_name)} — last 7 days.</h1>
-        ${section('🆕 New entrants', entries, '#c5ff3a')}
-        ${section('↘ Dropped out', exits, '#a1a1aa')}
-        ${section('Holding ground', persistent, '#e4e4e7')}
-        <p style="margin:28px 0 0;"><a href="${portalUrl}" style="display:inline-block;padding:12px 20px;background:#c5ff3a;color:#000;font-weight:700;text-decoration:none;border-radius:6px;font-size:15px;">Open dashboard →</a></p>
-      </td></tr>
-    </table>
-  </body></html>`;
-  const text = `${client.business_name} — last 7 days.\nNew entrants: ${entries.join(', ') || 'none'}\nDropped out: ${exits.join(', ') || 'none'}\nHolding ground: ${persistent.join(', ') || 'none'}\n${portalUrl}`;
 
   let sent = 0;
   for (const to of recipients) {
-    const ok = await sendEmail({ to, subject, html, text });
+    const ok = await sendWeeklyCompetitorSummary({
+      to,
+      businessName: client.business_name,
+      entries,
+      exits,
+      persistent,
+      portalUrl,
+    });
     if (ok) sent += 1;
   }
   return { sent, error: null };
-}
-
-function section(
-  title: string,
-  names: string[],
-  color: string
-): string {
-  if (names.length === 0) {
-    return `<p style="color:#52525b;font-size:13px;margin:8px 0;"><strong style="color:${color};">${title}:</strong> none.</p>`;
-  }
-  return `<p style="color:#a1a1aa;font-size:13px;margin:8px 0;line-height:1.6;"><strong style="color:${color};">${title}:</strong> ${names
-    .map(escapeHtml)
-    .join(', ')}.</p>`;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }

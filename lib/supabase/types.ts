@@ -158,6 +158,12 @@ export type AlertPrefs = {
   /** Weekly digest email summarizing competitor movement (separate
    *  from the per-scan competitor_entries alerts above). */
   weekly_competitor_summary_email: boolean;
+  /** Monthly PDF report email — sent on the 1st of each month with
+   *  the latest scan rendered as a TurfReport PDF attached.
+   *  Defaults to true so existing buyers keep getting the report;
+   *  buyers who don't want a monthly inbox attachment can toggle
+   *  this off in AlertPrefsCard. */
+  monthly_pdf_email: boolean;
 };
 
 /** A physical location of a client (added in migration 0006). One client

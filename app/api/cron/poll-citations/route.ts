@@ -1,14 +1,16 @@
 /**
  * Vercel Cron — citation-order status polling.
  *
- * Schedule (vercel.json): every 6 hours.
+ * Schedule (vercel.json): daily at 12:00 UTC. Was every 6 hours
+ * pre-Hobby-tier-limit (commit 50a14bb downgraded to daily).
  *
  * For each citation_orders row in queued/in_progress state (and not
- * paused), polls BrightLocal for the latest per-directory status,
- * rewrites per_directory + status on the row, and stamps updated_at.
+ * paused), polls the citation directory for the latest per-directory
+ * status, rewrites per_directory + status on the row, and stamps
+ * updated_at.
  *
  * No fan-out — citation orders typically resolve over 6-8 weeks, so
- * a 6-hour cadence is plenty. Vercel Cron will skip a tick if the
+ * a daily cadence is plenty. Vercel Cron will skip a tick if the
  * previous one is still running, so we don't worry about overlap.
  *
  * Auth: `Authorization: Bearer ${CRON_SECRET}` — same pattern as the

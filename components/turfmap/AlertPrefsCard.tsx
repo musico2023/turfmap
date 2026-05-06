@@ -216,6 +216,12 @@ export function AlertPrefsCard({
           on={prefs.weekly_competitor_summary_email}
           onChange={(v) => update('weekly_competitor_summary_email', v)}
         />
+        <Toggle
+          label="Monthly PDF report"
+          help="Branded TurfReport PDF emailed on the 1st of each month — heatmap, score family, AI Coach playbook."
+          on={prefs.monthly_pdf_email}
+          onChange={(v) => update('monthly_pdf_email', v)}
+        />
       </div>
 
       <div

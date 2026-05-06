@@ -51,7 +51,9 @@ export function ScanReadyEmail({
       <P>
         We finished the 81-point geo-grid scan for{' '}
         <strong>{businessName}</strong>. Open your dashboard to see the
-        heatmap, your TurfScore, and the AI Coach playbook.
+        heatmap, your score family, and your competitor leaderboard —
+        then generate the AI Coach playbook for your prioritized
+        next moves.
       </P>
 
       {metrics && (

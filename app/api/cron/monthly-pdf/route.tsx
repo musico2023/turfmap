@@ -24,7 +24,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { TurfReport, type TurfReportData } from '@/components/pdf/TurfReport';
-import { sendEmail } from '@/lib/email/resend';
+import { sendMonthlyPdf } from '@/lib/email/resend';
+import { withAlertPrefDefaults } from '@/lib/alerts/prefs';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
@@ -61,15 +62,22 @@ export async function GET(req: Request) {
   // Pull every client on a recurring tier (Pulse / Pulse+ / agency-
   // managed). One_time clients (TurfScan / Audit / Strategy) bought a
   // one-shot product — they shouldn't get monthly recurring emails.
+  // Also pull alert_prefs so we can honor the per-client opt-out
+  // toggle (alert_prefs.monthly_pdf_email).
   const { data: clients } = await supabase
     .from('clients')
-    .select('id, public_id, business_name, billing_mode, status')
+    .select('id, public_id, business_name, billing_mode, status, alert_prefs')
     .in('billing_mode', ['agency_managed', 'self_serve_subscription'])
     .neq('status', 'churned')
     .returns<
       Pick<
         ClientRow,
-        'id' | 'public_id' | 'business_name' | 'billing_mode' | 'status'
+        | 'id'
+        | 'public_id'
+        | 'business_name'
+        | 'billing_mode'
+        | 'status'
+        | 'alert_prefs'
       >[]
     >();
 
@@ -79,6 +87,10 @@ export async function GET(req: Request) {
 
   for (const client of clients ?? []) {
     processed += 1;
+    // Honor the per-client opt-out. Defaults to true (= send) for
+    // existing buyers without the field set.
+    const prefs = withAlertPrefDefaults(client.alert_prefs ?? null);
+    if (!prefs.monthly_pdf_email) continue;
     try {
       const result = await sendMonthlyPdfForClient(supabase, client);
       sent += result.sent;
@@ -268,33 +280,15 @@ async function sendMonthlyPdfForClient(
 
   let sent = 0;
   for (const to of recipients) {
-    const ok = await sendEmail({
+    const ok = await sendMonthlyPdf({
       to,
-      subject: `Your monthly TurfMap — ${client.business_name}`,
-      html: `<!DOCTYPE html><html><body style="background:#0a0a0a;color:#e4e4e7;font-family:-apple-system,sans-serif;padding:32px;">
-        <table role="presentation" width="100%" style="max-width:560px;margin:0 auto;background:#0d0d0d;border:1px solid #27272a;border-radius:8px;padding:28px;">
-          <tr><td>
-            <span style="display:inline-block;padding:6px 10px;background:#c5ff3a;color:#000;font-weight:700;border-radius:4px;font-size:13px;">TurfMap</span>
-            <h1 style="font-size:22px;color:#ededed;margin:24px 0 12px;">Your monthly TurfMap is ready.</h1>
-            <p>${escapeHtml(client.business_name)} — ${dateStr}. The full PDF is attached.</p>
-            <p style="margin:24px 0;"><a href="${portalUrl}" style="display:inline-block;padding:12px 20px;background:#c5ff3a;color:#000;font-weight:700;text-decoration:none;border-radius:6px;font-size:15px;">Open dashboard →</a></p>
-          </td></tr>
-        </table>
-      </body></html>`,
-      text: `Your monthly TurfMap for ${client.business_name} is ready (${dateStr}). PDF attached. Dashboard: ${portalUrl}`,
-      attachments: [{ filename, content: pdfBuffer }],
+      businessName: client.business_name,
+      scanDate: dateStr,
+      portalUrl,
+      pdf: { filename, content: pdfBuffer },
     });
     if (ok) sent += 1;
   }
 
   return { sent, error: null };
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }

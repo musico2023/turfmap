@@ -121,7 +121,7 @@ export function AwaitingPaymentSetupCard({
           {pendingBuyerEmail && (
             <p className="text-[11px] text-zinc-500 mt-2 font-mono flex items-center gap-1.5">
               <Mail size={11} />
-              Setup email sent to{' '}
+              Buyer email:{' '}
               <span className="text-zinc-300">{pendingBuyerEmail}</span>
             </p>
           )}

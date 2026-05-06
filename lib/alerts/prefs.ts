@@ -17,6 +17,7 @@ export const DEFAULT_ALERT_PREFS: AlertPrefs = {
   momentum_reversal_email: true,
   cell_changes_email: false,
   weekly_competitor_summary_email: true,
+  monthly_pdf_email: true,
 };
 
 export function withAlertPrefDefaults(
