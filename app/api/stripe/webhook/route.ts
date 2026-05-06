@@ -182,13 +182,30 @@ async function syncSubscription(
   }
 
   const status = sub.status as SubscriptionStatus;
+
+  // Look up the client to honor agency-managed conversions. Once a
+  // client is agency_managed, the operator's contract is the source
+  // of truth for tier — Stripe events shouldn't overwrite it. We
+  // still mirror status + sub_id so the audit trail is intact.
+  const { data: existingClient } = await supabase
+    .from('clients')
+    .select('billing_mode')
+    .eq('stripe_customer_id', customerId)
+    .maybeSingle<Pick<ClientRow, 'billing_mode'>>();
+  const isAgencyManaged = existingClient?.billing_mode === 'agency_managed';
+
   const update: Partial<
     Pick<ClientRow, 'tier' | 'subscription_status' | 'stripe_subscription_id'>
-  > = {
-    tier,
-    subscription_status: status,
-    stripe_subscription_id: sub.id,
-  };
+  > = isAgencyManaged
+    ? {
+        subscription_status: status,
+        stripe_subscription_id: sub.id,
+      }
+    : {
+        tier,
+        subscription_status: status,
+        stripe_subscription_id: sub.id,
+      };
 
   const { error } = await supabase
     .from('clients')
@@ -207,15 +224,30 @@ async function markCancelled(
 ): Promise<void> {
   const customerId =
     typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
-  // Set status='canceled' and clear tier so feature gates close
-  // immediately. Don't clear stripe_subscription_id — it's useful
-  // for the audit trail + re-subscription flows.
+
+  // Look up the client to check billing_mode. For agency-managed
+  // clients (typically the result of a self-serve → managed
+  // conversion via /api/clients/[id]/convert-to-managed), the
+  // operator's contract is now the source of truth for tier — Stripe
+  // is no longer driving it. So we ONLY mirror the canceled status,
+  // leaving tier alone. For self-serve subs that were genuinely
+  // canceled by the buyer, we close feature gates by clearing tier.
+  const { data: client } = await supabase
+    .from('clients')
+    .select('billing_mode')
+    .eq('stripe_customer_id', customerId)
+    .maybeSingle<Pick<ClientRow, 'billing_mode'>>();
+  const isAgencyManaged = client?.billing_mode === 'agency_managed';
+
   const update: Partial<
     Pick<ClientRow, 'tier' | 'subscription_status'>
-  > = {
-    tier: null as SubscriptionTier | null,
-    subscription_status: 'canceled',
-  };
+  > = isAgencyManaged
+    ? { subscription_status: 'canceled' }
+    : {
+        tier: null as SubscriptionTier | null,
+        subscription_status: 'canceled',
+      };
+
   const { error } = await supabase
     .from('clients')
     .update(update)

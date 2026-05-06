@@ -29,6 +29,7 @@ import {
 import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { SubscriptionPanel } from '@/components/turfmap/SubscriptionPanel';
 import { TierOverrideCard } from '@/components/turfmap/TierOverrideCard';
+import { ConvertToManagedCard } from '@/components/turfmap/ConvertToManagedCard';
 import { AlertPrefsCard } from '@/components/turfmap/AlertPrefsCard';
 import { ExportsCard } from '@/components/turfmap/ExportsCard';
 import { canAccessExports, resolveTier } from '@/lib/subscription/tier';
@@ -264,6 +265,16 @@ export default async function ClientSettingsPage({
             <SubscriptionPanel
               clientId={client.id}
               summary={subscriptionSummary}
+            />
+          )}
+          {/* One-click conversion of self-serve buyers onto agency
+           *  contracts. Hidden once the client is already
+           *  agency_managed (the inner endpoint also rejects, but
+           *  hiding the card avoids the affordance entirely). */}
+          {showSubscriptionPanel && (
+            <ConvertToManagedCard
+              clientId={client.id}
+              currentTier={client.tier}
             />
           )}
           <DeleteClientCard
