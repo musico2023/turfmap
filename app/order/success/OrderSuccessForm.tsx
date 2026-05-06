@@ -57,6 +57,10 @@ export function OrderSuccessForm({
   /** Optional human-readable note from the fulfill API (used for the
    *  "partial scan failure" / "already fulfilled" cases). */
   const [partialMessage, setPartialMessage] = useState<string | null>(null);
+  /** Cal.com booking URL — set on Audit + Strategy fulfillments
+   *  when CAL_COM_*_URL env is configured. NULL otherwise → success
+   *  state falls back to "your strategist will email" copy. */
+  const [bookingUrl, setBookingUrl] = useState<string | null>(null);
 
   const setKeywordAt = (idx: number, value: string) => {
     setKeywords((prev) => {
@@ -110,12 +114,16 @@ export function OrderSuccessForm({
         already_fulfilled?: boolean;
         partial?: boolean;
         message?: string;
+        booking_url?: string | null;
       };
 
       // 409 = already fulfilled. Treat as success — show the
       // fulfilled state with whatever client_id we got back.
       if (res.status === 409 && data.already_fulfilled) {
         setPublicId(typeof data.public_id === 'string' ? data.public_id : null);
+        setBookingUrl(
+          typeof data.booking_url === 'string' ? data.booking_url : null
+        );
         setDone(true);
         setBusy(false);
         return;
@@ -143,6 +151,9 @@ export function OrderSuccessForm({
       // delivery message when not present.
       setPublicId(typeof data.public_id === 'string' ? data.public_id : null);
       setPartialMessage(typeof data.message === 'string' ? data.message : null);
+      setBookingUrl(
+        typeof data.booking_url === 'string' ? data.booking_url : null
+      );
       setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -185,7 +196,39 @@ export function OrderSuccessForm({
             Open my TurfMap →
           </a>
         )}
-        {(tier === 'audit' || tier === 'strategy') && (
+        {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
+          <div
+            className="mt-8 mx-auto max-w-md rounded-lg border p-5 text-left"
+            style={{
+              borderColor: 'var(--color-border)',
+              background: 'var(--color-bg)',
+            }}
+          >
+            <p className="font-display text-base font-bold text-zinc-100 mb-1">
+              Book your{' '}
+              {tier === 'strategy'
+                ? '90-min Strategy Session'
+                : '30-min Audit walkthrough'}
+            </p>
+            <p className="text-sm text-zinc-500 leading-relaxed mb-4">
+              Pick a time that works — we&rsquo;ve pre-filled your details
+              so it&rsquo;s one click.
+            </p>
+            <a
+              href={bookingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-2.5 px-4 transition-all whitespace-nowrap hover:brightness-110"
+              style={{
+                background: 'var(--color-lime)',
+                color: 'black',
+              }}
+            >
+              Book my call →
+            </a>
+          </div>
+        )}
+        {(tier === 'audit' || tier === 'strategy') && !bookingUrl && (
           <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">
             Your strategist will email separately within 2 business days with
             the diagnosis

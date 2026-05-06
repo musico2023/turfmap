@@ -128,12 +128,21 @@ export async function sendEmail(args: SendArgs): Promise<boolean> {
  * Order confirmation, sent immediately after Stripe checkout completes
  * + the order-fulfill route lands the client + scan rows. Tells the
  * buyer the scan is queued and gives them the dashboard link.
+ *
+ * For Audit + Strategy tiers, also surfaces a Cal.com booking link
+ * for the strategist call that's part of the deliverable. Caller
+ * computes the URL via lib/integrations/calcom.
  */
 export async function sendOrderConfirmation(args: {
   to: string;
   businessName: string;
   tier: 'scan' | 'audit' | 'strategy' | 'pulse' | 'pulse_plus';
   dashboardUrl: string;
+  /** Cal.com booking link for the strategist call. Set on Audit +
+   *  Strategy orders only. NULL when CAL_COM_*_URL env isn't
+   *  configured yet — email falls back to "we'll be in touch"
+   *  language so it doesn't reference a missing link. */
+  bookingUrl?: string | null;
 }): Promise<boolean> {
   const tierLabel = {
     scan: 'TurfScan',
@@ -142,6 +151,32 @@ export async function sendOrderConfirmation(args: {
     pulse: 'TurfMap Pulse',
     pulse_plus: 'TurfMap Pulse+',
   }[args.tier];
+
+  const callLabel =
+    args.tier === 'strategy' ? '90-minute strategy session' : '30-minute walkthrough';
+  const includesCall = args.tier === 'audit' || args.tier === 'strategy';
+
+  const bookingBlock = includesCall
+    ? args.bookingUrl
+      ? `
+        <div style="margin:24px 0;padding:16px;border:1px solid #27272a;border-radius:8px;background:#111;">
+          <p style="margin:0 0 8px;font-weight:600;color:#ededed;">
+            Book your ${callLabel}
+          </p>
+          <p style="margin:0 0 14px;font-size:14px;color:#a1a1aa;">
+            Pick a time that works — we've pre-filled your email so it's
+            one click.
+          </p>
+          ${cta(args.bookingUrl, 'Book my call →')}
+        </div>
+      `
+      : `
+        <p style="font-size:13px;color:#a1a1aa;">
+          Your strategist will reach out within 2 business days to schedule
+          your ${callLabel}.
+        </p>
+      `
+    : '';
 
   return sendEmail({
     to: args.to,
@@ -161,6 +196,7 @@ export async function sendOrderConfirmation(args: {
       <p style="margin:24px 0;">
         ${cta(args.dashboardUrl, 'Open my dashboard →')}
       </p>
+      ${bookingBlock}
       <p style="font-size:13px;color:#71717a;">
         Questions? Just hit reply — this address is monitored.
       </p>

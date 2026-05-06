@@ -56,6 +56,7 @@ import {
   sendScanReady,
   sendPulsePlusWelcome,
 } from '@/lib/email/resend';
+import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -251,11 +252,21 @@ export async function POST(req: NextRequest) {
   // pipeline (sendOrderConfirmation already swallows errors).
   const origin = req.headers.get('origin') ?? new URL(req.url).origin;
   const dashboardUrl = `${origin}/clients/${client.public_id}`;
+  // Cal.com booking link for Audit + Strategy buyers — pre-filled
+  // with the buyer's email + business name. Returns null for tiers
+  // without a strategist call OR when CAL_COM_*_URL env isn't set
+  // yet; sendOrderConfirmation handles the null case gracefully.
+  const bookingUrl = calcomBookingUrlForTier({
+    tier: session.tier,
+    email: body.email,
+    businessName: body.businessName.trim(),
+  });
   await sendOrderConfirmation({
     to: body.email,
     businessName: body.businessName.trim(),
     tier: session.tier,
     dashboardUrl,
+    bookingUrl,
   });
 
   // ─── 6. Insert tracked keywords ────────────────────────────────────────
@@ -345,6 +356,7 @@ export async function POST(req: NextRequest) {
         .map((r) => (r.ok ? r.scanId : null))
         .filter(Boolean),
       failed_scan_count: failedScans.length,
+      booking_url: bookingUrl,
       message:
         "Your account is set up but one or more scans hit a transient error. We'll retry automatically and email you when they're complete.",
     });
@@ -401,6 +413,10 @@ export async function POST(req: NextRequest) {
     public_id: client.public_id,
     scan_ids: scanIds,
     primary_scan_id: scanIds[0] ?? null,
+    // For audit/strategy buyers, return the Cal.com URL so the
+    // success page can surface an inline "Book your call" CTA
+    // without refetching from /api/orders/booking-link or similar.
+    booking_url: bookingUrl,
   });
 }
 
