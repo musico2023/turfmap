@@ -255,7 +255,7 @@ export function OrderSuccessForm({
           onChange={(e) => setBusinessName(e.target.value)}
           placeholder="e.g. Smith & Sons Plumbing"
           required
-          className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+          className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
         />
       </Field>
 
@@ -292,7 +292,7 @@ export function OrderSuccessForm({
             onChange={(e) => setKeywordAt(0, e.target.value)}
             placeholder="plumber toronto"
             required
-            className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+            className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
           />
         </Field>
       ) : (
@@ -316,7 +316,7 @@ export function OrderSuccessForm({
                       : 'plumbing services toronto'
                 }
                 required
-                className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+                className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
               />
             ))}
           </div>
@@ -336,7 +336,7 @@ export function OrderSuccessForm({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@business.com"
               required
-              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
             />
           </Field>
           <Field label="Phone" hint="Optional — for the strategist call only.">
@@ -345,7 +345,7 @@ export function OrderSuccessForm({
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="(416) 555-0100"
-              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
             />
           </Field>
         </div>
@@ -357,7 +357,7 @@ export function OrderSuccessForm({
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@business.com"
             required
-            className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+            className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
           />
         </Field>
       )}

@@ -100,8 +100,12 @@ export type AddressAutocompleteProps = {
   disabled?: boolean;
 };
 
+// 16px on mobile (text-base) prevents iOS Safari's auto-zoom on
+// focus, then drops to 14px (sm:text-sm) at sm+ to match the rest
+// of the form's typographic rhythm. Operator-side callers that
+// override inputClassName should follow the same pattern.
 const DEFAULT_INPUT_CLASS =
-  'w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+  'w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
 export function AddressAutocomplete({
   value,
