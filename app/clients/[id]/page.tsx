@@ -289,7 +289,7 @@ export default async function ClientDashboardPage({
 
       {latestScan && isFirstScan && (
         <div
-          className="px-8 py-3 border-b flex items-center gap-3 text-xs"
+          className="px-4 md:px-8 py-3 border-b flex items-center gap-3 text-xs"
           style={{
             background: '#0d130a',
             borderColor: 'var(--color-border)',
@@ -312,7 +312,7 @@ export default async function ClientDashboardPage({
           Each component self-hides when it has ≤ 1 entry to surface. */}
       {(locations.length > 1 || keywordList.length > 1) && (
         <div
-          className="border-b px-8 py-3 flex items-center gap-6 flex-wrap"
+          className="border-b px-4 md:px-8 py-3 flex items-center gap-3 md:gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <LocationSwitcher
@@ -328,12 +328,12 @@ export default async function ClientDashboardPage({
         </div>
       )}
 
-      {/* Business setup bar */}
+      {/* Business setup bar — stacks on mobile, four columns at lg+ */}
       <div
-        className="border-b px-8 py-4 grid grid-cols-12 gap-4 items-center"
+        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 md:gap-4 items-start lg:items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="col-span-3">
+        <div className="lg:col-span-3 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
@@ -355,16 +355,18 @@ export default async function ClientDashboardPage({
             </div>
           </div>
         </div>
-        <div className="col-span-3">
+        <div className="lg:col-span-3 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Pin Location
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
-            <MapPin size={13} className="text-zinc-500" />
-            {activeLocation?.address ?? client.address}
+            <MapPin size={13} className="text-zinc-500 flex-shrink-0" />
+            <span className="truncate">
+              {activeLocation?.address ?? client.address}
+            </span>
           </div>
         </div>
-        <div className="col-span-2">
+        <div className="lg:col-span-2 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Tracking Keyword
           </div>
@@ -372,7 +374,7 @@ export default async function ClientDashboardPage({
             {keyword?.keyword ?? '—'}
           </div>
         </div>
-        <div className="col-span-4 flex flex-col items-end gap-2">
+        <div className="lg:col-span-4 flex flex-col sm:items-start lg:items-end gap-2">
           <div className="text-xs text-zinc-500 font-mono">
             {latestScan ? (
               <>
@@ -428,16 +430,16 @@ export default async function ClientDashboardPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 p-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         {/* Heatmap */}
         <div
-          className="col-span-8 border rounded-lg p-6 relative"
+          className="lg:col-span-8 border rounded-lg p-4 md:p-6 relative"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',
           }}
         >
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div>
               <h3 className="font-display text-xl font-bold">
                 Territory Heatmap
@@ -455,7 +457,7 @@ export default async function ClientDashboardPage({
                 </InfoTooltip>
               </p>
             </div>
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider flex-wrap">
               {[
                 { color: '#c5ff3a', label: '#1' },
                 { color: '#e8e54a', label: '#2' },
@@ -487,7 +489,19 @@ export default async function ClientDashboardPage({
               paired TurfReach + TurfRank (2-up grid)
               optional Momentum (full width, second+ scan only)
         */}
-        <div className="col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4">
+          {/* Attribution eyebrow — same as portal/share. Keeps the
+              score family tied to the account holder visually, even
+              when the heatmap above is toggled to a competitor view. */}
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5 flex-wrap"
+            aria-label="Score attribution"
+          >
+            <span>Visibility for</span>
+            <span className="text-zinc-200 normal-case tracking-normal font-bold">
+              {client.business_name}
+            </span>
+          </div>
           <StatCard
             variant="hero"
             label="TurfScore™"
@@ -548,7 +562,7 @@ export default async function ClientDashboardPage({
         </div>
 
         {/* AI Coach — full width below the heatmap + sidebar */}
-        <div className="col-span-12">
+        <div className="lg:col-span-12">
           <AICoach
             scanId={latestScan?.id ?? null}
             insight={insightRow ?? null}
@@ -560,7 +574,7 @@ export default async function ClientDashboardPage({
          *  When no citation order exists yet, the panel surfaces a
          *  "Set up citations" CTA pointing at the onboarding form. */}
         {showCitationsPanel && (
-          <div className="col-span-12">
+          <div className="lg:col-span-12">
             <CitationsPanel
               order={citationOrder ?? null}
               clientPublicId={client.public_id}
@@ -570,7 +584,7 @@ export default async function ClientDashboardPage({
       </div>
 
       <footer
-        className="border-t px-8 py-4 flex items-center justify-between text-xs text-zinc-600"
+        className="border-t px-4 md:px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-zinc-600"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span className="flex items-center gap-2.5">

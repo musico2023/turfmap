@@ -286,7 +286,10 @@ export function ClientUsersManager({
         )}
       </div>
 
-      <form onSubmit={onAdd} className="grid grid-cols-12 gap-2">
+      <form
+        onSubmit={onAdd}
+        className="grid grid-cols-1 sm:grid-cols-12 gap-2"
+      >
         <input
           type="email"
           value={newEmail}
@@ -297,7 +300,7 @@ export function ClientUsersManager({
               : 'add a portal user (e.g. owner@client.com)'
           }
           disabled={atCap}
-          className="col-span-10 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-60"
+          className="sm:col-span-10 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-60"
         />
         <Button
           type="submit"
@@ -306,7 +309,7 @@ export function ClientUsersManager({
           disabled={!newEmail.trim() || atCap}
           loading={busy === 'add'}
           leftIcon={<Plus size={12} strokeWidth={2.75} />}
-          className="col-span-2"
+          className="sm:col-span-2"
         >
           Add
         </Button>

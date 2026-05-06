@@ -318,7 +318,7 @@ export function KeywordsManager({
 
       {/* Add form */}
       <form onSubmit={onAdd} className="space-y-3">
-        <div className="grid grid-cols-12 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
           <input
             type="text"
             value={newKeyword}
@@ -329,7 +329,7 @@ export function KeywordsManager({
                 ? `Keyword cap reached${upgradeHint}`
                 : "add another keyword (e.g. 'water heater repair')"
             }
-            className="col-span-7 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="sm:col-span-7 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <select
             value={newFrequency}
@@ -337,7 +337,7 @@ export function KeywordsManager({
               setNewFrequency(e.target.value as ScanFrequency)
             }
             disabled={atCap}
-            className="col-span-3 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="sm:col-span-3 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm text-zinc-100 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value="weekly">weekly</option>
             <option value="biweekly">biweekly</option>
@@ -357,7 +357,7 @@ export function KeywordsManager({
                 <Plus size={12} strokeWidth={2.75} />
               )
             }
-            className="col-span-2"
+            className="sm:col-span-2"
           >
             {atCap ? 'At cap' : 'Add'}
           </Button>

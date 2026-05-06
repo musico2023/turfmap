@@ -143,7 +143,7 @@ export default async function PerScanPage({
 
       {/* Historical-scan banner */}
       <div
-        className="border-b px-8 py-3 flex items-center justify-between text-xs"
+        className="border-b px-4 md:px-8 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 text-xs"
         style={{
           background: '#0f1208',
           borderColor: 'var(--color-border-bright)',
@@ -190,35 +190,35 @@ export default async function PerScanPage({
 
       {/* Business meta */}
       <div
-        className="border-b px-8 py-4 grid grid-cols-12 gap-4 items-center"
+        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 md:gap-4 items-start lg:items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="col-span-3">
+        <div className="lg:col-span-3 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
-          <div className="text-sm font-medium text-zinc-100">
+          <div className="text-sm font-medium text-zinc-100 truncate">
             {client.business_name}
           </div>
         </div>
-        <div className="col-span-3">
+        <div className="lg:col-span-3 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Pin Location
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
-            <MapPin size={13} className="text-zinc-500" />
-            {client.address}
+            <MapPin size={13} className="text-zinc-500 flex-shrink-0" />
+            <span className="truncate">{client.address}</span>
           </div>
         </div>
-        <div className="col-span-3">
+        <div className="lg:col-span-3 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Tracking Keyword
           </div>
-          <div className="text-sm font-mono text-zinc-200">
+          <div className="text-sm font-mono text-zinc-200 truncate">
             {keyword?.keyword ?? '—'}
           </div>
         </div>
-        <div className="col-span-3 flex justify-end">
+        <div className="lg:col-span-3 flex sm:justify-start lg:justify-end gap-2 flex-wrap">
           <a
             href={`/api/reports/pdf?scanId=${scan.id}`}
             target="_blank"
@@ -236,15 +236,15 @@ export default async function PerScanPage({
       </div>
 
       {/* Heatmap + Stats */}
-      <div className="grid grid-cols-12 gap-6 p-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         <div
-          className="col-span-8 border rounded-lg p-6 relative overflow-hidden"
+          className="lg:col-span-8 border rounded-lg p-4 md:p-6 relative overflow-hidden"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',
           }}
         >
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div>
               <h3 className="font-display text-xl font-bold">
                 Territory Heatmap
@@ -280,7 +280,17 @@ export default async function PerScanPage({
           />
         </div>
 
-        <div className="col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4">
+          {/* Attribution eyebrow — same intent as portal/share. */}
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5 flex-wrap"
+            aria-label="Score attribution"
+          >
+            <span>Visibility for</span>
+            <span className="text-zinc-200 normal-case tracking-normal font-bold">
+              {client.business_name}
+            </span>
+          </div>
           <StatCard
             variant="hero"
             label="TurfScore™"
@@ -308,7 +318,7 @@ export default async function PerScanPage({
           <CompetitorTable competitors={competitors} />
         </div>
 
-        <div className="col-span-12">
+        <div className="lg:col-span-12">
           <AICoach
             scanId={scan.id}
             insight={insightRow ?? null}
@@ -318,7 +328,7 @@ export default async function PerScanPage({
       </div>
 
       <footer
-        className="border-t px-8 py-4 flex items-center justify-between text-xs text-zinc-600"
+        className="border-t px-4 md:px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-zinc-600"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span>
