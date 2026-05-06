@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { getStripe } from '@/lib/stripe/client';
+import { sendStripeSetupLink } from '@/lib/email/resend';
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -141,6 +142,11 @@ export async function POST(req: Request) {
       status: (parsed.status ?? 'active') as ClientStatus,
       tier: planDrivenTier,
       billing_mode: planDrivenBillingMode,
+      // Persisted only for Stripe-plan creates so the regenerate-
+      // checkout flow + auto-email both have it without making the
+      // operator re-enter. Cleared once the buyer completes Checkout
+      // (Stripe customer.email becomes the source of truth).
+      pending_buyer_email: isStripePlan ? parsed.buyer_email : null,
     })
     .select('id, public_id')
     .single<{ id: string; public_id: string }>();
@@ -282,10 +288,32 @@ export async function POST(req: Request) {
     }
   }
 
+  // Auto-email the Checkout link to the buyer. Best-effort: a
+  // Resend failure shouldn't fail the create response — the
+  // operator still has the URL to forward manually. The email
+  // result lands on the response so the UI can confirm delivery
+  // (or surface the failure to the operator).
+  let setupEmailSent = false;
+  if (
+    isStripePlan &&
+    checkoutUrl &&
+    parsed.buyer_email &&
+    parsed.plan !== 'agency_managed'
+  ) {
+    setupEmailSent = await sendStripeSetupLink({
+      to: parsed.buyer_email,
+      businessName: parsed.business_name,
+      tier: parsed.plan as 'pulse' | 'pulse_plus',
+      trialDays: parsed.trial_days ?? 0,
+      checkoutUrl,
+    });
+  }
+
   return NextResponse.json({
     id: client.id,
     public_id: client.public_id,
     checkout_url: checkoutUrl,
     checkout_error: checkoutError,
+    setup_email_sent: setupEmailSent,
   });
 }

@@ -188,7 +188,11 @@ export default async function ClientSettingsPage({
 
         <div className="space-y-6">
           {awaitingPaymentSetup && (
-            <AwaitingPaymentSetupCard tier={client.tier} />
+            <AwaitingPaymentSetupCard
+              clientId={client.id}
+              tier={client.tier}
+              pendingBuyerEmail={client.pending_buyer_email}
+            />
           )}
           <ClientSettingsForm
             client={client}

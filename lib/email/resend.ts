@@ -281,6 +281,57 @@ export async function sendPortalInvite(args: {
  * can't be submitted, so this email is operationally important —
  * not just a nice-to-have.
  */
+/**
+ * Stripe Checkout setup link, sent when an operator creates a
+ * client via the agency-side plan selector with a Pulse / Pulse+
+ * plan. The buyer hasn't yet entered payment info; this email
+ * carries the Checkout link they click to start their trial /
+ * subscription.
+ *
+ * Sent automatically by /api/clients on row creation when a
+ * Checkout link is generated. Re-sent by
+ * /api/clients/[id]/regenerate-checkout if the original link
+ * expires (24h Stripe default) or the buyer abandons.
+ */
+export async function sendStripeSetupLink(args: {
+  to: string;
+  businessName: string;
+  tier: 'pulse' | 'pulse_plus';
+  trialDays: number;
+  checkoutUrl: string;
+}): Promise<boolean> {
+  const tierLabel = args.tier === 'pulse_plus' ? 'TurfMap Pulse+' : 'TurfMap Pulse';
+  const trialLine =
+    args.trialDays > 0
+      ? `Your ${args.trialDays}-day trial starts as soon as you complete checkout. We don't charge anything until day ${args.trialDays + 1} — cancel any time before then with no fees.`
+      : `Checkout will start your subscription immediately. You can cancel any time from your dashboard.`;
+  return sendEmail({
+    to: args.to,
+    subject: `Set up your ${tierLabel} account — ${args.businessName}`,
+    html: htmlShell(`
+      <h1 style="font-size:22px;color:#ededed;margin:0 0 12px;">
+        Set up your ${tierLabel} account.
+      </h1>
+      <p>
+        Your account for <strong>${escape(args.businessName)}</strong> is
+        provisioned and ready. Click the button below to complete
+        payment setup with Stripe — same checkout process you'd see
+        on any modern subscription product.
+      </p>
+      <p style="margin:24px 0;">
+        ${cta(args.checkoutUrl, 'Complete payment setup →')}
+      </p>
+      <p style="font-size:13px;color:#a1a1aa;">
+        ${trialLine}
+      </p>
+      <p style="font-size:13px;color:#71717a;">
+        The link expires in 24 hours — if it stops working, hit
+        reply and we'll send a fresh one.
+      </p>
+    `),
+  });
+}
+
 export async function sendPulsePlusWelcome(args: {
   to: string;
   businessName: string;

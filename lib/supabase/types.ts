@@ -99,6 +99,15 @@ export type ClientRow = {
    *  Drives feature gating + the agency tier toggle. NULL on
    *  one_time clients. */
   tier: SubscriptionTier | null;
+  /** Buyer email captured at agency-side create time when the
+   *  operator picked a Stripe plan (Pulse / Pulse+). Used to (a)
+   *  send the initial Stripe Checkout link via Resend, and (b)
+   *  regenerate the link later if the buyer abandons / the
+   *  Checkout session expires. Added in migration 0016. NULL for
+   *  agency_managed clients (no Stripe relationship) and for
+   *  marketing-tripwire buyers (Stripe customer.email is the
+   *  authoritative source post-Checkout). */
+  pending_buyer_email: string | null;
   /** Per-client alert preferences (added in migration 0013). JSONB
    *  blob with the toggles + thresholds described in AlertPrefs. The
    *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs

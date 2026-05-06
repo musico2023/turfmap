@@ -42,15 +42,18 @@
  * the string into stripe.webhooks.constructEvent.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import type Stripe from 'stripe';
 import { getStripe } from '@/lib/stripe/client';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { tierFromPriceId } from '@/lib/stripe/tierFromPrice';
+import { runScanForLocation } from '@/lib/scans/runScan';
 import type {
+  ClientLocationRow,
   ClientRow,
   SubscriptionStatus,
   SubscriptionTier,
+  TrackedKeywordRow,
 } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -199,14 +202,24 @@ async function syncSubscription(
   const { data: existingClient } = lookupByMetadata
     ? await supabase
         .from('clients')
-        .select('id, billing_mode')
+        .select('id, billing_mode, stripe_subscription_id, business_name')
         .eq('id', metadataClientId)
-        .maybeSingle<Pick<ClientRow, 'id' | 'billing_mode'>>()
+        .maybeSingle<
+          Pick<
+            ClientRow,
+            'id' | 'billing_mode' | 'stripe_subscription_id' | 'business_name'
+          >
+        >()
     : await supabase
         .from('clients')
-        .select('id, billing_mode')
+        .select('id, billing_mode, stripe_subscription_id, business_name')
         .eq('stripe_customer_id', customerId)
-        .maybeSingle<Pick<ClientRow, 'id' | 'billing_mode'>>();
+        .maybeSingle<
+          Pick<
+            ClientRow,
+            'id' | 'billing_mode' | 'stripe_subscription_id' | 'business_name'
+          >
+        >();
 
   if (!existingClient) {
     console.warn(
@@ -216,6 +229,12 @@ async function syncSubscription(
   }
 
   const isAgencyManaged = existingClient.billing_mode === 'agency_managed';
+  // First-activation detection: was sub_id null before this event?
+  // Used below to decide whether to fire the initial scan auto-
+  // trigger. We capture this BEFORE the update because the update
+  // is what writes sub.id onto the row.
+  const isFirstActivation =
+    !existingClient.stripe_subscription_id && !isAgencyManaged;
 
   // Once a client is agency_managed, the operator's contract is
   // the source of truth for tier — Stripe events should mirror
@@ -250,6 +269,103 @@ async function syncSubscription(
       `clients update failed for client ${existingClient.id}: ${error.message}`
     );
   }
+
+  // Initial-scan trigger on first activation. Fires after the
+  // webhook responds 200 to Stripe (Next.js `after()` runs work
+  // outside the response window). Skips if scans already exist —
+  // the webhook is delivered at-least-once and we don't want
+  // duplicates on retried events.
+  if (isFirstActivation) {
+    after(async () => {
+      try {
+        await triggerInitialScanIfMissing(supabase, existingClient.id);
+      } catch (e) {
+        console.error(
+          `[stripe-webhook] initial-scan trigger failed for ${existingClient.id}:`,
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    });
+  }
+}
+
+/**
+ * Fire the buyer's first scan on agency-created Pulse / Pulse+
+ * activation. Idempotent: skips if any scan already exists for
+ * this client.
+ *
+ * The marketing-tripwire flow handles initial scans inside
+ * /api/orders/fulfill; this is the equivalent for the agency-
+ * created path where the buyer enters payment after the row is
+ * already onboarded. Same end state: when the buyer lands on
+ * /clients/<id>?stripe_setup=complete, they see a fresh heatmap
+ * instead of an empty grid.
+ */
+async function triggerInitialScanIfMissing(
+  supabase: SupabaseLike,
+  clientId: string
+): Promise<void> {
+  // 1. Skip if any scan exists for this client (idempotency on
+  //    webhook retries + protection against accidental double-
+  //    fires from rapid status transitions).
+  const { count: existingScans } = await supabase
+    .from('scans')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', clientId);
+  if ((existingScans ?? 0) > 0) {
+    return;
+  }
+
+  // 2. Resolve the (client, primary location, primary keyword) tuple
+  //    needed by runScanForLocation.
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id, business_name')
+    .eq('id', clientId)
+    .maybeSingle<Pick<ClientRow, 'id' | 'business_name'>>();
+  if (!client) return;
+
+  const { data: location } = await supabase
+    .from('client_locations')
+    .select('id, latitude, longitude, service_radius_miles')
+    .eq('client_id', clientId)
+    .eq('is_primary', true)
+    .maybeSingle<
+      Pick<
+        ClientLocationRow,
+        'id' | 'latitude' | 'longitude' | 'service_radius_miles'
+      >
+    >();
+  if (!location) {
+    console.warn(
+      `[stripe-webhook] client ${clientId} has no primary location — skipping initial scan`
+    );
+    return;
+  }
+
+  const { data: keyword } = await supabase
+    .from('tracked_keywords')
+    .select('id, keyword')
+    .eq('client_id', clientId)
+    .eq('location_id', location.id)
+    .order('is_primary', { ascending: false })
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
+  if (!keyword) {
+    console.warn(
+      `[stripe-webhook] client ${clientId} location ${location.id} has no keywords — skipping initial scan`
+    );
+    return;
+  }
+
+  await runScanForLocation(supabase, {
+    client,
+    location,
+    keyword,
+    scanType: 'on_demand',
+    triggeredBy: null,
+  });
 }
 
 async function markCancelled(
