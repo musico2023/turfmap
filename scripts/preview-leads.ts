@@ -173,15 +173,14 @@ async function previewOne(lead: Lead): Promise<PreviewRow> {
     notes: '',
   };
 
+  // Two-pass search: first with country bias (most leads are CAN),
+  // then with US bias as a fallback. Take up to 5 candidates per pass
+  // and pick the one whose displayName best matches the lead's
+  // business_name by Jaccard similarity — relevance ranking alone
+  // is unreliable for small local businesses.
   let candidate;
   try {
-    const search = await searchPlaces({
-      query: lead.businessName,
-      latitude: null,
-      longitude: null,
-      maxResults: 1,
-    });
-    candidate = search.candidates[0] ?? null;
+    candidate = await bestCandidateForName(lead.businessName);
   } catch (e) {
     base.matchStatus = 'error';
     base.notes = e instanceof Error ? e.message : String(e);
@@ -214,6 +213,39 @@ async function previewOne(lead: Lead): Promise<PreviewRow> {
     derivedKeyword: base.derivedKeyword,
   });
   return base;
+}
+
+/**
+ * Find the best Places candidate for a business name. Tries CA-biased
+ * search first; falls back to US bias if nothing reasonable comes
+ * back. "Best" = Jaccard similarity ≥ 0.3 between submitted name and
+ * matched displayName, with the highest-scoring candidate winning.
+ * Returns null when no candidate clears the threshold.
+ */
+async function bestCandidateForName(businessName: string) {
+  const passes: Array<{ regionCode: string }> = [
+    { regionCode: 'CA' },
+    { regionCode: 'US' },
+  ];
+  let best: { sim: number; cand: Awaited<ReturnType<typeof searchPlaces>>['candidates'][number] } | null = null;
+  for (const pass of passes) {
+    const search = await searchPlaces({
+      query: businessName,
+      latitude: null,
+      longitude: null,
+      maxResults: 5,
+      regionCode: pass.regionCode,
+    });
+    for (const cand of search.candidates) {
+      const sim = jaccard(businessName, cand.displayName ?? '');
+      if (sim >= 0.3 && (!best || sim > best.sim)) {
+        best = { sim, cand };
+      }
+    }
+    // Once we have a strong match in CA, don't bother with the US pass.
+    if (best && best.sim >= 0.6) break;
+  }
+  return best?.cand ?? null;
 }
 
 function deriveKeyword(

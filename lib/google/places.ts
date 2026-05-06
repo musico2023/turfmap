@@ -148,6 +148,12 @@ export async function searchPlaces(input: {
   latitude: number | null;
   longitude: number | null;
   maxResults?: number;
+  /** ISO-3166-1 alpha-2 region bias. Without lat/lng, the Places API
+   *  global text search is too noisy to find small local businesses
+   *  by name alone — a country bias dramatically improves recall.
+   *  Defaults to 'CA' since Fourdots' lead pool is mostly Canadian;
+   *  callers with a known US-only segment can override. */
+  regionCode?: string | null;
 }): Promise<{ candidates: SearchCandidate[]; costCents: number }> {
   const key = apiKey();
   if (!key) return { candidates: [], costCents: 0 };
@@ -170,6 +176,9 @@ export async function searchPlaces(input: {
         radius: 5000, // 5km — wider than auto-match radius for manual hunt
       },
     };
+  } else if (input.regionCode !== null) {
+    // No lat/lng → fall back to country bias. 'CA' default.
+    body.regionCode = input.regionCode ?? 'CA';
   }
   const res = await fetch(`${PLACES_BASE}/places:searchText`, {
     method: 'POST',
