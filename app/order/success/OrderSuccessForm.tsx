@@ -181,7 +181,7 @@ export function OrderSuccessForm({
             Open my TurfMap →
           </a>
         )}
-        {tier !== 'scan' && (
+        {(tier === 'audit' || tier === 'strategy') && (
           <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">
             Your strategist will email separately within 2 business days with
             the diagnosis
@@ -270,7 +270,33 @@ export function OrderSuccessForm({
         </Field>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Phone field is only relevant for strategist-call tiers
+          (Audit + Strategy). Pulse / Pulse+ / Scan don't include a
+          call so we hide it entirely — collecting an unused phone
+          field is friction, not value. */}
+      {tier === 'audit' || tier === 'strategy' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Email" required>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@business.com"
+              required
+              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+            />
+          </Field>
+          <Field label="Phone" hint="Optional — for the strategist call only.">
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="(416) 555-0100"
+              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+            />
+          </Field>
+        </div>
+      ) : (
         <Field label="Email" required>
           <input
             type="email"
@@ -281,16 +307,7 @@ export function OrderSuccessForm({
             className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
           />
         </Field>
-        <Field label="Phone" hint="Optional — for the strategist call only.">
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="(416) 555-0100"
-            className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
-          />
-        </Field>
-      </div>
+      )}
 
       <button
         type="submit"
