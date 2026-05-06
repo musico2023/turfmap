@@ -102,7 +102,7 @@ Add a section covering:
 
 2. **Pulse+ monthly minimum commitment.** Pulse+ on monthly billing cadence has a 3-month minimum commitment from the date of subscription. Cancellation requested during the committed phase takes effect at the end of the third month, not immediately. Pulse+ on annual cadence and Pulse (any cadence) have no minimum commitment beyond the active billing period.
 
-3. **Cancellation.** Buyers can cancel at any time (subject to the Pulse+ monthly minimum above) via the in-app "Cancel" button on their portal, or directly through the Stripe Customer Portal. Cancellation takes effect at the end of the current billing period. Already-charged billing periods are not refunded on cancellation — the buyer retains full access through the end of the period they paid for. Refund eligibility on subscriptions follows the same scan-delivery-failure rule as one-time purchases below: if the first scan after subscription start fails to deliver within 7 days, the buyer may request a refund of the first month's charge. Subsequent months are not refundable.
+3. **Cancellation.** Buyers can cancel at any time (subject to the Pulse+ monthly minimum above) via the in-app "Cancel" button on their portal, or directly through the Stripe Customer Portal. Cancellation takes effect at the end of the current billing period. Already-charged billing periods are not refunded on cancellation — the buyer retains full access through the end of the period they paid for. Refund eligibility on subscriptions follows the same scan-delivery-failure rule as one-time purchases below: if the first scan after subscription start fails to deliver within 24 hours, the buyer may request a refund of the first month's charge. Subsequent months are not refundable.
 
 4. **Per-location billing.** Each subscription includes one location. Additional locations are billed at $25/mo (Pulse) or $35/mo (Pulse+) per additional location, prorated daily. Adding a location triggers an immediate prorated charge for the partial period through Stripe. Removing a location applies a Stripe-issued proration credit against the buyer's next invoice for the unused portion of the current period — this is not a refund (no funds return to the original payment method); it offsets the next charge. The 3-month minimum commitment applies only to the base subscription, not to individual location line items.
 
@@ -120,14 +120,14 @@ Add a section covering:
 
 3. **Refund policy — TurfMap one-time purchases.** Refunds on TurfScan, Visibility Audit, and Strategy Session are limited to scan-delivery failure. Specifically:
 
-   - **Eligible for refund:** if the buyer's initial scan has not been delivered to their dashboard within 7 days of Stripe Checkout completion, the buyer may request a full refund of the purchase price.
+   - **Eligible for refund:** if the buyer's initial scan has not been delivered to their dashboard within 24 hours of Stripe Checkout completion, the buyer may request a full refund of the purchase price.
    - **Not eligible for refund (non-exhaustive):** scans that delivered successfully (regardless of the score result, ranking outcomes, or whether the buyer found the data actionable); strategist calls that were attempted, scheduled, or completed; failure to schedule a strategist call within the 30-day post-purchase window; dissatisfaction with AI Coach playbook recommendations; change of mind after a successful scan; results showing low visibility (TurfMap measures, it doesn't manufacture rankings).
 
-   To request a refund under the scan-delivery-failure clause, the buyer emails support before the 7-day window closes. Refunds are processed to the original payment method via Stripe, typically within 5–10 business days.
+   To request a refund under the scan-delivery-failure clause, the buyer emails support before the 24-hour window closes. Refunds are processed to the original payment method via Stripe, typically within 5–10 business days.
 
 4. **Failed-delivery remedy when refund isn't requested.** If a scan fails on our end and the buyer prefers re-delivery over a refund (e.g. the underlying business hasn't changed and they'd rather just have the data), we will re-run the scan at no charge. This is performance of the original purchase, not a separate service.
 
-5. **Re-delivery for strategist calls.** If a scheduled Visibility Audit or Strategy Session call doesn't occur because of a TurfMap-side issue (strategist no-show, technical failure preventing the call), we re-schedule the call at no charge. This does not extend refund eligibility — the original 7-day scan-delivery refund window still applies and starts at Checkout, not at re-scheduled-call date.
+5. **Re-delivery for strategist calls.** If a scheduled Visibility Audit or Strategy Session call doesn't occur because of a TurfMap-side issue (strategist no-show, technical failure preventing the call), we re-schedule the call at no charge. This does not extend refund eligibility — the original 24-hour scan-delivery refund window still applies and starts at Checkout, not at re-scheduled-call date.
 
 ### Data ownership and AI Coach disclaimer
 
