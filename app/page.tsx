@@ -791,12 +791,12 @@ function CompareCard({
           : 'var(--color-border)',
       }}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
         <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">
           {title}
         </div>
         <span
-          className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded"
+          className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded self-start sm:self-auto whitespace-nowrap"
           style={{
             background: bright ? '#1a2010' : 'var(--color-bg)',
             color: bright ? 'var(--color-lime)' : '#a1a1aa',
