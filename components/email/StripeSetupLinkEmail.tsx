@@ -32,7 +32,7 @@ export function StripeSetupLinkEmail({
   checkoutUrl,
 }: StripeSetupLinkEmailProps) {
   const tierLabel = tier === 'pulse_plus' ? 'TurfMap Pulse+' : 'TurfMap Pulse';
-  const monthlyPrice = tier === 'pulse_plus' ? '$89/mo' : '$39/mo';
+  const monthlyPrice = tier === 'pulse_plus' ? '$99/mo' : '$39/mo';
   const hasTrial = trialDays > 0;
 
   return (

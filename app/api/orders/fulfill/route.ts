@@ -251,7 +251,12 @@ export async function POST(req: NextRequest) {
   // dashboard link. Failures here are logged but don't block the
   // pipeline (sendOrderConfirmation already swallows errors).
   const origin = req.headers.get('origin') ?? new URL(req.url).origin;
-  const dashboardUrl = `${origin}/clients/${client.public_id}`;
+  // /portal — buyer-facing dashboard. Self-serve buyers can sign in
+  // here via magic link; the agency-side /clients/<id> route would
+  // redirect them to /login (agency-staff-only). All emails sent
+  // out of this fulfill flow are to the BUYER, never the operator,
+  // so /portal is the right destination.
+  const dashboardUrl = `${origin}/portal/${client.public_id}`;
   // Cal.com booking link for Audit + Strategy buyers — pre-filled
   // with the buyer's email + business name. Returns null for tiers
   // without a strategist call OR when CAL_COM_*_URL env isn't set
@@ -338,7 +343,13 @@ export async function POST(req: NextRequest) {
     // buyer paid for Pulse+ either way. Scan-ready email is suppressed
     // here; it'll fire when the retry pipeline (TODO) lands.
     if (session.tier === 'pulse_plus') {
-      const onboardingUrl = `${origin}/clients/${client.public_id}/settings`;
+      // Buyer-facing portal URL — the citation onboarding form
+      // currently lives at an agency-only route, so we send the
+      // buyer to their portal and the operator follows up by
+      // email/Slack to gather categories + hours. Will swap to a
+      // direct citation-onboarding URL once we ship buyer access
+      // to that form (planned follow-up).
+      const onboardingUrl = `${origin}/portal/${client.public_id}`;
       await sendPulsePlusWelcome({
         to: body.email,
         businessName: body.businessName.trim(),

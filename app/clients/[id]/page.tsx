@@ -301,8 +301,8 @@ export default async function ClientDashboardPage({
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
             </span>{' '}
-            This is your starting point — re-scans every 90 days will show
-            your territory expanding.
+            This is the starting point — visibility expands as scans
+            re-run and the AI Coach playbook is acted on.
           </span>
         </div>
       )}

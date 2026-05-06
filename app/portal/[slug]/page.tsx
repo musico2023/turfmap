@@ -306,8 +306,9 @@ export default async function ClientPortalPage({
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
             </span>{' '}
-            This is your starting point — re-scans every 90 days will show
-            your territory expanding.
+            {client.billing_mode === 'one_time'
+              ? 'This is your map — re-scan from the dashboard any time to track changes.'
+              : 'This is your starting point — your territory expands with weekly re-scans and the AI Coach playbook.'}
           </span>
         </div>
       )}

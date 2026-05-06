@@ -36,19 +36,20 @@ export function PulsePlusWelcomeEmail({
       <H1>Welcome to Pulse+.</H1>
       <P>
         Pulse+ tracks your visibility weekly and builds + maintains
-        your citations across ~25 industry directories. Before we kick
-        off the citation build for <strong>{businessName}</strong>, we
-        need a few extra details — categories, hours, photos.
+        your citations across ~25 industry directories. Your first
+        scan is on its way; in the meantime, your account team will
+        reach out to gather the extra details we need for the
+        citation build (categories, hours, photos).
       </P>
 
       <PrimaryButton href={onboardingUrl}>
-        Finish my setup →
+        View my dashboard →
       </PrimaryButton>
 
       <PSmall>
-        First wave of citations goes live within 2 weeks of completing
-        this form. Full propagation takes 6–8 weeks. We&rsquo;ll send
-        progress updates as listings activate.
+        First wave of citations goes live within 2 weeks of providing
+        those details. Full propagation takes 6–8 weeks. We&rsquo;ll
+        send progress updates as listings activate.
       </PSmall>
     </EmailLayout>
   );

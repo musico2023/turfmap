@@ -520,15 +520,14 @@ export default function MarketingLanding() {
                 q: 'Can I rerun the scan later?',
                 a: (
                   <>
-                    Yes. The Visibility Audit includes a 30-day re-scan, the
-                    Strategy Session includes two (60 + 90 days). If you want
-                    your map refreshed every month indefinitely — to catch
-                    ranking drops the moment they happen — ask us at checkout
-                    about ongoing monthly tracking. We also offer fully
-                    managed monthly services where we don&rsquo;t just
-                    measure the map, we act on it; the right fit depends on
-                    your category and how much of this you want to handle
-                    yourself.
+                    Yes. Every TurfMap account has a re-scan button you can
+                    fire on demand. If you want your map refreshed every
+                    week indefinitely — to catch ranking drops the moment
+                    they happen — that&rsquo;s what TurfMap Pulse is for
+                    ($39/mo). We also offer fully managed monthly services
+                    where we don&rsquo;t just measure the map, we act on
+                    it; the right fit depends on your category and how
+                    much of this you want to handle yourself.
                   </>
                 ),
               },
