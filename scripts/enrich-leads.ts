@@ -337,12 +337,13 @@ async function enrichOne(args: {
     };
   }
 
-  // 7. Run the scan.
+  // 7. Run the scan. scan_type='on_demand' matches the constraint
+  //    in migration 0001 (scheduled | on_demand).
   const scanResult = await runScanForLocation(supabase, {
     client: { id: client.id, business_name: businessName },
     location,
     keyword: { id: kw.id, keyword },
-    scanType: 'manual',
+    scanType: 'on_demand',
     triggeredBy: null,
   });
   if (!scanResult.ok) {
