@@ -5,6 +5,14 @@
  *   - amr      : average rank (1-3) at the points where they appeared
  *   - top3Pct  : (appearances / totalPoints) × 100, rounded
  *
+ * Per-cell dedupe: a single competitor only counts ONCE per grid cell
+ * even when DFS returns the same business across multiple item types
+ * (e.g. local_pack + map). Without this, share-of-voice could exceed
+ * 100% — caught in production after a Toronto donut shop's COPS
+ * competitor came back as 300% share. We use the BEST (lowest) rank
+ * for the cell when the same brand appears multiple times in one
+ * cell's response, mirroring the curated-list path's behavior.
+ *
  * Returns the top N (default 3) by AMR, ascending. Optionally excludes the
  * client's own business by name pattern.
  */
@@ -33,22 +41,38 @@ export function aggregateCompetitors(
 
   for (const sp of scanPoints) {
     const list = (sp.competitors ?? []) as RawCompetitor[];
+    // Best rank per competitor within this single cell — handles
+    // duplicate entries that DFS sometimes returns (same business
+    // across local_pack + map item types). Without this, share-of-
+    // voice can exceed 100%.
+    const cellBest = new Map<string, number>();
     for (const c of list) {
       if (!c?.name) continue;
       if (excludeNamePattern && excludeNamePattern.test(c.name)) continue;
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
-      const ranks = stats.get(c.name) ?? [];
+      const prev = cellBest.get(c.name);
+      if (prev === undefined || rank < prev) cellBest.set(c.name, rank);
+    }
+    for (const [name, rank] of cellBest.entries()) {
+      const ranks = stats.get(name) ?? [];
       ranks.push(rank);
-      stats.set(c.name, ranks);
+      stats.set(name, ranks);
     }
   }
 
+  const safeTotal = Math.max(totalPoints, 1);
   return [...stats.entries()]
     .map(([name, ranks]) => ({
       name,
       amr: round1(ranks.reduce((a, b) => a + b, 0) / ranks.length),
-      top3Pct: Math.round((ranks.length / Math.max(totalPoints, 1)) * 100),
+      // Defensive clamp at 100 — the per-cell dedupe above guarantees
+      // ranks.length ≤ totalPoints, but the clamp protects against
+      // future regressions or pathological DFS payloads.
+      top3Pct: Math.min(
+        100,
+        Math.round((ranks.length / safeTotal) * 100)
+      ),
     }))
     .sort((a, b) => a.amr - b.amr)
     .slice(0, topN);
