@@ -44,10 +44,10 @@ export function SettingsTabs({
 
   return (
     <div
-      className="border-b mb-6 -mx-2 px-2"
+      className="border-b mb-6"
       style={{ borderColor: 'var(--color-border)' }}
     >
-      <nav className="flex gap-1 overflow-x-auto" aria-label="Settings tabs">
+      <nav className="flex gap-1 flex-wrap" aria-label="Settings tabs">
         {TABS.map((tab) => {
           const isActive = tab.id === active;
           return (
