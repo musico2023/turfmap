@@ -7,6 +7,10 @@ import type { ClientRow, ClientStatus } from '@/lib/supabase/types';
 import { LogoUploader } from './LogoUploader';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
+import {
+  AddressAutocomplete,
+  type AddressFields,
+} from './AddressAutocomplete';
 
 const INDUSTRY_SUGGESTIONS = [
   'plumbing',
@@ -508,12 +512,32 @@ export function ClientSettingsForm({
             </button>
           }
         >
-          <input
-            type="text"
+          <AddressAutocomplete
             value={form.address}
-            onChange={(e) => update('address', e.target.value)}
+            onChange={(next) => update('address', next)}
+            onSelect={(fields: AddressFields) => {
+              // Operator picked a Mapbox suggestion — sync the
+              // freeform field + the structured NAP block at once.
+              // The "re-geocode" button above remains available for
+              // typed-but-not-selected fallback paths.
+              update('address', fields.formatted);
+              update('street_address', fields.street_address);
+              update('city', fields.city);
+              update('region', fields.region);
+              update('postcode', fields.postcode);
+              update(
+                'country_code',
+                fields.country_code.toUpperCase() === 'CA'
+                  ? 'CAN'
+                  : fields.country_code.toUpperCase() === 'US'
+                    ? 'USA'
+                    : fields.country_code.toUpperCase()
+              );
+              update('latitude', String(fields.latitude));
+              update('longitude', String(fields.longitude));
+            }}
             required
-            className={inputClass}
+            inputClassName={inputClass}
           />
         </Field>
         {fillState.status === 'filled' && fillState.filled > 0 && (

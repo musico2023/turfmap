@@ -2,6 +2,10 @@
 
 import { useState } from 'react';
 import { ArrowRight, Loader2 } from 'lucide-react';
+import {
+  AddressAutocomplete,
+  type AddressFields,
+} from '@/components/turfmap/AddressAutocomplete';
 
 /**
  * Post-checkout business-details form.
@@ -215,15 +219,21 @@ export function OrderSuccessForm({
       <Field
         label="Service address"
         required
-        hint="The physical location your service operates from. We'll center the 81-cell grid on this address."
+        hint="Start typing your address — pick from the dropdown so we can center the 81-cell grid precisely on your storefront."
       >
-        <input
-          type="text"
+        <AddressAutocomplete
           value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="123 Main St, Toronto, ON M5V 2L7"
+          onChange={setAddress}
+          onSelect={(fields: AddressFields) => {
+            // Buyer picked a Mapbox suggestion — the input now holds
+            // the canonical full_address. The server-side fulfill
+            // still re-geocodes via Nominatim for cross-validation,
+            // but a Mapbox-resolved address effectively guarantees a
+            // clean Nominatim hit.
+            setAddress(fields.formatted);
+          }}
+          placeholder="123 Main St, Toronto"
           required
-          className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
         />
       </Field>
 

@@ -6,6 +6,10 @@ import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
 import { InfoTooltip } from './InfoTooltip';
+import {
+  AddressAutocomplete,
+  type AddressFields,
+} from './AddressAutocomplete';
 
 // Grouped industry options for the <select>. Each group corresponds
 // to a BrightLocal directory profile (lib/brightlocal/directories.ts):
@@ -343,15 +347,42 @@ export function ClientCreateForm() {
         <Field
           label="Address"
           required
-          help="Street + city + region. Skip the postal code — it sometimes confuses the geocoder."
+          help="Start typing — pick from the dropdown to auto-fill the structured NAP fields below."
         >
-          <input
-            type="text"
+          <AddressAutocomplete
             value={form.address}
-            onChange={(e) => update('address', e.target.value)}
-            placeholder="100 Queen St W, Toronto, ON"
+            onChange={(next) => update('address', next)}
+            onSelect={(fields: AddressFields) => {
+              // Operator picked a Mapbox suggestion — populate the
+              // structured NAP fields + lat/lng directly. Skips the
+              // /api/geocode round-trip for selected results; the
+              // existing debounced geocode still runs as a fallback
+              // for typed-but-not-selected addresses.
+              update('address', fields.formatted);
+              update('street_address', fields.street_address);
+              update('city', fields.city);
+              update('region', fields.region);
+              update('postcode', fields.postcode);
+              update(
+                'country_code',
+                fields.country_code.toUpperCase() === 'CA'
+                  ? 'CAN'
+                  : fields.country_code.toUpperCase() === 'US'
+                    ? 'USA'
+                    : fields.country_code.toUpperCase()
+              );
+              update('latitude', String(fields.latitude));
+              update('longitude', String(fields.longitude));
+              setGeocode({
+                status: 'found',
+                lat: fields.latitude,
+                lng: fields.longitude,
+                formatted: fields.formatted,
+              });
+            }}
+            placeholder="100 Queen St W, Toronto"
             required
-            className={inputClass}
+            inputClassName={inputClass}
           />
         </Field>
 

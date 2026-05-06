@@ -6,6 +6,10 @@ import { ChevronDown, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
 import type { ClientLocationRow } from '@/lib/supabase/types';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
+import {
+  AddressAutocomplete,
+  type AddressFields,
+} from './AddressAutocomplete';
 
 export type LocationsManagerProps = {
   clientId: string;
@@ -161,6 +165,11 @@ function AddLocationForm({
   const [serviceRadius, setServiceRadius] = useState('1.6');
   const [gbpUrl, setGbpUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Mapbox-resolved structured fields. Set when the operator picks a
+  // suggestion from the autocomplete dropdown; cleared whenever they
+  // edit the freeform address afterward (so we don't ship stale
+  // structured data with a hand-typed override).
+  const [selected, setSelected] = useState<AddressFields | null>(null);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,55 +177,85 @@ function AddLocationForm({
     setSubmitting(true);
 
     try {
-      // 1. Geocode the address to get lat/lng + structured components.
-      const geo = await fetch('/api/geocode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: address.trim() }),
-      });
-      const geoData = (await geo.json()) as {
-        lat?: number;
-        lng?: number;
-        components?: {
-          street_address: string | null;
-          city: string | null;
-          region: string | null;
-          postcode: string | null;
-          country_code: string | null;
-        } | null;
-        error?: string;
-      };
-      if (!geo.ok || geoData.lat === undefined || geoData.lng === undefined) {
-        onError(geoData.error ?? `geocode failed (HTTP ${geo.status})`);
-        setSubmitting(false);
-        return;
+      // Prefer Mapbox-resolved fields when the operator picked from
+      // the dropdown — Mapbox already gave us canonical structured
+      // data + lat/lng, no need to round-trip through Nominatim.
+      // Fall back to /api/geocode for typed-but-not-selected paths.
+      let lat: number;
+      let lng: number;
+      let components: {
+        street_address: string | null;
+        city: string | null;
+        region: string | null;
+        postcode: string | null;
+        country_code: string | null;
+      } | null;
+
+      if (selected && selected.formatted === address.trim()) {
+        lat = selected.latitude;
+        lng = selected.longitude;
+        components = {
+          street_address: selected.street_address || null,
+          city: selected.city || null,
+          region: selected.region || null,
+          postcode: selected.postcode || null,
+          country_code: selected.country_code
+            ? selected.country_code.toUpperCase() === 'CA'
+              ? 'CAN'
+              : selected.country_code.toUpperCase() === 'US'
+                ? 'USA'
+                : selected.country_code.toUpperCase()
+            : null,
+        };
+      } else {
+        const geo = await fetch('/api/geocode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: address.trim() }),
+        });
+        const geoData = (await geo.json()) as {
+          lat?: number;
+          lng?: number;
+          components?: {
+            street_address: string | null;
+            city: string | null;
+            region: string | null;
+            postcode: string | null;
+            country_code: string | null;
+          } | null;
+          error?: string;
+        };
+        if (!geo.ok || geoData.lat === undefined || geoData.lng === undefined) {
+          onError(geoData.error ?? `geocode failed (HTTP ${geo.status})`);
+          setSubmitting(false);
+          return;
+        }
+        lat = geoData.lat;
+        lng = geoData.lng;
+        components = geoData.components ?? null;
       }
-      const c = geoData.components;
 
-      // Operator-typed postcode wins over Nominatim's normalized one.
-      // (Nominatim sometimes returns a different code than what the
-      // operator actually wrote — e.g. M3B 2S7 vs the typed M3B 3S6 —
-      // and the audit downstream then flags real listings as
-      // inconsistencies.) Falls back to Nominatim's parse only when
-      // the operator didn't include a postcode in their input.
+      // Operator-typed postcode wins over the resolver's normalized
+      // one (preserves what the buyer actually wrote — Mapbox/Nominatim
+      // can return a slightly different code than the typed input,
+      // which downstream NAP audit flags as inconsistencies).
       const operatorPostcode = extractPostcodeFromAddress(address.trim());
-      const finalPostcode = operatorPostcode ?? c?.postcode ?? null;
+      const finalPostcode = operatorPostcode ?? components?.postcode ?? null;
 
-      // 2. POST the new location with the resolved coords + components.
       const res = await fetch(`/api/clients/${clientId}/locations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           label: label.trim() || null,
           address: address.trim(),
-          street_address: c?.street_address ?? null,
-          city: c?.city ?? null,
-          region: c?.region ?? null,
+          street_address: components?.street_address ?? null,
+          city: components?.city ?? null,
+          region: components?.region ?? null,
           postcode: finalPostcode,
-          country_code: c?.country_code ?? 'USA',
+          country_code: components?.country_code ?? 'USA',
           phone: phone.trim() || null,
-          latitude: geoData.lat,
-          longitude: geoData.lng,
+          latitude: lat,
+          longitude: lng,
           service_radius_miles: Number(serviceRadius),
           gbp_url: gbpUrl.trim() || null,
         }),
@@ -257,13 +296,22 @@ function AddLocationForm({
           className={inputClass}
         />
       </div>
-      <input
-        type="text"
+      <AddressAutocomplete
         value={address}
-        onChange={(e) => setAddress(e.target.value)}
-        placeholder="Address (geocodes silently)"
+        onChange={(next) => {
+          setAddress(next);
+          // Clear the selected fields if the operator hand-edits
+          // after picking — keep the form honest about whether we
+          // have canonical structured data or not.
+          if (selected && next !== selected.formatted) setSelected(null);
+        }}
+        onSelect={(fields) => {
+          setSelected(fields);
+          setAddress(fields.formatted);
+        }}
+        placeholder="Address — pick from the dropdown"
         required
-        className={inputClass}
+        inputClassName={inputClass}
       />
       <div className="grid grid-cols-2 gap-2">
         <input
