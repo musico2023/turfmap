@@ -354,6 +354,114 @@ export async function sendMonthlyPdf(args: {
   });
 }
 
+/** Minimal HTML escape — only used by the operator-internal
+ *  scan-delivery alert below, which is hand-rolled HTML rather
+ *  than a React Email template. Buyer-facing emails go through
+ *  components/email/* which already handles escaping via React. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Operator-internal scan-delivery alert. Fires from the
+ * check-scan-delivery cron when buyers paid in the last 24-25
+ * hours but their initial scan hasn't completed — those buyers
+ * are inside the 24-hour refund window per the TurfMap terms.
+ *
+ * Single email per cron run, listing all at-risk clients with
+ * deep-links into the agency dashboard. Operator clicks through,
+ * fires a manual re-scan from the dashboard.
+ *
+ * Plain HTML — operator-internal, no need for the full React
+ * Email layout. The branded shell is for buyer-facing emails;
+ * this one's about ops density.
+ */
+export async function sendDeliveryAlert(args: {
+  to: string;
+  clients: Array<{
+    businessName: string;
+    publicId: string;
+    hoursSincePurchase: number;
+    billingMode: string;
+    buyerEmail: string | null;
+    dashboardUrl: string;
+  }>;
+}): Promise<boolean> {
+  const rows = args.clients
+    .map((c) => {
+      const remaining = Math.max(0, 24 - c.hoursSincePurchase);
+      return `
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #27272a;">
+            <a href="${c.dashboardUrl}" style="color:#c5ff3a;text-decoration:none;font-weight:600;">${escapeHtml(
+              c.businessName
+            )}</a>
+            <div style="font-size:11px;color:#71717a;margin-top:2px;">
+              ${escapeHtml(c.billingMode)}${
+                c.buyerEmail ? ` · ${escapeHtml(c.buyerEmail)}` : ''
+              }
+            </div>
+          </td>
+          <td style="padding:8px 12px;border-bottom:1px solid #27272a;font-family:ui-monospace,monospace;font-size:12px;color:${
+            remaining <= 4 ? '#ff8e8e' : '#ffb86b'
+          };text-align:right;">
+            ${c.hoursSincePurchase}h since · ${remaining}h left
+          </td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  const subject = `[TurfMap ops] ${args.clients.length} client${
+    args.clients.length === 1 ? '' : 's'
+  } awaiting first scan — refund window`;
+  const html = `<!DOCTYPE html><html><body style="margin:0;background:#0a0a0a;color:#e4e4e7;font-family:-apple-system,'Segoe UI',sans-serif;padding:24px;">
+    <div style="max-width:640px;margin:0 auto;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.18em;color:#71717a;margin-bottom:8px;">
+        TurfMap ops alert
+      </div>
+      <h1 style="font-size:20px;color:#ededed;margin:0 0 8px;">
+        ${args.clients.length} client${
+          args.clients.length === 1 ? '' : 's'
+        } awaiting first scan
+      </h1>
+      <p style="font-size:14px;color:#a1a1aa;margin:0 0 16px;line-height:1.5;">
+        These buyers paid via Stripe Checkout but their initial scan hasn't
+        completed yet. They're inside the 24-hour refund window — fire a
+        re-scan from the dashboard before it closes, or expect a refund
+        request.
+      </p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0d0d0d;border:1px solid #27272a;border-radius:6px;border-collapse:separate;border-spacing:0;margin:0 0 16px;">
+        ${rows}
+      </table>
+      <p style="font-size:12px;color:#52525b;margin:0;">
+        Click any name to jump to the agency dashboard, then hit
+        <strong>Re-scan turf</strong> to retry. If the issue is upstream
+        (DataForSEO outage, geocoding failure), you'll see the error
+        inline and can decide whether to refund proactively.
+      </p>
+    </div>
+  </body></html>`;
+  const text =
+    `${args.clients.length} TurfMap clients awaiting first scan:\n\n` +
+    args.clients
+      .map(
+        (c) =>
+          `- ${c.businessName} (${c.hoursSincePurchase}h since purchase, ${Math.max(
+            0,
+            24 - c.hoursSincePurchase
+          )}h left in refund window)\n  ${c.dashboardUrl}`
+      )
+      .join('\n');
+
+  return sendEmail({ to: args.to, subject, html, text });
+}
+
 /**
  * Pulse+ welcome email — sent after a successful Pulse+ subscription
  * is created. Points the buyer at the dashboard while the operator
