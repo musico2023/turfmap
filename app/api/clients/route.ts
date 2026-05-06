@@ -20,6 +20,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
+import { getStripe } from '@/lib/stripe/client';
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -58,6 +59,21 @@ const CreateClientBody = z.object({
       .optional(),
     is_primary: z.boolean().optional(),
   }),
+  // Plan selector at create time. Drives billing_mode + tier + the
+  // optional Stripe-Checkout-link generation. Defaults to
+  // agency_managed with tier=pulse_plus to match the most common
+  // operator workflow (custom contract, full feature access).
+  plan: z
+    .enum(['agency_managed', 'pulse', 'pulse_plus'])
+    .optional()
+    .default('agency_managed'),
+  tier: z.enum(['pulse', 'pulse_plus']).optional(),
+  /** Required when plan is 'pulse' / 'pulse_plus'. Pre-fills Stripe
+   *  Checkout's customer_email field. */
+  buyer_email: z.string().email().optional(),
+  /** Trial length in days for the Stripe Checkout flow. 0 = no
+   *  trial. */
+  trial_days: z.number().int().min(0).max(90).optional(),
 });
 
 export async function POST(req: Request) {
@@ -78,6 +94,27 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+
+  // Resolve plan-driven billing fields. The Stripe path needs a
+  // buyer email + tier; reject early if those are missing rather
+  // than half-creating a row that points nowhere.
+  const isStripePlan =
+    parsed.plan === 'pulse' || parsed.plan === 'pulse_plus';
+  if (isStripePlan && !parsed.buyer_email) {
+    return NextResponse.json(
+      { error: 'buyer_email is required for Pulse / Pulse+ plans' },
+      { status: 400 }
+    );
+  }
+  // Tier on the new row. For agency-managed clients, take it from
+  // body.tier (defaulting to pulse_plus since that's the typical
+  // bundled-contract value). For Stripe plans, tier matches the
+  // plan name so feature gates work even before checkout completes.
+  const planDrivenTier: 'pulse' | 'pulse_plus' = isStripePlan
+    ? (parsed.plan as 'pulse' | 'pulse_plus')
+    : (parsed.tier ?? 'pulse_plus');
+  const planDrivenBillingMode: 'agency_managed' | 'self_serve_subscription' =
+    isStripePlan ? 'self_serve_subscription' : 'agency_managed';
 
   const supabase = getServerSupabase();
 
@@ -102,6 +139,8 @@ export async function POST(req: Request) {
       primary_color: parsed.primary_color ?? '#c5ff3a',
       monthly_price_cents: parsed.monthly_price_cents ?? null,
       status: (parsed.status ?? 'active') as ClientStatus,
+      tier: planDrivenTier,
+      billing_mode: planDrivenBillingMode,
     })
     .select('id, public_id')
     .single<{ id: string; public_id: string }>();
@@ -166,5 +205,87 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ id: client.id, public_id: client.public_id });
+  // 4. (Stripe-plan only) Generate a Checkout session the operator
+  //    can forward to the buyer. We DON'T fail the whole create
+  //    request if Stripe Checkout-session generation fails — the
+  //    row exists and is usable; the operator can regenerate the
+  //    Checkout link later from settings. We surface the error
+  //    inline as `checkout_error` so the UI can warn.
+  let checkoutUrl: string | null = null;
+  let checkoutError: string | null = null;
+  if (isStripePlan) {
+    const stripe = await getStripe();
+    if (!stripe) {
+      checkoutError =
+        'STRIPE_SECRET_KEY not set — Checkout link skipped. Generate later from settings.';
+    } else {
+      const priceEnvKey =
+        parsed.plan === 'pulse_plus'
+          ? 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY'
+          : 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY';
+      const priceId = process.env[priceEnvKey];
+      if (!priceId) {
+        checkoutError = `${priceEnvKey} not set — Checkout link skipped.`;
+      } else {
+        try {
+          const origin =
+            process.env.NEXT_PUBLIC_APP_URL ??
+            req.headers.get('origin') ??
+            'https://turfmap.ai';
+          const session = await stripe.checkout.sessions.create({
+            mode: 'subscription',
+            payment_method_types: ['card'],
+            line_items: [{ price: priceId, quantity: 1 }],
+            customer_email: parsed.buyer_email,
+            // Trial captured via subscription_data — Stripe creates
+            // the sub in 'trialing' status and only attempts the
+            // first charge when the trial ends. trial_days=0 is
+            // omitted so Stripe charges immediately.
+            ...(parsed.trial_days && parsed.trial_days > 0
+              ? {
+                  subscription_data: {
+                    trial_period_days: parsed.trial_days,
+                    metadata: {
+                      client_id: client.id,
+                      plan: parsed.plan,
+                    },
+                  },
+                }
+              : {
+                  subscription_data: {
+                    metadata: {
+                      client_id: client.id,
+                      plan: parsed.plan,
+                    },
+                  },
+                }),
+            // Session-level metadata mirrors so the order-fulfill
+            // path (which reads session.metadata.tier) works
+            // unchanged for marketing-tripwire buyers.
+            metadata: {
+              tier: parsed.plan,
+              client_id: client.id,
+            },
+            success_url: `${origin}/clients/${client.public_id}?stripe_setup=complete`,
+            cancel_url: `${origin}/clients/${client.public_id}?stripe_setup=cancelled`,
+            allow_promotion_codes: true,
+          });
+          checkoutUrl = session.url ?? null;
+          if (!checkoutUrl) {
+            checkoutError = 'Stripe returned no Checkout URL.';
+          }
+        } catch (e) {
+          checkoutError =
+            e instanceof Error ? e.message : 'unknown Stripe error';
+        }
+      }
+    }
+  }
+
+  return NextResponse.json({
+    id: client.id,
+    public_id: client.public_id,
+    checkout_url: checkoutUrl,
+    checkout_error: checkoutError,
+  });
 }

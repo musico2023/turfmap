@@ -183,37 +183,71 @@ async function syncSubscription(
 
   const status = sub.status as SubscriptionStatus;
 
-  // Look up the client to honor agency-managed conversions. Once a
-  // client is agency_managed, the operator's contract is the source
-  // of truth for tier — Stripe events shouldn't overwrite it. We
-  // still mirror status + sub_id so the audit trail is intact.
-  const { data: existingClient } = await supabase
-    .from('clients')
-    .select('billing_mode')
-    .eq('stripe_customer_id', customerId)
-    .maybeSingle<Pick<ClientRow, 'billing_mode'>>();
-  const isAgencyManaged = existingClient?.billing_mode === 'agency_managed';
+  // Two paths to find the client row:
+  //   1. Agency-created flow (operator created the row first, then
+  //      forwarded the Stripe Checkout link to the buyer). The
+  //      Checkout session's subscription_data.metadata carries
+  //      client_id — at this point the row has NO stripe_customer_id
+  //      yet (Stripe just created the customer milliseconds ago),
+  //      so customer-id lookup would miss. We match on id and
+  //      ALSO stamp stripe_customer_id during the update.
+  //   2. Marketing-tripwire flow (buyer paid first, fulfill route
+  //      then created the row with stripe_customer_id). Existing
+  //      customer-id-based lookup.
+  const metadataClientId = sub.metadata?.client_id;
+  const lookupByMetadata = typeof metadataClientId === 'string';
+  const { data: existingClient } = lookupByMetadata
+    ? await supabase
+        .from('clients')
+        .select('id, billing_mode')
+        .eq('id', metadataClientId)
+        .maybeSingle<Pick<ClientRow, 'id' | 'billing_mode'>>()
+    : await supabase
+        .from('clients')
+        .select('id, billing_mode')
+        .eq('stripe_customer_id', customerId)
+        .maybeSingle<Pick<ClientRow, 'id' | 'billing_mode'>>();
 
+  if (!existingClient) {
+    console.warn(
+      `[stripe-webhook] subscription ${sub.id} (customer ${customerId}, metadata.client_id=${metadataClientId ?? 'null'}) has no matching client row — skipping`
+    );
+    return;
+  }
+
+  const isAgencyManaged = existingClient.billing_mode === 'agency_managed';
+
+  // Once a client is agency_managed, the operator's contract is
+  // the source of truth for tier — Stripe events should mirror
+  // status + sub_id but never overwrite tier.
   const update: Partial<
-    Pick<ClientRow, 'tier' | 'subscription_status' | 'stripe_subscription_id'>
+    Pick<
+      ClientRow,
+      | 'tier'
+      | 'subscription_status'
+      | 'stripe_subscription_id'
+      | 'stripe_customer_id'
+    >
   > = isAgencyManaged
     ? {
         subscription_status: status,
         stripe_subscription_id: sub.id,
+        stripe_customer_id: customerId,
       }
     : {
         tier,
         subscription_status: status,
         stripe_subscription_id: sub.id,
+        stripe_customer_id: customerId,
       };
 
   const { error } = await supabase
     .from('clients')
     .update(update)
-    .eq('stripe_customer_id', customerId);
+    .eq('id', existingClient.id);
   if (error) {
     throw new Error(
-      `clients update failed for customer ${customerId}: ${error.message}`
+      `clients update failed for client ${existingClient.id}: ${error.message}`
     );
   }
 }

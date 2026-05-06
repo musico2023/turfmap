@@ -30,6 +30,7 @@ import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { SubscriptionPanel } from '@/components/turfmap/SubscriptionPanel';
 import { TierOverrideCard } from '@/components/turfmap/TierOverrideCard';
 import { ConvertToManagedCard } from '@/components/turfmap/ConvertToManagedCard';
+import { AwaitingPaymentSetupCard } from '@/components/turfmap/AwaitingPaymentSetupCard';
 import { AlertPrefsCard } from '@/components/turfmap/AlertPrefsCard';
 import { ExportsCard } from '@/components/turfmap/ExportsCard';
 import { canAccessExports, resolveTier } from '@/lib/subscription/tier';
@@ -120,6 +121,15 @@ export default async function ClientSettingsPage({
   const isRecurring = client.billing_mode !== 'one_time';
   const showExports = canAccessExports(tierForGating);
 
+  // "Awaiting buyer payment setup" — the client was created via the
+  // agency-side plan selector with a Stripe plan, but the buyer
+  // hasn't yet completed Checkout (so stripe_subscription_id is
+  // still null). Banner surfaces above the regular cards until the
+  // webhook activates the row.
+  const awaitingPaymentSetup =
+    client.billing_mode === 'self_serve_subscription' &&
+    !client.stripe_subscription_id;
+
   return (
     <div className="min-h-screen w-full text-white">
       <Header userEmail={me.email} />
@@ -177,6 +187,9 @@ export default async function ClientSettingsPage({
         )}
 
         <div className="space-y-6">
+          {awaitingPaymentSetup && (
+            <AwaitingPaymentSetupCard tier={client.tier} />
+          )}
           <ClientSettingsForm
             client={client}
             primaryLocationId={
