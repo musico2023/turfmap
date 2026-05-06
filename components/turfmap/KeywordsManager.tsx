@@ -2,9 +2,14 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Plus, Trash2 } from 'lucide-react';
-import type { ScanFrequency, TrackedKeywordRow } from '@/lib/supabase/types';
+import { Activity, Lock, Plus, Trash2 } from 'lucide-react';
+import type {
+  ScanFrequency,
+  SubscriptionTier,
+  TrackedKeywordRow,
+} from '@/lib/supabase/types';
 import { Button } from '@/components/ui/Button';
+import { maxKeywordsPerLocation } from '@/lib/subscription/tier';
 
 export type KeywordsManagerProps = {
   clientId: string;
@@ -17,6 +22,11 @@ export type KeywordsManagerProps = {
    *  multi-location clients so the operator sees which location's
    *  keywords are listed). */
   locationLabel?: string | null;
+  /** Recurring tier — drives the per-location keyword cap (Pulse: 3,
+   *  Pulse+: 10, NULL: 1). The API enforces; this prop is for UX (the
+   *  counter and the disabled-at-cap state). Pass null for one_time
+   *  clients or when tier is unset. */
+  tier?: SubscriptionTier | null;
   /** Pre-computed industry+city-based keyword chips (e.g. ["pediatrician
    *  toronto", "pediatric clinic toronto", ...]). Click → fills the
    *  input. Empty array hides the suggestion row. Computed server-side
@@ -29,9 +39,14 @@ export function KeywordsManager({
   clientId,
   locationId = null,
   locationLabel = null,
+  tier = null,
   suggestions = [],
   keywords,
 }: KeywordsManagerProps) {
+  const cap = maxKeywordsPerLocation(tier);
+  const atCap = keywords.length >= cap;
+  const upgradeHint =
+    tier === 'pulse' ? ' — upgrade to Pulse+ for 10' : '';
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -102,19 +117,38 @@ export function KeywordsManager({
         borderColor: 'var(--color-border)',
       }}
     >
-      <div className="mb-4">
-        <h3 className="font-display text-lg font-bold">
-          Tracked keywords
-          {locationLabel && (
-            <span className="text-xs text-zinc-500 font-normal ml-2">
-              · {locationLabel}
-            </span>
-          )}
-        </h3>
-        <p className="text-xs text-zinc-500 mt-0.5">
-          {keywords.length} keyword{keywords.length === 1 ? '' : 's'} · scheduled
-          scans run on each keyword&apos;s frequency.
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-display text-lg font-bold">
+            Tracked keywords
+            {locationLabel && (
+              <span className="text-xs text-zinc-500 font-normal ml-2">
+                · {locationLabel}
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {keywords.length} of {cap} keyword{cap === 1 ? '' : 's'} · scheduled
+            scans run on each keyword&apos;s frequency.
+          </p>
+        </div>
+        <span
+          className="px-2 py-1 rounded text-[10px] uppercase tracking-[0.18em] font-bold whitespace-nowrap"
+          style={{
+            background: atCap
+              ? 'rgba(255, 159, 58, 0.06)'
+              : 'rgba(255, 255, 255, 0.04)',
+            color: atCap ? '#ffb86b' : '#a1a1aa',
+            border: `1px solid ${atCap ? 'rgba(255, 159, 58, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+          }}
+          title={
+            atCap
+              ? `You've used all ${cap} keyword slots${upgradeHint}.`
+              : `${cap - keywords.length} of ${cap} slots remaining.`
+          }
+        >
+          {keywords.length} / {cap}
+        </span>
       </div>
 
       {/* List */}
@@ -173,7 +207,7 @@ export function KeywordsManager({
       {/* Suggestion chips — affordances are explicit: a + icon, hover
           glow, and a small label tell the operator they're clickable.
           Click fills the input below so they can edit before submitting. */}
-      {suggestions.length > 0 && (
+      {suggestions.length > 0 && !atCap && (
         <div className="mb-3">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 flex items-center gap-1.5">
             <span>Suggestions</span>
@@ -234,15 +268,21 @@ export function KeywordsManager({
             type="text"
             value={newKeyword}
             onChange={(e) => setNewKeyword(e.target.value)}
-            placeholder="add another keyword (e.g. 'water heater repair')"
-            className="col-span-7 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+            disabled={atCap}
+            placeholder={
+              atCap
+                ? `Keyword cap reached${upgradeHint}`
+                : "add another keyword (e.g. 'water heater repair')"
+            }
+            className="col-span-7 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <select
             value={newFrequency}
             onChange={(e) =>
               setNewFrequency(e.target.value as ScanFrequency)
             }
-            className="col-span-3 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 focus:outline-none focus:border-zinc-600 transition-colors"
+            disabled={atCap}
+            className="col-span-3 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value="weekly">weekly</option>
             <option value="biweekly">biweekly</option>
@@ -253,23 +293,44 @@ export function KeywordsManager({
             type="submit"
             variant="primary"
             size="md"
-            disabled={!newKeyword.trim()}
+            disabled={!newKeyword.trim() || atCap}
             loading={busy === 'add'}
-            leftIcon={<Plus size={12} strokeWidth={2.75} />}
+            leftIcon={
+              atCap ? (
+                <Lock size={12} strokeWidth={2.75} />
+              ) : (
+                <Plus size={12} strokeWidth={2.75} />
+              )
+            }
             className="col-span-2"
           >
-            Add
+            {atCap ? 'At cap' : 'Add'}
           </Button>
         </div>
-        <label className="flex items-center gap-2 text-xs text-zinc-500 select-none">
+        <label
+          className={`flex items-center gap-2 text-xs select-none ${atCap ? 'text-zinc-700' : 'text-zinc-500'}`}
+        >
           <input
             type="checkbox"
             checked={makePrimary}
             onChange={(e) => setMakePrimary(e.target.checked)}
-            className="accent-[var(--color-lime)]"
+            disabled={atCap}
+            className="accent-[var(--color-lime)] disabled:cursor-not-allowed"
           />
           Make this the primary keyword (replaces the current primary)
         </label>
+        {atCap && (
+          <p className="text-xs text-zinc-500">
+            <span className="text-zinc-300 font-semibold">
+              {cap}/{cap} keyword slots used
+            </span>
+            {tier === 'pulse'
+              ? ' — Pulse+ unlocks 10 per location.'
+              : tier === 'pulse_plus'
+                ? ' — contact support to add custom slots.'
+                : ' — set a recurring tier to add more.'}
+          </p>
+        )}
         {error && (
           <div className="text-xs text-red-400 font-mono">{error}</div>
         )}

@@ -194,6 +194,7 @@ export default async function ClientSettingsPage({
                 ? activeLocation.label || activeLocation.city || 'Primary'
                 : null
             }
+            tier={tierForGating}
             suggestions={buildKeywordSuggestions(
               client.industry,
               activeLocation?.city ?? null
