@@ -500,9 +500,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
         {/* Footer (page 1) */}
         <View style={styles.footer} fixed>
           <Text>TurfMap™ — proprietary technology of Fourdots Digital</Text>
-          <Text>
-            Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
-          </Text>
+          <Text>Scan {data.scan.id.slice(0, 8)}</Text>
         </View>
       </Page>
 
@@ -550,9 +548,7 @@ export function TurfReport({ data }: { data: TurfReportData }) {
           {/* Footer (page 2 — same shape as page 1) */}
           <View style={styles.footer} fixed>
             <Text>TurfMap™ — proprietary technology of Fourdots Digital</Text>
-            <Text>
-              Scan {data.scan.id.slice(0, 8)} · {data.scan.failedPoints} failed pts · ${(data.scan.dfsCostCents / 100).toFixed(2)} DFS
-            </Text>
+            <Text>Scan {data.scan.id.slice(0, 8)}</Text>
           </View>
         </Page>
       )}

@@ -114,7 +114,7 @@ export function OrderConfirmationEmail({
           Pulse+ unlocks <TierBadge tier="pulse_plus" /> — citation
           building queues up after the first scan; we&rsquo;ll send a
           short onboarding form to capture the categories and hours
-          BrightLocal needs.
+          we need to submit your listings.
         </PSmall>
       )}
 

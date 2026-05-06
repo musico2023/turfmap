@@ -128,8 +128,7 @@ export function CitationsPanel({
         ))}
         {dirs.length === 0 && (
           <p className="text-xs text-zinc-600 italic">
-            No directory submissions yet — order is still queueing at
-            BrightLocal.
+            No directory submissions yet — order is still queueing.
           </p>
         )}
       </div>
