@@ -30,6 +30,7 @@ import { DeleteClientCard } from '@/components/turfmap/DeleteClientCard';
 import { SubscriptionPanel } from '@/components/turfmap/SubscriptionPanel';
 import { TierOverrideCard } from '@/components/turfmap/TierOverrideCard';
 import { ConvertToManagedCard } from '@/components/turfmap/ConvertToManagedCard';
+import { ConvertToSelfServeCard } from '@/components/turfmap/ConvertToSelfServeCard';
 import { AwaitingPaymentSetupCard } from '@/components/turfmap/AwaitingPaymentSetupCard';
 import { AlertPrefsCard } from '@/components/turfmap/AlertPrefsCard';
 import { ExportsCard } from '@/components/turfmap/ExportsCard';
@@ -303,6 +304,18 @@ export default async function ClientSettingsPage({
               currentTier={client.tier}
             />
           )}
+          {/* Mirror of ConvertToManagedCard, opposite direction:
+           *  agency-managed → Stripe-billed self-serve. Renders only
+           *  on agency-managed clients. Same fourdots-owner domain
+           *  gate as the inverse — operationally significant
+           *  billing-mode flip, restricted-affordance. */}
+          {client.billing_mode === 'agency_managed' &&
+            isAgencyOwnerEmail(me.email) && (
+              <ConvertToSelfServeCard
+                clientId={client.id}
+                currentTier={client.tier}
+              />
+            )}
           <DeleteClientCard
             clientId={client.public_id}
             businessName={client.business_name}
