@@ -6,6 +6,7 @@ import {
   AddressAutocomplete,
   type AddressFields,
 } from '@/components/turfmap/AddressAutocomplete';
+import { CalEmbed } from '@/components/turfmap/CalEmbed';
 
 /**
  * Post-checkout business-details form.
@@ -197,36 +198,17 @@ export function OrderSuccessForm({
           </a>
         )}
         {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
-          <div
-            className="mt-8 mx-auto max-w-md rounded-lg border p-5 text-left"
-            style={{
-              borderColor: 'var(--color-border)',
-              background: 'var(--color-bg)',
-            }}
-          >
-            <p className="font-display text-base font-bold text-zinc-100 mb-1">
-              Book your{' '}
-              {tier === 'strategy'
+          <CalEmbed
+            bookingUrl={bookingUrl}
+            email={email}
+            businessName={businessName}
+            notes={`Booking from TurfMap ${tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit'} order for ${businessName}.`}
+            tierLabel={
+              tier === 'strategy'
                 ? '90-min Strategy Session'
-                : '30-min Audit walkthrough'}
-            </p>
-            <p className="text-sm text-zinc-500 leading-relaxed mb-4">
-              Pick a time that works — we&rsquo;ve pre-filled your details
-              so it&rsquo;s one click.
-            </p>
-            <a
-              href={bookingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-2.5 px-4 transition-all whitespace-nowrap hover:brightness-110"
-              style={{
-                background: 'var(--color-lime)',
-                color: 'black',
-              }}
-            >
-              Book my call →
-            </a>
-          </div>
+                : '30-min Audit walkthrough'
+            }
+          />
         )}
         {(tier === 'audit' || tier === 'strategy') && !bookingUrl && (
           <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">

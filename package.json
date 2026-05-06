@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
+    "@calcom/embed-react": "^1.5.3",
     "@mapbox/search-js-react": "^1.5.1",
     "@react-email/components": "^1.0.12",
     "@react-pdf/renderer": "^4.5.1",
