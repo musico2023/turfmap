@@ -22,7 +22,7 @@ import type { ClientLocationRow } from '@/lib/supabase/types';
 type SupabaseLike = SupabaseClient<any, any, any>;
 
 const LOCATION_COLS =
-  'id, client_id, label, is_primary, address, street_address, city, region, postcode, country_code, phone, latitude, longitude, pin_lat, pin_lng, service_radius_miles, created_at';
+  'id, client_id, label, is_primary, address, street_address, city, region, postcode, country_code, phone, latitude, longitude, pin_lat, pin_lng, service_radius_miles, google_place_id, google_place_match_status, google_place_match_distance_m, google_place_match_name_similarity, created_at';
 
 /**
  * Returns the requested location, or — if `locationId` is null —

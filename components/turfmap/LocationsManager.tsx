@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
 import type {
@@ -646,6 +646,11 @@ function EditLocationForm({
         placeholder="Service radius (mi)"
         className={inputClass}
       />
+      <GbpMatchPanel
+        clientId={clientId}
+        locationId={location.id}
+        businessName={location.label ?? location.city ?? ''}
+      />
       <div className="flex justify-between items-center gap-2 pt-1">
         <div className="flex gap-2">
           {!location.is_primary && (
@@ -681,6 +686,343 @@ function EditLocationForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+// ─── GBP match panel ─────────────────────────────────────────────────────
+
+type GbpMatchState = {
+  placeId: string | null;
+  status:
+    | 'auto'
+    | 'confirmed'
+    | 'manual'
+    | 'rejected'
+    | 'no_match'
+    | null;
+  matchDistanceM: number | null;
+  matchNameSimilarity: number | null;
+  signals: {
+    rating: number | null;
+    user_ratings_total: number | null;
+    primary_type: string | null;
+    types: string[] | null;
+    business_status: string | null;
+    photos_count: number | null;
+    fetched_at: string;
+  } | null;
+};
+
+type Candidate = {
+  placeId: string;
+  displayName: string | null;
+  formattedAddress: string | null;
+  primaryType: string | null;
+  rating: number | null;
+  userRatingCount: number | null;
+};
+
+function GbpMatchPanel({
+  clientId,
+  locationId,
+  businessName,
+}: {
+  clientId: string;
+  locationId: string;
+  businessName: string;
+}) {
+  const [state, setState] = useState<GbpMatchState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<null | 'confirm' | 'reject' | 'select'>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const baseUrl = `/api/clients/${clientId}/locations/${locationId}/gbp-match`;
+
+  const refresh = async () => {
+    try {
+      const res = await fetch(baseUrl, { method: 'GET' });
+      const data = (await res.json()) as GbpMatchState | { error?: string };
+      if (res.ok) setState(data as GbpMatchState);
+    } catch {
+      // Silent — panel just shows nothing
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial fetch on expand. The panel only mounts when the row is
+  // expanded (parent unmounts it on collapse), so a one-shot fetch is
+  // sufficient — no polling, no resubscribe. The fetch is async, so
+  // any setState lands after the effect body returns (lint-safe).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(baseUrl, { method: 'GET' });
+        const data = (await res.json()) as GbpMatchState | { error?: string };
+        if (!cancelled && res.ok) setState(data as GbpMatchState);
+      } catch {
+        // Silent — panel just shows nothing.
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const callAction = async (
+    action: 'confirm' | 'reject',
+    afterLabel: GbpMatchState['status']
+  ) => {
+    setBusy(action);
+    setErr(null);
+    try {
+      const res = await fetch(baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setErr(data.error ?? `${action} failed`);
+        return;
+      }
+      // Optimistic update; the next refresh fills in signal blanks.
+      setState((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: afterLabel,
+              placeId: action === 'reject' ? null : prev.placeId,
+              signals: action === 'reject' ? null : prev.signals,
+            }
+          : prev
+      );
+      if (action === 'reject') setSearchOpen(true);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setErr(null);
+    try {
+      const res = await fetch(baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'search', query: searchQuery.trim() }),
+      });
+      const data = (await res.json()) as
+        | { candidates: Candidate[]; cost_cents: number }
+        | { error?: string };
+      if (!res.ok) {
+        setErr(('error' in data && data.error) || 'search failed');
+        return;
+      }
+      setCandidates(('candidates' in data && data.candidates) || []);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const pickCandidate = async (placeId: string) => {
+    setBusy('select');
+    setErr(null);
+    try {
+      const res = await fetch(baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'select', placeId }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setErr(data.error ?? 'select failed');
+        return;
+      }
+      setSearchOpen(false);
+      setCandidates(null);
+      setSearchQuery('');
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="border rounded-md px-3 py-2 text-[11px] text-zinc-500" style={{ borderColor: 'var(--color-border)' }}>
+        Loading GBP match…
+      </div>
+    );
+  }
+  if (!state) return null;
+
+  const status = state.status;
+  const placeId = state.placeId;
+  const sig = state.signals;
+  const ratingLine =
+    sig && (sig.rating !== null || sig.user_ratings_total !== null)
+      ? `${sig.rating !== null ? `${sig.rating.toFixed(1)} ★` : ''}${sig.rating !== null && sig.user_ratings_total !== null ? ' · ' : ''}${sig.user_ratings_total !== null ? `${sig.user_ratings_total} reviews` : ''}`
+      : null;
+
+  const badge = (() => {
+    if (!status || status === null)
+      return { text: 'GBP: not linked', color: '#a1a1aa', bg: '#1a1a1a' };
+    if (status === 'auto')
+      return {
+        text: 'GBP: auto-matched — please confirm',
+        color: '#fbbf24',
+        bg: '#2a1f05',
+      };
+    if (status === 'confirmed')
+      return { text: 'GBP: confirmed', color: 'var(--color-lime)', bg: '#1a2a05' };
+    if (status === 'manual')
+      return { text: 'GBP: manually linked', color: 'var(--color-lime)', bg: '#1a2a05' };
+    if (status === 'rejected')
+      return { text: 'GBP: rejected — search to relink', color: '#f87171', bg: '#2a0606' };
+    return { text: 'GBP: no match found — search to link', color: '#a1a1aa', bg: '#1a1a1a' };
+  })();
+
+  return (
+    <div className="border rounded-md p-2.5 space-y-2 text-[11px]" style={{ borderColor: 'var(--color-border)', background: 'rgba(255,255,255,0.01)' }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold"
+          style={{ background: badge.bg, color: badge.color }}
+        >
+          {badge.text}
+        </span>
+        {(status === 'auto' || status === 'confirmed' || status === 'manual') && placeId && (
+          <a
+            href={`https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeId)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-zinc-500 hover:text-zinc-300 underline-offset-2 hover:underline"
+          >
+            view on Google
+          </a>
+        )}
+      </div>
+      {sig && (
+        <div className="text-zinc-400 leading-relaxed">
+          {sig.primary_type && (
+            <div>Category: <span className="text-zinc-300">{sig.primary_type}</span></div>
+          )}
+          {ratingLine && <div>{ratingLine}</div>}
+          {sig.business_status && sig.business_status !== 'OPERATIONAL' && (
+            <div className="text-amber-400">Status: {sig.business_status}</div>
+          )}
+        </div>
+      )}
+      {status === 'auto' && (
+        <div className="flex gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy === 'confirm'}
+            onClick={() => callAction('confirm', 'confirmed')}
+          >
+            That&apos;s us
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={busy === 'reject'}
+            onClick={() => callAction('reject', 'rejected')}
+          >
+            Not us — search again
+          </Button>
+        </div>
+      )}
+      {(status === 'confirmed' || status === 'manual') && (
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={busy === 'reject'}
+            onClick={() => callAction('reject', 'rejected')}
+          >
+            Re-link to a different listing
+          </Button>
+        </div>
+      )}
+      {(status === 'rejected' || status === 'no_match' || !status) && !searchOpen && (
+        <Button variant="secondary" size="sm" onClick={() => setSearchOpen(true)}>
+          Search Google for the right listing
+        </Button>
+      )}
+      {searchOpen && (
+        <div className="space-y-2 pt-1 border-t" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={businessName || 'Business name + city'}
+              className={inputClass}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  runSearch();
+                }
+              }}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              loading={searching}
+              onClick={runSearch}
+              disabled={!searchQuery.trim()}
+            >
+              Search
+            </Button>
+          </div>
+          {candidates && candidates.length === 0 && (
+            <div className="text-zinc-500">No matches. Try a different query.</div>
+          )}
+          {candidates && candidates.length > 0 && (
+            <ul className="space-y-1">
+              {candidates.map((c) => (
+                <li
+                  key={c.placeId}
+                  className="border rounded-md p-2 hover:bg-white/[0.03] cursor-pointer"
+                  style={{ borderColor: 'var(--color-border)' }}
+                  onClick={() => pickCandidate(c.placeId)}
+                >
+                  <div className="text-zinc-200 text-xs font-medium">
+                    {c.displayName ?? '(no name)'}
+                  </div>
+                  <div className="text-zinc-500 text-[10px] font-mono">
+                    {c.formattedAddress ?? ''}
+                  </div>
+                  <div className="text-zinc-500 text-[10px]">
+                    {[
+                      c.primaryType,
+                      c.rating !== null ? `${c.rating.toFixed(1)} ★` : null,
+                      c.userRatingCount !== null
+                        ? `${c.userRatingCount} reviews`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {err && <div className="text-red-400">{err}</div>}
+    </div>
   );
 }
 

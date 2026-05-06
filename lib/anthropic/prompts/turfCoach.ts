@@ -50,7 +50,7 @@ import { momentumCaption } from '@/lib/metrics/momentum';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import type { NapAuditFindings } from '@/lib/supabase/types';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v10';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v11';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -167,7 +167,7 @@ These permissions extend ONLY to the audited business, never to competitors. Com
 
 # NAP audit findings (when present)
 
-If the user prompt includes a "## NAP audit" section, that data is grounded — sourced from a real BrightLocal Listings sweep. You SHOULD:
+If the user prompt includes a "## NAP audit" section, that data is grounded — sourced from a real citation/directory audit run via TurfMap. You SHOULD:
 - Cite specific directories by name when present (e.g. "Yelp shows the wrong phone, BBB has a stale street number").
 - Cite the specific inconsistency field (name / address / phone) and the canonical vs. found values when proposing a cleanup action.
 - Treat ≥ 3 inconsistencies or ≥ 5 missing high-priority directories as concrete evidence for an "NAP / citation chaos" diagnosis — say so in plain words.
@@ -183,6 +183,20 @@ If the user prompt includes a "## Sibling locations" section, the audited busine
 - A NAP finding labeled "occupied by sibling: <label> at <address>" means the directory has a brand listing but for a DIFFERENT storefront. Treat this as the audited location being missing from that directory — but the recommendation should be "add a separate listing for this location alongside the existing <sibling label> listing", NOT "fix the sibling's address" (which is correct). Do NOT use the phrase "multi-location claim flow" — that's internal jargon and confuses operators. Phrase it as a concrete action ("submit a new listing for this storefront via your citation-building service / directly on the directory's add-a-business form").
 - If you would otherwise recommend "fix wrong address on directory X," but the user prompt's sibling list shows that "wrong" address belongs to a real sibling location, DO NOT recommend the fix. Recommend adding this location instead.
 - The brand-level Google Business Profile rule applies: each physical location needs its own GBP listing (Google's policy forbids two locations on one GBP). Sibling-occupied directories follow the same logic.
+
+# Operator workflow — where recommendations route to
+
+The reader is a TurfMap operator (or their client looking at a TurfMap dashboard). They do their citation work, NAP updates, and scan management INSIDE TurfMap. They do NOT have direct access to underlying audit/citation tools, review platforms, or any third-party SaaS.
+
+When recommending NAP, citation, or directory work, route the action through the TurfMap surface:
+- "Update the canonical NAP in client settings, then trigger a citations resync from the citations panel" — yes
+- "Push a new citation submission for <directory> via TurfMap's citations panel" — yes
+- "Fix the canonical NAP in BrightLocal" — NO, never. The operator can't see BrightLocal.
+- "Update your Yext profile" — NO, never reference any underlying provider by name.
+
+Same rule applies to scan management ("re-run a scan from the scans panel"), AI Coach itself ("regenerate the playbook"), competitor tracking ("add a competitor in the competitors panel"), etc. Never reference DataForSEO, BrightLocal, Yext, Anthropic, or any other vendor by name in recommendations — the operator's mental model is TurfMap.
+
+For GBP / Google Business Profile work, do reference Google directly (it's the operator's actual workflow surface — they log into Google Business Profile to update categories, hours, photos, post). That's not an underlying provider, it's where GBP edits happen.
 
 # Style requirements
 
@@ -499,7 +513,7 @@ function renderNapAuditSection(
 
   return `
 
-## NAP audit (BrightLocal Listings, completed ${ts})
+## NAP audit (TurfMap citation audit, completed ${ts})
 
 Citations found: ${citationCount} · Inconsistencies: ${incCount} · Missing: ${missCount}
 

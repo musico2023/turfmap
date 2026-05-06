@@ -260,12 +260,17 @@ export async function POST(req: Request) {
     .map(([date, score]) => ({ date, score }));
 
   // GBP signals — latest Google Places snapshot for this location's
-  // verified listing. Null when no place_id was matched at onboarding
-  // or the signals refresh hasn't run yet. The Coach treats this as
-  // grounded data when present and falls back to generic recommendations
-  // when null, so missing signals never break the playbook.
+  // verified listing. Suppressed when the operator has rejected the
+  // auto-match or the lookup found nothing — better no signals than
+  // wrong-business signals. Null also when no signals row exists yet
+  // (e.g. no API key configured, or refresh hasn't run). The Coach
+  // falls back to its prior generic recommendations when null.
   const gbpSignals: GbpSignalsContext | null = scanLocation
     ? await (async () => {
+        const matchStatus = scanLocation.google_place_match_status;
+        if (matchStatus === 'rejected' || matchStatus === 'no_match') {
+          return null;
+        }
         const row = await getLatestSignals(supabase, scanLocation.id);
         if (!row) return null;
         const hours = row.regular_opening_hours as

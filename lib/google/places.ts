@@ -65,6 +65,15 @@ export type FindPlaceResult = {
   costCents: number;
 };
 
+export type SearchCandidate = {
+  placeId: string;
+  displayName: string | null;
+  formattedAddress: string | null;
+  primaryType: string | null;
+  rating: number | null;
+  userRatingCount: number | null;
+};
+
 export type PlaceDetails = {
   placeId: string;
   displayName: string | null;
@@ -126,6 +135,79 @@ async function textSearchTopId(
   const data = (await res.json()) as { places?: { id?: string }[] };
   const placeId = data.places?.[0]?.id ?? null;
   return { placeId, costCents: placeId ? COST_CENTS.textSearchEssentials : 0 };
+}
+
+/**
+ * Multi-result Text Search for the manual-override flow. Returns up
+ * to N candidates with enough surface info (name, address, category,
+ * rating) for the operator to pick the right listing. Pricing tier
+ * is Pro because we ask for rating + types in the field mask.
+ */
+export async function searchPlaces(input: {
+  query: string;
+  latitude: number | null;
+  longitude: number | null;
+  maxResults?: number;
+}): Promise<{ candidates: SearchCandidate[]; costCents: number }> {
+  const key = apiKey();
+  if (!key) return { candidates: [], costCents: 0 };
+  const fieldMask = [
+    'places.id',
+    'places.displayName',
+    'places.formattedAddress',
+    'places.primaryType',
+    'places.rating',
+    'places.userRatingCount',
+  ].join(',');
+  const body: Record<string, unknown> = {
+    textQuery: input.query,
+    maxResultCount: Math.min(input.maxResults ?? 5, 10),
+  };
+  if (input.latitude !== null && input.longitude !== null) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: input.latitude, longitude: input.longitude },
+        radius: 5000, // 5km — wider than auto-match radius for manual hunt
+      },
+    };
+  }
+  const res = await fetch(`${PLACES_BASE}/places:searchText`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': key,
+      'X-Goog-FieldMask': fieldMask,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    console.warn('[places] searchPlaces failed', res.status, text.slice(0, 200));
+    return { candidates: [], costCents: 0 };
+  }
+  type RawPlace = {
+    id?: string;
+    displayName?: { text?: string };
+    formattedAddress?: string;
+    primaryType?: string;
+    rating?: number;
+    userRatingCount?: number;
+  };
+  const data = (await res.json()) as { places?: RawPlace[] };
+  const candidates: SearchCandidate[] = (data.places ?? [])
+    .filter((p): p is RawPlace & { id: string } => typeof p.id === 'string')
+    .map((p) => ({
+      placeId: p.id,
+      displayName: p.displayName?.text ?? null,
+      formattedAddress: p.formattedAddress ?? null,
+      primaryType: p.primaryType ?? null,
+      rating: typeof p.rating === 'number' ? p.rating : null,
+      userRatingCount:
+        typeof p.userRatingCount === 'number' ? p.userRatingCount : null,
+    }));
+  // Pro tier — searchPlaces with rating/types in the mask costs $32/1k
+  // ≈ $0.032 = 3¢. Round up to be safe; surfaced for cost tracking.
+  return { candidates, costCents: candidates.length > 0 ? 3 : 0 };
 }
 
 /**

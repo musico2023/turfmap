@@ -187,6 +187,19 @@ export type ClientLocationRow = {
   pin_lat: number | null;
   pin_lng: number | null;
   service_radius_miles: number | null;
+  /** Stable Google Places (New) place_id. Set at onboarding when the
+   *  strict-match guardrail passes; cleared if the operator rejects. */
+  google_place_id: string | null;
+  /** Operator-confirmation state. See migration 0019. */
+  google_place_match_status:
+    | 'auto'
+    | 'confirmed'
+    | 'manual'
+    | 'rejected'
+    | 'no_match'
+    | null;
+  google_place_match_distance_m: number | null;
+  google_place_match_name_similarity: number | null;
   /** Per-location NAP re-sync counter (added in migration 0012). Resets
    *  at the start of each quarter via cron. Used by the §6 re-sync
    *  gate to enforce the 3-onboarding + 3-quarterly free cap before

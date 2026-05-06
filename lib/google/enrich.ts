@@ -24,9 +24,23 @@ import { findAndVerifyPlace, getPlaceDetails, type PlaceDetails } from './places
 type SupabaseLike = SupabaseClient<any, any, any>;
 
 export type OnboardingEnrichmentStatus =
-  | { status: 'matched'; placeId: string; signalsId: string; costCents: number }
+  | {
+      status: 'matched';
+      placeId: string;
+      signalsId: string;
+      costCents: number;
+      matchDistanceM: number;
+      matchNameSimilarity: number;
+    }
   | { status: 'no_match'; costCents: number }
   | { status: 'skipped'; reason: 'no_api_key' | 'missing_inputs' | 'error' };
+
+export type GbpMatchStatus =
+  | 'auto'
+  | 'confirmed'
+  | 'manual'
+  | 'rejected'
+  | 'no_match';
 
 /**
  * Look up the GBP listing for a freshly-created location and persist
@@ -66,16 +80,33 @@ export async function enrichLocationFromOnboarding(
   }
 
   if (!result) {
-    // Soft-tracked: the Text Search call still cost money even on
-    // rejected matches. We don't have a great place to attribute that
-    // 0.5¢ to — we accept it as a cost-of-onboarding rounding error.
+    // Mark the location as 'no_match' so the AI Coach skips signals
+    // and the backfill / cron skip future re-tries. The Text Search
+    // call still cost ~0.5¢; we accept that as cost-of-onboarding.
+    await supabase
+      .from('client_locations')
+      .update({
+        google_place_match_status: 'no_match',
+        google_place_id: null,
+      })
+      .eq('id', args.locationId);
     return { status: 'no_match', costCents: 1 };
   }
 
-  // Persist place_id on the location row.
+  // Persist place_id + match metadata on the location row. Status
+  // 'auto' means strict-match passed but operator hasn't reviewed
+  // yet — the AI Coach treats it as usable, but the locations
+  // panel surfaces a "confirm/reject" badge.
   const { error: locErr } = await supabase
     .from('client_locations')
-    .update({ google_place_id: result.details.placeId })
+    .update({
+      google_place_id: result.details.placeId,
+      google_place_match_status: 'auto',
+      google_place_match_distance_m: Math.round(result.matchDistanceM),
+      google_place_match_name_similarity: Number(
+        result.matchNameSimilarity.toFixed(2)
+      ),
+    })
     .eq('id', args.locationId);
   if (locErr) {
     console.warn('[places.enrich] failed to persist place_id', locErr.message);
@@ -95,7 +126,68 @@ export async function enrichLocationFromOnboarding(
     placeId: result.details.placeId,
     signalsId,
     costCents: result.totalCostCents,
+    matchDistanceM: result.matchDistanceM,
+    matchNameSimilarity: result.matchNameSimilarity,
   };
+}
+
+/**
+ * Confirm/reject helpers used by the operator UI. Always update the
+ * status column so the Coach + cron can act consistently.
+ */
+export async function confirmMatch(
+  supabase: SupabaseLike,
+  locationId: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('client_locations')
+    .update({ google_place_match_status: 'confirmed' })
+    .eq('id', locationId);
+  return !error;
+}
+
+export async function rejectMatch(
+  supabase: SupabaseLike,
+  locationId: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('client_locations')
+    .update({
+      google_place_match_status: 'rejected',
+      google_place_id: null,
+      google_place_match_distance_m: null,
+      google_place_match_name_similarity: null,
+    })
+    .eq('id', locationId);
+  return !error;
+}
+
+/**
+ * Operator-driven manual selection. Stores the picked place_id with
+ * status='manual' and triggers an immediate Place Details fetch so
+ * the next AI Coach run has signals to cite. Returns true on success.
+ */
+export async function selectMatchManually(
+  supabase: SupabaseLike,
+  args: { locationId: string; placeId: string }
+): Promise<boolean> {
+  const details = await getPlaceDetails(args.placeId);
+  if (!details) return false;
+  const { error } = await supabase
+    .from('client_locations')
+    .update({
+      google_place_id: args.placeId,
+      google_place_match_status: 'manual',
+      // Operator-confirmed selection — the auto-strict-match metrics
+      // don't apply here. Null them out so the audit trail reads as
+      // "manually picked" rather than "passed strict match".
+      google_place_match_distance_m: null,
+      google_place_match_name_similarity: null,
+    })
+    .eq('id', args.locationId);
+  if (error) return false;
+  await insertSignalsRow(supabase, args.locationId, details);
+  return true;
 }
 
 /**
