@@ -42,7 +42,6 @@ const NewLocationBody = z.object({
   pin_lat: z.number().min(-90).max(90).optional().nullable(),
   pin_lng: z.number().min(-180).max(180).optional().nullable(),
   service_radius_miles: z.number().min(0.1).max(10).optional(),
-  gbp_url: z.string().url().max(2048).optional().nullable(),
   /** Optional — caller can set this true to flip the primary atomically.
    *  When true, the existing primary is demoted in the same transaction. */
   is_primary: z.boolean().optional(),
@@ -130,7 +129,6 @@ export async function POST(
       pin_lat: parsed.pin_lat ?? null,
       pin_lng: parsed.pin_lng ?? null,
       service_radius_miles: parsed.service_radius_miles ?? 1.6,
-      gbp_url: parsed.gbp_url ?? null,
     })
     .select('*')
     .single<ClientLocationRow>();

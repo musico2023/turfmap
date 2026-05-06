@@ -240,7 +240,6 @@ function AddLocationForm({
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [serviceRadius, setServiceRadius] = useState('1.6');
-  const [gbpUrl, setGbpUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // Mapbox-resolved structured fields. Set when the operator picks a
   // suggestion from the autocomplete dropdown; cleared whenever they
@@ -344,7 +343,6 @@ function AddLocationForm({
           latitude: lat,
           longitude: lng,
           service_radius_miles: Number(serviceRadius),
-          gbp_url: gbpUrl.trim() || null,
         }),
       });
       const data = (await res.json()) as {
@@ -428,23 +426,14 @@ function AddLocationForm({
         required
         inputClassName={inputClass}
       />
-      <div className="grid grid-cols-2 gap-2">
-        <input
-          type="number"
-          step="0.1"
-          value={serviceRadius}
-          onChange={(e) => setServiceRadius(e.target.value)}
-          placeholder="Service radius (mi)"
-          className={inputClass}
-        />
-        <input
-          type="url"
-          value={gbpUrl}
-          onChange={(e) => setGbpUrl(e.target.value)}
-          placeholder="GBP URL (optional)"
-          className={inputClass}
-        />
-      </div>
+      <input
+        type="number"
+        step="0.1"
+        value={serviceRadius}
+        onChange={(e) => setServiceRadius(e.target.value)}
+        placeholder="Service radius (mi)"
+        className={inputClass}
+      />
       <div className="flex justify-end gap-2 pt-1">
         <Button
           variant="ghost"
@@ -487,7 +476,6 @@ function EditLocationForm({
   const [serviceRadius, setServiceRadius] = useState(
     String(location.service_radius_miles ?? 1.6)
   );
-  const [gbpUrl, setGbpUrl] = useState(location.gbp_url ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -548,7 +536,6 @@ function EditLocationForm({
             address: address.trim(),
             phone: phone.trim() || null,
             service_radius_miles: Number(serviceRadius),
-            gbp_url: gbpUrl.trim() || null,
             ...geocodePayload,
           }),
         }
@@ -651,23 +638,14 @@ function EditLocationForm({
         placeholder="Address"
         className={inputClass}
       />
-      <div className="grid grid-cols-2 gap-2">
-        <input
-          type="number"
-          step="0.1"
-          value={serviceRadius}
-          onChange={(e) => setServiceRadius(e.target.value)}
-          placeholder="Service radius (mi)"
-          className={inputClass}
-        />
-        <input
-          type="url"
-          value={gbpUrl}
-          onChange={(e) => setGbpUrl(e.target.value)}
-          placeholder="GBP URL"
-          className={inputClass}
-        />
-      </div>
+      <input
+        type="number"
+        step="0.1"
+        value={serviceRadius}
+        onChange={(e) => setServiceRadius(e.target.value)}
+        placeholder="Service radius (mi)"
+        className={inputClass}
+      />
       <div className="flex justify-between items-center gap-2 pt-1">
         <div className="flex gap-2">
           {!location.is_primary && (

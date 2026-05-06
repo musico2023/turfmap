@@ -187,8 +187,6 @@ export type ClientLocationRow = {
   pin_lat: number | null;
   pin_lng: number | null;
   service_radius_miles: number | null;
-  /** Optional Google Business Profile URL for this location. */
-  gbp_url: string | null;
   /** Per-location NAP re-sync counter (added in migration 0012). Resets
    *  at the start of each quarter via cron. Used by the §6 re-sync
    *  gate to enforce the 3-onboarding + 3-quarterly free cap before

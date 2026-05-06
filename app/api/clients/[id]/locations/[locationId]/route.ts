@@ -48,7 +48,6 @@ const PatchBody = z
     pin_lat: z.number().min(-90).max(90).nullable(),
     pin_lng: z.number().min(-180).max(180).nullable(),
     service_radius_miles: z.number().min(0.1).max(10),
-    gbp_url: z.string().url().max(2048).nullable(),
     is_primary: z.boolean(),
   })
   .partial()
