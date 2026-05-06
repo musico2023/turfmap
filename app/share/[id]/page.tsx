@@ -174,7 +174,7 @@ export default async function PublicSharePage({
   );
   const sharedBy = share.agency_label?.trim() || 'Fourdots Digital';
   const ctaText = share.cta_text?.trim() || 'Want a TurfMap of your business?';
-  const ctaUrl = share.cta_url?.trim() || 'https://fourdots.io';
+  const ctaUrl = share.cta_url?.trim() || 'https://turfmap.ai';
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -457,10 +457,10 @@ function ExpiredScreen({
         <h3 className="font-display text-lg font-bold mb-2">{headline}</h3>
         <p className="text-xs text-zinc-400 leading-relaxed mb-5">{body}</p>
         <Link
-          href="https://fourdots.io"
+          href="https://turfmap.ai"
           className="text-xs font-mono text-zinc-500 hover:text-zinc-300"
         >
-          fourdots.io →
+          turfmap.ai →
         </Link>
       </div>
     </div>
