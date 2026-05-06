@@ -276,7 +276,7 @@ export default async function ClientPortalPage({
           param (?location=... / ?keyword=...). */}
       {(locations.length > 1 || keywordList.length > 1) && (
         <div
-          className="border-b px-8 py-3 flex items-center gap-6 flex-wrap"
+          className="border-b px-4 md:px-8 py-3 flex items-center gap-3 md:gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <LocationSwitcher
@@ -294,7 +294,7 @@ export default async function ClientPortalPage({
 
       {latestScan && isFirstScan && (
         <div
-          className="px-8 py-3 border-b flex items-center gap-3 text-xs"
+          className="px-4 md:px-8 py-3 border-b flex items-center gap-3 text-xs"
           style={{
             background: 'rgba(197, 255, 58, 0.05)',
             borderColor: 'var(--color-border)',
@@ -313,12 +313,12 @@ export default async function ClientPortalPage({
         </div>
       )}
 
-      {/* Compact business meta — no scan-trigger / cost data here */}
+      {/* Compact business meta — stacks on mobile, three columns at md+ */}
       <div
-        className="border-b px-8 py-4 grid grid-cols-12 gap-4 items-center"
+        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 items-start md:items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="col-span-4">
+        <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
@@ -331,34 +331,36 @@ export default async function ClientPortalPage({
             )}
           </div>
         </div>
-        <div className="col-span-4">
+        <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Pin Location
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
-            <MapPin size={13} className="text-zinc-500" />
-            {activeLocation?.address ?? client.address}
+            <MapPin size={13} className="text-zinc-500 flex-shrink-0" />
+            <span className="truncate">
+              {activeLocation?.address ?? client.address}
+            </span>
           </div>
         </div>
-        <div className="col-span-4">
+        <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Tracked Keyword
           </div>
-          <div className="text-sm font-mono text-zinc-200">
+          <div className="text-sm font-mono text-zinc-200 truncate">
             {keyword?.keyword ?? '—'}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 p-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         <div
-          className="col-span-8 border rounded-lg p-6 relative overflow-hidden"
+          className="lg:col-span-8 border rounded-lg p-4 md:p-6 relative overflow-hidden"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',
           }}
         >
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div>
               <h3 className="font-display text-xl font-bold">
                 Territory Heatmap
@@ -368,7 +370,7 @@ export default async function ClientPortalPage({
                 {activeLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6}mi radius
               </p>
             </div>
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider flex-wrap">
               {[
                 { color: '#c5ff3a', label: 'Top 3' },
                 { color: '#e8e54a', label: '4–10' },
@@ -395,7 +397,7 @@ export default async function ClientPortalPage({
           />
         </div>
 
-        <div className="col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4">
           <StatCard
             variant="hero"
             label="TurfScore™"
@@ -454,7 +456,7 @@ export default async function ClientPortalPage({
           <CompetitorTable competitors={competitors} />
         </div>
 
-        <div className="col-span-12">
+        <div className="lg:col-span-12">
           <AICoach
             scanId={latestScan?.id ?? null}
             insight={insightRow ?? null}
@@ -463,7 +465,7 @@ export default async function ClientPortalPage({
         </div>
 
         {showBillingPanel && (
-          <div className="col-span-12">
+          <div className="lg:col-span-12">
             <ClientBillingPanel
               clientId={clientUuid}
               tier={portalTier}
@@ -474,7 +476,7 @@ export default async function ClientPortalPage({
       </div>
 
       <footer
-        className="border-t px-8 py-4 flex items-center justify-between text-xs text-zinc-600"
+        className="border-t px-4 md:px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-zinc-600"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span>
@@ -517,7 +519,7 @@ function PortalHeader({
   const initial = businessName.trim().charAt(0).toUpperCase() || 'T';
   return (
     <header
-      className="border-b px-8 py-5 flex items-center justify-between"
+      className="border-b px-4 md:px-8 py-5 flex items-center justify-between gap-3"
       style={{ borderColor: 'var(--color-border)' }}
     >
       <div className="flex items-center gap-3">

@@ -104,7 +104,7 @@ export function KeywordSwitcher({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="px-3 py-1.5 rounded-md text-xs font-mono border transition-colors flex items-center gap-2 min-w-[200px]"
+          className="px-3 py-1.5 rounded-md text-xs font-mono border transition-colors flex items-center gap-2 w-full sm:w-auto sm:min-w-[200px]"
           style={{
             borderColor: open ? 'var(--color-lime)' : 'var(--color-border)',
             background: open ? '#0d130a' : 'var(--color-card)',
@@ -129,7 +129,7 @@ export function KeywordSwitcher({
 
         {open && (
           <div
-            className="absolute z-30 mt-1 w-[320px] rounded-md border shadow-2xl"
+            className="absolute z-30 mt-1 w-[min(320px,calc(100vw-2rem))] rounded-md border shadow-2xl"
             style={{
               background: 'var(--color-card)',
               borderColor: 'var(--color-border)',
