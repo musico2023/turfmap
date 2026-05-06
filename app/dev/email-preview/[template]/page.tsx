@@ -24,19 +24,41 @@ import { ScanReadyEmail } from '@/components/email/ScanReadyEmail';
 import { PortalInviteEmail } from '@/components/email/PortalInviteEmail';
 import { PulsePlusWelcomeEmail } from '@/components/email/PulsePlusWelcomeEmail';
 import { StripeSetupLinkEmail } from '@/components/email/StripeSetupLinkEmail';
+import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 
 export const dynamic = 'force-dynamic';
 
 const MOCK_BUSINESS = "Sugar Daddy Doughnuts";
+const MOCK_BUYER_EMAIL = 'owner@sugardaddydoughnuts.com';
 const MOCK_DASHBOARD_URL = 'https://turfmap.ai/clients/c8da57826c';
-const MOCK_BOOKING_URL =
-  'https://cal.com/anthony-fourdots/audit-walkthrough?email=owner%40sugardaddy.com&name=Sugar%20Daddy%20Doughnuts';
 const MOCK_CHECKOUT_URL =
   'https://checkout.stripe.com/c/pay/cs_test_a1b2c3d4e5f6g7h8i9j0';
 const MOCK_MAGIC_LINK =
   'https://turfmap.ai/auth/callback?token_hash=mock_token_hash_for_preview&type=magiclink';
 const MOCK_ONBOARDING_URL =
   'https://turfmap.ai/clients/c8da57826c/citations/setup';
+
+/**
+ * Build a Cal.com booking URL for the preview using the real
+ * env-configured base URL + the same query-pre-fill helper the
+ * production fulfill flow uses. Falls back to a placeholder cal.com
+ * URL when the env isn't set so the preview still shows something
+ * (rather than null) even pre-launch.
+ */
+function previewBookingUrlForTier(
+  tier: 'audit' | 'strategy'
+): string {
+  const real = calcomBookingUrlForTier({
+    tier,
+    email: MOCK_BUYER_EMAIL,
+    businessName: MOCK_BUSINESS,
+  });
+  if (real) return real;
+  // Pre-launch placeholder — only used when CAL_COM_*_URL isn't yet
+  // set in the local env. Once configured, the helper returns the
+  // operator's real Cal slug above.
+  return `https://cal.com/turfmap.ai/${tier === 'strategy' ? 'strategy-session' : 'visibility-audit-walkthrough'}?email=${encodeURIComponent(MOCK_BUYER_EMAIL)}&name=${encodeURIComponent(MOCK_BUSINESS)}`;
+}
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -71,7 +93,10 @@ async function renderTemplate(
             businessName: MOCK_BUSINESS,
             tier,
             dashboardUrl: MOCK_DASHBOARD_URL,
-            bookingUrl: includeBooking ? MOCK_BOOKING_URL : null,
+            bookingUrl:
+              includeBooking && (tier === 'audit' || tier === 'strategy')
+                ? previewBookingUrlForTier(tier)
+                : null,
           })
         ),
       };
