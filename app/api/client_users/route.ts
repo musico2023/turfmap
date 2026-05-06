@@ -37,8 +37,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
-import { sendPortalInvite } from '@/lib/email/resend';
-import type { ClientRow } from '@/lib/supabase/types';
+import { sendPortalInviteEmail } from '@/lib/portal/invite';
 
 export const runtime = 'nodejs';
 
@@ -129,85 +128,3 @@ export async function POST(req: Request) {
   });
 }
 
-/**
- * Generate a non-PKCE magic link via Supabase admin and email it to
- * the recipient via Resend. Returns ok:true on success, ok:false +
- * a redacted error string otherwise. Never throws.
- *
- * Exported indirectly by the POST handler; lives here rather than in
- * lib/ because it's tightly coupled to this endpoint's recovery /
- * resend semantics. If a second caller (e.g. a manual "resend"
- * endpoint) needs the same logic, lift it then.
- */
-async function sendPortalInviteEmail(opts: {
-  supabase: ReturnType<typeof getServerSupabase>;
-  clientId: string;
-  email: string;
-  origin: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  // Pull the client's display fields so the email template has a real
-  // business name + a clean public_id slug for the redirect URL.
-  const { data: client } = await opts.supabase
-    .from('clients')
-    .select('business_name, public_id')
-    .eq('id', opts.clientId)
-    .maybeSingle<Pick<ClientRow, 'business_name' | 'public_id'>>();
-  if (!client) {
-    return { ok: false, error: 'client lookup failed' };
-  }
-
-  // Generate the magic link via the admin API. This does NOT store any
-  // PKCE verifier — the link uses a token_hash that /auth/callback
-  // exchanges via verifyOtp regardless of which browser opens it.
-  // emailRedirectTo is a noise field for our flow (we build our own
-  // URL below using `properties.hashed_token`) but the Supabase API
-  // still requires it.
-  const next = `/portal/${client.public_id}`;
-  const callbackUrl = `${opts.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-
-  let hashedToken: string | undefined;
-  try {
-    const { data: linkData, error: linkErr } =
-      await opts.supabase.auth.admin.generateLink({
-        type: 'magiclink',
-        email: opts.email,
-        options: {
-          redirectTo: callbackUrl,
-        },
-      });
-    if (linkErr) {
-      return { ok: false, error: linkErr.message };
-    }
-    hashedToken = linkData?.properties?.hashed_token;
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
-  }
-
-  if (!hashedToken) {
-    return { ok: false, error: 'admin.generateLink returned no hashed_token' };
-  }
-
-  // Build the link the recipient actually clicks — points at our own
-  // /auth/callback so we control the verifyOtp + redirect, not
-  // Supabase's hosted verifier. type=magiclink tells the callback
-  // which OtpType to pass into verifyOtp.
-  const params = new URLSearchParams({
-    token_hash: hashedToken,
-    type: 'magiclink',
-    next,
-  });
-  const magicLinkUrl = `${opts.origin}/auth/callback?${params.toString()}`;
-
-  const sent = await sendPortalInvite({
-    to: opts.email,
-    businessName: client.business_name,
-    magicLinkUrl,
-  });
-
-  return sent
-    ? { ok: true }
-    : { ok: false, error: 'email send failed (see server logs)' };
-}

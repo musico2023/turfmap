@@ -7,6 +7,8 @@ import {
   type AddressFields,
 } from '@/components/turfmap/AddressAutocomplete';
 import { CalEmbed } from '@/components/turfmap/CalEmbed';
+import { OnboardingWizard } from '@/components/turfmap/OnboardingWizard';
+import type { OnboardingStep } from '@/lib/supabase/types';
 
 /**
  * Post-checkout business-details form.
@@ -62,6 +64,12 @@ export function OrderSuccessForm({
    *  when CAL_COM_*_URL env is configured. NULL otherwise → success
    *  state falls back to "your strategist will email" copy. */
   const [bookingUrl, setBookingUrl] = useState<string | null>(null);
+  /** Onboarding wizard step — set on Pulse / Pulse+ fulfillments.
+   *  Null for one-time tiers + agency-managed clients. The wizard
+   *  takes over the success state when present. */
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
+    null
+  );
 
   const setKeywordAt = (idx: number, value: string) => {
     setKeywords((prev) => {
@@ -116,14 +124,20 @@ export function OrderSuccessForm({
         partial?: boolean;
         message?: string;
         booking_url?: string | null;
+        onboarding_step?: OnboardingStep | null;
       };
 
       // 409 = already fulfilled. Treat as success — show the
       // fulfilled state with whatever client_id we got back.
+      // Resume the wizard if onboarding_step was returned (Pulse / Pulse+
+      // who closed the tab and came back, or a refresh mid-flow).
       if (res.status === 409 && data.already_fulfilled) {
         setPublicId(typeof data.public_id === 'string' ? data.public_id : null);
         setBookingUrl(
           typeof data.booking_url === 'string' ? data.booking_url : null
+        );
+        setOnboardingStep(
+          (data.onboarding_step as OnboardingStep | null) ?? null
         );
         setDone(true);
         setBusy(false);
@@ -155,6 +169,9 @@ export function OrderSuccessForm({
       setBookingUrl(
         typeof data.booking_url === 'string' ? data.booking_url : null
       );
+      setOnboardingStep(
+        (data.onboarding_step as OnboardingStep | null) ?? null
+      );
       setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -163,6 +180,20 @@ export function OrderSuccessForm({
   };
 
   if (done) {
+    // Self-serve subscription buyers (Pulse / Pulse+) hand off to the
+    // multi-step wizard, which manages its own UX (GBP confirmation,
+    // team invites, competitors, then the "TurfMap is ready" CTA).
+    // Pulse+ + Pulse only — one-time tiers fall through to the
+    // existing simple success card below.
+    if (onboardingStep && publicId && sessionId) {
+      return (
+        <OnboardingWizard
+          publicId={publicId}
+          sessionId={sessionId}
+          initialStep={onboardingStep}
+        />
+      );
+    }
     return (
       <div
         className="border rounded-lg p-8 text-center"

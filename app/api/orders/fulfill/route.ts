@@ -139,12 +139,30 @@ export async function POST(req: NextRequest) {
   }
 
   if (lead.status === 'fulfilled') {
+    // Buyer hit /order/success again — likely refresh, return-from-tab,
+    // or wizard resume. Look up the client so we can hand back the
+    // public_id + current onboarding_step; the frontend uses these to
+    // re-mount the success state (or resume the wizard at the right
+    // step) without forcing a re-fulfill.
+    let publicId: string | null = null;
+    let onboardingStep: string | null = null;
+    if (lead.client_id) {
+      const { data: c } = await supabase
+        .from('clients')
+        .select('public_id, onboarding_step')
+        .eq('id', lead.client_id)
+        .maybeSingle<Pick<ClientRow, 'public_id' | 'onboarding_step'>>();
+      publicId = c?.public_id ?? null;
+      onboardingStep = c?.onboarding_step ?? null;
+    }
     return NextResponse.json(
       {
         error:
           'This order has already been fulfilled. Check your email for the scan link.',
         already_fulfilled: true,
         client_id: lead.client_id,
+        public_id: publicId,
+        onboarding_step: onboardingStep,
       },
       { status: 409 }
     );
@@ -189,6 +207,12 @@ export async function POST(req: NextRequest) {
       stripe_subscription_id: session.subscriptionId,
       subscription_status:
         billingMode === 'self_serve_subscription' ? 'active' : null,
+      // Self-serve subscription buyers (Pulse / Pulse+) drop into the
+      // post-checkout onboarding wizard. One-time tiers (Audit /
+      // Strategy / Scan) skip it — they're served by the Cal.com
+      // embed on the success state instead.
+      onboarding_step:
+        billingMode === 'self_serve_subscription' ? 'gbp_match' : null,
     })
     .select('*')
     .single<ClientRow>();
@@ -382,6 +406,7 @@ export async function POST(req: NextRequest) {
         .filter(Boolean),
       failed_scan_count: failedScans.length,
       booking_url: bookingUrl,
+      onboarding_step: client.onboarding_step,
       message:
         "Your account is set up but one or more scans hit a transient error. We'll retry automatically and email you when they're complete.",
     });
@@ -456,6 +481,9 @@ export async function POST(req: NextRequest) {
     // success page can surface an inline "Book your call" CTA
     // without refetching from /api/orders/booking-link or similar.
     booking_url: bookingUrl,
+    // For self-serve subscription buyers, return the wizard step so
+    // the success page can render the OnboardingWizard inline.
+    onboarding_step: client.onboarding_step,
   });
 }
 

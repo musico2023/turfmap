@@ -34,6 +34,14 @@ export type BillingMode =
  *  can override manually via /api/clients/[id]/tier. */
 export type SubscriptionTier = 'pulse' | 'pulse_plus';
 
+/** Post-checkout onboarding wizard state for self-serve subscription
+ *  buyers. See migration 0020. */
+export type OnboardingStep =
+  | 'gbp_match'
+  | 'portal_users'
+  | 'competitors'
+  | 'done';
+
 export type SubscriptionStatus =
   | 'trialing'
   | 'active'
@@ -108,6 +116,11 @@ export type ClientRow = {
    *  marketing-tripwire buyers (Stripe customer.email is the
    *  authoritative source post-Checkout). */
   pending_buyer_email: string | null;
+  /** Post-checkout onboarding wizard state. Set by /api/orders/fulfill
+   *  for self-serve subscription buyers; advanced via the buyer-side
+   *  wizard surface (`/api/onboarding/[publicId]`). NULL for clients
+   *  not in a wizard flow. Added in migration 0020. */
+  onboarding_step: OnboardingStep | null;
   /** Per-client alert preferences (added in migration 0013). JSONB
    *  blob with the toggles + thresholds described in AlertPrefs. The
    *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs
