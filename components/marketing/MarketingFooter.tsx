@@ -79,7 +79,7 @@ export function MarketingFooter() {
           </p>
           <p className="font-mono text-zinc-600 flex items-center md:justify-end gap-3">
             <a
-              href="https://fourdots.io/privacy"
+              href="https://fourdots.io/privacy#turfmap-data-flows"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-zinc-300 transition-colors"
@@ -88,7 +88,7 @@ export function MarketingFooter() {
             </a>
             <span className="text-zinc-800">·</span>
             <a
-              href="https://fourdots.io/terms"
+              href="https://fourdots.io/terms#turfmap-billing"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-zinc-300 transition-colors"
