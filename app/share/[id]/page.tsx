@@ -326,6 +326,21 @@ export default async function PublicSharePage({
         </div>
 
         <div className="lg:col-span-4 space-y-4">
+          {/* Attribution eyebrow — same intent as on /portal: the
+              score family is the account holder's, not whoever the
+              heatmap is currently toggled to show. Especially
+              important on share links where the recipient may have
+              no prior context for whose territory they're looking
+              at. */}
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5 flex-wrap"
+            aria-label="Score attribution"
+          >
+            <span>Visibility for</span>
+            <span className="text-zinc-200 normal-case tracking-normal font-bold">
+              {client.business_name}
+            </span>
+          </div>
           <StatCard
             variant="hero"
             label="TurfScore™"

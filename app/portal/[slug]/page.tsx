@@ -398,6 +398,21 @@ export default async function ClientPortalPage({
         </div>
 
         <div className="lg:col-span-4 space-y-4">
+          {/* Attribution eyebrow — keeps the score family tied to the
+              account holder visually, even when the heatmap above
+              has been toggled to a competitor view. Without this,
+              the stacked-on-mobile layout makes it look like the
+              score numbers belong to whoever the heatmap is
+              currently showing. */}
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5 flex-wrap"
+            aria-label="Score attribution"
+          >
+            <span>Visibility for</span>
+            <span className="text-zinc-200 normal-case tracking-normal font-bold">
+              {client.business_name}
+            </span>
+          </div>
           <StatCard
             variant="hero"
             label="TurfScore™"
