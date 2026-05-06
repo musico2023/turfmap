@@ -37,7 +37,10 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { listLocations, resolveLocation } from '@/lib/supabase/locations';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { buildKeywordSuggestions } from '@/lib/keywords/suggestions';
-import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
+import {
+  isAgencyOwnerEmail,
+  requireAgencyUserOrRedirect,
+} from '@/lib/auth/agency';
 import { loadSubscriptionSummary } from '@/lib/stripe/subscription';
 import type { TrackedKeywordRow } from '@/lib/supabase/types';
 
@@ -270,8 +273,14 @@ export default async function ClientSettingsPage({
           {/* One-click conversion of self-serve buyers onto agency
            *  contracts. Hidden once the client is already
            *  agency_managed (the inner endpoint also rejects, but
-           *  hiding the card avoids the affordance entirely). */}
-          {showSubscriptionPanel && (
+           *  hiding the card avoids the affordance entirely).
+           *
+           *  Domain-gated to agency-owner emails (fourdots.ca /
+           *  fourdots.io) on top of the standard agency-staff check.
+           *  Contractors / future hires from other domains in the
+           *  `users` table won't see this destructive action. The
+           *  API endpoint also re-checks server-side. */}
+          {showSubscriptionPanel && isAgencyOwnerEmail(me.email) && (
             <ConvertToManagedCard
               clientId={client.id}
               currentTier={client.tier}

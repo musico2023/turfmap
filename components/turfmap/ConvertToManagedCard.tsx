@@ -93,11 +93,11 @@ export function ConvertToManagedCard({
             Convert to agency-managed
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed max-w-xl">
-            For when this self-serve buyer is now on a custom Local
-            Lead Machine contract billed outside Stripe. Cancels their
-            Stripe subscription, flips billing_mode to agency_managed,
-            and sets tier explicitly. The Stripe webhook stops
-            overwriting tier post-conversion.
+            For when this self-serve buyer is now on a custom contract
+            billed outside Stripe. Cancels their Stripe subscription,
+            flips billing_mode to agency_managed, and sets tier
+            explicitly. The Stripe webhook stops overwriting tier
+            post-conversion.
           </p>
         </div>
         {!expanded && (

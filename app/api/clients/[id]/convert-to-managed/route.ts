@@ -36,7 +36,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { requireAgencyUserForApi } from '@/lib/auth/agency';
+import {
+  isAgencyOwnerEmail,
+  requireAgencyUserForApi,
+} from '@/lib/auth/agency';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { getStripe } from '@/lib/stripe/client';
 import type { ClientRow } from '@/lib/supabase/types';
@@ -54,6 +57,22 @@ export async function POST(
 ) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
+
+  // Defense in depth — UI hides the affordance to non-agency-owner
+  // emails, but a request hitting the route directly still has to
+  // clear the domain gate. Self-serve → agency conversion is
+  // operationally significant (irreversible Stripe cancellation),
+  // so we keep it scoped to fourdots.ca / fourdots.io operators.
+  if (!isAgencyOwnerEmail(auth.email)) {
+    return NextResponse.json(
+      {
+        error:
+          'Restricted action — only agency-owner accounts can convert clients to agency-managed.',
+      },
+      { status: 403 }
+    );
+  }
+
   const { id: clientParam } = await params;
 
   let parsed: z.infer<typeof Body>;
