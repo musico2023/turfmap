@@ -383,10 +383,24 @@ export async function POST(req: NextRequest) {
   // so a transient Resend hiccup doesn't fail the order. The dashboard
   // success state on /order/success is still the primary delivery path
   // — email is the secondary "you can come back anytime" handoff.
+  // Pull the score family from the primary scan (= first one in
+  // scanResults; runs in keyword-order, primary keyword is index 0).
+  // For multi-keyword tiers (Strategy / Pulse+), the email surfaces
+  // the primary keyword's metrics — clearest single-number summary.
+  const primaryScanResult = scanResults[0];
+  const scanReadyMetrics =
+    primaryScanResult && primaryScanResult.ok
+      ? {
+          turfScore: primaryScanResult.turfScore,
+          turfReach: primaryScanResult.turfReach,
+          turfRank: primaryScanResult.turfRank,
+        }
+      : undefined;
   await sendScanReady({
     to: body.email,
     businessName: body.businessName.trim(),
     dashboardUrl,
+    metrics: scanReadyMetrics,
   });
   if (session.tier === 'pulse_plus') {
     // Pulse+ needs a richer NAP/category profile before BL Citation
