@@ -615,7 +615,10 @@ export function ClientSettingsForm({
           businessName={client.business_name}
         />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Monthly price (USD)">
+          <Field
+            label="Internal contract value (USD/mo)"
+            help="Optional record-keeping for agency-managed contracts. Not used by Stripe."
+          >
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">
                 $

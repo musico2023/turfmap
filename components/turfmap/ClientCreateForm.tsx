@@ -106,9 +106,6 @@ type Form = {
   country_code: string;
   industry: string;
   service_radius_miles: string;
-  /** User-facing dollar amount (e.g. "3500" or "3500.00"). Converted to
-   *  integer cents on submit to match the DB column. */
-  monthly_price_dollars: string;
   keyword: string;
   scan_frequency: 'weekly' | 'biweekly' | 'monthly' | 'daily';
 };
@@ -126,7 +123,6 @@ const initial: Form = {
   country_code: 'USA',
   industry: '',
   service_radius_miles: '1.6',
-  monthly_price_dollars: '',
   keyword: '',
   scan_frequency: 'weekly',
 };
@@ -278,15 +274,6 @@ export function ClientCreateForm() {
       },
     };
     if (form.industry) body.industry = form.industry;
-    if (form.monthly_price_dollars) {
-      const dollars = Number(form.monthly_price_dollars);
-      if (Number.isNaN(dollars) || dollars < 0) {
-        setError('monthly price must be a non-negative number');
-        return;
-      }
-      // Round to integer cents to dodge float drift on values like 99.99 → 9999.
-      body.monthly_price_cents = Math.round(dollars * 100);
-    }
 
     setSubmitting(true);
     try {
@@ -507,29 +494,19 @@ export function ClientCreateForm() {
         </Field>
       </Section>
 
-      {/* Billing — logo upload is handled on /clients/[id]/settings
-       *  after the row exists (LogoUploader needs the client UUID for
-       *  the storage path). Brand-accent color was removed: every
-       *  portal renders with the standard TurfMap lime + dark surfaces
+      {/* Internal contract value (formerly a Billing > Monthly Price
+       *  section here) is now editable from /clients/[id]/settings
+       *  only. It's optional metadata — no system surface reads it,
+       *  it's just a record-keeping affordance for agency-managed
+       *  contracts. Removing it from create-time keeps the
+       *  onboarding flow tight; the operator can fill it in later
+       *  when the contract value is finalized.
+       *
+       *  Logo upload is also handled in /clients/[id]/settings
+       *  (LogoUploader needs the client UUID for the storage path).
+       *  Brand-accent color was removed entirely: every portal
+       *  renders with the standard TurfMap lime + dark surfaces
        *  with only the logo varying per client. */}
-      <Section title="Billing">
-        <Field label="Monthly price (USD)" help="Optional. Stored as integer cents internally.">
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">
-              $
-            </span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.monthly_price_dollars}
-              onChange={(e) => update('monthly_price_dollars', e.target.value)}
-              placeholder="3500"
-              className={`${inputClass} pl-7`}
-            />
-          </div>
-        </Field>
-      </Section>
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-3 pt-2">
