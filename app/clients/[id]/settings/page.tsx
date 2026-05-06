@@ -185,7 +185,15 @@ export default async function ClientSettingsPage({
               client.billing_mode === 'agency_managed'
             }
           />
-          <LocationsManager clientId={client.public_id} locations={locations} />
+          <LocationsManager
+            clientId={client.public_id}
+            locations={locations}
+            tier={tierForGating}
+            selfServeBilling={
+              client.billing_mode === 'self_serve_subscription' &&
+              Boolean(client.stripe_subscription_id)
+            }
+          />
           <KeywordsManager
             clientId={client.id}
             locationId={activeLocation?.id ?? null}

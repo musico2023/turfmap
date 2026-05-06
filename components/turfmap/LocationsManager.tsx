@@ -3,8 +3,12 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronRight, MapPin, Plus, Trash2 } from 'lucide-react';
-import type { ClientLocationRow } from '@/lib/supabase/types';
+import type {
+  ClientLocationRow,
+  SubscriptionTier,
+} from '@/lib/supabase/types';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
+import { extraLocationDollarsForTier } from '@/lib/stripe/extraLocations';
 import { Button } from '@/components/ui/Button';
 import {
   AddressAutocomplete,
@@ -14,6 +18,15 @@ import {
 export type LocationsManagerProps = {
   clientId: string;
   locations: ClientLocationRow[];
+  /** Recurring tier — drives the per-location billing copy and the
+   *  add-location confirmation dialog. NULL for one_time / agency-
+   *  managed clients (no per-location billing). */
+  tier?: SubscriptionTier | null;
+  /** True iff this client has a Stripe self-serve subscription (i.e.
+   *  adding/removing locations actually triggers a Stripe quantity
+   *  update). False for agency-managed clients — they see the
+   *  location count but no billing copy. */
+  selfServeBilling?: boolean;
 };
 
 /**
@@ -31,14 +44,26 @@ export type LocationsManagerProps = {
  * Keeps the same visual language as KeywordsManager — operator stays
  * in the settings page; no modal navigation.
  */
-export function LocationsManager({ clientId, locations }: LocationsManagerProps) {
+export function LocationsManager({
+  clientId,
+  locations,
+  tier = null,
+  selfServeBilling = false,
+}: LocationsManagerProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [recentNotice, setRecentNotice] = useState<string | null>(null);
 
   const refresh = () => startTransition(() => router.refresh());
+
+  const extraDollars =
+    tier && selfServeBilling ? extraLocationDollarsForTier(tier) : 0;
+  const additionalCount = Math.max(0, locations.length - 1);
+  const monthlyExtras = additionalCount * extraDollars;
+  const showBillingLine = selfServeBilling && tier !== null;
 
   return (
     <div
@@ -69,6 +94,35 @@ export function LocationsManager({ clientId, locations }: LocationsManagerProps)
         </Button>
       </div>
 
+      {showBillingLine && (
+        <div
+          className="rounded-md border px-3 py-2 mb-3 text-xs flex items-center justify-between gap-3"
+          style={{
+            background: 'var(--color-bg)',
+            borderColor: 'var(--color-border)',
+            color: '#a1a1aa',
+          }}
+        >
+          <span>
+            <span className="text-zinc-300 font-semibold">
+              {locations.length} location{locations.length === 1 ? '' : 's'}
+            </span>{' '}
+            · 1 included
+            {additionalCount > 0 && (
+              <>
+                {' '}
+                + {additionalCount} additional × ${extraDollars}/mo
+              </>
+            )}
+          </span>
+          {monthlyExtras > 0 && (
+            <span className="font-mono text-zinc-200">
+              +${monthlyExtras}/mo
+            </span>
+          )}
+        </div>
+      )}
+
       {error && (
         <div
           className="border rounded-md p-3 mb-3 text-xs font-mono"
@@ -82,12 +136,29 @@ export function LocationsManager({ clientId, locations }: LocationsManagerProps)
         </div>
       )}
 
+      {recentNotice && (
+        <div
+          className="rounded-md border px-3 py-2 mb-3 text-xs"
+          style={{
+            background: 'rgba(197, 255, 58, 0.06)',
+            borderColor: 'rgba(197, 255, 58, 0.3)',
+            color: 'var(--color-lime, #c5ff3a)',
+          }}
+        >
+          {recentNotice}
+        </div>
+      )}
+
       {adding && (
         <AddLocationForm
           clientId={clientId}
+          existingLocationCount={locations.length}
+          tier={tier}
+          selfServeBilling={selfServeBilling}
           onCancel={() => setAdding(false)}
-          onAdded={() => {
+          onAdded={(notice) => {
             setAdding(false);
+            if (notice) setRecentNotice(notice);
             refresh();
           }}
           onError={setError}
@@ -150,13 +221,19 @@ export function LocationsManager({ clientId, locations }: LocationsManagerProps)
 
 function AddLocationForm({
   clientId,
+  existingLocationCount,
+  tier,
+  selfServeBilling,
   onCancel,
   onAdded,
   onError,
 }: {
   clientId: string;
+  existingLocationCount: number;
+  tier: SubscriptionTier | null;
+  selfServeBilling: boolean;
   onCancel: () => void;
-  onAdded: () => void;
+  onAdded: (notice?: string) => void;
   onError: (msg: string | null) => void;
 }) {
   const [label, setLabel] = useState('');
@@ -170,6 +247,16 @@ function AddLocationForm({
   // edit the freeform address afterward (so we don't ship stale
   // structured data with a hand-typed override).
   const [selected, setSelected] = useState<AddressFields | null>(null);
+
+  // Per-location billing — show a confirmation banner inline when the
+  // new location will trigger a $19/$29 add-on charge. The first
+  // location is included in the base tier, so the second + onward
+  // are the ones that bill. Agency-managed clients (selfServeBilling
+  // false) skip the banner entirely.
+  const willChargeExtra =
+    selfServeBilling && tier !== null && existingLocationCount >= 1;
+  const extraDollars =
+    selfServeBilling && tier ? extraLocationDollarsForTier(tier) : 0;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,13 +347,27 @@ function AddLocationForm({
           gbp_url: gbpUrl.trim() || null,
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        billing?: { ok: boolean; quantity?: number; message?: string } | null;
+      };
       if (!res.ok) {
         onError(data.error ?? `add failed (HTTP ${res.status})`);
         setSubmitting(false);
         return;
       }
-      onAdded();
+      // Surface a one-line proration notice on success when the
+      // location actually billed something. Stripe handles the
+      // proration math; we just narrate.
+      let notice: string | undefined;
+      if (willChargeExtra && data.billing?.ok) {
+        notice = `Location added. +$${extraDollars}/mo (prorated through next invoice).`;
+      } else if (data.billing && !data.billing.ok) {
+        // Location succeeded but Stripe sync didn't — flag for ops
+        // visibility so the operator can reconcile manually.
+        notice = `Location added. Stripe sync failed (${data.billing.message}). Reconcile in dashboard.`;
+      }
+      onAdded(notice);
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -280,6 +381,20 @@ function AddLocationForm({
       className="border rounded-md p-3 mb-2 space-y-2"
       style={{ borderColor: 'var(--color-border)', background: '#0d0d0d' }}
     >
+      {willChargeExtra && (
+        <div
+          className="rounded-md border px-3 py-2 text-xs"
+          style={{
+            background: 'rgba(255, 159, 58, 0.05)',
+            borderColor: 'rgba(255, 159, 58, 0.3)',
+            color: '#ffb86b',
+          }}
+        >
+          <strong>+${extraDollars}/mo</strong> per additional location on{' '}
+          {tier === 'pulse_plus' ? 'Pulse+' : 'Pulse'}. Stripe will prorate
+          the charge through your next invoice.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <input
           type="text"

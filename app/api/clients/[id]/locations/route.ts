@@ -18,7 +18,9 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { listLocations } from '@/lib/supabase/locations';
 import { resolveClientUuid } from '@/lib/supabase/client-lookup';
-import type { ClientLocationRow } from '@/lib/supabase/types';
+import { syncExtraLocationQuantity } from '@/lib/stripe/extraLocations';
+import { resolveTier } from '@/lib/subscription/tier';
+import type { ClientLocationRow, ClientRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
@@ -139,5 +141,44 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ location: row });
+  // Per-location billing — bump the extra-location item's quantity on
+  // the client's Stripe subscription if applicable. Best-effort: a
+  // Stripe failure here doesn't roll back the location row (the
+  // operator can manually reconcile via the Stripe dashboard, and the
+  // location still works for scans). Pulse / Pulse+ subs only;
+  // agency-managed and one_time clients no-op.
+  const { data: clientRow } = await supabase
+    .from('clients')
+    .select('id, billing_mode, tier, stripe_subscription_id')
+    .eq('id', clientId)
+    .maybeSingle<
+      Pick<
+        ClientRow,
+        'id' | 'billing_mode' | 'tier' | 'stripe_subscription_id'
+      >
+    >();
+  let billingNote: { ok: boolean; message?: string; quantity?: number } | null =
+    null;
+  if (
+    clientRow?.billing_mode === 'self_serve_subscription' &&
+    clientRow.stripe_subscription_id
+  ) {
+    const tier = resolveTier(clientRow);
+    if (tier) {
+      const { count: locationCount } = await supabase
+        .from('client_locations')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId);
+      const result = await syncExtraLocationQuantity({
+        subscriptionId: clientRow.stripe_subscription_id,
+        tier,
+        numLocations: locationCount ?? 1,
+      });
+      billingNote = result.ok
+        ? { ok: true, quantity: result.quantity }
+        : { ok: false, message: result.message };
+    }
+  }
+
+  return NextResponse.json({ location: row, billing: billingNote });
 }

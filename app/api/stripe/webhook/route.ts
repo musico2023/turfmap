@@ -141,28 +141,42 @@ export async function POST(req: Request) {
 
 type SupabaseLike = ReturnType<typeof getServerSupabase>;
 
-/** Resolve tier from the subscription's first item price, then write
- *  tier + subscription_status + stripe_subscription_id onto the
- *  client row matching the customer id. */
+/** Resolve tier by scanning ALL items on the subscription for one
+ *  matching a known base-tier price ID. Multi-item subs (post per-
+ *  location billing) carry a base item AND an extra-location item;
+ *  the base item is what determines the tier. Stripe doesn't
+ *  guarantee item ordering, so iterating beats reading items[0].
+ *
+ *  Then write tier + subscription_status + stripe_subscription_id
+ *  onto the client row matching the customer id. */
 async function syncSubscription(
   supabase: SupabaseLike,
   sub: Stripe.Subscription
 ): Promise<void> {
   const customerId =
     typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
-  const item = sub.items.data[0];
-  if (!item) {
+  if (sub.items.data.length === 0) {
     console.warn(
       `[stripe-webhook] subscription ${sub.id} has no items — skipping`
     );
     return;
   }
-  const priceId =
-    typeof item.price === 'string' ? item.price : item.price.id;
-  const tier = tierFromPriceId(priceId);
+  let tier: ReturnType<typeof tierFromPriceId> = null;
+  for (const item of sub.items.data) {
+    const priceId =
+      typeof item.price === 'string' ? item.price : item.price.id;
+    const candidate = tierFromPriceId(priceId);
+    if (candidate) {
+      tier = candidate;
+      break;
+    }
+  }
   if (!tier) {
+    const allPrices = sub.items.data
+      .map((i) => (typeof i.price === 'string' ? i.price : i.price.id))
+      .join(', ');
     console.warn(
-      `[stripe-webhook] subscription ${sub.id} on unknown price ${priceId} — skipping tier write`
+      `[stripe-webhook] subscription ${sub.id} has no items on a recognized tier price (saw: ${allPrices}) — skipping tier write`
     );
     return;
   }

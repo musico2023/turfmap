@@ -228,16 +228,39 @@ export async function updateSubscriptionPrice(args: {
   }
   try {
     const sub = await stripe.subscriptions.retrieve(args.subscriptionId);
-    const item = sub.items.data[0];
-    if (!item) {
+    if (sub.items.data.length === 0) {
       return {
         ok: false,
         kind: 'no_items',
         message: `subscription ${args.subscriptionId} has no items`,
       };
     }
+    // Multi-item subs (post per-location billing) carry a base item +
+    // an extra-location item. The price swap targets the BASE item —
+    // we identify it by checking which item maps to a known tier
+    // price (Pulse / Pulse+, monthly + annual). Stripe doesn't
+    // guarantee item ordering, so reading items[0] is unsafe.
+    const knownBasePrices = new Set(
+      [
+        process.env.NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY,
+        process.env.NEXT_PUBLIC_STRIPE_PRICE_PULSE_ANNUAL,
+        process.env.NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY,
+        process.env.NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_ANNUAL,
+      ].filter((p): p is string => Boolean(p))
+    );
+    const baseItem = sub.items.data.find((it) => {
+      const priceId = typeof it.price === 'string' ? it.price : it.price.id;
+      return knownBasePrices.has(priceId);
+    });
+    if (!baseItem) {
+      return {
+        ok: false,
+        kind: 'no_items',
+        message: `subscription ${args.subscriptionId} has no item on a recognized base-tier price`,
+      };
+    }
     await stripe.subscriptions.update(args.subscriptionId, {
-      items: [{ id: item.id, price: args.newPriceId }],
+      items: [{ id: baseItem.id, price: args.newPriceId }],
       proration_behavior: 'always_invoice',
     });
     return { ok: true, subscriptionId: args.subscriptionId };
