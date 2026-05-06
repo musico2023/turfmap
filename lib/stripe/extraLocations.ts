@@ -9,8 +9,8 @@
  * proration automatically.
  *
  * Public marketing pricing (line 429-432 of app/page.tsx):
- *   Pulse  → +$19/mo per additional location
- *   Pulse+ → +$29/mo per additional location
+ *   Pulse  → +$25/mo per additional location
+ *   Pulse+ → +$35/mo per additional location
  *
  * 3-month commitment:
  *   Subscription Schedules lock the subscription itself for 3 months
@@ -48,8 +48,8 @@ export function extraLocationPriceForTier(
  *  in dollars. Source of truth is Stripe — we use this only for UI
  *  copy that surfaces the cost before round-tripping to Stripe. */
 export function extraLocationDollarsForTier(tier: SubscriptionTier): number {
-  if (tier === 'pulse_plus') return 29;
-  if (tier === 'pulse') return 19;
+  if (tier === 'pulse_plus') return 35;
+  if (tier === 'pulse') return 25;
   return 0;
 }
 

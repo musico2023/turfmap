@@ -426,9 +426,9 @@ export default function MarketingLanding() {
               Multiple locations? Add them linearly.
             </span>{' '}
             <span className="text-zinc-400">
-              <span className="font-mono">+$19/mo</span> per additional
+              <span className="font-mono">+$25/mo</span> per additional
               location on Pulse,{' '}
-              <span className="font-mono">+$29/mo</span> on Pulse+. No tier
+              <span className="font-mono">+$35/mo</span> on Pulse+. No tier
               ladders, no per-location penalties.
             </span>
           </div>
