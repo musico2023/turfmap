@@ -45,6 +45,8 @@ export function KeywordsManager({
 }: KeywordsManagerProps) {
   const cap = maxKeywordsPerLocation(tier);
   const atCap = keywords.length >= cap;
+  const overage = Math.max(0, keywords.length - cap);
+  const isOverCap = overage > 0;
   const upgradeHint =
     tier === 'pulse' ? ' — upgrade to Pulse+ for 10' : '';
   const router = useRouter();
@@ -128,8 +130,20 @@ export function KeywordsManager({
             )}
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            {keywords.length} of {cap} keyword{cap === 1 ? '' : 's'} · scheduled
-            scans run on each keyword&apos;s frequency.
+            {isOverCap ? (
+              <>
+                <span style={{ color: '#ffb86b' }}>
+                  {keywords.length} keyword{keywords.length === 1 ? '' : 's'}
+                </span>{' '}
+                · {cap} included on plan, {overage} over · scheduled scans run on
+                each keyword&apos;s frequency.
+              </>
+            ) : (
+              <>
+                {keywords.length} of {cap} keyword{cap === 1 ? '' : 's'} ·
+                scheduled scans run on each keyword&apos;s frequency.
+              </>
+            )}
           </p>
         </div>
         <span
@@ -321,14 +335,23 @@ export function KeywordsManager({
         </label>
         {atCap && (
           <p className="text-xs text-zinc-500">
-            <span className="text-zinc-300 font-semibold">
-              {cap}/{cap} keyword slots used
+            <span
+              className="font-semibold"
+              style={{ color: isOverCap ? '#ffb86b' : '#e4e4e7' }}
+            >
+              {isOverCap
+                ? `${overage} over your ${cap}-keyword plan`
+                : `${cap}/${cap} keyword slots used`}
             </span>
-            {tier === 'pulse'
-              ? ' — Pulse+ unlocks 10 per location.'
-              : tier === 'pulse_plus'
-                ? ' — contact support to add custom slots.'
-                : ' — set a recurring tier to add more.'}
+            {isOverCap
+              ? tier === 'pulse'
+                ? ` — remove ${overage} to add new, or upgrade to Pulse+ for 10.`
+                : ` — remove ${overage} to add new, or contact support.`
+              : tier === 'pulse'
+                ? ' — Pulse+ unlocks 10 per location.'
+                : tier === 'pulse_plus'
+                  ? ' — contact support to add custom slots.'
+                  : ' — set a recurring tier to add more.'}
           </p>
         )}
         {error && (
