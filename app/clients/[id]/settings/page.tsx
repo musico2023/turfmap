@@ -233,9 +233,12 @@ export default async function ClientSettingsPage({
           {isRecurring && (
             <AlertPrefsCard
               clientId={client.id}
+              clientPublicId={client.public_id}
               tier={tierForGating}
               initialPrefs={client.alert_prefs ?? null}
-              initialSlackWebhookUrl={client.slack_webhook_url ?? null}
+              slackTeamName={client.slack_team_name ?? null}
+              slackChannelName={client.slack_channel_name ?? null}
+              slackConnected={Boolean(client.slack_webhook_url)}
             />
           )}
           {/* ExportsCard is Pulse+ only — exports are gated. */}

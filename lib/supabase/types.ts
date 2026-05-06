@@ -104,10 +104,20 @@ export type ClientRow = {
    *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs
    *  fills any missing keys for backward compat. */
   alert_prefs: AlertPrefs | null;
-  /** Slack incoming-webhook URL. Operator pastes it from Slack's
-   *  Apps → Incoming Webhooks UI. We POST alerts to this URL. Null
-   *  means Slack delivery is disabled for this client. */
+  /** Slack incoming-webhook URL. Set by the OAuth flow at
+   *  /api/integrations/slack/callback (post-migration 0015). Pre-OAuth
+   *  this column was operator-pasted; the new flow writes the
+   *  per-channel webhook Slack returns from the incoming-webhook
+   *  scope. Null means Slack delivery is disabled for this client. */
   slack_webhook_url: string | null;
+  /** Slack workspace display name (e.g. "Acme Corp"). Captured at
+   *  OAuth time alongside slack_webhook_url for UI display only —
+   *  alert dispatch only cares about the webhook URL. Added in
+   *  migration 0015. */
+  slack_team_name: string | null;
+  /** Slack channel display name (e.g. "#alerts"). Captured at OAuth
+   *  time. UI display only. Added in migration 0015. */
+  slack_channel_name: string | null;
   /** Looker Studio access token. Per-client random string the
    *  operator generates from the Exports card; Looker authenticates
    *  on token alone. Null means Looker export is disabled. */
