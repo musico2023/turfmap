@@ -49,6 +49,21 @@ export function KeywordsManager({
   const isOverCap = overage > 0;
   const upgradeHint =
     tier === 'pulse' ? ' — upgrade to Pulse+ for 10' : '';
+
+  // Determine which keywords are inside vs outside the tier cap.
+  // Same ordering as the cron and /api/scans/trigger: primary first,
+  // then earliest-created. The first `cap` rows are scannable; the
+  // rest render with a "scans paused" badge. Backend enforces the
+  // same cutoff — this is purely UI affordance.
+  const orderedForCap = [...keywords].sort((a, b) => {
+    const ap = a.is_primary ? 1 : 0;
+    const bp = b.is_primary ? 1 : 0;
+    if (ap !== bp) return bp - ap; // primary first
+    const at = a.created_at ?? '';
+    const bt = b.created_at ?? '';
+    return at.localeCompare(bt);
+  });
+  const overCapIds = new Set(orderedForCap.slice(cap).map((k) => k.id));
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -173,48 +188,74 @@ export function KeywordsManager({
             this client.
           </div>
         ) : (
-          keywords.map((k) => (
-            <div
-              key={k.id}
-              className="flex items-center gap-3 px-3 py-2 rounded-md border"
-              style={{
-                background: 'var(--color-bg)',
-                borderColor: 'var(--color-border)',
-              }}
-            >
-              <span className="font-mono text-sm text-zinc-100 flex-1 truncate">
-                {k.keyword}
-              </span>
-              {k.is_primary && (
-                <span
-                  className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border"
-                  style={{
-                    background: '#1a2010',
-                    color: 'var(--color-lime)',
-                    borderColor: 'var(--color-border-bright)',
-                  }}
-                >
-                  PRIMARY
-                </span>
-              )}
-              <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
-                {k.scan_frequency ?? 'weekly'}
-              </span>
-              <button
-                type="button"
-                onClick={() => onDelete(k.id)}
-                disabled={busy === k.id}
-                title="Remove keyword"
-                className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-50"
+          keywords.map((k) => {
+            const overCap = overCapIds.has(k.id);
+            return (
+              <div
+                key={k.id}
+                className="flex items-center gap-3 px-3 py-2 rounded-md border transition-opacity"
+                style={{
+                  background: 'var(--color-bg)',
+                  borderColor: overCap
+                    ? 'rgba(255, 159, 58, 0.25)'
+                    : 'var(--color-border)',
+                  opacity: overCap ? 0.7 : 1,
+                }}
+                title={
+                  overCap
+                    ? `Over your ${cap}-keyword plan — scheduled and on-demand scans are paused for this keyword. Remove an earlier keyword or upgrade to resume scanning.`
+                    : undefined
+                }
               >
-                {busy === k.id ? (
-                  <Activity size={14} className="animate-pulse" />
-                ) : (
-                  <Trash2 size={14} />
+                <span
+                  className={`font-mono text-sm flex-1 truncate ${overCap ? 'text-zinc-400 line-through decoration-zinc-600' : 'text-zinc-100'}`}
+                >
+                  {k.keyword}
+                </span>
+                {k.is_primary && (
+                  <span
+                    className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border"
+                    style={{
+                      background: '#1a2010',
+                      color: 'var(--color-lime)',
+                      borderColor: 'var(--color-border-bright)',
+                    }}
+                  >
+                    PRIMARY
+                  </span>
                 )}
-              </button>
-            </div>
-          ))
+                {overCap && (
+                  <span
+                    className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border flex items-center gap-1"
+                    style={{
+                      background: 'rgba(255, 159, 58, 0.06)',
+                      color: '#ffb86b',
+                      borderColor: 'rgba(255, 159, 58, 0.3)',
+                    }}
+                  >
+                    <Lock size={9} />
+                    SCANS PAUSED
+                  </span>
+                )}
+                <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                  {k.scan_frequency ?? 'weekly'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onDelete(k.id)}
+                  disabled={busy === k.id}
+                  title="Remove keyword"
+                  className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                >
+                  {busy === k.id ? (
+                    <Activity size={14} className="animate-pulse" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
 

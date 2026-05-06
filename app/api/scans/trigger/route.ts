@@ -33,6 +33,8 @@ import { resolveLocation } from '@/lib/supabase/locations';
 import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import { runScanForLocation } from '@/lib/scans/runScan';
 import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
+import { isKeywordWithinCap } from '@/lib/subscription/keywordCap';
+import { tierLabel } from '@/lib/subscription/tier';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 // Avoid IPv6 ENOTFOUND flakes on dual-stack networks.
@@ -157,6 +159,29 @@ async function runScanTrigger(req: Request) {
     return NextResponse.json(
       { error: 'no tracked keyword found for this location' },
       { status: 400 }
+    );
+  }
+
+  // Tier cap: over-cap keywords don't fire scans (scheduled or
+  // on-demand). The first `cap` keywords by (is_primary DESC,
+  // created_at ASC) per location stay scannable; the rest are
+  // visible in the dashboard but inert until the operator either
+  // removes one or upgrades. See lib/subscription/keywordCap.
+  const cap = await isKeywordWithinCap(supabase, {
+    clientId,
+    locationId: location.id,
+    keywordId: keywordRow.id,
+  });
+  if (!cap.inCap) {
+    return NextResponse.json(
+      {
+        error: `Over your ${tierLabel(cap.tier)} plan: this keyword is #${cap.position} of ${cap.cap} included. Remove an earlier keyword or upgrade to scan it.`,
+        kind: 'over_cap',
+        cap: cap.cap,
+        position: cap.position,
+        tier: cap.tier,
+      },
+      { status: 403 }
     );
   }
 
