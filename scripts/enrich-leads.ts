@@ -1,37 +1,41 @@
 /**
  * Outreach-lead enrichment.
  *
- * Takes a CSV of past Fourdots leads (Business Name + Email + Tags),
- * looks up each business via Google Places, runs a real DataForSEO
- * Local Pack scan against their geocoded location, and emits an
- * enriched output CSV with TurfScore + top competitor + a public
- * share-link URL each prospect can click.
+ * TWO MODES:
  *
- * Run with:
- *   npm run enrich:leads -- \
- *     --input  /path/to/Export_Contacts_All_…csv \
- *     --output ./outreach-tier-a.csv \
- *     --limit  50 \
- *     --tag    dfy-strategy-call-booked \
- *     --skip-tag llm,signed,dfy-onboarding,dfy-onboarding-call-booked
+ * 1) Single-pass (legacy):
+ *    Takes a raw lead CSV, does Places lookup + DFS scan + share-link
+ *    creation in one shot.
+ *      npm run enrich:leads -- --input <leads.csv> --output <out.csv> \
+ *        --tag llm,llm-form-submit
+ *
+ * 2) Two-phase via preview (recommended):
+ *    Phase 1: scripts/preview-leads.ts does only the Places lookup
+ *    and emits a review CSV with match details + derived keyword +
+ *    confidence flag. Operator reviews/edits in a spreadsheet (override
+ *    keywords, mark skip='y' for bad matches).
+ *    Phase 2: this script reads the reviewed CSV via --from-preview
+ *    and runs only the DFS scans + share-link generation on rows the
+ *    operator confirmed.
+ *      npm run preview:leads -- --input <leads.csv> --output <preview.csv>
+ *      # (operator edits preview.csv)
+ *      npm run enrich:leads -- --from-preview <preview.csv> --output <out.csv>
  *
  * Flags:
- *   --input   <path>     CSV path (required)
- *   --output  <path>     output CSV (required)
- *   --limit   <N>        cap rows processed (default: all)
- *   --tag     <name,…>   only process rows containing one of these tags
- *   --skip-tag <name,…>  exclude rows containing any of these tags
- *   --dry-run            list what would be processed; no API calls
- *   --share-cta-text  <s>  override the share-link's CTA headline
- *   --share-cta-url   <s>  override the share-link's CTA destination
- *   --share-days      <N>  share-link expiry in days (default: 90)
+ *   --from-preview <path>   reviewed-preview CSV — phase 2 mode
+ *   --input   <path>        raw lead CSV — single-pass mode
+ *   --output  <path>        output CSV (required, both modes)
+ *   --limit   <N>           cap rows processed
+ *   --tag     <name,…>      single-pass: only these tags
+ *   --skip-tag <name,…>     single-pass: exclude these tags
+ *   --dry-run               list what would be processed; no API calls
+ *   --share-cta-text  <s>   override the share-link's CTA headline
+ *   --share-cta-url   <s>   override the share-link's CTA destination
+ *   --share-days      <N>   share-link expiry in days (default: 90)
  *
- * Cost (per lead):
- *   - Google Places search + details:  ~$0.025
- *   - DataForSEO Live scan (81 grid):  ~$0.162
- *   - Total:                            ~$0.19 per lead
- *
- * 50 leads ≈ $9.50, 250 leads ≈ $47.50.
+ * Cost:
+ *   - Single-pass:    ~$0.19 per lead (Places + DFS)
+ *   - From-preview:   ~$0.16 per scanned row (DFS only — Places paid in phase 1)
  *
  * Idempotency: rows are matched by lead email — re-runs skip leads
  * we've already enriched (look for an existing clients row tagged
@@ -93,9 +97,14 @@ const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
 async function main() {
   const args = parseArgs();
 
+  // Phase 2: reviewed-preview CSV → DFS scans + share links only.
+  if (args.fromPreview) {
+    return mainFromPreview(args);
+  }
+
   if (!args.input || !args.output) {
     console.error(
-      'Usage: npm run enrich:leads -- --input <csv> --output <csv> [--limit N] [--tag a,b] [--skip-tag c,d] [--dry-run] [--share-days N]'
+      'Usage:\n  Single-pass:   npm run enrich:leads -- --input <leads.csv> --output <csv> [--tag a,b] [--skip-tag c,d]\n  From preview:  npm run enrich:leads -- --from-preview <preview.csv> --output <csv>'
     );
     process.exit(1);
   }
@@ -188,6 +197,316 @@ async function main() {
   console.log(`Total cost: $${(totalCostCents / 100).toFixed(2)}`);
   console.log(`Output: ${args.output}`);
 }
+
+// ─── Phase 2: from-preview mode ──────────────────────────────────────────
+
+type PreviewRow = {
+  email: string;
+  business_name: string;
+  match_status: string;
+  place_id: string;
+  matched_name: string;
+  matched_address: string;
+  matched_category: string;
+  matched_lat: string;
+  matched_lng: string;
+  derived_keyword: string;
+  keyword_override: string;
+  skip: string;
+};
+
+async function mainFromPreview(args: Args) {
+  if (!args.output) {
+    console.error('--from-preview requires --output');
+    process.exit(1);
+  }
+  const rows = readPreviewCsv(args.fromPreview);
+  const eligible = rows.filter(
+    (r) => r.match_status === 'matched' && !truthy(r.skip)
+  );
+  const work = args.limit ? eligible.slice(0, args.limit) : eligible;
+
+  console.log(
+    `[enrich-leads] from-preview rows=${rows.length} eligible=${eligible.length} processing=${work.length}${args.dryRun ? ' (dry-run)' : ''}`
+  );
+
+  if (args.dryRun) {
+    for (const r of work.slice(0, 25)) {
+      const kw = (r.keyword_override || r.derived_keyword || '(no keyword)').trim();
+      console.log(`  - ${r.business_name} → "${kw}"  [${r.email}]`);
+    }
+    if (work.length > 25) console.log(`  …and ${work.length - 25} more`);
+    console.log(`\nEstimated DFS cost: ~$${(work.length * 0.16).toFixed(2)}`);
+    return;
+  }
+
+  if (!process.env.GOOGLE_PLACES_API_KEY) {
+    console.error('GOOGLE_PLACES_API_KEY is not set in .env.local.');
+    process.exit(1);
+  }
+
+  const supabase = getServerSupabase();
+  const results: EnrichmentResult[] = [];
+  let totalCostCents = 0;
+
+  for (let i = 0; i < work.length; i++) {
+    const r = work[i];
+    const tag = `[${i + 1}/${work.length}] ${r.business_name} (${r.email})`;
+    console.log(tag);
+
+    // Idempotency — skip if we already enriched this lead.
+    const { data: existing } = await supabase
+      .from('clients')
+      .select('id, public_id')
+      .eq('is_outreach_lead', true)
+      .eq('pending_buyer_email', r.email)
+      .maybeSingle<{ id: string; public_id: string }>();
+    if (existing) {
+      console.log(`  ↻ already enriched (client ${existing.public_id})`);
+      results.push({
+        email: r.email,
+        businessName: r.business_name,
+        status: 'already_enriched',
+      });
+      continue;
+    }
+
+    const result = await enrichFromPreviewedRow({
+      supabase,
+      row: r,
+      shareDays: args.shareDays ?? DEFAULT_SHARE_DAYS,
+      shareCtaText: args.shareCtaText ?? DEFAULT_SHARE_CTA_TEXT,
+      shareCtaUrl: args.shareCtaUrl ?? DEFAULT_SHARE_CTA_URL,
+    });
+    results.push(result);
+    if (result.costCents) totalCostCents += result.costCents;
+
+    if (result.status === 'enriched') {
+      console.log(
+        `  ✓ TurfScore ${result.turfScore} · top: ${result.topCompetitor ?? '(none)'} · ${result.shareUrl}`
+      );
+    } else {
+      console.log(`  ${result.status === 'failed' ? '✗' : '–'} ${result.reason ?? result.status}`);
+    }
+  }
+
+  writeResults(args.output, results);
+  console.log(
+    `\n[enrich-leads] done. enriched=${results.filter((r) => r.status === 'enriched').length} skipped=${results.filter((r) => r.status === 'skipped').length} failed=${results.filter((r) => r.status === 'failed').length} already=${results.filter((r) => r.status === 'already_enriched').length}`
+  );
+  console.log(`Total cost: $${(totalCostCents / 100).toFixed(2)}`);
+  console.log(`Output: ${args.output}`);
+}
+
+async function enrichFromPreviewedRow(args: {
+  supabase: ReturnType<typeof getServerSupabase>;
+  row: PreviewRow;
+  shareDays: number;
+  shareCtaText: string;
+  shareCtaUrl: string;
+}): Promise<EnrichmentResult> {
+  const { supabase, row } = args;
+  const businessName = row.business_name.trim();
+  const keyword = (row.keyword_override || row.derived_keyword).trim().toLowerCase();
+  if (!keyword) {
+    return {
+      email: row.email,
+      businessName,
+      status: 'skipped',
+      reason: 'no keyword (derived empty + no override)',
+    };
+  }
+  const lat = Number(row.matched_lat);
+  const lng = Number(row.matched_lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return {
+      email: row.email,
+      businessName,
+      status: 'skipped',
+      reason: 'matched lat/lng missing or invalid',
+    };
+  }
+
+  const { data: client, error: clientErr } = await supabase
+    .from('clients')
+    .insert({
+      business_name: businessName,
+      address: row.matched_address || null,
+      latitude: lat,
+      longitude: lng,
+      service_radius_miles: 1.6,
+      status: 'paused',
+      billing_mode: 'agency_managed',
+      is_outreach_lead: true,
+      pending_buyer_email: row.email,
+      industry: row.matched_category || null,
+    })
+    .select('*')
+    .single<ClientRow>();
+  if (clientErr || !client) {
+    return {
+      email: row.email,
+      businessName,
+      status: 'failed',
+      reason: `client insert: ${clientErr?.message ?? 'no row'}`,
+    };
+  }
+
+  const { data: location, error: locErr } = await supabase
+    .from('client_locations')
+    .insert({
+      client_id: client.id,
+      is_primary: true,
+      label: businessName,
+      address: row.matched_address || null,
+      latitude: lat,
+      longitude: lng,
+      service_radius_miles: 1.6,
+      google_place_id: row.place_id || null,
+      google_place_match_status: 'manual',
+    })
+    .select('*')
+    .single<ClientLocationRow>();
+  if (locErr || !location) {
+    await supabase.from('clients').delete().eq('id', client.id);
+    return {
+      email: row.email,
+      businessName,
+      status: 'failed',
+      reason: `location insert: ${locErr?.message ?? 'no row'}`,
+    };
+  }
+
+  const { data: kw, error: kwErr } = await supabase
+    .from('tracked_keywords')
+    .insert({
+      client_id: client.id,
+      location_id: location.id,
+      keyword,
+      is_primary: true,
+    })
+    .select('*')
+    .single<TrackedKeywordRow>();
+  if (kwErr || !kw) {
+    await supabase.from('clients').delete().eq('id', client.id);
+    return {
+      email: row.email,
+      businessName,
+      status: 'failed',
+      reason: `keyword insert: ${kwErr?.message ?? 'no row'}`,
+    };
+  }
+
+  const scanResult = await runScanForLocation(supabase, {
+    client: { id: client.id, business_name: businessName },
+    location,
+    keyword: { id: kw.id, keyword },
+    scanType: 'on_demand',
+    triggeredBy: null,
+  });
+  if (!scanResult.ok) {
+    await supabase.from('clients').delete().eq('id', client.id);
+    return {
+      email: row.email,
+      businessName,
+      status: 'failed',
+      reason: `scan: ${scanResult.error}`,
+      keyword,
+    };
+  }
+
+  const topCompetitor = await findTopCompetitor(
+    supabase,
+    scanResult.scanId,
+    businessName
+  );
+  const expiresAt = new Date(
+    Date.now() + args.shareDays * 24 * 60 * 60 * 1000
+  ).toISOString();
+  const { data: link, error: linkErr } = await supabase
+    .from('scan_share_links')
+    .insert({
+      scan_id: scanResult.scanId,
+      expires_at: expiresAt,
+      cta_text: args.shareCtaText,
+      cta_url: args.shareCtaUrl,
+    })
+    .select('id')
+    .single<{ id: string }>();
+  if (linkErr || !link) {
+    return {
+      email: row.email,
+      businessName,
+      status: 'failed',
+      reason: `share link: ${linkErr?.message ?? 'no row'}`,
+      keyword,
+      turfScore: scanResult.turfScore,
+      turfReach: scanResult.turfReach,
+      turfRank: scanResult.turfRank,
+      topCompetitor,
+      costCents: scanResult.dfsCostCents,
+    };
+  }
+
+  return {
+    email: row.email,
+    businessName,
+    status: 'enriched',
+    matchedAddress: row.matched_address || null,
+    matchedCategory: row.matched_category || null,
+    keyword,
+    turfScore: scanResult.turfScore,
+    turfReach: scanResult.turfReach,
+    turfRank: scanResult.turfRank,
+    topCompetitor,
+    shareUrl: `${APP_ORIGIN}/share/${link.id}`,
+    costCents: scanResult.dfsCostCents,
+  };
+}
+
+function truthy(v: string | undefined): boolean {
+  if (!v) return false;
+  const s = v.trim().toLowerCase();
+  return s === 'y' || s === 'yes' || s === 'true' || s === '1' || s === 'x';
+}
+
+function readPreviewCsv(filePath: string): PreviewRow[] {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const lines = raw.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length < 2) return [];
+  const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
+  const idx = (name: string) => header.findIndex((h) => h === name);
+  const KEYS: Array<keyof PreviewRow> = [
+    'email',
+    'business_name',
+    'match_status',
+    'place_id',
+    'matched_name',
+    'matched_address',
+    'matched_category',
+    'matched_lat',
+    'matched_lng',
+    'derived_keyword',
+    'keyword_override',
+    'skip',
+  ];
+  const indices = Object.fromEntries(KEYS.map((k) => [k, idx(k)])) as Record<
+    keyof PreviewRow,
+    number
+  >;
+  const rows: PreviewRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCsvLine(lines[i]);
+    const r: Partial<PreviewRow> = {};
+    for (const k of KEYS) {
+      r[k] = (indices[k] >= 0 ? cells[indices[k]] : '') ?? '';
+    }
+    rows.push(r as PreviewRow);
+  }
+  return rows;
+}
+
+// ─── Single-pass mode (legacy) ───────────────────────────────────────────
 
 async function enrichOne(args: {
   supabase: ReturnType<typeof getServerSupabase>;
@@ -482,6 +801,7 @@ function deriveKeyword(
 
 type Args = {
   input: string;
+  fromPreview: string;
   output: string;
   limit: number | null;
   tags: string[] | null;
@@ -501,6 +821,7 @@ function parseArgs(): Args {
   };
   return {
     input: get('--input') ?? '',
+    fromPreview: get('--from-preview') ?? '',
     output: get('--output') ?? '',
     limit: get('--limit') ? Number(get('--limit')) : null,
     tags: get('--tag')?.split(',').map((s) => s.trim()) ?? null,

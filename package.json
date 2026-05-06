@@ -16,6 +16,7 @@
     "init:storage": "tsx scripts/init-storage.ts",
     "bl:directories": "tsx scripts/list-bl-directories.ts",
     "backfill:gbp": "tsx scripts/backfill-gbp.ts",
+    "preview:leads": "tsx scripts/preview-leads.ts",
     "enrich:leads": "tsx scripts/enrich-leads.ts"
   },
   "dependencies": {
