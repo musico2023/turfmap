@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Order session not found in our records. Email anthony@fourdots.io with your Stripe session id and we'll fire your scan manually.",
+          "Order session not found in our records. Email support@turfmap.ai with your Stripe session id and we'll fire your scan manually.",
       },
       { status: 404 }
     );
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "We couldn't locate that address — please double-check the spelling. If it's correct, email anthony@fourdots.io and we'll fire your scan manually.",
+          "We couldn't locate that address — please double-check the spelling. If it's correct, email support@turfmap.ai and we'll fire your scan manually.",
       },
       { status: 422 }
     );
@@ -460,7 +460,7 @@ function errorForLoadSession(err: LoadSessionError): NextResponse {
     case 'invalid_tier':
       return NextResponse.json(
         {
-          error: `Stripe session is missing a recognized tier (got "${err.tierValue ?? 'null'}"). Email anthony@fourdots.io with your session id.`,
+          error: `Stripe session is missing a recognized tier (got "${err.tierValue ?? 'null'}"). Email support@turfmap.ai with your session id.`,
         },
         { status: 400 }
       );

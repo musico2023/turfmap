@@ -19,7 +19,7 @@
  *                                  but the domain must be verified at
  *                                  resend.com before sends will land)
  *   RESEND_REPLY_TO              — optional; defaults to
- *                                  "anthony@fourdots.io" so buyers can
+ *                                  "support@turfmap.ai" so buyers can
  *                                  hit-reply for support
  */
 
@@ -57,7 +57,7 @@ import {
 let cached: Resend | null = null;
 
 const DEFAULT_FROM = 'TurfMap <noreply@turfmap.ai>';
-const DEFAULT_REPLY_TO = 'anthony@fourdots.io';
+const DEFAULT_REPLY_TO = 'support@turfmap.ai';
 
 /** Returns a singleton Resend instance, or null if RESEND_API_KEY
  *  isn't configured. Senders below already handle null gracefully —

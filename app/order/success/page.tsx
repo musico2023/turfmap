@@ -220,7 +220,7 @@ async function validateAndRecordSession(
         return {
           kind: 'warning',
           message:
-            "We couldn't locate your Stripe session. If you completed payment, email anthony@fourdots.io with your receipt and we'll fulfill manually.",
+            "We couldn't locate your Stripe session. If you completed payment, email support@turfmap.ai with your receipt and we'll fulfill manually.",
         };
       case 'payment_not_complete':
         return {
@@ -231,7 +231,7 @@ async function validateAndRecordSession(
         return {
           kind: 'warning',
           message:
-            "Your Stripe session doesn't have a recognized tier. Email anthony@fourdots.io with your session id.",
+            "Your Stripe session doesn't have a recognized tier. Email support@turfmap.ai with your session id.",
         };
       case 'stripe_error':
         return {

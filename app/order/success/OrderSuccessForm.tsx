@@ -87,7 +87,7 @@ export function OrderSuccessForm({
     }
     if (!sessionId) {
       return setError(
-        'Order session id is missing — checkout link looks malformed. Email anthony@fourdots.io and we will fire your scan manually.'
+        'Order session id is missing — checkout link looks malformed. Email support@turfmap.ai and we will fire your scan manually.'
       );
     }
 
@@ -134,7 +134,7 @@ export function OrderSuccessForm({
       // copy that points the buyer at email-based recovery.
       if (res.status === 404) {
         setError(
-          "Order intake isn't fully wired yet. We saw your payment — email anthony@fourdots.io with these details and we'll fire your scan manually."
+          "Order intake isn't fully wired yet. We saw your payment — email support@turfmap.ai with these details and we'll fire your scan manually."
         );
         setBusy(false);
         return;
