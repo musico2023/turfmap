@@ -30,40 +30,54 @@ const FADE_MS = 350;
 
 function RotatingLabel() {
   const [idx, setIdx] = useState(0);
-  const [visible, setVisible] = useState(true);
   useEffect(() => {
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      setVisible(false);
-      window.setTimeout(() => {
-        if (cancelled) return;
-        setIdx((i) => (i + 1) % ROTATING_LABELS.length);
-        setVisible(true);
-      }, FADE_MS);
-    };
-    const t = window.setInterval(tick, ROTATE_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(t);
-    };
+    const t = window.setInterval(() => {
+      setIdx((i) => (i + 1) % ROTATING_LABELS.length);
+    }, ROTATE_MS);
+    return () => window.clearInterval(t);
   }, []);
+  // Cross-fade implementation. All labels are stacked absolutely
+  // inside an inline-block container; the active one is at opacity 1
+  // and the rest at 0, both transitioning over FADE_MS. At any moment
+  // during a swap, the outgoing label is fading 1→0 *while* the
+  // incoming is fading 0→1 — there is never a frame where no label
+  // is rendered. Replaces the prior single-span fade-out / swap /
+  // fade-in approach which had a ~FADE_MS window with the eyebrow
+  // reading "...local · from $99" with the vertical missing.
+  //
+  // Container needs explicit height + line-height:1 because absolute
+  // children don't contribute to the inline-block's layout box; the
+  // 1em / lh:1 keeps the eyebrow vertically aligned with the
+  // surrounding "Google Maps audit for local … · from $99" text.
   return (
     <span
-      // Fixed width so layout doesn't shift across the 7-11 char label
-      // range. Inline-block + min-width so the surrounding eyebrow
-      // characters stay glued together.
       style={{
+        position: 'relative',
         display: 'inline-block',
         minWidth: '11ch',
+        height: '1em',
+        lineHeight: 1,
         textAlign: 'left',
-        color: 'var(--color-lime)',
-        opacity: visible ? 1 : 0,
-        transition: `opacity ${FADE_MS}ms ease-in-out`,
+        verticalAlign: 'baseline',
       }}
       aria-live="polite"
     >
-      {ROTATING_LABELS[idx]}
+      {ROTATING_LABELS.map((label, i) => (
+        <span
+          key={label}
+          aria-hidden={i !== idx}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            color: 'var(--color-lime)',
+            opacity: i === idx ? 1 : 0,
+            transition: `opacity ${FADE_MS}ms ease-in-out`,
+          }}
+        >
+          {label}
+        </span>
+      ))}
     </span>
   );
 }
@@ -125,8 +139,11 @@ export function MarketingHero() {
           <p className="text-zinc-300 text-lg md:text-xl leading-relaxed max-w-xl mb-8">
             TurfMap runs an 81-point geo-grid scan across your service area and
             shows you, cell by cell, where you appear in Google&rsquo;s local
-            3-pack. Most local businesses are invisible to two-thirds
-            of the people searching for them. Find out what your map looks
+            3-pack. Most local businesses are invisible to{' '}
+            <strong className="font-semibold text-zinc-100">
+              two-thirds of the people
+            </strong>
+            {' '}searching for them. Find out what your map looks
             like.
           </p>
           <div className="flex flex-wrap items-center gap-3">

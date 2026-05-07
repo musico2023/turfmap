@@ -91,9 +91,11 @@ export default function MarketingLanding() {
           <>
             Google personalizes local results by physical location. Someone
             searching from across town sees a completely different 3-pack than
-            someone next door. A single rank check from your laptop tells you
-            almost nothing about whether your service-area neighbors can find
-            you.
+            someone next door. A single rank check from your laptop tells you{' '}
+            <strong className="font-semibold text-zinc-200">
+              almost nothing
+            </strong>{' '}
+            about whether your service-area neighbors can find you.
           </>
         }
       >
@@ -151,7 +153,16 @@ export default function MarketingLanding() {
             A prioritized fix list. <em>In plain English.</em>
           </>
         }
-        intro="Every TurfScan ends with a fix list. Three prioritized actions specific to your business and category, written by our AI Coach from your real audit data — not generic SEO advice. You walk away knowing what to fix, in what order."
+        intro={
+          <>
+            Every TurfScan ends with a fix list. Three prioritized actions
+            specific to your business and category, written by our AI Coach
+            from your real audit data — not generic SEO advice.{' '}
+            <strong className="font-semibold text-zinc-200">
+              You walk away knowing what to fix, in what order.
+            </strong>
+          </>
+        }
         headerAside={<CoachSignature />}
         tint
       >
@@ -403,8 +414,10 @@ export default function MarketingLanding() {
             <>
               Get an audit. We scan your territory, diagnose what&rsquo;s
               breaking your visibility, and walk you through what to fix
-              — once. Hand the report to your team, share it with a
-              freelancer, or use it to evaluate vendors.
+              —{' '}
+              <strong className="font-semibold text-zinc-100">once</strong>
+              . Hand the report to your team, share it with a freelancer,
+              or use it to evaluate vendors.
             </>
           }
           comparison={
@@ -436,8 +449,11 @@ export default function MarketingLanding() {
           body={
             <>
               Get a subscription. We track your visibility weekly, alert
-              you when it shifts, and (on Pulse+) build and maintain
-              citations across ~25 industry directories on your behalf.
+              you when it shifts, and (on Pulse+){' '}
+              <strong className="font-semibold text-zinc-100">
+                build and maintain citations
+              </strong>{' '}
+              across ~25 industry directories on your behalf.
             </>
           }
         />
@@ -684,7 +700,20 @@ export default function MarketingLanding() {
             See your map. Then decide <em>what to do about it.</em>
           </>
         }
-        intro="If you make it to the end of this page, you already suspect you've got a visibility problem. Worst case: $99 confirms it. Best case: you find a quick fix that pays for itself in one new customer."
+        intro={
+          <>
+            If you make it to the end of this page, you already suspect
+            you&rsquo;ve got a visibility problem. Worst case:{' '}
+            <strong className="font-semibold text-zinc-200">
+              $99 confirms it
+            </strong>
+            . Best case: you find a quick fix that{' '}
+            <strong className="font-semibold text-zinc-200">
+              pays for itself in one new customer
+            </strong>
+            .
+          </>
+        }
       >
         <div className="flex flex-wrap items-center gap-3 mt-8">
           <LinkButton
