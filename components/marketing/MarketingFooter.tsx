@@ -41,7 +41,7 @@ export function MarketingFooter() {
             </span>
           </div>
           <p className="text-zinc-500 leading-relaxed max-w-xs">
-            Geo-grid local SEO diagnostic.
+            Google Maps audit for local businesses.
           </p>
           <p className="text-zinc-600 leading-relaxed max-w-xs">
             Proprietary technology of{' '}
