@@ -155,19 +155,15 @@ async function main() {
       .eq('pending_buyer_email', lead.email)
       .maybeSingle<{ id: string; public_id: string }>();
     if (existing) {
-      const { data: link } = await supabase
-        .from('scan_share_links')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle<{ id: string }>();
-      console.log(`  ↻ already enriched (client ${existing.public_id})`);
-      results.push({
+      const restored = await loadExistingResult(supabase, {
+        clientId: existing.id,
         email: lead.email,
         businessName: lead.businessName,
-        status: 'already_enriched',
-        shareUrl: link ? `${APP_ORIGIN}/share/${link.id}` : null,
       });
+      console.log(
+        `  ↻ already enriched (client ${existing.public_id}) — TurfScore ${restored.turfScore ?? 'n/a'} · ${restored.shareUrl ?? '(no link)'}`
+      );
+      results.push(restored);
       continue;
     }
 
@@ -262,12 +258,15 @@ async function mainFromPreview(args: Args) {
       .eq('pending_buyer_email', r.email)
       .maybeSingle<{ id: string; public_id: string }>();
     if (existing) {
-      console.log(`  ↻ already enriched (client ${existing.public_id})`);
-      results.push({
+      const restored = await loadExistingResult(supabase, {
+        clientId: existing.id,
         email: r.email,
         businessName: r.business_name,
-        status: 'already_enriched',
       });
+      console.log(
+        `  ↻ already enriched (client ${existing.public_id}) — TurfScore ${restored.turfScore ?? 'n/a'} · ${restored.shareUrl ?? '(no link)'}`
+      );
+      results.push(restored);
       continue;
     }
 
@@ -462,6 +461,82 @@ async function enrichFromPreviewedRow(args: {
     shareUrl: `${APP_ORIGIN}/share/${link.id}`,
     costCents: scanResult.dfsCostCents,
   };
+}
+
+/**
+ * Reconstruct a full EnrichmentResult for a lead we've already
+ * enriched (idempotency / resume path). Joins clients → scans →
+ * scan_points → scan_share_links so the output CSV is fully
+ * populated even when most rows came from prior runs.
+ */
+async function loadExistingResult(
+  supabase: ReturnType<typeof getServerSupabase>,
+  args: { clientId: string; email: string; businessName: string }
+): Promise<EnrichmentResult> {
+  const base: EnrichmentResult = {
+    email: args.email,
+    businessName: args.businessName,
+    status: 'already_enriched',
+  };
+
+  // Pull the clients row's primary location address + category for
+  // the CSV columns.
+  const { data: client } = await supabase
+    .from('clients')
+    .select('address, industry')
+    .eq('id', args.clientId)
+    .maybeSingle<{ address: string | null; industry: string | null }>();
+  if (client) {
+    base.matchedAddress = client.address;
+    base.matchedCategory = client.industry;
+  }
+
+  // Latest complete scan for the client → score family + keyword.
+  const { data: scan } = await supabase
+    .from('scans')
+    .select('id, turf_score, turf_reach, turf_rank, keyword_id')
+    .eq('client_id', args.clientId)
+    .eq('status', 'complete')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      turf_score: number | null;
+      turf_reach: number | null;
+      turf_rank: number | null;
+      keyword_id: string | null;
+    }>();
+  if (!scan) return base;
+
+  base.turfScore = scan.turf_score;
+  base.turfReach = scan.turf_reach;
+  base.turfRank = scan.turf_rank;
+  base.topCompetitor = await findTopCompetitor(
+    supabase,
+    scan.id,
+    args.businessName
+  );
+
+  if (scan.keyword_id) {
+    const { data: kw } = await supabase
+      .from('tracked_keywords')
+      .select('keyword')
+      .eq('id', scan.keyword_id)
+      .maybeSingle<{ keyword: string }>();
+    base.keyword = kw?.keyword ?? null;
+  }
+
+  // Most-recent share link for that scan.
+  const { data: link } = await supabase
+    .from('scan_share_links')
+    .select('id')
+    .eq('scan_id', scan.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (link) base.shareUrl = `${APP_ORIGIN}/share/${link.id}`;
+
+  return base;
 }
 
 function truthy(v: string | undefined): boolean {
