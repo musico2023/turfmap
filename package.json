@@ -17,7 +17,8 @@
     "bl:directories": "tsx scripts/list-bl-directories.ts",
     "backfill:gbp": "tsx scripts/backfill-gbp.ts",
     "preview:leads": "tsx scripts/preview-leads.ts",
-    "enrich:leads": "tsx scripts/enrich-leads.ts"
+    "enrich:leads": "tsx scripts/enrich-leads.ts",
+    "personalize:outreach": "tsx scripts/personalize-outreach.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
