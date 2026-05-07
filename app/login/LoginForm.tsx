@@ -57,7 +57,7 @@ export function LoginForm({
         <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
           We sent a sign-in link to{' '}
           <span className="text-zinc-200 font-mono">{email}</span>. Open it on
-          this device to access the agency console.
+          this device to sign in.
         </p>
         <button
           type="button"
@@ -77,13 +77,13 @@ export function LoginForm({
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
         <label className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 block">
-          Agency email
+          Email
         </label>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@your-agency.com"
+          placeholder="you@example.com"
           required
           autoFocus
           className="w-full px-3 py-2.5 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"

@@ -1,40 +1,41 @@
 /**
- * POST /api/auth/agency-magic-link — send a magic-link to a TurfMap user
- * (an entry in the `users` table).
+ * POST /api/auth/agency-magic-link — unified sign-in entrypoint.
  *
- * Body: { email: string }
+ * Despite the historical name, this endpoint serves BOTH agency
+ * staff (entries in `users`) and portal users (entries in
+ * `client_users`). The /login page is the single sign-in surface for
+ * the entire product; this endpoint figures out which kind of
+ * account the email belongs to and routes the magic-link redirect
+ * accordingly.
  *
- * Access model:
- *   - Fourdots-domain emails (lib/auth/agencyDomains) get auto-
- *     provisioned into `users` on first sign-in with role='admin'.
- *     Anyone Fourdots hires can request a link and immediately have
- *     full agency-level access to every client account; we do not
- *     maintain a per-staff allowlist.
- *   - Non-Fourdots emails must already exist in `users` (a paying
- *     TurfMap customer that the team has provisioned). Strangers get
- *     403 with a pointer to turfmap.ai.
+ * Body: { email: string, next?: string }
  *
- * On success, Supabase emails the user; the redirect lands them at
- * /auth/callback?next=/clients (the agency console root). When the
- * caller passes an explicit `next` (e.g. for a deep-link sign-in
- * flow), that takes precedence.
+ * Resolution order:
+ *   1. `users` row exists (agency staff) — magic link redirects to
+ *      /clients (or `next` override).
+ *   2. Email domain is a Fourdots-domain — auto-provisions a `users`
+ *      row with role='admin', then magic link to /clients.
+ *   3. `client_users` row exists (portal user with at least one
+ *      client portal) — magic link redirects to /portal/<public_id>
+ *      of the most recently invited / most recent portal access.
+ *   4. None of the above — 403 with sign-up pointer.
  *
- * This is the agency-side counterpart to /api/auth/magic-link (which
- * targets per-client portal users — that endpoint has its own gate
- * via the client_users membership table).
+ * Email styling: uses lib/auth/sendMagicLink (admin.generateLink +
+ * Resend SignInLinkEmail template), NOT signInWithOtp's unstyled
+ * Supabase-default mailer. The template flavors copy by businessName
+ * for portal users, agency-generic otherwise.
  */
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
+import { sendMagicLink } from '@/lib/auth/sendMagicLink';
 
 export const runtime = 'nodejs';
 
 const Body = z.object({
   email: z.string().email().max(320),
-  /** Optional path the user should land on after signing in. */
   next: z.string().startsWith('/').optional(),
 });
 
@@ -56,68 +57,92 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.email.trim().toLowerCase();
-
   const admin = getServerSupabase();
-  const { data: existing } = await admin
+
+  // ─── 1. Agency staff lookup ─────────────────────────────────────────
+  const { data: agencyUser } = await admin
     .from('users')
     .select('id, email')
     .eq('email', email)
     .maybeSingle<{ id: string; email: string }>();
 
-  if (!existing) {
-    // First-time sign-in:
-    //   - Fourdots-domain emails get auto-provisioned with role='admin'
-    //     (anyone we hire gets agency access immediately).
-    //   - Anyone else is told to sign up for TurfMap.
-    if (!isAgencyDomainEmail(email)) {
-      return NextResponse.json(
-        {
-          error:
-            "this email isn't on the TurfMap account list. To get TurfMap access, sign up at turfmap.ai.",
-        },
-        { status: 403 }
-      );
-    }
+  let route: { kind: 'agency' } | { kind: 'portal'; clientPublicId: string; businessName: string } | null = null;
 
+  if (agencyUser) {
+    route = { kind: 'agency' };
+  } else if (isAgencyDomainEmail(email)) {
+    // ─── 2. Auto-provision Fourdots-domain emails as admin staff ──
     const { error: insertErr } = await admin
       .from('users')
       .insert({ email, role: 'admin' });
     if (insertErr) {
-      // Race-condition tolerance: a unique-violation here means another
-      // concurrent magic-link request beat us to the insert. The user
-      // exists now, so fall through and send the OTP.
       const code = (insertErr as { code?: string }).code;
       if (code !== '23505') {
+        // Race-condition tolerance: 23505 means a concurrent request
+        // beat us; the row exists either way. Anything else is fatal.
         return NextResponse.json(
-          {
-            error: `agency provisioning failed: ${insertErr.message}`,
-          },
+          { error: `agency provisioning failed: ${insertErr.message}` },
           { status: 500 }
         );
       }
     }
+    route = { kind: 'agency' };
+  } else {
+    // ─── 3. Portal user lookup ────────────────────────────────────
+    // Pick the most recent client_users row for this email (if any).
+    // Portal users with access to multiple clients land on their
+    // most recently invited one; they can navigate within the portal
+    // afterwards.
+    const { data: portalUser } = await admin
+      .from('client_users')
+      .select('id, client_id, invited_at, clients ( public_id, business_name )')
+      .eq('email', email)
+      .order('invited_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle<{
+        id: string;
+        client_id: string;
+        invited_at: string | null;
+        clients: { public_id: string; business_name: string } | null;
+      }>();
+
+    if (portalUser?.clients) {
+      route = {
+        kind: 'portal',
+        clientPublicId: portalUser.clients.public_id,
+        businessName: portalUser.clients.business_name,
+      };
+    }
   }
 
-  const auth = await getAuthSupabase();
-  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
-  // Default landing is the agency console root (`/clients`) post-
-  // marketing-launch — the bare `/` is now the public landing page,
-  // so a magic link without an explicit next would otherwise drop
-  // the staff member on the marketing surface they don't need.
-  const next = parsed.next ?? '/clients';
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
-
-  const { error: otpErr } = await auth.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: redirectTo,
-      shouldCreateUser: true,
-    },
-  });
-
-  if (otpErr) {
+  // ─── 4. No matching account ─────────────────────────────────────────
+  if (!route) {
     return NextResponse.json(
-      { error: `magic-link send failed: ${otpErr.message}` },
+      {
+        error:
+          "We couldn't find an account for this email. If you're new to TurfMap, sign up at turfmap.ai. If you should have access, ask your agency to invite you.",
+      },
+      { status: 403 }
+    );
+  }
+
+  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  const next =
+    parsed.next ??
+    (route.kind === 'agency'
+      ? '/clients'
+      : `/portal/${route.clientPublicId}`);
+
+  const result = await sendMagicLink({
+    supabase: admin,
+    email,
+    origin,
+    next,
+    businessName: route.kind === 'portal' ? route.businessName : null,
+  });
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: `magic-link send failed: ${result.error}` },
       { status: 502 }
     );
   }

@@ -1,9 +1,19 @@
 /**
- * Agency-staff sign-in — `/login`. TurfMap-branded (lime accent + Crosshair
- * icon to match the dashboard Header). Mirrors the white-label portal login
- * structure, but always TurfMap-branded since this is the internal product.
+ * Unified TurfMap sign-in — `/login`. Single sign-in surface for both
+ * agency staff (rows in `users`) and portal users (rows in
+ * `client_users`). The /api/auth/agency-magic-link endpoint resolves
+ * which kind of account the email belongs to and routes the magic
+ * link's redirect accordingly:
+ *   - agency → /clients
+ *   - portal → /portal/<their most recent client>
+ *
+ * TurfMap-branded (lime accent + Crosshair icon to match the
+ * dashboard Header). Per-client portal sign-in (white-label) lives
+ * at /portal/<slug>/login; that's a separate surface for buyers who
+ * arrive via a portal-specific URL.
  */
 
+import Link from 'next/link';
 import { Crosshair } from 'lucide-react';
 import { LoginForm } from './LoginForm';
 
@@ -38,7 +48,7 @@ export default async function AgencyLoginPage({
               TurfMap.ai
             </div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mt-0.5">
-              Agency console · sign in
+              Sign in
             </div>
           </div>
         </div>
@@ -70,7 +80,14 @@ export default async function AgencyLoginPage({
           <span>
             Proprietary technology of{' '}
             <span className="text-zinc-400 font-semibold">Fourdots Digital</span>.
-            Access is restricted to agency staff.
+            New to TurfMap?{' '}
+            <Link
+              href="/"
+              className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"
+            >
+              Get started
+            </Link>
+            .
           </span>
         </div>
       </div>

@@ -1,22 +1,26 @@
 /**
- * POST /api/auth/magic-link — send a Supabase magic-link to a client portal user.
+ * POST /api/auth/magic-link — send a magic-link to a client portal user
+ * for a SPECIFIC client. This is the per-client deep-link sign-in
+ * (called from /portal/<slug>/login). The /login page uses the
+ * unified /api/auth/agency-magic-link endpoint, which routes
+ * automatically by account type.
  *
  * Body: { client_id: uuid, email: string }
  *
- * Pre-checks the email is on the `client_users` table for the given client
- * (using the service-role client). If it isn't, we return 403 instead of
- * sending a link — saves the user from clicking a link that would just
- * dump them at the access-denied screen.
+ * Pre-checks the email is on the `client_users` table for the given
+ * client (using the service-role client). If it isn't, returns 403
+ * instead of sending a link — saves the user from clicking a link
+ * that would just dump them at the access-denied screen.
  *
- * On success, Supabase emails the user a one-time-token URL. The redirect
- * sends them to /auth/callback?next=/portal/<client_id>, which exchanges
- * the token and forwards them to their portal.
+ * Email styling: uses lib/auth/sendMagicLink (admin.generateLink +
+ * Resend SignInLinkEmail with portal-flavor copy), NOT
+ * signInWithOtp's unstyled Supabase-default mailer.
  */
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { sendMagicLink } from '@/lib/auth/sendMagicLink';
 
 export const runtime = 'nodejs';
 
@@ -47,12 +51,17 @@ export async function POST(req: Request) {
   const email = parsed.email.trim().toLowerCase();
   const { data: row } = await admin
     .from('client_users')
-    .select('id, email, client_id')
+    .select('id, email, client_id, clients ( public_id, business_name )')
     .eq('client_id', parsed.client_id)
     .eq('email', email)
-    .maybeSingle<{ id: string; email: string; client_id: string }>();
+    .maybeSingle<{
+      id: string;
+      email: string;
+      client_id: string;
+      clients: { public_id: string; business_name: string } | null;
+    }>();
 
-  if (!row) {
+  if (!row || !row.clients) {
     return NextResponse.json(
       {
         error:
@@ -62,30 +71,25 @@ export async function POST(req: Request) {
     );
   }
 
-  // Send the magic link. The user-context client (anon key) is required
-  // here so cookies on the eventual callback bind to the same Supabase
-  // project. We pass `next=/portal/<id>` through the redirect URL.
-  const auth = await getAuthSupabase();
   const origin = req.headers.get('origin') ?? new URL(req.url).origin;
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/portal/${parsed.client_id}`)}`;
+  const next = `/portal/${row.clients.public_id}`;
 
-  const { error: otpErr } = await auth.auth.signInWithOtp({
+  const result = await sendMagicLink({
+    supabase: admin,
     email,
-    options: {
-      emailRedirectTo: redirectTo,
-      shouldCreateUser: true,
-    },
+    origin,
+    next,
+    businessName: row.clients.business_name,
   });
-
-  if (otpErr) {
+  if (!result.ok) {
     return NextResponse.json(
-      { error: `magic-link send failed: ${otpErr.message}` },
+      { error: `magic-link send failed: ${result.error}` },
       { status: 502 }
     );
   }
 
-  // Stamp last_login_at on the next successful callback exchange — for now
-  // we mark "invited" timestamp so the agency can tell who's been emailed.
+  // Stamp invited_at so the agency UI shows "invited <date>" rather than
+  // "not signed in yet" for users who used the deep-link entry point.
   await admin
     .from('client_users')
     .update({ invited_at: new Date().toISOString() })

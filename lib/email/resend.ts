@@ -38,6 +38,10 @@ import {
   type PortalInviteEmailProps,
 } from '@/components/email/PortalInviteEmail';
 import {
+  SignInLinkEmail,
+  type SignInLinkEmailProps,
+} from '@/components/email/SignInLinkEmail';
+import {
   PulsePlusWelcomeEmail,
   type PulsePlusWelcomeEmailProps,
 } from '@/components/email/PulsePlusWelcomeEmail';
@@ -250,6 +254,36 @@ export async function sendPortalInvite(args: {
   return sendEmail({
     to: args.to,
     subject: `You've been invited to view ${args.businessName}'s TurfMap`,
+    html,
+  });
+}
+
+/**
+ * User-initiated sign-in magic link. Sent in response to /login
+ * (agency staff) or /portal/<id>/login (portal users) form submits.
+ * Replaces the unstyled Supabase-default email that signInWithOtp
+ * triggers — uses our React Email branded template instead via
+ * admin.generateLink + Resend.
+ *
+ * Pass `businessName` for portal-flavor copy ("Sign in to <Business>'s
+ * dashboard"); omit for the agency variant.
+ */
+export async function sendSignInLink(args: {
+  to: string;
+  magicLinkUrl: string;
+  businessName?: string | null;
+}): Promise<boolean> {
+  const html = await render(
+    SignInLinkEmail({
+      magicLinkUrl: args.magicLinkUrl,
+      businessName: args.businessName ?? null,
+    } satisfies SignInLinkEmailProps)
+  );
+  return sendEmail({
+    to: args.to,
+    subject: args.businessName
+      ? `Your TurfMap sign-in link — ${args.businessName}`
+      : 'Your TurfMap sign-in link',
     html,
   });
 }
