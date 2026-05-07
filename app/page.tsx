@@ -152,6 +152,7 @@ export default function MarketingLanding() {
           </>
         }
         intro="Every TurfScan ends with a fix list. Three prioritized actions specific to your business and category, written by our AI Coach from your real audit data — not generic SEO advice. You walk away knowing what to fix, in what order."
+        headerAside={<CoachSignature />}
         tint
       >
         {/* PRIMARY — the Fix List (AI Coach output). Visual centerpiece
@@ -810,6 +811,99 @@ function PathHeader({
           {comparison}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Section 03 right-side visual — a "signature card" for the TurfMap
+ * AI Coach. Visually balances the heading row (which used to feel
+ * left-heavy at desktop widths now that the Fix List leads the
+ * section) and reinforces the AI Coach as the system that produces
+ * the Fix List below.
+ *
+ * Uses the same dark-green tint + lime border vocabulary as the Fix
+ * List panel beneath it, so the card reads as a "stamp" or "name
+ * plate" attributing the recommendations. The constellation of
+ * lime sparkles at the top + the central icon picks up the user's
+ * "stars" cue without leaning into a 5-star-rating motif (which
+ * would imply customer reviews, not the AI agent).
+ */
+function CoachSignature() {
+  return (
+    <div
+      className="rounded-lg border p-5 relative overflow-hidden"
+      style={{
+        background: '#0a0f04',
+        borderColor: 'var(--color-border-bright)',
+        boxShadow: '0 0 30px #c5ff3a18',
+      }}
+    >
+      {/* Constellation — three small sparkles scattered above the
+       *  central mark. Different sizes + opacities create depth so
+       *  the row reads as a constellation, not a fixed pattern. */}
+      <div className="flex items-center gap-3 mb-4 pl-1">
+        <Sparkles
+          size={9}
+          style={{ color: 'var(--color-lime)', opacity: 0.7 }}
+        />
+        <Sparkles
+          size={11}
+          style={{ color: 'var(--color-lime)', opacity: 0.45 }}
+        />
+        <Sparkles
+          size={8}
+          style={{ color: 'var(--color-lime)', opacity: 0.85 }}
+        />
+        <span className="ml-auto text-[9px] font-mono uppercase tracking-[0.22em] text-zinc-600">
+          v1
+        </span>
+      </div>
+
+      {/* Central mark — a single big lime Sparkles icon in a tinted
+       *  square, mirroring the header's TurfMap crosshair-on-lime
+       *  brand mark but with the AI / sparkle motif instead. */}
+      <div
+        className="flex items-center justify-center w-12 h-12 rounded-md mb-4"
+        style={{
+          background: '#1a2010',
+          border: '1px solid var(--color-border-bright)',
+        }}
+      >
+        <Sparkles
+          size={22}
+          strokeWidth={2.25}
+          style={{ color: 'var(--color-lime)' }}
+        />
+      </div>
+
+      {/* Wordmark + ™ */}
+      <div className="font-display text-xl md:text-2xl font-bold leading-tight text-zinc-100 mb-1">
+        TurfMap AI Coach
+        <span
+          className="text-xs align-top ml-0.5"
+          style={{ color: 'var(--color-lime)' }}
+        >
+          ™
+        </span>
+      </div>
+
+      {/* One-line tagline — operator-language. Two short sentences
+       *  with the line break preserved by leading-snug for rhythm. */}
+      <p className="text-sm text-zinc-400 leading-snug mb-4">
+        Reads your map.
+        <br />
+        Writes your fixes.
+      </p>
+
+      {/* Bottom strip — small attribution note, mono, dim, with a
+       *  thin top border so it reads as a footer on the card. */}
+      <div
+        className="pt-3 border-t text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-600"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        Signs every scan.
+      </div>
     </div>
   );
 }
