@@ -51,7 +51,7 @@ const TIERS: TierSpec[] = [
     features: [
       '81-point geo-grid scan, one keyword',
       'TurfReach + TurfRank + TurfScore',
-      "Auto-NAP citation check across your industry's directories",
+      'Citation check across the directories that matter for your trade',
       'AI Coach: top 3 strategic recommendations, grounded in your real NAP data',
       'Branded PDF report you can keep or share',
       'Delivered in under a minute',

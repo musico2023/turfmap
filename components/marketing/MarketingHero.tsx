@@ -1,9 +1,72 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
 import { LinkButton } from '@/components/ui/Button';
 import { buildHeroCells, HERO_METRICS } from './heroSeed';
+
+/**
+ * Rotating vertical labels for the hero eyebrow. Cycles every
+ * ROTATE_MS ms with a CSS opacity fade so the swap doesn't yank the
+ * reader's eye. Container width is fixed at 11ch so the longest
+ * label ("LANDSCAPERS", 11 chars) doesn't shift the layout when
+ * shorter labels render.
+ */
+const ROTATING_LABELS = [
+  'BUSINESSES',
+  'PLUMBERS',
+  'ROOFERS',
+  'CLINICS',
+  'CONTRACTORS',
+  'RESTAURANTS',
+  'CLEANERS',
+  'DENTISTS',
+  'HVAC PROS',
+  'LANDSCAPERS',
+] as const;
+const ROTATE_MS = 2500;
+const FADE_MS = 350;
+
+function RotatingLabel() {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      setVisible(false);
+      window.setTimeout(() => {
+        if (cancelled) return;
+        setIdx((i) => (i + 1) % ROTATING_LABELS.length);
+        setVisible(true);
+      }, FADE_MS);
+    };
+    const t = window.setInterval(tick, ROTATE_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, []);
+  return (
+    <span
+      // Fixed width so layout doesn't shift across the 7-11 char label
+      // range. Inline-block + min-width so the surrounding eyebrow
+      // characters stay glued together.
+      style={{
+        display: 'inline-block',
+        minWidth: '11ch',
+        textAlign: 'left',
+        color: 'var(--color-lime)',
+        opacity: visible ? 1 : 0,
+        transition: `opacity ${FADE_MS}ms ease-in-out`,
+      }}
+      aria-live="polite"
+    >
+      {ROTATING_LABELS[idx]}
+    </span>
+  );
+}
 
 /**
  * Landing-page hero.
@@ -45,12 +108,20 @@ export function MarketingHero() {
         <div className="lg:col-span-7">
           <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-5">
             <span style={{ color: 'var(--color-lime)' }}>●</span>{' '}
-            Geo-grid SEO diagnostic · from $99
+            Google Maps audit for local <RotatingLabel /> · from $99
           </div>
-          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.02] mb-6">
+          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.02] mb-4">
             See exactly where you <em>win</em>{' '}— and where you{' '}
             <em>don&rsquo;t.</em>
           </h1>
+          {/* Positioning sub-headline — sits between H1 and the descriptive
+           *  subhead. Italic to flag it as the strategic frame ("what is
+           *  this product, in one line?") rather than a continuation of
+           *  the description. */}
+          <p className="font-display text-xl md:text-2xl text-zinc-300 italic leading-snug mb-6 max-w-xl">
+            The Google Maps audit you should run before spending another
+            dollar on local SEO.
+          </p>
           <p className="text-zinc-300 text-lg md:text-xl leading-relaxed max-w-xl mb-8">
             TurfMap runs an 81-point geo-grid scan across your service area and
             shows you, cell by cell, where you appear in Google&rsquo;s local
