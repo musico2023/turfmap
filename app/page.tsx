@@ -174,9 +174,10 @@ export default function MarketingLanding() {
             description="The 3-pack has three slots. TurfRank is your average position across the cells where you actually appear. 3.0 = always #1, 1.0 = always #3."
             example={
               <>
-                TurfRank <strong className="text-zinc-100">1.4</strong> means
-                you&rsquo;re scraping the bottom of the pack — usually #3,
-                often beneath competitors who optimized harder.
+                TurfRank <strong className="text-zinc-100">1.4</strong>{' '}
+                means you&rsquo;re scraping the bottom of the pack —
+                usually #3, often beneath competitors who optimized
+                harder.
               </>
             }
             bands={[
@@ -196,10 +197,10 @@ export default function MarketingLanding() {
             example={
               <>
                 Most local businesses we scan land between{' '}
-                <strong className="text-zinc-100">30 and 55</strong> before
-                optimization. Above 60 is uncommon — it usually means the
-                Google Business Profile is well-tuned and the citations are
-                clean.
+                <strong className="text-zinc-100">30 and 55</strong>{' '}
+                before optimization. Above 60 is uncommon — it usually
+                means the Google Business Profile is well-tuned and the
+                citations are clean.
               </>
             }
             bands={[
@@ -891,6 +892,12 @@ function ScoreCard({
         <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-zinc-500 mr-2">
           E.g.
         </span>
+        {/* Explicit space character — Tailwind's mr-2 provides the
+         *  visual gap, but some clipboard / accessibility readers
+         *  collapse pure-margin spacing into "E.g.TurfRank". This
+         *  guarantees a real whitespace token between the eyebrow
+         *  and the example body. */}
+        {' '}
         {example}
       </p>
       <div className="mt-auto pt-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
