@@ -855,9 +855,6 @@ function CoachSignature() {
           size={8}
           style={{ color: 'var(--color-lime)', opacity: 0.85 }}
         />
-        <span className="ml-auto text-[9px] font-mono uppercase tracking-[0.22em] text-zinc-600">
-          v1
-        </span>
       </div>
 
       {/* Central mark — a single big lime Sparkles icon in a tinted
