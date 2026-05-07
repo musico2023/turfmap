@@ -81,6 +81,12 @@ export default function MarketingLanding() {
             That&rsquo;s one search out of 81.
           </>
         }
+        subHeading={
+          <>
+            See exactly where in your service area customers can find
+            you — and where they can&rsquo;t.
+          </>
+        }
         intro={
           <>
             Google personalizes local results by physical location. Someone
@@ -207,11 +213,12 @@ export default function MarketingLanding() {
           />
         </div>
 
-        {/* AI Coach preview */}
+        {/* AI Coach preview — "the fix list" framing */}
         <div className="mt-12">
           <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex items-center gap-2">
             <Sparkles size={11} style={{ color: 'var(--color-lime)' }} />
-            Plus: AI Coach
+            <span style={{ color: 'var(--color-lime)' }}>The fix list</span> ·
+            included in every scan
           </div>
           <div
             className="border rounded-lg p-5 md:p-6"
@@ -220,11 +227,21 @@ export default function MarketingLanding() {
               borderColor: 'var(--color-border-bright)',
             }}
           >
-            <p className="text-zinc-300 leading-relaxed mb-4 max-w-3xl">
-              Every scan is followed by a strategic readout: a one-paragraph
-              diagnosis of what&rsquo;s actually causing the gap, plus three
-              prioritized actions specific to your business and category. Not
-              generic SEO advice — a read of your map.
+            <p className="text-zinc-300 leading-relaxed mb-3 max-w-3xl">
+              Every scan ends with a strategic readout: a one-paragraph
+              diagnosis of what&rsquo;s actually causing your visibility gap,{' '}
+              <strong className="text-zinc-100">
+                plus three prioritized actions specific to your business and
+                category
+              </strong>
+              . Not generic SEO advice — a read of your map.
+            </p>
+            {/* Punchline line — the operator-facing payoff. Bold + lime
+             *  accent so the reader catches it as the conclusion before
+             *  scanning the three example cards below. */}
+            <p className="text-zinc-100 font-bold text-base md:text-lg leading-snug mb-5 max-w-3xl">
+              <span style={{ color: 'var(--color-lime)' }}>→</span> You walk
+              away knowing what to fix, in what order.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {[
@@ -471,7 +488,7 @@ export default function MarketingLanding() {
                     After you fill in your business details on the order form,
                     you&rsquo;ll get an email with a link to your map and your
                     AI Coach playbook. The Visibility Audit and Strategy
-                    Session add the strategist&rsquo;s written diagnosis,
+                    Session add our strategist&rsquo;s written diagnosis,
                     which lands within 2 business days.
                   </>
                 ),
@@ -533,34 +550,46 @@ export default function MarketingLanding() {
                 ),
               },
               {
-                q: 'What does NAP mean?',
+                q: 'What are citations, and why does my business need them?',
                 a: (
                   <>
-                    NAP is short for Name, Address, Phone — the three pieces
-                    of business contact data that Google cross-references
-                    across hundreds of directories (Apple Maps, Yelp, Bing,
-                    Yellow Pages, plus industry-specific ones — Angi and
-                    HomeAdvisor for home services, ZocDoc and Healthgrades
-                    for medical, OpenTable and Tripadvisor for restaurants,
-                    and so on). When NAP isn&rsquo;t consistent across those
-                    directories, Google trusts your listing less, which
-                    suppresses your appearance in the local 3-pack. Every
-                    Visibility Audit includes a full NAP scan tuned to your
-                    category.
+                    Citations are listings of your business name, address,
+                    and phone number across directories like Yelp, BBB,
+                    Angi, and trade-specific sites. When these are
+                    consistent and complete across the directories Google
+                    trusts, your Map Pack visibility goes up. When
+                    they&rsquo;re inconsistent or missing, Google penalizes
+                    you. Most local businesses have citation issues without
+                    knowing it — TurfScan finds them.
                   </>
                 ),
               },
               {
-                q: 'What is the local 3-pack?',
+                q: "What's the Map Pack, and why does it matter for my business?",
                 a: (
                   <>
-                    The three Google Maps results that appear at the top of
-                    the page when you search for a local service (e.g.{' '}
-                    <code>plumber toronto</code>). It&rsquo;s the most
-                    valuable real estate in local search — the businesses
-                    that land in the 3-pack capture the majority of clicks
-                    and calls. TurfMap measures, cell by cell, whether you
-                    appear there.
+                    The Map Pack is the box of three local businesses
+                    Google shows on Maps results when someone searches for
+                    a service near them. For most local businesses, ranking
+                    in the Map Pack drives more calls than any other Google
+                    placement. If you&rsquo;re not in the Map Pack across
+                    your service area, customers searching nearby are
+                    calling someone else.
+                  </>
+                ),
+              },
+              {
+                q: 'How is this different from other rank-tracking tools?',
+                a: (
+                  <>
+                    Most tools give you a single rank number — like
+                    &ldquo;you&rsquo;re #2 for plumber Toronto.&rdquo;
+                    That&rsquo;s almost useless because it ignores that
+                    your visibility changes neighborhood by neighborhood.
+                    TurfMap scans 81 points across your actual service
+                    area to show you where you&rsquo;re visible, where
+                    you&rsquo;re not, and what to fix. You&rsquo;re paying
+                    for the diagnosis and the fix list, not just the data.
                   </>
                 ),
               },

@@ -23,6 +23,11 @@ export type SectionProps = {
   eyebrow: string;
   /** H2 content. Wrap an italic phrase in `<em>…</em>`. */
   heading: ReactNode;
+  /** Optional positioning sub-headline rendered between the H2 and
+   *  the descriptive intro paragraph. Italic, smaller than H2, larger
+   *  than body — same emphasis as the hero sub-headline. Acts as the
+   *  one-line operator translation of what the section is about. */
+  subHeading?: ReactNode;
   /** Lead paragraph rendered under the H2. */
   intro?: ReactNode;
   children: ReactNode;
@@ -36,6 +41,7 @@ export function Section({
   n,
   eyebrow,
   heading,
+  subHeading,
   intro,
   children,
   tint = false,
@@ -57,9 +63,16 @@ export function Section({
           )}
           {eyebrow}
         </div>
-        <h2 className="font-display text-4xl md:text-5xl font-bold leading-[1.05] tracking-tight max-w-3xl mb-5">
+        <h2
+          className={`font-display text-4xl md:text-5xl font-bold leading-[1.05] tracking-tight max-w-3xl ${subHeading ? 'mb-3' : 'mb-5'}`}
+        >
           {heading}
         </h2>
+        {subHeading && (
+          <p className="font-display text-xl md:text-2xl text-zinc-300 italic leading-snug max-w-2xl mb-6">
+            {subHeading}
+          </p>
+        )}
         {intro && (
           <p className="text-zinc-400 text-base md:text-lg leading-relaxed max-w-2xl mb-10">
             {intro}
