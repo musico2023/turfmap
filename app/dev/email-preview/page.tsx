@@ -79,6 +79,40 @@ const TEMPLATES: TemplateLink[] = [
       { label: 'Pulse — no trial', query: 'tier=pulse&trial=0' },
     ],
   },
+  {
+    slug: 'sign-in-link',
+    name: 'Sign-in magic link',
+    blurb:
+      'Sent when a user requests a fresh sign-in link from /login or /portal/<id>/login. Replaces Supabase\'s default unstyled mailer.',
+    variants: [
+      { label: 'Agency sign-in', query: '' },
+      { label: 'Portal sign-in', query: 'business=1' },
+    ],
+  },
+  {
+    slug: 'alert',
+    name: 'Post-scan alert',
+    blurb:
+      'Score-movement / competitor-entry / momentum-reversal / cell-changes alerts dispatched after each scan. All four variants share the new AlertEmail shell.',
+    variants: [
+      { label: 'Score movement (up)', query: 'kind=score_up' },
+      { label: 'Score movement (down)', query: 'kind=score_down' },
+      { label: 'New competitors', query: 'kind=competitor_entries' },
+      { label: 'Momentum flip (positive)', query: 'kind=momentum_pos' },
+      { label: 'Momentum flip (negative)', query: 'kind=momentum_neg' },
+      { label: 'Cell changes', query: 'kind=cell_changes' },
+    ],
+  },
+  {
+    slug: 'delivery-alert',
+    name: 'Operator: scan-delivery alert',
+    blurb:
+      'Internal cron-fired email listing buyers inside the 24-hour refund window with no completed scan yet.',
+    variants: [
+      { label: 'Single client', query: 'count=1' },
+      { label: 'Multiple clients', query: 'count=4' },
+    ],
+  },
 ];
 
 export default async function EmailPreviewIndex() {

@@ -24,6 +24,10 @@ import { ScanReadyEmail } from '@/components/email/ScanReadyEmail';
 import { PortalInviteEmail } from '@/components/email/PortalInviteEmail';
 import { PulsePlusWelcomeEmail } from '@/components/email/PulsePlusWelcomeEmail';
 import { StripeSetupLinkEmail } from '@/components/email/StripeSetupLinkEmail';
+import { SignInLinkEmail } from '@/components/email/SignInLinkEmail';
+import { AlertEmail } from '@/components/email/AlertEmail';
+import { P } from '@/components/email/EmailLayout';
+import { DeliveryAlertEmail } from '@/components/email/DeliveryAlertEmail';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 
 export const dynamic = 'force-dynamic';
@@ -155,6 +159,173 @@ async function renderTemplate(
             checkoutUrl: MOCK_CHECKOUT_URL,
           })
         ),
+      };
+    }
+    case 'sign-in-link': {
+      const isPortal = single(search.business) === '1';
+      return {
+        subject: isPortal
+          ? `Your TurfMap sign-in link — ${MOCK_BUSINESS}`
+          : 'Your TurfMap sign-in link',
+        html: await render(
+          SignInLinkEmail({
+            magicLinkUrl: MOCK_MAGIC_LINK,
+            businessName: isPortal ? MOCK_BUSINESS : null,
+          })
+        ),
+      };
+    }
+    case 'alert': {
+      const kind = single(search.kind) ?? 'score_down';
+      switch (kind) {
+        case 'score_up':
+          return {
+            subject: `↑ TurfScore +14 — ${MOCK_BUSINESS}`,
+            html: await render(
+              AlertEmail({
+                preview: `↑ TurfScore +14 — ${MOCK_BUSINESS}`,
+                headline: 'Your TurfScore moved up by 14 points.',
+                ctaUrl: MOCK_DASHBOARD_URL,
+                ctaLabel: 'Open dashboard →',
+                footnote: 'Manage these alerts from your client settings.',
+                children: P({
+                  children: [
+                    <strong key="b">{MOCK_BUSINESS}</strong>,
+                    ' moved from ',
+                    <span key="p" style={{ color: '#a1a1aa' }}>42</span>,
+                    ' to ',
+                    <strong key="n" style={{ color: '#c5ff3a' }}>56</strong>,
+                    '.',
+                  ],
+                }),
+              })
+            ),
+          };
+        case 'score_down':
+          return {
+            subject: `↓ TurfScore -8 — ${MOCK_BUSINESS}`,
+            html: await render(
+              AlertEmail({
+                preview: `↓ TurfScore -8 — ${MOCK_BUSINESS}`,
+                headline: 'Your TurfScore dropped by 8 points.',
+                ctaUrl: MOCK_DASHBOARD_URL,
+                ctaLabel: 'Open dashboard →',
+                footnote: 'Manage these alerts from your client settings.',
+                children: P({
+                  children: [
+                    <strong key="b">{MOCK_BUSINESS}</strong>,
+                    ' moved from ',
+                    <span key="p" style={{ color: '#a1a1aa' }}>56</span>,
+                    ' to ',
+                    <strong key="n" style={{ color: '#ff9f3a' }}>48</strong>,
+                    '.',
+                  ],
+                }),
+              })
+            ),
+          };
+        case 'competitor_entries':
+          return {
+            subject: `New competitors in your 3-pack — ${MOCK_BUSINESS}`,
+            html: await render(
+              AlertEmail({
+                preview: `New competitors in your 3-pack — ${MOCK_BUSINESS}`,
+                headline: 'New competitors entered your 3-pack.',
+                ctaUrl: MOCK_DASHBOARD_URL,
+                ctaLabel: 'Review competitors →',
+                footnote: 'Manage these alerts from your client settings.',
+                children: (
+                  <>
+                    {P({ children: `${MOCK_BUSINESS}'s territory has new entrants:` })}
+                    <ul style={{ paddingLeft: 18, color: '#e4e4e7', margin: '0 0 8px' }}>
+                      <li>Krispy Kreme — Sheppard</li>
+                      <li>Tim Hortons (new flagship)</li>
+                      <li>Donut House Toronto</li>
+                    </ul>
+                  </>
+                ),
+              })
+            ),
+          };
+        case 'momentum_pos':
+          return {
+            subject: `↗ Momentum turned positive — ${MOCK_BUSINESS}`,
+            html: await render(
+              AlertEmail({
+                preview: `↗ Momentum turned positive — ${MOCK_BUSINESS}`,
+                headline: 'Momentum flipped negative → positive.',
+                ctaUrl: MOCK_DASHBOARD_URL,
+                ctaLabel: 'Open dashboard →',
+                footnote: 'Manage these alerts from your client settings.',
+                children: P({
+                  children: [
+                    `${MOCK_BUSINESS}'s momentum is now `,
+                    <strong key="m">+9</strong>,
+                    '. Whatever you changed last cycle is working — keep going.',
+                  ],
+                }),
+              })
+            ),
+          };
+        case 'momentum_neg':
+          return {
+            subject: `↘ Momentum turned negative — ${MOCK_BUSINESS}`,
+            html: await render(
+              AlertEmail({
+                preview: `↘ Momentum turned negative — ${MOCK_BUSINESS}`,
+                headline: 'Momentum flipped positive → negative.',
+                ctaUrl: MOCK_DASHBOARD_URL,
+                ctaLabel: 'Open dashboard →',
+                footnote: 'Manage these alerts from your client settings.',
+                children: P({
+                  children: [
+                    `${MOCK_BUSINESS}'s momentum is now `,
+                    <strong key="m">-7</strong>,
+                    '. Worth investigating — competitor activity, GBP edit, or a citation slip.',
+                  ],
+                }),
+              })
+            ),
+          };
+        case 'cell_changes':
+          return {
+            subject: `12 cells moved — ${MOCK_BUSINESS}`,
+            html: await render(
+              AlertEmail({
+                preview: `12 cells moved — ${MOCK_BUSINESS}`,
+                headline: '12 cells changed rank.',
+                ctaUrl: MOCK_DASHBOARD_URL,
+                ctaLabel: 'See the heatmap →',
+                footnote: 'Manage these alerts from your client settings.',
+                children: P({
+                  children: [
+                    `${MOCK_BUSINESS}: `,
+                    <strong key="i" style={{ color: '#c5ff3a' }}>8 improved</strong>,
+                    ' · ',
+                    <strong key="d" style={{ color: '#ff9f3a' }}>4 degraded</strong>,
+                    '. Average position improved on average.',
+                  ],
+                }),
+              })
+            ),
+          };
+        default:
+          return { subject: '', html: '' };
+      }
+    }
+    case 'delivery-alert': {
+      const count = Number(single(search.count) ?? '4');
+      const clients = Array.from({ length: Math.max(1, Math.min(count, 8)) }, (_, i) => ({
+        businessName: `Demo Business ${i + 1}`,
+        publicId: `demo${i}`,
+        hoursSincePurchase: 6 + i * 4,
+        billingMode: i % 2 === 0 ? 'self_serve_subscription' : 'one_time',
+        buyerEmail: `buyer${i + 1}@example.com`,
+        dashboardUrl: `${MOCK_DASHBOARD_URL}-${i}`,
+      }));
+      return {
+        subject: `[TurfMap ops] ${clients.length} client${clients.length === 1 ? '' : 's'} awaiting first scan — refund window`,
+        html: await render(DeliveryAlertEmail({ clients })),
       };
     }
     default:
