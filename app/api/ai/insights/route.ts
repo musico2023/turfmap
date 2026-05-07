@@ -233,12 +233,17 @@ export async function POST(req: Request) {
   // complete scans) and dedupe to one row per calendar day so same-day
   // rescan jitter doesn't crowd out real history. Newest last so the
   // prompt reads chronologically.
+  // Score history is keyword-scoped: a "plumber emergency" trend has
+  // nothing to do with a "drain cleaning" trend. Mixing them gives the
+  // Coach a false trajectory and produces misleading momentum/diagnosis
+  // language. Same fix as the runScan momentum baseline.
   const { data: historyRows } = scanLocation
     ? await supabase
         .from('scans')
         .select('completed_at, turf_score')
         .eq('client_id', client.id)
         .eq('location_id', scanLocation.id)
+        .eq('keyword_id', keyword.id)
         .eq('status', 'complete')
         .not('turf_score', 'is', null)
         .order('completed_at', { ascending: false })

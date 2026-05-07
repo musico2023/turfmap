@@ -196,8 +196,15 @@ export async function runScanForLocation(
   const found = scan.results.filter((r) => r.businessFound).length;
 
   // 5. Momentum: compare to most recent prior scan ≥ 12h older for THIS
-  //    location. Same-day rescans share a baseline; cross-location data
-  //    is excluded.
+  //    location AND THIS keyword. Score families are not comparable across
+  //    keywords — a "plumber emergency" scan rank pattern has nothing to
+  //    do with a "drain cleaning" scan, so cross-keyword momentum is just
+  //    noise. Same-day rescans of the same keyword share a baseline;
+  //    cross-keyword + cross-location data is excluded.
+  //
+  //    First-ever scan of a new keyword gets momentum=null (no baseline),
+  //    not a spurious negative number from whatever the location's prior
+  //    keyword happened to score.
   const baselineCutoff = new Date(
     Date.now() - MOMENTUM_BASELINE_WINDOW_HOURS * 60 * 60 * 1000
   ).toISOString();
@@ -206,6 +213,7 @@ export async function runScanForLocation(
     .select('turf_score')
     .eq('client_id', client.id)
     .eq('location_id', location.id)
+    .eq('keyword_id', keyword.id)
     .eq('status', 'complete')
     .neq('id', scanId)
     .lt('completed_at', baselineCutoff)
