@@ -1,6 +1,15 @@
 import type { Metadata } from 'next';
 import { Bricolage_Grotesque, Geist, JetBrains_Mono } from 'next/font/google';
+import { GoogleAnalytics } from '@next/third-parties/google';
 import './globals.css';
+
+// Google Analytics 4 measurement ID. Hardcoded because it's a public
+// identifier (it ends up in the gtag.js URL anyway) and the marketing
+// site is the only property pointing at this ID. To override per
+// environment (e.g. a dev property to keep prod numbers clean), set
+// NEXT_PUBLIC_GA_ID — empty string disables GA entirely.
+const GA_MEASUREMENT_ID =
+  process.env.NEXT_PUBLIC_GA_ID ?? 'G-EQQQ82CS13';
 
 // Display headings — used by the .font-display utility.
 const bricolage = Bricolage_Grotesque({
@@ -40,6 +49,12 @@ export default function RootLayout({
       <body className="min-h-full bg-[#0a0a0a] text-white font-sans">
         {children}
       </body>
+      {/* Google Analytics 4. The component handles App Router
+       *  client-side route changes automatically — pageviews fire on
+       *  every route swap, not just full reloads. Skipped when GA_ID
+       *  is empty (e.g. local dev with NEXT_PUBLIC_GA_ID="") so
+       *  development sessions don't pollute prod metrics. */}
+      {GA_MEASUREMENT_ID && <GoogleAnalytics gaId={GA_MEASUREMENT_ID} />}
     </html>
   );
 }
