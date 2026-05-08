@@ -155,6 +155,17 @@ export async function POST(
   const cadenceParam = url.searchParams.get('cadence');
   const cadence: Cadence = isCadence(cadenceParam) ? cadenceParam : 'monthly';
 
+  // Coupon + attribution params. The /scan lander forwards these from
+  // the popup URL so the buyer never has to manually paste a code on
+  // the Stripe checkout page, and so we can attribute the conversion
+  // back to the source campaign in Stripe + GA4.
+  const couponParam = (url.searchParams.get('coupon') ?? '').trim();
+  const utmSource = url.searchParams.get('utm_source') ?? '';
+  const utmMedium = url.searchParams.get('utm_medium') ?? '';
+  const utmCampaign = url.searchParams.get('utm_campaign') ?? '';
+  const gclid = url.searchParams.get('gclid') ?? '';
+  const clientReferenceId = url.searchParams.get('client_reference_id') ?? '';
+
   const secretKey = process.env.STRIPE_SECRET_KEY;
   const resolved = resolvePriceEnv(tierParam, cadence);
   if (!resolved) {
@@ -209,29 +220,112 @@ export async function POST(
 
   const isSubscription = SUBSCRIPTION_TIERS.has(tierParam);
 
+  // Resolve the coupon code (if any) to a Stripe `discounts` array.
+  // Stripe accepts EITHER a Promotion Code id (`promo_xxx`) or a
+  // Coupon id — but the URL gives us the customer-facing string,
+  // which for Promotion Codes needs a server-side lookup to convert
+  // to the id. Strategy: try Promotion Code lookup first (the more
+  // common case for landing-page codes); fall back to treating the
+  // raw string as a Coupon id if no active Promotion Code matches.
+  // If neither resolves, drop the discount silently — checkout will
+  // proceed at full price + the buyer can still paste the code into
+  // Stripe's promo-code field (allow_promotion_codes stays on as a
+  // safety net).
+  let discounts: Array<
+    { promotion_code: string } | { coupon: string }
+  > | undefined = undefined;
+  if (couponParam) {
+    try {
+      const promos = await stripe.promotionCodes.list({
+        code: couponParam,
+        active: true,
+        limit: 1,
+      });
+      if (promos.data[0]?.id) {
+        discounts = [{ promotion_code: promos.data[0].id }];
+      } else {
+        // No active promotion code with this string — try as a raw
+        // Coupon id. Stripe will throw on session create if neither
+        // works; the catch below falls back to no-discount checkout.
+        discounts = [{ coupon: couponParam }];
+      }
+    } catch {
+      // Promotion-code lookup failed (network, rate limit, etc.);
+      // fall back to raw Coupon id below. We still want checkout to
+      // proceed even if the discount can't be auto-applied.
+      discounts = [{ coupon: couponParam }];
+    }
+  }
+
+  // Stripe metadata is a flat string-string map. We collapse the
+  // attribution params onto it so they're queryable from the
+  // dashboard + present on the checkout.session.completed webhook
+  // payload — that's where the real conversion-tracking lives. Empty
+  // values are dropped so the metadata stays lean.
+  const attribution: Record<string, string> = {};
+  if (utmSource) attribution.utm_source = utmSource;
+  if (utmMedium) attribution.utm_medium = utmMedium;
+  if (utmCampaign) attribution.utm_campaign = utmCampaign;
+  if (gclid) attribution.gclid = gclid;
+  if (couponParam) attribution.coupon = couponParam;
+
+  // Build the session params. We try with the resolved discount
+  // first; if Stripe rejects (invalid coupon, expired, tier-
+  // mismatched), retry without it so the buyer doesn't get stuck.
+  const baseParams: import('stripe').default.Checkout.SessionCreateParams = {
+    mode: isSubscription ? 'subscription' : 'payment',
+    payment_method_types: ['card'],
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${origin}/order/success?tier=${tierParam}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/#section-04`,
+    // Capture the buyer's email up-front so the post-purchase form
+    // can pre-fill it.
+    // customer_creation isn't valid in subscription mode (Stripe
+    // always creates a customer for subs), so only set it for
+    // one-time payments.
+    ...(isSubscription ? {} : { customer_creation: 'if_required' as const }),
+    metadata: {
+      tier: tierParam,
+      // Stamp cadence on subscription sessions so the
+      // order-fulfill pipeline + Stripe webhook can tell monthly
+      // from annual without re-querying the Price object.
+      ...(isSubscription ? { cadence } : {}),
+      ...attribution,
+    },
+    ...(clientReferenceId ? { client_reference_id: clientReferenceId } : {}),
+  };
+
   try {
-    const session = await stripe.checkout.sessions.create({
-      mode: isSubscription ? 'subscription' : 'payment',
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${origin}/order/success?tier=${tierParam}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/#section-04`,
-      // Capture the buyer's email up-front so the post-purchase form
-      // can pre-fill it. allow_promotion_codes lets us run launch
-      // discounts without rebuilding.
-      // customer_creation isn't valid in subscription mode (Stripe
-      // always creates a customer for subs), so only set it for
-      // one-time payments.
-      ...(isSubscription ? {} : { customer_creation: 'if_required' as const }),
-      allow_promotion_codes: true,
-      metadata: {
-        tier: tierParam,
-        // Stamp cadence on subscription sessions so the
-        // order-fulfill pipeline + Stripe webhook can tell monthly
-        // from annual without re-querying the Price object.
-        ...(isSubscription ? { cadence } : {}),
-      },
-    });
+    let session: import('stripe').default.Checkout.Session;
+    try {
+      // First attempt: with the resolved discount. allow_promotion_codes
+      // is mutually exclusive with `discounts` on Stripe's side —
+      // omitting it when we pre-apply a discount avoids the API error
+      // "You may not specify both a coupon and the
+      // allow_promotion_codes option."
+      session = await stripe.checkout.sessions.create({
+        ...baseParams,
+        ...(discounts
+          ? { discounts }
+          : { allow_promotion_codes: true }),
+      });
+    } catch (e) {
+      // Discount rejected (invalid / expired / tier-mismatched code) —
+      // retry without it so the buyer reaches checkout. They can still
+      // hand-enter a valid code via Stripe's promo-code input.
+      if (discounts) {
+        console.warn(
+          '[checkout] discount rejected, retrying without:',
+          e instanceof Error ? e.message : e
+        );
+        session = await stripe.checkout.sessions.create({
+          ...baseParams,
+          allow_promotion_codes: true,
+        });
+      } else {
+        throw e;
+      }
+    }
 
     if (!session.url) {
       return NextResponse.json(
