@@ -65,8 +65,7 @@ export function OrderConfirmationEmail({
       <P>
         We&rsquo;re scanning <strong>{businessName}</strong>&rsquo;s territory
         right now — {TIER_BLURB[tier]}. The first scan typically lands in
-        30–60 seconds; you&rsquo;ll get another email when your dashboard
-        is ready.
+        30–60 seconds; we&rsquo;ll email when your TurfMap is ready.
       </P>
 
       {isRecurring && (
@@ -79,7 +78,7 @@ export function OrderConfirmationEmail({
       )}
 
       <PrimaryButton href={dashboardUrl}>
-        Open my dashboard →
+        Open my TurfMap →
       </PrimaryButton>
 
       {includesCall && bookingUrl && (

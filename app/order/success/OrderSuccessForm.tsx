@@ -415,7 +415,7 @@ export function OrderSuccessForm({
                 <div className="font-display text-base md:text-lg font-bold leading-tight">
                   {publicId
                     ? 'Your TurfMap is ready.'
-                    : 'Scan firing now.'}
+                    : 'Running your scan…'}
                 </div>
                 <p className="text-xs text-zinc-500 leading-relaxed mt-0.5 truncate">
                   Link sent to{' '}
@@ -469,7 +469,7 @@ export function OrderSuccessForm({
             }}
           >
             <div className="font-display text-2xl font-bold mb-3">
-              {publicId ? 'Your TurfMap is ready.' : 'Scan firing now.'}
+              {publicId ? 'Your TurfMap is ready.' : 'Running your scan…'}
             </div>
             <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">
               {partialMessage ?? (

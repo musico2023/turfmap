@@ -47,13 +47,13 @@ export function ScanReadyEmail({
     <EmailLayout
       preview={`Your TurfMap is ready — ${businessName}`}
     >
-      <H1>Your map&rsquo;s ready.</H1>
+      <H1>Your TurfMap is ready.</H1>
       <P>
         We finished the 81-point geo-grid scan for{' '}
-        <strong>{businessName}</strong>. Open your dashboard to see the
-        heatmap, your score family, and your competitor leaderboard —
-        then generate the AI Coach playbook for your prioritized
-        next moves.
+        <strong>{businessName}</strong>. Open your TurfMap to see the
+        heatmap, your score family, your competitor leaderboard, and
+        your AI Coach Fix List — the top 3 prioritized moves to
+        improve your visibility.
       </P>
 
       {metrics && (
@@ -72,7 +72,7 @@ export function ScanReadyEmail({
         />
       )}
 
-      <PrimaryButton href={dashboardUrl}>View my TurfMap →</PrimaryButton>
+      <PrimaryButton href={dashboardUrl}>Open my TurfMap →</PrimaryButton>
 
       {hasPdfAttachment && (
         <PSmall>Your PDF report is attached.</PSmall>

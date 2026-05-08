@@ -596,11 +596,12 @@ function DoneStep({ state }: { state: WizardState }) {
           <Check size={22} style={{ color: 'var(--color-lime, #c5ff3a)' }} />
         </div>
         <h2 className="font-display text-2xl font-bold mb-2">
-          Your TurfMap is ready
+          Your TurfMap is ready.
         </h2>
         <p className="text-sm text-zinc-400 leading-relaxed mb-6 max-w-md mx-auto">
-          Your first scan is done — head to the dashboard to see where you win
-          and where you don&rsquo;t. Your AI Coach playbook will load with it.
+          Your first scan is done — head to your TurfMap to see where
+          you win and where you don&rsquo;t. Your AI Coach Fix List
+          loads with it.
         </p>
         <Link
           href={`/portal/${state.publicId}`}

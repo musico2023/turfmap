@@ -186,9 +186,10 @@ export default async function OrderSuccessPage({
                   Thanks — your {tierLabel} order is confirmed.
                 </h1>
                 <p className="text-zinc-300 leading-relaxed">
-                  One more step. Tell us about your business and we&rsquo;ll
-                  fire your scan immediately. You&rsquo;ll get an email with
-                  your TurfMap link in under a minute.
+                  One more step. Tell us about your business — your
+                  scan kicks off the moment you submit, and we&rsquo;ll
+                  email your TurfMap as soon as it&rsquo;s ready
+                  (typically under a minute).
                 </p>
               </div>
             </div>
