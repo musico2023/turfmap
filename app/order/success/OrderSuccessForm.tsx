@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Check, Loader2, Sparkles } from 'lucide-react';
 import {
   AddressAutocomplete,
   type AddressFields,
 } from '@/components/turfmap/AddressAutocomplete';
 import { CalEmbed } from '@/components/turfmap/CalEmbed';
 import { OnboardingWizard } from '@/components/turfmap/OnboardingWizard';
+import { PulseAttachPanel } from '@/components/turfmap/PulseAttachPanel';
 import type { OnboardingStep } from '@/lib/supabase/types';
 
 /**
@@ -33,6 +34,9 @@ export function OrderSuccessForm({
   sessionId,
   keywordCount,
   prefillEmail,
+  stripeCustomerId,
+  attachState,
+  attachPublicId,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -42,6 +46,22 @@ export function OrderSuccessForm({
    *  buyer typing it again. They can still edit if they want a
    *  different delivery address. */
   prefillEmail: string | null;
+  /** Stripe customer id from the original one-time purchase. Forwarded
+   *  to the Pulse-attach panel so the trial subscription pre-binds to
+   *  the same customer (no email re-entry on Stripe). Null when the
+   *  session lookup couldn't recover it (e.g. Stripe not configured). */
+  stripeCustomerId: string | null;
+  /** Round-trip flag from the Pulse-attach Stripe redirect. When
+   *  'success', the success card surfaces a confirmation banner +
+   *  hides the attach panel. When 'cancelled', the attach panel
+   *  remains visible so the buyer can retry. Null when the buyer
+   *  hasn't engaged with the attach flow. */
+  attachState: 'success' | 'cancelled' | null;
+  /** Server-resolved client public_id for the attach return path.
+   *  Set when attachState is non-null (the buyer is returning from
+   *  Stripe Pulse-attach and shouldn't re-fill the form). Null on
+   *  the initial purchase flow. */
+  attachPublicId: string | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -70,6 +90,20 @@ export function OrderSuccessForm({
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
     null
   );
+
+  // Pulse-attach return path: when the buyer comes back from Stripe
+  // with ?attach=success or ?attach=cancelled, server resolves the
+  // existing client public_id and hands it down. We hydrate `done`
+  // and `publicId` from that so the success card renders directly —
+  // the buyer already filled the form on the original purchase, no
+  // need to make them do it again. Runs once on mount.
+  useEffect(() => {
+    if (attachState && attachPublicId) {
+      setPublicId(attachPublicId);
+      setDone(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setKeywordAt = (idx: number, value: string) => {
     setKeywords((prev) => {
@@ -194,61 +228,148 @@ export function OrderSuccessForm({
         />
       );
     }
+    // Pulse-attach panel surfaces only on one-time tiers, only when
+    // the buyer hasn't already opted in or cancelled mid-flow, and
+    // only when we have the data needed to bind the trial to the
+    // existing Stripe customer + client row.
+    const isOneTimeTier =
+      tier === 'scan' || tier === 'audit' || tier === 'strategy';
+    const showAttachPanel =
+      isOneTimeTier &&
+      attachState !== 'success' &&
+      publicId &&
+      sessionId &&
+      stripeCustomerId;
+
     return (
-      <div
-        className="border rounded-lg p-8 text-center"
-        style={{
-          background: 'var(--color-card)',
-          borderColor: 'var(--color-border-bright)',
-        }}
-      >
-        <div className="font-display text-2xl font-bold mb-3">
-          {publicId ? 'Your TurfMap is ready.' : 'Scan firing now.'}
-        </div>
-        <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">
-          {partialMessage ?? (
-            <>
-              We&rsquo;ve sent the link to{' '}
-              <span className="font-mono text-zinc-100">{email}</span>. You
-              can also bookmark this page or click below to open your
-              dashboard now.
-            </>
-          )}
-        </p>
-        {publicId && (
-          <a
-            href={`/portal/${publicId}`}
-            className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-3 px-5 transition-all whitespace-nowrap hover:brightness-110"
+      <>
+        {/* Attach success banner — shown when the buyer just came back
+         *  from a successful Pulse-attach Stripe flow. Inline above
+         *  the original success card so the celebratory beat compounds
+         *  ("scan ready + Pulse on its way"). */}
+        {attachState === 'success' && (
+          <div
+            className="border rounded-lg p-5 mb-5 flex items-start gap-3"
             style={{
-              background: 'var(--color-lime)',
-              color: 'black',
-              boxShadow: '0 6px 20px #c5ff3a40',
+              background: 'var(--color-card-glow)',
+              borderColor: 'var(--color-border-bright)',
+              boxShadow: '0 0 24px #c5ff3a14',
             }}
           >
-            Open my TurfMap →
-          </a>
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{
+                background: 'var(--color-lime)',
+                boxShadow: '0 0 18px #c5ff3a40',
+              }}
+            >
+              <Sparkles size={16} className="text-black" strokeWidth={2.75} />
+            </div>
+            <div className="flex-1">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-1">
+                Pulse trial active
+              </div>
+              <div className="font-display text-lg font-bold leading-tight mb-1">
+                Free for 30 days. Cancel anytime before then.
+              </div>
+              <p className="text-sm text-zinc-400 leading-relaxed">
+                Your map will auto-rescan weekly. We&rsquo;ll email when
+                your TurfScore moves more than ±5. First charge:{' '}
+                <span className="font-mono text-zinc-200">$39</span> on
+                day 31 — manage the subscription anytime from your
+                portal&rsquo;s billing page.
+              </p>
+            </div>
+          </div>
         )}
-        {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
-          <CalEmbed
-            bookingUrl={bookingUrl}
-            email={email}
-            businessName={businessName}
-            notes={`Booking from TurfMap ${tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit'} order for ${businessName}.`}
-            tierLabel={
-              tier === 'strategy'
-                ? '90-min Strategy Session'
-                : '30-min Audit walkthrough'
-            }
+
+        {/* Attach cancelled banner — shown when the buyer hit Cancel
+         *  on Stripe's hosted page. Light reassurance + no nag, plus
+         *  the original attach panel still mounts below so they can
+         *  retry if they changed their mind. */}
+        {attachState === 'cancelled' && (
+          <div
+            className="border rounded-md px-4 py-3 mb-5 flex items-start gap-2.5 text-xs"
+            style={{
+              background: 'var(--color-card)',
+              borderColor: 'var(--color-border)',
+              color: '#a1a1aa',
+            }}
+          >
+            <Check size={14} className="flex-shrink-0 mt-0.5" />
+            <span className="leading-relaxed">
+              No problem — your TurfScan is still on its way. The Pulse
+              trial offer is below if you change your mind.
+            </span>
+          </div>
+        )}
+
+        <div
+          className="border rounded-lg p-8 text-center"
+          style={{
+            background: 'var(--color-card)',
+            borderColor: 'var(--color-border-bright)',
+          }}
+        >
+          <div className="font-display text-2xl font-bold mb-3">
+            {publicId ? 'Your TurfMap is ready.' : 'Scan firing now.'}
+          </div>
+          <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">
+            {partialMessage ?? (
+              <>
+                We&rsquo;ve sent the link to{' '}
+                <span className="font-mono text-zinc-100">{email}</span>. You
+                can also bookmark this page or click below to open your
+                dashboard now.
+              </>
+            )}
+          </p>
+          {publicId && (
+            <a
+              href={`/portal/${publicId}`}
+              className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-3 px-5 transition-all whitespace-nowrap hover:brightness-110"
+              style={{
+                background: 'var(--color-lime)',
+                color: 'black',
+                boxShadow: '0 6px 20px #c5ff3a40',
+              }}
+            >
+              Open my TurfMap →
+            </a>
+          )}
+          {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
+            <CalEmbed
+              bookingUrl={bookingUrl}
+              email={email}
+              businessName={businessName}
+              notes={`Booking from TurfMap ${tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit'} order for ${businessName}.`}
+              tierLabel={
+                tier === 'strategy'
+                  ? '90-min Strategy Session'
+                  : '30-min Audit walkthrough'
+              }
+            />
+          )}
+          {(tier === 'audit' || tier === 'strategy') && !bookingUrl && (
+            <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">
+              Your strategist will email separately within 2 business days with
+              the diagnosis
+              {tier === 'strategy' && ' and a calendar link to book your call'}.
+            </p>
+          )}
+        </div>
+
+        {/* Pulse attach offer. Renders *below* the success card so the
+         *  primary "you got what you paid for" beat lands first; the
+         *  add-on offer is secondary, never required. */}
+        {showAttachPanel && (
+          <PulseAttachPanel
+            publicId={publicId}
+            stripeCustomerId={stripeCustomerId}
+            originalSessionId={sessionId}
           />
         )}
-        {(tier === 'audit' || tier === 'strategy') && !bookingUrl && (
-          <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">
-            Your strategist will email separately within 2 business days with
-            the diagnosis
-            {tier === 'strategy' && ' and a calendar link to book your call'}.
-          </p>
-        )}
-      </div>
+      </>
     );
   }
 

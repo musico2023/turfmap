@@ -56,6 +56,7 @@ const TIERS: TierSpec[] = [
       'Branded PDF report you can keep or share',
       'Delivered in under a minute',
     ],
+    bonus: '30 days of TurfMap Pulse, free',
     cta: 'Order TurfScan',
   },
   {
@@ -71,6 +72,7 @@ const TIERS: TierSpec[] = [
       '30-minute clarity session with a TurfMap strategist — live competitor teardown + strategic diagnosis',
       'Branded customized PDF with strategist notes, delivered post-call',
     ],
+    bonus: '30 days of TurfMap Pulse, free',
     cta: 'Order Visibility Audit',
     popular: true,
   },
@@ -88,6 +90,7 @@ const TIERS: TierSpec[] = [
       'Strategist read on where to focus your investment',
       'Branded comparative report covering all three keyword angles',
     ],
+    bonus: '30 days of TurfMap Pulse, free',
     cta: 'Book Strategy Session',
   },
 ];

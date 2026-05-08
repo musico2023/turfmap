@@ -483,6 +483,31 @@ export default async function ScanLandingPage({
               </li>
             ))}
           </ul>
+
+          {/* Pulse-trial pre-purchase teaser — sets the expectation
+           *  before checkout that the buyer will be offered 30 free
+           *  days of Pulse on the order-success page. Mirrors the
+           *  Gift-icon treatment used on the homepage PricingCards
+           *  bonus row so the visual rhythm carries across surfaces. */}
+          <div
+            className="mt-5 flex items-start gap-2.5 text-sm leading-relaxed"
+            style={{ color: 'var(--color-lime)' }}
+          >
+            <Sparkles
+              size={15}
+              strokeWidth={2.5}
+              className="flex-shrink-0 mt-0.5"
+            />
+            <span>
+              <span className="font-semibold">
+                + 30 days of TurfMap Pulse, free
+              </span>
+              <span className="text-zinc-500">
+                {' '}— offered on your order-confirmation page. Cancel
+                anytime before day 31 to pay nothing.
+              </span>
+            </span>
+          </div>
         </div>
       </section>
 

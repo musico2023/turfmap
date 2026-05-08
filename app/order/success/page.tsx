@@ -10,7 +10,7 @@ import {
   ensureLeadOrder,
   keywordCountForTier,
 } from '@/lib/stripe/leadOrders';
-import type { Tier } from '@/lib/supabase/types';
+import type { ClientRow, Tier } from '@/lib/supabase/types';
 
 export const metadata: Metadata = {
   title: 'Order received — TurfMap™',
@@ -40,9 +40,17 @@ export const metadata: Metadata = {
 export default async function OrderSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tier?: string; session_id?: string }>;
+  searchParams: Promise<{
+    tier?: string;
+    session_id?: string;
+    attach?: string;
+  }>;
 }) {
-  const { tier: tierParam, session_id: sessionId } = await searchParams;
+  const {
+    tier: tierParam,
+    session_id: sessionId,
+    attach: attachParam,
+  } = await searchParams;
 
   // ─── Stripe session validation + lead_orders idempotent insert ──────
   // Pulled into a helper so the rest of the render logic doesn't
@@ -71,6 +79,32 @@ export default async function OrderSuccessPage({
     sessionState?.kind === 'ok' ? sessionState.email : null;
   const sessionWarning =
     sessionState?.kind === 'warning' ? sessionState.message : null;
+  const stripeCustomerId =
+    sessionState?.kind === 'ok' ? sessionState.customerId : null;
+
+  // Pulse-attach return path. When the buyer comes back from Stripe
+  // with ?attach=success or ?attach=cancelled, we need to skip the
+  // form re-render — they already filled it on the original purchase
+  // — and surface the attach confirmation/cancellation state. Look
+  // up the existing client by stripe_customer_id so we can pass the
+  // public_id down to the form, which uses it to render the success
+  // card directly (no second form pass).
+  const attachState =
+    attachParam === 'success'
+      ? ('success' as const)
+      : attachParam === 'cancelled'
+        ? ('cancelled' as const)
+        : null;
+  let attachPublicId: string | null = null;
+  if (attachState && stripeCustomerId) {
+    const supabase = getServerSupabase();
+    const { data: client } = await supabase
+      .from('clients')
+      .select('public_id')
+      .eq('stripe_customer_id', stripeCustomerId)
+      .maybeSingle<Pick<ClientRow, 'public_id'>>();
+    attachPublicId = client?.public_id ?? null;
+  }
 
   return (
     <div className="min-h-screen w-full text-white flex flex-col">
@@ -153,6 +187,9 @@ export default async function OrderSuccessPage({
               sessionId={sessionId ?? null}
               keywordCount={keywordCount}
               prefillEmail={prefillEmail}
+              stripeCustomerId={stripeCustomerId}
+              attachState={attachState}
+              attachPublicId={attachPublicId}
             />
           </Suspense>
         </div>
@@ -188,7 +225,16 @@ function isTierString(v: string | undefined): v is Tier {
 }
 
 type SessionState =
-  | { kind: 'ok'; tier: Tier; email: string | null }
+  | {
+      kind: 'ok';
+      tier: Tier;
+      email: string | null;
+      /** Stripe Customer id captured during the original one-time
+       *  checkout (customer_creation: 'if_required'). Forwarded to
+       *  the OrderSuccessForm so it can wire the Pulse-attach panel
+       *  to the same Stripe customer record. */
+      customerId: string | null;
+    }
   | { kind: 'warning'; message: string };
 
 /**
@@ -251,5 +297,6 @@ async function validateAndRecordSession(
     kind: 'ok',
     tier: result.tier,
     email: result.customerEmail,
+    customerId: result.customerId,
   };
 }
