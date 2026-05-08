@@ -577,11 +577,19 @@ export default function MarketingLanding() {
                 q: 'Can I rerun the scan later?',
                 a: (
                   <>
-                    Yes. Every TurfMap account has a re-scan button you can
-                    fire on demand. If you want your map refreshed every
-                    week indefinitely — to catch ranking drops the moment
-                    they happen — that&rsquo;s what TurfMap Pulse is for
-                    ($39/mo). We also offer fully managed monthly services
+                    Your TurfScan ($99) gives you one scan — the
+                    diagnosis. To track your map over time and catch
+                    changes as they happen, that&rsquo;s what{' '}
+                    <strong className="font-semibold text-zinc-200">
+                      TurfMap Pulse
+                    </strong>{' '}
+                    is for ($39/mo) — same dashboard, automatic weekly
+                    re-scans, alerts when your visibility shifts.{' '}
+                    <strong className="font-semibold text-zinc-200">
+                      Pulse+
+                    </strong>{' '}
+                    ($99/mo, 3-month minimum) adds citation-building on
+                    top. We also offer fully managed monthly services
                     where we don&rsquo;t just measure the map, we act on
                     it; the right fit depends on your category and how
                     much of this you want to handle yourself.
