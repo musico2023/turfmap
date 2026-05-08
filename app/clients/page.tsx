@@ -1,9 +1,9 @@
-import Link from 'next/link';
-import { AlertTriangle, ChevronRight, Crosshair, Plus } from 'lucide-react';
+import { AlertTriangle, Crosshair, Plus } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type { ClientRow } from '@/lib/supabase/types';
 import { Header } from '@/components/turfmap/Header';
 import { SignOutButton } from '@/components/turfmap/SignOutButton';
+import { ClientRoster } from '@/components/turfmap/ClientRoster';
 import {
   isAgencyOwnerEmail,
   requireAgencyUserOrRedirect,
@@ -31,9 +31,16 @@ export default async function AgencyHomePage() {
     // Hide outreach-enrichment rows — those back cold-lead share
     // links, not real billed clients, and would clutter this listing.
     .eq('is_outreach_lead', false)
-    .order('created_at', { ascending: false });
+    // Alphabetical by business name. Postgres's default ordering is
+    // case-sensitive (capital letters first); we lowercase client-side
+    // below to keep "Pizzeria" and "pizzeria" adjacent regardless.
+    .order('business_name', { ascending: true });
 
-  const list = (clients ?? []) as ClientRow[];
+  const list = ((clients ?? []) as ClientRow[]).slice().sort((a, b) =>
+    a.business_name.localeCompare(b.business_name, undefined, {
+      sensitivity: 'base',
+    })
+  );
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -60,49 +67,7 @@ export default async function AgencyHomePage() {
         {list.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {list.map((c) => (
-              <Link
-                key={c.id}
-                href={`/clients/${c.public_id}`}
-                className="border rounded-lg p-5 transition-colors hover:border-zinc-700 group"
-                style={{
-                  background: 'var(--color-card)',
-                  borderColor: 'var(--color-border)',
-                }}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
-                    {c.industry ?? 'Local business'}
-                  </div>
-                  <ChevronRight
-                    size={16}
-                    className="text-zinc-600 group-hover:text-zinc-300 transition-colors"
-                  />
-                </div>
-                <div className="font-display text-lg font-semibold leading-snug mb-1">
-                  {c.business_name}
-                </div>
-                <div className="text-xs text-zinc-500 truncate">
-                  {c.address}
-                </div>
-                <div className="mt-4 flex items-center gap-2 text-[11px] font-mono text-zinc-600">
-                  <span
-                    className="inline-block w-1.5 h-1.5 rounded-full"
-                    style={{
-                      background:
-                        c.status === 'active'
-                          ? 'var(--color-lime)'
-                          : '#666',
-                    }}
-                  />
-                  <span className="uppercase tracking-wider">
-                    {c.status ?? 'unknown'}
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
+          <ClientRoster clients={list} />
         )}
       </div>
     </div>
