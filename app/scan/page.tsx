@@ -520,8 +520,27 @@ export default async function ScanLandingPage({
           <h2 className="font-display text-2xl md:text-3xl font-bold leading-tight tracking-tight mb-6 max-w-xl">
             Things people ask before <em>they buy.</em>
           </h2>
+          {/* "What if I find out my visibility is bad?" leads the FAQ
+           *  and renders open by default — it's the highest-objection
+           *  question on the page (the implicit "what if this just
+           *  confirms I'm screwed?" worry). FAQAccordion auto-expands
+           *  the first item, so the order here drives the
+           *  default-open state. The other three start collapsed. */}
           <FAQAccordion
             items={[
+              {
+                q: 'What if I find out my visibility is bad?',
+                a: (
+                  <>
+                    Visibility problems are fixable. Every TurfScan ends
+                    with the AI Coach Fix List — the top three actions
+                    to fix in priority order, specific to your business
+                    and category. Most buyers walk away with a clear
+                    plan they can act on in under an hour, or hand off
+                    to a freelancer or team member.
+                  </>
+                ),
+              },
               {
                 q: 'How is this different from just Googling myself?',
                 a: (
@@ -561,20 +580,6 @@ export default async function ScanLandingPage({
                   </>
                 ),
               },
-              {
-                q: 'What if I find out my visibility is bad?',
-                a: (
-                  <>
-                    Then the {showDiscount ? formatUsd(finalCents) : '$99'}{' '}
-                    TurfScan just paid for itself. The AI Coach fix list
-                    spells out the top 3 highest-leverage actions specific
-                    to your business and category — you, your team, or
-                    your existing freelancer can act on them. If you want
-                    done-for-you fixes, we&rsquo;ll point you at the right
-                    Fourdots Digital service on the way out.
-                  </>
-                ),
-              },
             ]}
           />
         </div>
@@ -582,8 +587,12 @@ export default async function ScanLandingPage({
 
       {/* CLOSING CTA — second buy button so buyers who scrolled to
        *  read the FAQ don't have to scroll all the way back up.
-       *  Larger, brighter, tinted — visually the page's loudest beat. */}
-      <section className="px-6 md:px-10 pb-16">
+       *  Larger, brighter, tinted — visually the page's loudest beat.
+       *  The worst-case/best-case frame above the price reminder
+       *  mirrors the closing language on the main marketing page —
+       *  reframes the $49 as a low-risk diagnostic regardless of
+       *  what the scan turns up. */}
+      <section className="px-6 md:px-10 pb-10">
         <div className="max-w-3xl mx-auto">
           <div
             className="rounded-lg p-7 md:p-9 border text-center"
@@ -593,14 +602,24 @@ export default async function ScanLandingPage({
               boxShadow: '0 0 40px #c5ff3a14',
             }}
           >
-            <div className="font-display text-2xl md:text-3xl font-bold mb-2">
+            <div className="font-display text-2xl md:text-3xl font-bold mb-3">
               Ready to see your map?
             </div>
-            <p className="text-sm md:text-base text-zinc-400 mb-6 max-w-md mx-auto leading-relaxed">
+            <p className="text-sm md:text-base text-zinc-300 mb-3 max-w-md mx-auto leading-relaxed">
+              <strong className="font-semibold text-zinc-100">
+                Worst case:
+              </strong>{' '}
+              {formatUsd(finalCents)} confirms what you suspect.{' '}
+              <strong className="font-semibold text-zinc-100">
+                Best case:
+              </strong>{' '}
+              one fix pays for the scan ten times over.
+            </p>
+            <p className="text-xs md:text-sm text-zinc-500 mb-6 max-w-md mx-auto leading-relaxed">
               {showDiscount && coupon ? (
                 <>
                   {formatUsd(finalCents)} TurfScan with{' '}
-                  <span className="font-mono text-zinc-200">
+                  <span className="font-mono text-zinc-300">
                     {coupon.code}
                   </span>{' '}
                   applied at checkout. One-time, no subscription.
@@ -620,6 +639,22 @@ export default async function ScanLandingPage({
               />
             </div>
           </div>
+
+          {/* Audit-ladder offramp — small, low-contrast, no accent
+           *  color or button styling. Mirrors the "Looking for full-
+           *  service local SEO instead..." footer line on the main
+           *  pricing page. The buyer who's curious clicks; the
+           *  buyer who's committed to $49 ignores it without
+           *  feeling pulled. */}
+          <p className="mt-6 text-xs text-zinc-600 text-center leading-relaxed">
+            Want a strategist to walk through your map after the scan?{' '}
+            <a
+              href="https://www.turfmap.ai/#section-04"
+              className="text-zinc-400 hover:text-zinc-200 transition-colors underline-offset-2 hover:underline"
+            >
+              See our Visibility Audit options →
+            </a>
+          </p>
         </div>
       </section>
 

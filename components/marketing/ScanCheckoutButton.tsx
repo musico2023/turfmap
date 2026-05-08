@@ -118,6 +118,15 @@ export function ScanCheckoutButton({
       >
         {loading ? 'Opening secure checkout…' : label}
       </Button>
+      {/* Click-flow transparency line — removes hesitation at the
+       *  moment of click by spelling out exactly what happens next.
+       *  Same visual weight as the "FOURDOTS50 applied at checkout"
+       *  helper line so the two read as a coordinated pair. */}
+      <p className="mt-2.5 text-xs text-zinc-500 leading-relaxed">
+        Next: business details{' '}
+        <span className="text-zinc-600">→</span> secure Stripe checkout{' '}
+        <span className="text-zinc-600">→</span> scan fires immediately.
+      </p>
       {error && (
         <p
           className="mt-3 text-xs text-red-400 leading-relaxed"
