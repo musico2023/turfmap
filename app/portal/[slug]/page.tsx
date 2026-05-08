@@ -480,6 +480,7 @@ export default async function ClientPortalPage({
           <div className="lg:col-span-12">
             <ClientBillingPanel
               clientId={clientUuid}
+              clientPublicId={client.public_id}
               tier={portalTier}
               summary={billingSummary}
             />

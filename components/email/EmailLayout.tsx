@@ -377,6 +377,34 @@ export function TierBadge({ tier }: { tier: 'pulse' | 'pulse_plus' }) {
   );
 }
 
+/**
+ * Subdued inline link for secondary actions in an email — e.g. the
+ * "Cancel trial" affordance on the day-28 reminder, where the
+ * primary CTA is "Manage subscription" and we don't want the
+ * cancel option to compete visually. Renders as light underlined
+ * text in the muted color, no padding/background.
+ */
+export function SecondaryLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      style={{
+        color: TEXT_MUTED,
+        fontSize: 13,
+        textDecoration: 'underline',
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 export const COLORS = {
   BG,
   CARD,

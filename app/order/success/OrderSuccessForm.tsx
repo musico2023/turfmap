@@ -241,6 +241,16 @@ export function OrderSuccessForm({
       sessionId &&
       stripeCustomerId;
 
+    // Compact celebration vs full success card. When the attach panel
+    // is the focal point of the page (most one-time-tier success
+    // hits), the original "Your TurfMap is ready" + big lime CTA card
+    // would compete with the attach for the buyer's attention. Render
+    // it as a compact acknowledgment row instead — the buyer's
+    // dashboard exit lives inside the attach panel as a "Skip" link.
+    //
+    // When the attach panel is hidden (Pulse already attached, the
+    // tier is itself a Pulse purchase, or attach=success), the
+    // original full success card is the right hero — restore it.
     return (
       <>
         {/* Attach success banner — shown when the buyer just came back
@@ -273,11 +283,10 @@ export function OrderSuccessForm({
                 Free for 30 days. Cancel anytime before then.
               </div>
               <p className="text-sm text-zinc-400 leading-relaxed">
-                Your map will auto-rescan weekly. We&rsquo;ll email when
-                your TurfScore moves more than ±5. First charge:{' '}
+                Your map will auto-rescan every Monday. We&rsquo;ll email
+                when your TurfScore moves more than ±5. First charge:{' '}
                 <span className="font-mono text-zinc-200">$39</span> on
-                day 31 — manage the subscription anytime from your
-                portal&rsquo;s billing page.
+                day 31 — manage or cancel anytime from your portal.
               </p>
             </div>
           </div>
@@ -285,8 +294,8 @@ export function OrderSuccessForm({
 
         {/* Attach cancelled banner — shown when the buyer hit Cancel
          *  on Stripe's hosted page. Light reassurance + no nag, plus
-         *  the original attach panel still mounts below so they can
-         *  retry if they changed their mind. */}
+         *  the attach panel still mounts below so they can retry if
+         *  they changed their mind. */}
         {attachState === 'cancelled' && (
           <div
             className="border rounded-md px-4 py-3 mb-5 flex items-start gap-2.5 text-xs"
@@ -304,70 +313,133 @@ export function OrderSuccessForm({
           </div>
         )}
 
-        <div
-          className="border rounded-lg p-8 text-center"
-          style={{
-            background: 'var(--color-card)',
-            borderColor: 'var(--color-border-bright)',
-          }}
-        >
-          <div className="font-display text-2xl font-bold mb-3">
-            {publicId ? 'Your TurfMap is ready.' : 'Scan firing now.'}
-          </div>
-          <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">
-            {partialMessage ?? (
-              <>
-                We&rsquo;ve sent the link to{' '}
-                <span className="font-mono text-zinc-100">{email}</span>. You
-                can also bookmark this page or click below to open your
-                dashboard now.
-              </>
-            )}
-          </p>
-          {publicId && (
-            <a
-              href={`/portal/${publicId}`}
-              className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-3 px-5 transition-all whitespace-nowrap hover:brightness-110"
+        {showAttachPanel ? (
+          // Attach-panel-primary layout. Compact celebration header,
+          // then the attach panel as the hero element, then any
+          // tier-specific extras (Cal.com booking for audit/strategy).
+          <>
+            <div
+              className="border rounded-lg p-5 mb-5 flex items-center gap-3"
               style={{
-                background: 'var(--color-lime)',
-                color: 'black',
-                boxShadow: '0 6px 20px #c5ff3a40',
+                background: 'var(--color-card)',
+                borderColor: 'var(--color-border)',
               }}
             >
-              Open my TurfMap →
-            </a>
-          )}
-          {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
-            <CalEmbed
-              bookingUrl={bookingUrl}
-              email={email}
-              businessName={businessName}
-              notes={`Booking from TurfMap ${tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit'} order for ${businessName}.`}
-              tierLabel={
-                tier === 'strategy'
-                  ? '90-min Strategy Session'
-                  : '30-min Audit walkthrough'
-              }
-            />
-          )}
-          {(tier === 'audit' || tier === 'strategy') && !bookingUrl && (
-            <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">
-              Your strategist will email separately within 2 business days with
-              the diagnosis
-              {tier === 'strategy' && ' and a calendar link to book your call'}.
-            </p>
-          )}
-        </div>
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{
+                  background: 'var(--color-lime)',
+                  boxShadow: '0 0 12px #c5ff3a30',
+                }}
+              >
+                <Check size={16} className="text-black" strokeWidth={3} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-display text-base md:text-lg font-bold leading-tight">
+                  {publicId
+                    ? 'Your TurfMap is ready.'
+                    : 'Scan firing now.'}
+                </div>
+                <p className="text-xs text-zinc-500 leading-relaxed mt-0.5 truncate">
+                  Link sent to{' '}
+                  <span className="font-mono text-zinc-300">{email}</span>.
+                </p>
+              </div>
+            </div>
 
-        {/* Pulse attach offer. Renders *below* the success card so the
-         *  primary "you got what you paid for" beat lands first; the
-         *  add-on offer is secondary, never required. */}
-        {showAttachPanel && (
-          <PulseAttachPanel
-            publicId={publicId}
-            stripeCustomerId={stripeCustomerId}
-            originalSessionId={sessionId}
-          />
+            <PulseAttachPanel
+              publicId={publicId}
+              stripeCustomerId={stripeCustomerId}
+              originalSessionId={sessionId}
+            />
+
+            {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
+              <div className="mt-6">
+                <CalEmbed
+                  bookingUrl={bookingUrl}
+                  email={email}
+                  businessName={businessName}
+                  notes={`Booking from TurfMap ${tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit'} order for ${businessName}.`}
+                  tierLabel={
+                    tier === 'strategy'
+                      ? '90-min Strategy Session'
+                      : '30-min Audit walkthrough'
+                  }
+                />
+              </div>
+            )}
+            {(tier === 'audit' || tier === 'strategy') && !bookingUrl && (
+              <p className="text-sm text-zinc-500 leading-relaxed mt-6">
+                Your strategist will email separately within 2 business days
+                with the diagnosis
+                {tier === 'strategy' &&
+                  ' and a calendar link to book your call'}
+                .
+              </p>
+            )}
+          </>
+        ) : (
+          // Full success-card layout. Renders when the attach panel
+          // shouldn't show (Pulse already attached, attach=success,
+          // tier is itself Pulse/Pulse+). The big "Open my TurfMap"
+          // CTA is the focal point because there's nothing else
+          // competing for attention here.
+          <div
+            className="border rounded-lg p-8 text-center"
+            style={{
+              background: 'var(--color-card)',
+              borderColor: 'var(--color-border-bright)',
+            }}
+          >
+            <div className="font-display text-2xl font-bold mb-3">
+              {publicId ? 'Your TurfMap is ready.' : 'Scan firing now.'}
+            </div>
+            <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">
+              {partialMessage ?? (
+                <>
+                  We&rsquo;ve sent the link to{' '}
+                  <span className="font-mono text-zinc-100">{email}</span>.
+                  You can also bookmark this page or click below to open
+                  your dashboard now.
+                </>
+              )}
+            </p>
+            {publicId && (
+              <a
+                href={`/portal/${publicId}`}
+                className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-3 px-5 transition-all whitespace-nowrap hover:brightness-110"
+                style={{
+                  background: 'var(--color-lime)',
+                  color: 'black',
+                  boxShadow: '0 6px 20px #c5ff3a40',
+                }}
+              >
+                Open my TurfMap →
+              </a>
+            )}
+            {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
+              <CalEmbed
+                bookingUrl={bookingUrl}
+                email={email}
+                businessName={businessName}
+                notes={`Booking from TurfMap ${tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit'} order for ${businessName}.`}
+                tierLabel={
+                  tier === 'strategy'
+                    ? '90-min Strategy Session'
+                    : '30-min Audit walkthrough'
+                }
+              />
+            )}
+            {(tier === 'audit' || tier === 'strategy') && !bookingUrl && (
+              <p className="text-sm text-zinc-500 leading-relaxed max-w-xl mx-auto mt-6">
+                Your strategist will email separately within 2 business days
+                with the diagnosis
+                {tier === 'strategy' &&
+                  ' and a calendar link to book your call'}
+                .
+              </p>
+            )}
+          </div>
         )}
       </>
     );

@@ -1,8 +1,14 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { CreditCard, ExternalLink, Sparkles, Activity } from 'lucide-react';
+import { useEffect, useState, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  Activity,
+  CreditCard,
+  ExternalLink,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { tierLabel } from '@/lib/subscription/tier';
 import type { SubscriptionTier } from '@/lib/supabase/types';
@@ -27,6 +33,10 @@ import type { SubscriptionTier } from '@/lib/supabase/types';
 export type ClientBillingPanelProps = {
   /** Client UUID — passed to /api/portal/* endpoints. */
   clientId: string;
+  /** Client public_id — passed to /api/portal/cancel-pulse-trial,
+   *  which keys lookups by public_id. Same value as the slug in
+   *  the portal URL. */
+  clientPublicId: string;
   tier: SubscriptionTier | null;
   /** Server-loaded subscription summary. NULL when the client has no
    *  Stripe subscription on file (agency-managed) — panel renders
@@ -46,14 +56,42 @@ export type ClientBillingPanelProps = {
 
 export function ClientBillingPanel({
   clientId,
+  clientPublicId,
   tier,
   summary,
 }: ClientBillingPanelProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const [busy, setBusy] = useState<'portal' | 'upgrade' | null>(null);
+  const [busy, setBusy] = useState<'portal' | 'upgrade' | 'cancel' | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+  // Auto-open the cancel-trial modal when the buyer arrives via the
+  // day-28 email's "Cancel trial" deep link (?cancel_trial=1). The
+  // searchParams check fires once on mount; closing the modal won't
+  // re-open it since there's no observer wired up. Only opens when
+  // the buyer is actually in trial state — otherwise we'd open a
+  // modal that posts an API that 400s.
+  useEffect(() => {
+    if (
+      searchParams?.get('cancel_trial') === '1' &&
+      summary &&
+      summary.ok &&
+      summary.status === 'trialing' &&
+      !summary.cancelAtPeriodEnd
+    ) {
+      setCancelModalOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isTrialing = summary?.ok && summary.status === 'trialing';
+  const cancelAlreadyScheduled =
+    summary?.ok && summary.cancelAtPeriodEnd;
 
   const openBillingPortal = async () => {
     setError(null);
@@ -71,6 +109,44 @@ export function ClientBillingPanel({
         return;
       }
       window.location.href = data.url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cancelPulseTrial = async () => {
+    setError(null);
+    setNotice(null);
+    setBusy('cancel');
+    try {
+      const res = await fetch('/api/portal/cancel-pulse-trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientPublicId }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        cancelsAt?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(
+          data.error ?? `Cancellation failed (HTTP ${res.status})`
+        );
+        return;
+      }
+      // Show a brief inline confirmation, then refresh to pick up the
+      // new cancelAtPeriodEnd flag from Stripe (the summary will
+      // re-render with the "Access ends YYYY-MM-DD" amber banner).
+      setNotice(
+        data.cancelsAt
+          ? `Cancellation scheduled — your trial ends ${data.cancelsAt.slice(0, 10)} with no charge.`
+          : 'Cancellation scheduled — no charge will run at trial end.'
+      );
+      setCancelModalOpen(false);
+      startTransition(() => router.refresh());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -199,6 +275,22 @@ export function ClientBillingPanel({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
+        {/* During an active Pulse trial, the most prominent action is
+         *  "Cancel Pulse trial" — it's the affordance the day-28
+         *  email points at and the one buyers will look for first.
+         *  Suppress when cancellation is already scheduled (the amber
+         *  banner above already conveys the state). */}
+        {isTrialing && !cancelAlreadyScheduled && (
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => setCancelModalOpen(true)}
+            disabled={busy !== null}
+            leftIcon={<X size={12} strokeWidth={2.5} />}
+          >
+            Cancel Pulse trial
+          </Button>
+        )}
         {summary && summary.ok && (
           <Button
             variant="secondary"
@@ -212,7 +304,7 @@ export function ClientBillingPanel({
             Manage billing
           </Button>
         )}
-        {tier === 'pulse' && summary && summary.ok && (
+        {tier === 'pulse' && summary && summary.ok && !isTrialing && (
           <Button
             variant="primary"
             size="md"
@@ -240,6 +332,131 @@ export function ClientBillingPanel({
             {notice}
           </span>
         )}
+      </div>
+
+      {/* Cancel-trial confirmation modal. Backdrop + centered card.
+       *  Fires on either the dashboard "Cancel Pulse trial" button OR
+       *  the day-28 email's deep link (?cancel_trial=1 auto-opens
+       *  this on mount). Single confirm click cancels; close button
+       *  + ESC + backdrop click all dismiss. Sub-2-second flow per
+       *  the launch checklist. */}
+      {cancelModalOpen && (
+        <CancelTrialModal
+          busy={busy === 'cancel'}
+          summary={summary && summary.ok ? summary : null}
+          onConfirm={cancelPulseTrial}
+          onClose={() => {
+            if (busy === 'cancel') return;
+            setCancelModalOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Modal-style confirm dialog for cancelling the Pulse trial. Inline
+ * fixed-position layout — no portal/dialog dependency — keeps the
+ * component zero-dependency (Tailwind + lucide already in the
+ * bundle).
+ */
+function CancelTrialModal({
+  busy,
+  summary,
+  onConfirm,
+  onClose,
+}: {
+  busy: boolean;
+  summary: {
+    currentPeriodEnd: string;
+  } | null;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  // ESC closes the modal. Lives only while the modal is mounted, so
+  // no leaked listener.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0, 0, 0, 0.65)' }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cancel-trial-title"
+    >
+      <div
+        className="border rounded-lg max-w-md w-full p-6 relative"
+        style={{
+          background: 'var(--color-card)',
+          borderColor: 'var(--color-border-bright)',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Close"
+          className="absolute top-3 right-3 text-zinc-500 hover:text-zinc-300 transition-colors p-1 disabled:opacity-50"
+        >
+          <X size={16} />
+        </button>
+
+        <h3
+          id="cancel-trial-title"
+          className="font-display text-lg font-bold mb-2"
+        >
+          Cancel your Pulse trial?
+        </h3>
+        <p className="text-sm text-zinc-300 leading-relaxed mb-2">
+          You&rsquo;ll keep Pulse access through the end of your trial
+          {summary?.currentPeriodEnd && (
+            <>
+              {' '}(
+              <strong className="text-zinc-100">
+                {summary.currentPeriodEnd.slice(0, 10)}
+              </strong>
+              )
+            </>
+          )}
+          , and your card{' '}
+          <strong className="text-zinc-100">won&rsquo;t be charged</strong>.
+        </p>
+        <p className="text-xs text-zinc-500 leading-relaxed mb-5">
+          Changed your mind? Re-activate anytime from the billing page
+          before your trial ends.
+        </p>
+
+        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Keep Pulse
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={onConfirm}
+            loading={busy}
+            loadingLabel="Cancelling…"
+            disabled={busy}
+          >
+            Yes, cancel trial
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -50,6 +50,10 @@ import {
   type PulsePlusWelcomeEmailProps,
 } from '@/components/email/PulsePlusWelcomeEmail';
 import {
+  PulseTrialEndingEmail,
+  type PulseTrialEndingEmailProps,
+} from '@/components/email/PulseTrialEndingEmail';
+import {
   StripeSetupLinkEmail,
   type StripeSetupLinkEmailProps,
 } from '@/components/email/StripeSetupLinkEmail';
@@ -459,6 +463,41 @@ export async function sendPulsePlusWelcome(args: {
   return sendEmail({
     to: args.to,
     subject: `Welcome to TurfMap Pulse+ — finish your setup`,
+    html,
+  });
+}
+
+/**
+ * Day-28 Pulse trial ending reminder. Triggered by Stripe's
+ * customer.subscription.trial_will_end webhook event (fires ~3
+ * days before trial end). Surfaces the trial value to date
+ * (scan count + current TurfScore) plus both action paths
+ * (manage subscription / cancel trial). Doing nothing keeps the
+ * subscription — the email is the only "are you sure you want
+ * to keep paying?" touch we hit the buyer with.
+ */
+export async function sendPulseTrialEnding(args: {
+  to: string;
+  businessName: string;
+  scanCount: number;
+  currentTurfScore: number | null;
+  chargeDate: string;
+  manageSubscriptionUrl: string;
+  cancelTrialUrl: string;
+}): Promise<boolean> {
+  const html = await render(
+    PulseTrialEndingEmail({
+      businessName: args.businessName,
+      scanCount: args.scanCount,
+      currentTurfScore: args.currentTurfScore,
+      chargeDate: args.chargeDate,
+      manageSubscriptionUrl: args.manageSubscriptionUrl,
+      cancelTrialUrl: args.cancelTrialUrl,
+    } satisfies PulseTrialEndingEmailProps)
+  );
+  return sendEmail({
+    to: args.to,
+    subject: `Your TurfMap Pulse trial ends in 3 days`,
     html,
   });
 }
