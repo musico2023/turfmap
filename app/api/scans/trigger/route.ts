@@ -122,15 +122,40 @@ async function runScanTrigger(req: Request) {
   // mutable, so reusing one base across awaits leaks filters from prior
   // calls (the fallback would still carry `location_id = X` and find
   // nothing, defeating the point of falling back).
+  // When keywordId is provided, also enforce that the keyword belongs
+  // to the requested location. Without this, the trigger would happily
+  // run a sibling-location keyword against the active location's grid
+  // (the Sugar Daddy Doughnuts Union Station bug — keyword from a
+  // different location came back with 0/100 because the territory
+  // didn't match). The match is satisfied if the keyword's
+  // location_id equals the location's id, OR if the keyword is a
+  // legacy unscoped row (location_id IS NULL) — those are the only
+  // two safe states.
   let keywordRow: Pick<TrackedKeywordRow, 'id' | 'keyword'> | null = null;
   if (keywordId) {
     const { data } = await supabase
       .from('tracked_keywords')
-      .select('id, keyword')
+      .select('id, keyword, location_id')
       .eq('client_id', clientId)
       .eq('id', keywordId)
-      .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
-    keywordRow = data ?? null;
+      .maybeSingle<
+        Pick<TrackedKeywordRow, 'id' | 'keyword' | 'location_id'>
+      >();
+    if (data) {
+      const matchesLocation =
+        data.location_id === location.id || data.location_id === null;
+      if (matchesLocation) {
+        keywordRow = { id: data.id, keyword: data.keyword };
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "That keyword belongs to a different location. Add a keyword for this location in Settings before scanning.",
+          },
+          { status: 400 }
+        );
+      }
+    }
   } else {
     const { data: locKw } = await supabase
       .from('tracked_keywords')
@@ -142,13 +167,17 @@ async function runScanTrigger(req: Request) {
       .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
     keywordRow = locKw ?? null;
     if (!keywordRow) {
-      // Fallback: any keyword on this client (covers legacy rows with
-      // location_id=NULL, plus the brief window between client-create
-      // and the location_id stamp on the primary keyword).
+      // Fallback ONLY to legacy keywords (location_id IS NULL) —
+      // these exist on pre-multi-location-migration clients and the
+      // brief window between client-create and the location_id stamp
+      // on the primary keyword. We deliberately do NOT fall back to
+      // a sibling location's keyword: that would scan the wrong
+      // (location, keyword) pair and return nonsense results.
       const { data: anyKw } = await supabase
         .from('tracked_keywords')
         .select('id, keyword')
         .eq('client_id', clientId)
+        .is('location_id', null)
         .order('is_primary', { ascending: false })
         .limit(1)
         .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
@@ -157,7 +186,10 @@ async function runScanTrigger(req: Request) {
   }
   if (!keywordRow) {
     return NextResponse.json(
-      { error: 'no tracked keyword found for this location' },
+      {
+        error:
+          'No tracked keyword for this location. Add a keyword in Settings before scanning.',
+      },
       { status: 400 }
     );
   }

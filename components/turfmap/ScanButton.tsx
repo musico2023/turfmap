@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, Radio, Search } from 'lucide-react';
+import { Lock, Radio, Search, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 export type RescanCap = {
@@ -31,6 +31,19 @@ export type ScanButtonProps = {
    *  scans. Drives the disabled state + the X/N badge under the button.
    *  Optional for back-compat; absence = no rate-limit display. */
   rescanCap?: RescanCap | null;
+  /** Whether the active location has at least one keyword scoped to it.
+   *  When false, the button renders disabled with a "Add a keyword to
+   *  scan this location" affordance — required since a multi-location
+   *  client can have one location without a keyword while sibling
+   *  locations have plenty (the Sugar Daddy Doughnuts Union Station
+   *  case). Pre-fix the button stayed enabled in that state and a
+   *  click would silently scan a sibling location's keyword against
+   *  the wrong grid, returning 0/100. */
+  hasKeyword?: boolean;
+  /** Public_id used to deep-link the operator into Settings →
+   *  Keywords when hasKeyword=false. Required when hasKeyword is
+   *  explicitly false; ignored otherwise. */
+  clientPublicId?: string;
 };
 
 /**
@@ -51,6 +64,8 @@ export function ScanButton({
   keywordId,
   keywordLabel,
   rescanCap,
+  hasKeyword = true,
+  clientPublicId,
 }: ScanButtonProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -59,7 +74,12 @@ export function ScanButton({
 
   const busy = isScanning || isPending;
   const atCap = rescanCap?.atCap === true;
-  const disabled = busy || atCap;
+  // Three independent reasons to disable the button. hasKeyword is
+  // the new gate — without it the dashboard's fallback could pass
+  // through a sibling location's keyword id and the trigger route
+  // would happily scan the wrong territory.
+  const noKeyword = hasKeyword === false;
+  const disabled = busy || atCap || noKeyword;
 
   const onClick = async () => {
     setError(null);
@@ -114,15 +134,23 @@ export function ScanButton({
     }
   };
 
-  // Variant flips when the rate-limit cap is hit: a primary CTA isn't
-  // honest there (clicking would 429); secondary outline reads as
-  // "currently unavailable" — same visual language as a disabled nav.
-  const label = atCap
-    ? 'Daily limit reached'
-    : keywordLabel
-      ? 'Re-scan turf'
-      : 'Run TurfScan';
-  const icon = atCap ? (
+  // Three button states:
+  //   no-keyword → "Add a keyword to scan" + Tag icon, secondary variant
+  //   at-cap     → "Daily limit reached" + Lock icon, amber-tinted
+  //   default    → "Run TurfScan" / "Re-scan turf" + Radio/Search icon
+  //
+  // The no-keyword state takes precedence over at-cap (no point telling
+  // the operator they're rate-limited when there's nothing to scan).
+  const label = noKeyword
+    ? 'Add a keyword to scan'
+    : atCap
+      ? 'Daily limit reached'
+      : keywordLabel
+        ? 'Re-scan turf'
+        : 'Run TurfScan';
+  const icon = noKeyword ? (
+    <Tag size={14} strokeWidth={2.5} />
+  ) : atCap ? (
     <Lock size={14} strokeWidth={2.5} />
   ) : keywordLabel ? (
     <Radio size={14} strokeWidth={2.75} />
@@ -135,39 +163,63 @@ export function ScanButton({
   // (operationally meaningful: "you're rate-limited, here's when you
   // can scan again") rather than a default disabled/dim button. Pre-
   // bump it blended into the chrome row and operators didn't notice.
-  const atCapStyle = atCap
+  //
+  // No-keyword uses the same visual language as at-cap (constraint
+  // tone) but in a quieter zinc rather than amber — it's not an
+  // error, just an instruction.
+  const constraintStyle = noKeyword
     ? {
-        background: '#1a1308',
-        borderColor: '#3a2a0a',
-        color: '#f5b651',
+        background: 'var(--color-card)',
+        borderColor: 'var(--color-border)',
+        color: '#a1a1aa',
       }
-    : undefined;
+    : atCap
+      ? {
+          background: '#1a1308',
+          borderColor: '#3a2a0a',
+          color: '#f5b651',
+        }
+      : undefined;
 
   return (
     <div className="flex flex-col items-end gap-1.5">
       <Button
-        variant={atCap ? 'secondary' : 'primary'}
+        variant={noKeyword || atCap ? 'secondary' : 'primary'}
         size="lg"
         onClick={onClick}
         disabled={disabled}
         loading={busy}
         loadingLabel="Scanning territory…"
         leftIcon={icon}
-        style={atCapStyle}
+        style={constraintStyle}
         title={
-          atCap
-            ? `Daily on-demand scan limit reached (${rescanCap?.count}/${rescanCap?.limit}). Next slot ${formatNextAvailable(rescanCap?.nextAvailableAt) ?? 'soon'}.`
-            : undefined
+          noKeyword
+            ? 'No tracked keyword for this location. Add one in Settings to enable scanning.'
+            : atCap
+              ? `Daily on-demand scan limit reached (${rescanCap?.count}/${rescanCap?.limit}). Next slot ${formatNextAvailable(rescanCap?.nextAvailableAt) ?? 'soon'}.`
+              : undefined
         }
       >
         {label}
       </Button>
-      {rescanCap && !atCap && rescanCap.count > 0 && (
+      {/* No-keyword affordance — link to Settings → Keywords. The
+       *  button is disabled (correct: scanning without a keyword
+       *  shouldn't fire), but the operator needs an obvious next
+       *  step, so we render a small explanatory caption + link. */}
+      {noKeyword && clientPublicId && (
+        <a
+          href={`/clients/${clientPublicId}/settings#keywords`}
+          className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          add one in Settings →
+        </a>
+      )}
+      {!noKeyword && rescanCap && !atCap && rescanCap.count > 0 && (
         <span className="text-[10px] font-mono text-zinc-600">
           {rescanCap.count} of {rescanCap.limit} on-demand scans used (24h)
         </span>
       )}
-      {atCap && (
+      {!noKeyword && atCap && (
         // Amber-tinted caption pairs visually with the at-cap button, so
         // the "next slot in Xh Ym" reads as one constraint group rather
         // than orphan chrome text below an unrelated button.

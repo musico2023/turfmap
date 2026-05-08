@@ -153,12 +153,19 @@ export default async function ClientPortalPage({
       keywordList.find((k) => k.is_primary) ?? keywordList[0] ?? null;
   }
   if (!activeKeyword) {
-    // Legacy fallback — keyword without location_id, surfaced so the
-    // portal isn't empty during the brief migration window.
+    // Legacy fallback — only keywords with location_id IS NULL.
+    // Modern data has location_id stamped, so this only matches the
+    // brief migration window between client-create and the
+    // location_id stamp on the primary keyword. We deliberately do
+    // NOT fall back to a sibling location's keyword: see the
+    // matching comment in app/clients/[id]/page.tsx for the bug
+    // this prevents (Sugar Daddy Doughnuts Union Station — sibling
+    // keyword scanned the wrong territory and returned 0/100).
     const { data: anyKw } = await supabase
       .from('tracked_keywords')
       .select('id, keyword, is_primary')
       .eq('client_id', client.id)
+      .is('location_id', null)
       .order('is_primary', { ascending: false })
       .limit(1)
       .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>>();

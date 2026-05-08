@@ -98,7 +98,18 @@ export default async function ClientDashboardPage({
   //   1. ?keyword=<id> if present and matches a keyword on this location
   //   2. The location's primary keyword
   //   3. The first keyword on the location
-  //   4. Or any keyword on this client (covers legacy rows w/o location_id)
+  //   4. A LEGACY keyword (location_id IS NULL) — pre-multi-location
+  //      migration rows that haven't been re-scoped yet
+  //
+  // We deliberately do NOT fall back to a sibling location's keyword
+  // here. Pre-fix, a multi-location client with one location lacking
+  // a keyword would silently surface another location's keyword as
+  // the "active" one, and the ScanButton would happily fire a scan
+  // against the wrong (location, keyword) pair — yielding nonsense
+  // results (the Sugar Daddy Doughnuts Union Station bug). Now an
+  // unscoped location stays empty until the operator explicitly
+  // adds a keyword for it, and the ScanButton renders disabled with
+  // a clear "add a keyword" affordance.
   let activeKeyword:
     | Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>
     | null = null;
@@ -111,12 +122,15 @@ export default async function ClientDashboardPage({
       keywordList.find((k) => k.is_primary) ?? keywordList[0] ?? null;
   }
   if (!activeKeyword) {
-    // Legacy fallback — keyword without location_id, surfaced so the
-    // dashboard isn't empty during the brief migration window.
+    // Legacy fallback — only keywords with location_id IS NULL.
+    // Modern data has location_id stamped, so this only matches the
+    // brief migration window between client-create and the
+    // location_id stamp on the primary keyword.
     const { data: anyKw } = await supabase
       .from('tracked_keywords')
       .select('id, keyword, is_primary')
       .eq('client_id', id)
+      .is('location_id', null)
       .order('is_primary', { ascending: false })
       .limit(1)
       .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>>();
@@ -421,10 +435,12 @@ export default async function ClientDashboardPage({
             )}
             <ScanButton
               clientId={client.public_id}
+              clientPublicId={client.public_id}
               locationId={activeLocation?.id ?? null}
               keywordId={activeKeyword?.id ?? null}
               keywordLabel={latestScan ? keyword?.keyword : undefined}
               rescanCap={rescanCap}
+              hasKeyword={keywordList.length > 0}
             />
           </div>
         </div>
