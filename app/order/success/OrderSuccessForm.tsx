@@ -9,6 +9,7 @@ import {
 import { CalEmbed } from '@/components/turfmap/CalEmbed';
 import { OnboardingWizard } from '@/components/turfmap/OnboardingWizard';
 import { PulseAttachPanel } from '@/components/turfmap/PulseAttachPanel';
+import { SuccessBurst } from '@/components/animations/SuccessBurst';
 import type { OnboardingStep } from '@/lib/supabase/types';
 
 /**
@@ -297,13 +298,13 @@ export function OrderSuccessForm({
       return (
         <>
           <div
-            className="rounded-lg p-4 mb-5 flex items-center gap-3"
+            className="relative rounded-lg p-4 mb-5 flex items-center gap-3 animate-scale-in animate-lime-glow"
             style={{
               background: 'var(--color-card-glow)',
               border: '1px solid var(--color-border-bright)',
-              boxShadow: '0 0 18px #c5ff3a14',
             }}
           >
+            <SuccessBurst active variant="compact" />
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
               style={{
@@ -313,7 +314,7 @@ export function OrderSuccessForm({
             >
               <Sparkles size={15} className="text-black" strokeWidth={2.75} />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 relative">
               <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">
                 Pulse trial active · 30 days free
               </div>
@@ -340,13 +341,13 @@ export function OrderSuccessForm({
          *  day-31 framing. */}
         {attachState === 'success' && (
           <div
-            className="border rounded-lg p-5 mb-5 flex items-start gap-3"
+            className="relative border rounded-lg p-5 mb-5 flex items-start gap-3 animate-scale-in animate-lime-glow"
             style={{
               background: 'var(--color-card-glow)',
               borderColor: 'var(--color-border-bright)',
-              boxShadow: '0 0 24px #c5ff3a14',
             }}
           >
+            <SuccessBurst active variant="compact" />
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
               style={{
@@ -356,7 +357,7 @@ export function OrderSuccessForm({
             >
               <Sparkles size={16} className="text-black" strokeWidth={2.75} />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 relative">
               <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-1">
                 Pulse trial active
               </div>
@@ -465,14 +466,23 @@ export function OrderSuccessForm({
           // tier is itself Pulse/Pulse+). The big "Open my TurfMap"
           // CTA is the focal point because there's nothing else
           // competing for attention here.
+          //
+          // The card scales in on mount + (when we've actually got a
+          // publicId, meaning the scan completed) fires a lime
+          // sparkle burst from center. Both animations no-op for
+          // users with prefers-reduced-motion.
           <div
-            className="border rounded-lg p-8 text-center"
+            className="relative border rounded-lg p-8 text-center animate-scale-in overflow-visible"
             style={{
               background: 'var(--color-card)',
               borderColor: 'var(--color-border-bright)',
             }}
           >
-            <div className="font-display text-2xl font-bold mb-3">
+            {/* Sparkle burst — only fires when the scan landed
+             *  (publicId set). The "Running your scan…" state
+             *  shouldn't celebrate anything yet. */}
+            <SuccessBurst active={Boolean(publicId)} />
+            <div className="font-display text-2xl font-bold mb-3 relative">
               {publicId ? 'Your TurfMap is ready.' : 'Running your scan…'}
             </div>
             <p className="text-zinc-300 leading-relaxed max-w-xl mx-auto mb-6">

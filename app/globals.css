@@ -49,6 +49,67 @@
 .animate-scan-sweep { animation: scan-sweep 1.6s ease-in-out infinite; }
 .animate-blink { animation: blink 1.2s steps(2) infinite; }
 
+/* Celebration animations — wired on big-win moments (scan delivered,
+ * wizard done, Pulse trial activated). Tasteful + short; never
+ * loops, never blocks input. All animations no-op when the user
+ * has prefers-reduced-motion set. */
+
+/* Subtle scale-in for success cards. ~400ms, ease-out, opacity
+ * 0→1 + scale 0.96→1. Fires once on mount. */
+@keyframes scale-in-up {
+  0% { opacity: 0; transform: scale(0.96) translateY(6px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-scale-in {
+  animation: scale-in-up 420ms ease-out both;
+}
+
+/* Slow lime-glow pulse — used to mark the Pulse trial active
+ * banner. The shadow + ring oscillate softly so the eye lands on
+ * it without it competing with primary CTAs. Loops indefinitely
+ * but at 4.4s cadence; reads as ambient, not aggressive. */
+@keyframes lime-glow-pulse {
+  0%, 100% { box-shadow: 0 0 14px rgba(197, 255, 58, 0.18); }
+  50%      { box-shadow: 0 0 26px rgba(197, 255, 58, 0.34); }
+}
+.animate-lime-glow {
+  animation: lime-glow-pulse 4.4s ease-in-out infinite;
+}
+
+/* Sparkle-burst keyframes — used by SuccessBurst (one particle per
+ * span, with per-particle inline custom-property delays + angles).
+ * Particle starts at center scale 0, rises along its angle as
+ * scale + opacity peak, then fades out. Single shot. */
+@keyframes sparkle-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--angle, 0deg)) translateY(0) scale(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--angle, 0deg)) translateY(-30px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--angle, 0deg)) translateY(var(--distance, -120px)) scale(0.4);
+  }
+}
+.animate-sparkle {
+  animation: sparkle-burst var(--duration, 1400ms) ease-out forwards;
+}
+
+/* Reduced-motion override — disable all the celebratory animations
+ * for users who've opted out. The pulse-ring + scan-sweep above
+ * stay (they're status indicators, not flourish), but the cards
+ * appear instantly + the sparkle / glow pulse don't fire. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-scale-in,
+  .animate-lime-glow,
+  .animate-sparkle {
+    animation: none;
+  }
+}
+
 /* Heatmap scope-readout grid. Two stacked linear-gradients paint a 60px
  * cell grid in faint lime on top of the dark canvas — reads as instrument
  * gridlines without competing with the rank cells. Opacity tuned to

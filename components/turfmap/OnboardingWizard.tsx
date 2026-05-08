@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Check, Loader2, Search } from 'lucide-react';
+import { SuccessBurst } from '@/components/animations/SuccessBurst';
 
 type Status = 'auto' | 'confirmed' | 'manual' | 'rejected' | 'no_match' | null;
 type Step = 'gbp_match' | 'portal_users' | 'competitors' | 'done';
@@ -588,29 +589,33 @@ function CompetitorsStep({
 function DoneStep({ state }: { state: WizardState }) {
   return (
     <Card>
-      <div className="text-center py-2">
+      <div className="relative text-center py-2 animate-scale-in overflow-visible">
+        {/* Sparkle burst from card center, default density. The wizard's
+         *  done step is the highest-celebratory moment in the flow —
+         *  buyer just finished setup AND has their first map ready. */}
+        <SuccessBurst active />
         <div
-          className="w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4"
+          className="w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4 relative animate-lime-glow"
           style={{ background: 'rgba(197, 255, 58, 0.12)' }}
         >
           <Check size={22} style={{ color: 'var(--color-lime, #c5ff3a)' }} />
         </div>
-        <h2 className="font-display text-2xl font-bold mb-2">
+        <h2 className="font-display text-2xl font-bold mb-2 relative">
           Your TurfMap is ready.
         </h2>
-        <p className="text-sm text-zinc-400 leading-relaxed mb-6 max-w-md mx-auto">
+        <p className="text-sm text-zinc-400 leading-relaxed mb-6 max-w-md mx-auto relative">
           Your first scan is done — head to your TurfMap to see where
           you win and where you don&rsquo;t. Your AI Coach Fix List
           loads with it.
         </p>
         <Link
           href={`/portal/${state.publicId}`}
-          className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-2.5 px-5 transition-all hover:brightness-110"
+          className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-2.5 px-5 transition-all hover:brightness-110 relative"
           style={{ background: 'var(--color-lime)', color: 'black' }}
         >
           Open my TurfMap <ArrowRight size={14} />
         </Link>
-        <p className="text-[11px] text-zinc-600 mt-6">
+        <p className="text-[11px] text-zinc-600 mt-6 relative">
           Bookmarks, additional locations, alert preferences, and exports live
           under <span className="text-zinc-400">Settings</span> in the portal.
         </p>
