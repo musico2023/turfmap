@@ -131,6 +131,10 @@ export function OrderSuccessForm({
     if (!businessName.trim()) return setError('Business name is required.');
     if (!address.trim()) return setError('Service address is required.');
     if (!email.trim()) return setError('Email is required.');
+    if (!phone.trim())
+      return setError(
+        'Business phone is required for the citation check.'
+      );
     if (keywords.some((k) => !k.trim())) {
       return setError(
         keywordCount === 1
@@ -606,33 +610,22 @@ export function OrderSuccessForm({
         </Field>
       )}
 
-      {/* Phone field is only relevant for strategist-call tiers
-          (Audit + Strategy). Pulse / Pulse+ / Scan don't include a
-          call so we hide it entirely — collecting an unused phone
-          field is friction, not value. */}
-      {tier === 'audit' || tier === 'strategy' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Email" required>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@business.com"
-              required
-              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
-            />
-          </Field>
-          <Field label="Phone" hint="Optional — for the strategist call only.">
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="(416) 555-0100"
-              className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
-            />
-          </Field>
-        </div>
-      ) : (
+      {/* Email + business phone — both required across every tier.
+       *  The phone is the P in NAP (Name / Address / Phone), the
+       *  citation triplet that BrightLocal cross-references against
+       *  ~25 directories to surface inconsistencies. Without it,
+       *  locationToBusinessProfile() returns null and maybeRunNapAudit
+       *  short-circuits, so the buyer pays for the "Citation check
+       *  across the directories that matter for your trade" deliverable
+       *  but the audit never actually runs.
+       *
+       *  Pre-fix the phone was only collected for Audit/Strategy
+       *  tiers under a "for the strategist call" hint that was both
+       *  wrong (Cal.com event types collect their own phone during
+       *  booking) and missing (TurfScan and Pulse/Pulse+ skipped
+       *  collection entirely). Required-on-every-tier closes the
+       *  citation-check gap. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Email" required>
           <input
             type="email"
@@ -643,7 +636,21 @@ export function OrderSuccessForm({
             className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
           />
         </Field>
-      )}
+        <Field
+          label="Business phone"
+          required
+          hint="Used to cross-reference your business listing across Google, Yelp, Bing, Apple Maps, and ~25 other directories — required for the citation check."
+        >
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="(416) 555-0100"
+            required
+            className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+          />
+        </Field>
+      </div>
 
       <button
         type="submit"

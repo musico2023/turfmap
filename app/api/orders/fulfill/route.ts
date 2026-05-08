@@ -79,7 +79,12 @@ const FulfillBody = z.object({
   address: z.string().min(4).max(400),
   keywords: z.array(z.string().min(2).max(160)).min(1).max(3),
   email: z.string().email(),
-  phone: z.string().min(0).max(40).nullable().optional(),
+  // Phone is the P in NAP — required for the citation check across
+  // directories. locationToBusinessProfile() returns null without it
+  // and the BrightLocal NAP audit short-circuits. min(7) accepts the
+  // shortest plausible international form (e.g. "+1 416 5"); the
+  // form's tel input does the heavy lifting on local format.
+  phone: z.string().min(7).max(40),
 });
 
 export async function POST(req: NextRequest) {
