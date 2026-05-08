@@ -10,7 +10,7 @@ import {
   ensureLeadOrder,
   keywordCountForTier,
 } from '@/lib/stripe/leadOrders';
-import type { ClientRow, Tier } from '@/lib/supabase/types';
+import type { ClientRow, OnboardingStep, Tier } from '@/lib/supabase/types';
 
 export const metadata: Metadata = {
   title: 'Order received — TurfMap™',
@@ -96,14 +96,47 @@ export default async function OrderSuccessPage({
         ? ('cancelled' as const)
         : null;
   let attachPublicId: string | null = null;
+  let attachOnboardingStep: OnboardingStep | null = null;
   if (attachState && stripeCustomerId) {
     const supabase = getServerSupabase();
     const { data: client } = await supabase
       .from('clients')
-      .select('public_id')
+      .select('id, public_id, onboarding_step')
       .eq('stripe_customer_id', stripeCustomerId)
-      .maybeSingle<Pick<ClientRow, 'public_id'>>();
+      .maybeSingle<
+        Pick<ClientRow, 'id' | 'public_id' | 'onboarding_step'>
+      >();
     attachPublicId = client?.public_id ?? null;
+    attachOnboardingStep = client?.onboarding_step ?? null;
+
+    // Defensive set: when attach succeeded but the webhook hasn't
+    // fired yet (Stripe is at-least-once but eventual), the row may
+    // still have onboarding_step=null even though the trial is live.
+    // We stamp 'gbp_match' here so the wizard mounts immediately on
+    // the buyer's first return-from-Stripe load — they shouldn't
+    // wait for webhook ordering to start setup. Only acts on
+    // attach=success (skipped on cancelled), only when client_id is
+    // resolvable, and only when onboarding_step is null (so we never
+    // rewind a buyer who's already past gbp_match).
+    if (
+      attachState === 'success' &&
+      client &&
+      client.onboarding_step === null
+    ) {
+      const { error: stepErr } = await supabase
+        .from('clients')
+        .update({ onboarding_step: 'gbp_match' as const })
+        .eq('id', client.id)
+        .is('onboarding_step', null);
+      if (stepErr) {
+        console.warn(
+          '[order-success] failed to defensively set onboarding_step:',
+          stepErr.message
+        );
+      } else {
+        attachOnboardingStep = 'gbp_match';
+      }
+    }
   }
 
   return (
@@ -190,6 +223,7 @@ export default async function OrderSuccessPage({
               stripeCustomerId={stripeCustomerId}
               attachState={attachState}
               attachPublicId={attachPublicId}
+              attachOnboardingStep={attachOnboardingStep}
             />
           </Suspense>
         </div>

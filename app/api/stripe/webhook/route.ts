@@ -275,6 +275,19 @@ async function syncSubscription(
   // Once a client is agency_managed, the operator's contract is
   // the source of truth for tier — Stripe events should mirror
   // status + sub_id but never overwrite tier.
+  //
+  // For one-time → trial-attach buyers, also stamp
+  // onboarding_step='gbp_match' so the OnboardingWizard mounts on
+  // their next /order/success render. Without this, attach buyers
+  // skip the wizard entirely (the original /api/orders/fulfill ran
+  // with billing_mode='one_time' and didn't set onboarding_step),
+  // which means they never confirm their Google Business Profile
+  // match — degrading AI Coach quality during the high-leverage
+  // first 30 trial days. Idempotent: if onboarding_step is already
+  // populated (somehow, e.g. a previous attach was rolled back and
+  // retried), the page-side defense in app/order/success/page.tsx
+  // also runs an UPDATE, but the column is whatever we're writing
+  // here — no drift.
   const update: Partial<
     Pick<
       ClientRow,
@@ -283,6 +296,7 @@ async function syncSubscription(
       | 'stripe_subscription_id'
       | 'stripe_customer_id'
       | 'billing_mode'
+      | 'onboarding_step'
     >
   > = isAgencyManaged
     ? {
@@ -296,7 +310,10 @@ async function syncSubscription(
         stripe_subscription_id: sub.id,
         stripe_customer_id: customerId,
         ...(isOneTimeAttach
-          ? { billing_mode: 'self_serve_subscription' as const }
+          ? {
+              billing_mode: 'self_serve_subscription' as const,
+              onboarding_step: 'gbp_match' as const,
+            }
           : {}),
       };
 

@@ -37,6 +37,7 @@ export function OrderSuccessForm({
   stripeCustomerId,
   attachState,
   attachPublicId,
+  attachOnboardingStep,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -62,6 +63,15 @@ export function OrderSuccessForm({
    *  Stripe Pulse-attach and shouldn't re-fill the form). Null on
    *  the initial purchase flow. */
   attachPublicId: string | null;
+  /** Server-resolved onboarding_step when the buyer is returning
+   *  from a successful Pulse trial-attach. When set, the success
+   *  state replaces the static "Pulse trial active" banner with the
+   *  inline OnboardingWizard so the buyer drops straight into GBP
+   *  confirmation while they're still in completion mode. The page
+   *  defensively stamps 'gbp_match' if the webhook hasn't fired
+   *  yet, so this is non-null whenever attachState='success' and
+   *  the client row was resolvable. */
+  attachOnboardingStep: OnboardingStep | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -251,12 +261,79 @@ export function OrderSuccessForm({
     // When the attach panel is hidden (Pulse already attached, the
     // tier is itself a Pulse purchase, or attach=success), the
     // original full success card is the right hero — restore it.
+    // Pulse-attach onboarding-wizard handoff. When the buyer is back
+    // from a successful trial activation AND we have everything the
+    // wizard needs (publicId, sessionId, onboarding_step), render the
+    // wizard inline. This is "Option B" from the launch review: drop
+    // the buyer straight into GBP confirmation + setup while they're
+    // still in completion mode, instead of showing a static banner
+    // they have to click out of and re-enter from a portal alert.
+    //
+    // The wizard expects ?session_id to authorize against the original
+    // lead_orders row — the buyer's one-time purchase session is still
+    // valid for that. requireOnboardingSession (lib/auth/onboarding.ts)
+    // joins lead_orders.stripe_session_id → client_id and confirms
+    // status='fulfilled'.
+    const showAttachWizard =
+      attachState === 'success' &&
+      attachPublicId &&
+      attachOnboardingStep &&
+      sessionId &&
+      attachOnboardingStep !== 'done';
+
+    // When the wizard takes over, return early — no success card, no
+    // attach panel, no Cal.com booking. The wizard's "done" step has
+    // its own "Open my TurfMap" CTA, and the buyer already engaged
+    // with the original Cal.com booking on the first pass through
+    // /order/success (audit/strategy tiers don't see the attach
+    // panel anyway because the trial-attach is a Pulse offer; if a
+    // future product change lets audit/strategy buyers also attach,
+    // we'd need to surface the booking inside or after the wizard).
+    if (showAttachWizard && attachPublicId && sessionId && attachOnboardingStep) {
+      return (
+        <>
+          <div
+            className="rounded-lg p-4 mb-5 flex items-center gap-3"
+            style={{
+              background: 'var(--color-card-glow)',
+              border: '1px solid var(--color-border-bright)',
+              boxShadow: '0 0 18px #c5ff3a14',
+            }}
+          >
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{
+                background: 'var(--color-lime)',
+                boxShadow: '0 0 14px #c5ff3a40',
+              }}
+            >
+              <Sparkles size={15} className="text-black" strokeWidth={2.75} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">
+                Pulse trial active · 30 days free
+              </div>
+              <p className="text-sm text-zinc-300 leading-snug mt-0.5">
+                One last step: confirm your business details so weekly
+                scans + the AI Coach get the right inputs.
+              </p>
+            </div>
+          </div>
+          <OnboardingWizard
+            publicId={attachPublicId}
+            sessionId={sessionId}
+            initialStep={attachOnboardingStep}
+          />
+        </>
+      );
+    }
+
     return (
       <>
-        {/* Attach success banner — shown when the buyer just came back
-         *  from a successful Pulse-attach Stripe flow. Inline above
-         *  the original success card so the celebratory beat compounds
-         *  ("scan ready + Pulse on its way"). */}
+        {/* Static attach-success banner — fallback when the wizard
+         *  can't mount (missing publicId/sessionId/step or wizard
+         *  already completed). Original celebratory copy + the
+         *  day-31 framing. */}
         {attachState === 'success' && (
           <div
             className="border rounded-lg p-5 mb-5 flex items-start gap-3"
