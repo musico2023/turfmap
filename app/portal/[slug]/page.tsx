@@ -268,13 +268,15 @@ export default async function ClientPortalPage({
         isAgencyPreview={isAgencyPreview}
       />
 
-      {/* Location + keyword switchers — share one strip so the strip
-          itself only mounts when at least one switcher has more than
-          one option. The slug in pathname matches whatever the URL
-          has (UUID or public_id), so each switcher's basePath
-          preserves /portal/<slug> and just swaps the relevant query
-          param (?location=... / ?keyword=...). */}
-      {(locations.length > 1 || keywordList.length > 1) && (
+      {/* Location + keyword switchers. KeywordSwitcher always renders
+          (as a non-interactive pill when there's a single keyword, as
+          a dropdown when there are multiple) so the active keyword is
+          always visible at the top of the portal. LocationSwitcher
+          self-hides when there's ≤ 1 location. The slug in pathname
+          matches whatever the URL has (UUID or public_id), so each
+          switcher's basePath preserves /portal/<slug> and just swaps
+          the relevant query param (?location=... / ?keyword=...). */}
+      {keywordList.length > 0 && (
         <div
           className="border-b px-4 md:px-8 py-3 flex items-center gap-3 md:gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
@@ -313,9 +315,12 @@ export default async function ClientPortalPage({
         </div>
       )}
 
-      {/* Compact business meta — stacks on mobile, three columns at md+ */}
+      {/* Compact business meta — stacks on mobile, two columns at md+.
+       *  The "Tracked Keyword" column was removed; the active keyword
+       *  is now surfaced in the switcher strip above so showing it
+       *  again here was redundant. */}
       <div
-        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 items-start md:items-center"
+        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 items-start md:items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <div>
@@ -340,14 +345,6 @@ export default async function ClientPortalPage({
             <span className="truncate">
               {activeLocation?.address ?? client.address}
             </span>
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
-            Tracked Keyword
-          </div>
-          <div className="text-sm font-mono text-zinc-200 truncate">
-            {keyword?.keyword ?? '—'}
           </div>
         </div>
       </div>

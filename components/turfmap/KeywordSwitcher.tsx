@@ -10,7 +10,11 @@ export type KeywordSwitcherProps = {
   /** Tolerant — the page URL may use the public_id slug or the UUID. */
   clientId: string;
   /** Keywords scoped to the active location. Caller filters; we just
-   *  render the list. Hidden entirely when this list has ≤ 1 entry. */
+   *  render the list. Renders as a non-interactive pill when this
+   *  list has exactly 1 entry — the keyword is always visible in the
+   *  strip so operators don't have to scan a separate "Tracking
+   *  Keyword" column further down to know which keyword the heatmap
+   *  is showing. Returns null only when the list is empty. */
   keywords: Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>[];
   /** Currently-selected keyword id. When null the page is implicitly
    *  showing the location's primary (or first) keyword's latest scan. */
@@ -78,12 +82,46 @@ export function KeywordSwitcher({
     return keywords.filter((k) => k.keyword.toLowerCase().includes(q));
   }, [keywords, query]);
 
-  if (keywords.length <= 1) return null;
+  if (keywords.length === 0) return null;
 
   const active =
     keywords.find((k) => k.id === activeKeywordId) ??
     keywords.find((k) => k.is_primary) ??
     keywords[0];
+
+  // Single-keyword case: render as a non-interactive pill so the
+  // active keyword is always visible at the top of the page. Same
+  // eyebrow + box dimensions as the multi-keyword button below so
+  // the strip's visual rhythm doesn't shift across clients with
+  // 1 vs N keywords. No chevron, no click handler — purely
+  // informational.
+  if (keywords.length === 1) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5">
+          <Tag size={11} /> Keyword
+        </span>
+        <div
+          className="px-3 py-1.5 rounded-md text-xs font-mono border flex items-center w-full sm:w-auto sm:min-w-[200px]"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-card)',
+            color: '#e4e4e7',
+          }}
+          aria-label={`Tracking keyword: ${active.keyword}`}
+        >
+          <span className="flex-1 text-left truncate">
+            {active.keyword}
+            {active.is_primary && (
+              <span className="text-[9px] uppercase tracking-wider text-zinc-600 ml-1.5">
+                primary
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   // Build the href for each row — preserves existing query params (the
   // ?location=<id> on multi-location clients) and just swaps the

@@ -307,10 +307,14 @@ export default async function ClientDashboardPage({
         </div>
       )}
 
-      {/* Location + keyword switchers — share one strip so they don't
-          bloat the header on multi-keyword single-location clients.
-          Each component self-hides when it has ≤ 1 entry to surface. */}
-      {(locations.length > 1 || keywordList.length > 1) && (
+      {/* Location + keyword switchers — share one strip. KeywordSwitcher
+          always renders (as a non-interactive pill when there's a
+          single keyword, as a dropdown when there are multiple) so the
+          active keyword is always visible at the top of the page.
+          LocationSwitcher self-hides when there's ≤ 1 location. The
+          strip mounts whenever there's at least one keyword to show
+          (i.e. always for any real client). */}
+      {keywordList.length > 0 && (
         <div
           className="border-b px-4 md:px-8 py-3 flex items-center gap-3 md:gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
@@ -355,7 +359,7 @@ export default async function ClientDashboardPage({
             </div>
           </div>
         </div>
-        <div className="lg:col-span-3 min-w-0">
+        <div className="lg:col-span-4 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Pin Location
           </div>
@@ -366,15 +370,11 @@ export default async function ClientDashboardPage({
             </span>
           </div>
         </div>
-        <div className="lg:col-span-2 min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
-            Tracking Keyword
-          </div>
-          <div className="text-sm font-mono text-zinc-200 truncate">
-            {keyword?.keyword ?? '—'}
-          </div>
-        </div>
-        <div className="lg:col-span-4 flex flex-col sm:items-start lg:items-end gap-2">
+        {/* "Tracking Keyword" column removed — the active keyword is
+         *  now surfaced in the switcher strip above the business bar
+         *  (KeywordSwitcher renders a static pill for single-keyword
+         *  clients), so showing it again here was redundant. */}
+        <div className="lg:col-span-5 flex flex-col sm:items-start lg:items-end gap-2">
           <div className="text-xs text-zinc-500 font-mono">
             {latestScan ? (
               <>
