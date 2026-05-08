@@ -27,6 +27,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
+import { MIN_SHARE_PCT } from '@/lib/metrics/competitors';
 import { maybeFinalizeNapAudit, maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
 import {
   listLocations,
@@ -131,6 +132,22 @@ export async function POST(req: Request) {
   }
 
   // Top competitors by appearance count, excluding the client's own brand.
+  //
+  // Mirrors the dedupe + noise-filter logic in lib/metrics/competitors.ts so
+  // the Coach references the same competitive set the operator sees in the
+  // dashboard. Two important details:
+  //
+  //   - Per-cell dedupe: a single competitor only counts ONCE per grid
+  //     cell, even when DFS returns the same business across local_pack +
+  //     map item types. Without this, share-of-voice (and the prompt's
+  //     "appearances" count) can exceed the cell total.
+  //
+  //   - Noise floor (MIN_SHARE_PCT): brands appearing in < 2% of cells
+  //     (1 cell out of 81) are filtered out. A 1-cell hit is almost
+  //     always a Google-pin proximity artifact, not a real competitor —
+  //     and we already hide them from the dashboard CompetitorTable, so
+  //     leaving them in the prompt would have the Coach reference brands
+  //     the operator can't see.
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
     'i'
@@ -143,23 +160,33 @@ export async function POST(req: Request) {
       rank_group: number | null;
       rank_absolute: number | null;
     }>;
+    // Best rank per brand within this single cell — collapses duplicates
+    // before they inflate the appearance count.
+    const cellBest = new Map<string, number>();
     for (const c of list) {
       if (!c?.name) continue;
       if (ownNamePattern.test(c.name)) continue;
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
-      const s = compStats.get(c.name) ?? { ranks: [] };
+      const prev = cellBest.get(c.name);
+      if (prev === undefined || rank < prev) cellBest.set(c.name, rank);
+    }
+    for (const [name, rank] of cellBest.entries()) {
+      const s = compStats.get(name) ?? { ranks: [] };
       s.ranks.push(rank);
-      compStats.set(c.name, s);
+      compStats.set(name, s);
     }
   }
+  const totalPointsForShare = Math.max(points.length, 1);
   const competitorList = [...compStats.entries()]
     .map(([name, s]) => ({
       name,
       appearances: s.ranks.length,
       avgRank: s.ranks.reduce((a, b) => a + b, 0) / s.ranks.length,
       bestRank: Math.min(...s.ranks),
+      sharePct: Math.round((s.ranks.length / totalPointsForShare) * 100),
     }))
+    .filter((c) => c.sharePct >= MIN_SHARE_PCT)
     .sort((a, b) => b.appearances - a.appearances || a.avgRank - b.avgRank)
     .slice(0, 10);
 

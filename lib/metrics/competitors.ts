@@ -13,8 +13,29 @@
  * for the cell when the same brand appears multiple times in one
  * cell's response, mirroring the curated-list path's behavior.
  *
- * Returns the top N (default 3) by AMR, ascending. Optionally excludes the
- * client's own business by name pattern.
+ * Ranking + noise floor:
+ *
+ *   Brands appearing in fewer than `MIN_SHARE_PCT`% of cells are
+ *   filtered out as noise. A single-cell hit at rank #1 ties for the
+ *   "best" AMR with a brand that dominates 48% of the territory at
+ *   AMR 1.4 — but the 1-cell brand is almost always a Google-pin
+ *   proximity artifact, not a real competitor. Default floor: 2%
+ *   (≥ 2 cells out of 81), which excludes single-pin artifacts but
+ *   keeps any brand with even a small but non-trivial territory
+ *   presence.
+ *
+ *   After filtering, results sort by share DESC (territorial
+ *   dominance is the primary signal for "who's eating my lunch?"),
+ *   with AMR ASC as the tiebreaker — so two brands at the same
+ *   share are ordered by who lands at the top of the pack more
+ *   often when they do appear.
+ *
+ *   This auto-mode path differs from `aggregateCuratedCompetitors`,
+ *   which has no noise filter (operator-chosen brands surface even
+ *   at 0% share — that's part of the value of curated mode).
+ *
+ * Returns the top N (default 3). Optionally excludes the client's
+ * own business by name pattern.
  */
 
 export type RawCompetitor = {
@@ -30,6 +51,17 @@ export type CompetitorAggregate = {
   amr: number;
   top3Pct: number;
 };
+
+/**
+ * Minimum share-of-voice (% of cells) for a brand to surface in
+ * auto-discovery mode. Brands below this floor are almost always
+ * Google-pin proximity artifacts (a business whose Google location
+ * happens to sit on top of a single grid cell). Exposed for the
+ * AI Coach prompt to apply the same filter when describing the
+ * competitive set to Claude — drift between what the table shows
+ * and what the Coach references would be confusing.
+ */
+export const MIN_SHARE_PCT = 2;
 
 export function aggregateCompetitors(
   scanPoints: Array<{ competitors: unknown }>,
@@ -74,7 +106,18 @@ export function aggregateCompetitors(
         Math.round((ranks.length / safeTotal) * 100)
       ),
     }))
-    .sort((a, b) => a.amr - b.amr)
+    // Noise floor — see MIN_SHARE_PCT docs. A 1-cell hit at rank #1
+    // ties on AMR with a brand at 48% share, but it's a Google-pin
+    // proximity artifact, not a real competitor.
+    .filter((c) => c.top3Pct >= MIN_SHARE_PCT)
+    // Sort by territorial dominance first (share desc), tiebreak on
+    // average rank (lower is better). This matches operator intuition:
+    // "who's eating my lunch?" → the brand with the most cells in
+    // the 3-pack at the highest average rank.
+    .sort((a, b) => {
+      if (a.top3Pct !== b.top3Pct) return b.top3Pct - a.top3Pct;
+      return a.amr - b.amr;
+    })
     .slice(0, topN);
 }
 

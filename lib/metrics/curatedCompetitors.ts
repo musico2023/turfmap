@@ -79,10 +79,20 @@ export function aggregateCuratedCompetitors(
       return { name, amr, top3Pct, appearsInCells: ranks.length };
     })
     .sort((a, b) => {
-      // primary: amr asc; secondary: appearsInCells desc (so a brand that's
-      // present everywhere outranks a brand present in 1 cell at rank 1)
-      if (a.amr !== b.amr) return a.amr - b.amr;
-      return b.appearsInCells - a.appearsInCells;
+      // Sort by territorial dominance first (share desc), AMR asc as
+      // tiebreak. Mirrors the auto-mode path in lib/metrics/competitors.ts
+      // so the two modes order brands the same way — "who covers the most
+      // territory at the highest average rank" is the dominance question
+      // operators are asking, regardless of whether the list was
+      // auto-discovered or operator-curated.
+      //
+      // Note: 0%-share rows (top3Pct=0, appearsInCells=0) sort to the
+      // bottom naturally, where the CompetitorTable's "tracked but not
+      // in pack" expander hides them. The OUT_OF_PACK=20 sentinel for
+      // amr keeps the tiebreak logic deterministic among 0%-share rows
+      // (alphabetical ties go to the brand that came back first from DFS).
+      if (a.top3Pct !== b.top3Pct) return b.top3Pct - a.top3Pct;
+      return a.amr - b.amr;
     });
 }
 
