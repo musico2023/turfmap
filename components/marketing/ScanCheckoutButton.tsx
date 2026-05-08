@@ -22,6 +22,24 @@ export type ScanCheckoutButtonProps = {
   /** Optional Stripe Customer reference id. Currently unused — wired
    *  up here so future flows (e.g. logged-in upgrade) can pass it. */
   clientReferenceId?: string | null;
+  /**
+   * When true, render the button + helper line as a horizontally
+   * centered column. Use this in the closing-CTA panel where the
+   * surrounding section is text-center.
+   *
+   * Why this can't just rely on parent text-center: the primary
+   * Button variant uses `display: flex` (not inline-flex) so it
+   * ignores text-align. And the helper-text "Next: business details
+   * → ..." line below the button is wider than the button itself,
+   * so an inline-block wrapper sizes to the helper text and the
+   * narrower button visually left-aligns inside it. Adding flex +
+   * items-center on the outer wrapper centers each child on its own
+   * cross-axis, regardless of intrinsic widths.
+   *
+   * Default false — the hero CTA lives in a left-aligned column
+   * and shouldn't be re-centered.
+   */
+  centered?: boolean;
 };
 
 /**
@@ -49,6 +67,7 @@ export function ScanCheckoutButton({
   gclid,
   label,
   clientReferenceId,
+  centered = false,
 }: ScanCheckoutButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +125,7 @@ export function ScanCheckoutButton({
   };
 
   return (
-    <div>
+    <div className={centered ? 'flex flex-col items-center' : undefined}>
       <Button
         type="button"
         variant="primary"
@@ -122,14 +141,16 @@ export function ScanCheckoutButton({
        *  moment of click by spelling out exactly what happens next.
        *  Same visual weight as the "FOURDOTS50 applied at checkout"
        *  helper line so the two read as a coordinated pair. */}
-      <p className="mt-2.5 text-xs text-zinc-500 leading-relaxed">
+      <p
+        className={`mt-2.5 text-xs text-zinc-500 leading-relaxed ${centered ? 'text-center' : ''}`}
+      >
         Next: business details{' '}
         <span className="text-zinc-600">→</span> secure Stripe checkout{' '}
         <span className="text-zinc-600">→</span> scan fires immediately.
       </p>
       {error && (
         <p
-          className="mt-3 text-xs text-red-400 leading-relaxed"
+          className={`mt-3 text-xs text-red-400 leading-relaxed ${centered ? 'text-center' : ''}`}
           role="alert"
         >
           {error}

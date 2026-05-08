@@ -628,16 +628,15 @@ export default async function ScanLandingPage({
                 <>{formatUsd(finalCents)} TurfScan. One-time, no subscription.</>
               )}
             </p>
-            <div className="inline-block">
-              <ScanCheckoutButton
-                coupon={couponCode}
-                utmSource={utmSource}
-                utmMedium={utmMedium}
-                utmCampaign={utmCampaign}
-                gclid={gclid}
-                label={`Get my ${formatUsd(finalCents)} TurfScan`}
-              />
-            </div>
+            <ScanCheckoutButton
+              coupon={couponCode}
+              utmSource={utmSource}
+              utmMedium={utmMedium}
+              utmCampaign={utmCampaign}
+              gclid={gclid}
+              label={`Get my ${formatUsd(finalCents)} TurfScan`}
+              centered
+            />
           </div>
 
           {/* Audit-ladder offramp — small, low-contrast, no accent
