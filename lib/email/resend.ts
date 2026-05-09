@@ -54,6 +54,14 @@ import {
   type PulseTrialEndingEmailProps,
 } from '@/components/email/PulseTrialEndingEmail';
 import {
+  AuditCallReminderEmail,
+  type AuditCallReminderEmailProps,
+} from '@/components/email/AuditCallReminderEmail';
+import {
+  AuditCallConfirmedEmail,
+  type AuditCallConfirmedEmailProps,
+} from '@/components/email/AuditCallConfirmedEmail';
+import {
   StripeSetupLinkEmail,
   type StripeSetupLinkEmailProps,
 } from '@/components/email/StripeSetupLinkEmail';
@@ -195,11 +203,6 @@ export async function sendOrderConfirmation(args: {
    *  configured yet — email falls back to "your strategist will
    *  email" copy. */
   bookingUrl?: string | null;
-  /** Pre-formatted scheduled-call timestamp for Audit upgrades
-   *  ("Tuesday, Aug 12 at 2:00 pm EST"). Standalone Audit
-   *  purchases leave this null; the email shows the auto-schedule
-   *  promise instead. Ignored on tiers other than audit. */
-  scheduledAt?: string | null;
   /** 'upgrade' for the TurfScan→Audit dashboard upsell flow,
    *  'standalone' (default) for direct Stripe-Checkout audit
    *  purchases. Only affects audit-tier headline copy. */
@@ -211,7 +214,6 @@ export async function sendOrderConfirmation(args: {
       tier: args.tier,
       dashboardUrl: args.dashboardUrl,
       bookingUrl: args.bookingUrl ?? null,
-      scheduledAt: args.scheduledAt ?? null,
       auditPurchaseKind: args.auditPurchaseKind,
     })
   );
@@ -517,6 +519,63 @@ export async function sendPulseTrialEnding(args: {
   return sendEmail({
     to: args.to,
     subject: `Your TurfMap Pulse trial ends in 3 days`,
+    html,
+  });
+}
+
+/**
+ * Audit-call reminder. Triggered ~20 minutes after a Visibility
+ * Audit purchase if the buyer hasn't booked a Cal.com slot yet —
+ * fired by the audit-call-reminders cron (not inline at fulfill
+ * time, so a function timeout never silently drops it). Once-only
+ * per lead_orders row: caller stamps audit_call_reminded_at on the
+ * lead_orders.stripe_metadata to dedupe across cron retries.
+ */
+export async function sendAuditCallReminder(args: {
+  to: string;
+  businessName: string;
+  bookingUrl: string;
+}): Promise<boolean> {
+  const html = await render(
+    AuditCallReminderEmail({
+      businessName: args.businessName,
+      bookingUrl: args.bookingUrl,
+    } satisfies AuditCallReminderEmailProps)
+  );
+  return sendEmail({
+    to: args.to,
+    subject: `One more step: book your TurfMap strategist call`,
+    html,
+  });
+}
+
+/**
+ * Audit-call booking confirmation. Fires from the Cal.com webhook
+ * when BOOKING_CREATED lands. The webhook handler computes the
+ * pre-formatted scheduledAt + manageBookingUrl from Cal.com's
+ * payload, and we own the email shell here so the buyer sees a
+ * branded follow-up alongside Cal.com's auto-generated calendar
+ * invite (Cal.com still sends its own — this is the TurfMap-side
+ * confirmation, not a replacement).
+ */
+export async function sendAuditCallConfirmed(args: {
+  to: string;
+  businessName: string;
+  scheduledAt: string;
+  manageBookingUrl: string;
+  dashboardUrl: string;
+}): Promise<boolean> {
+  const html = await render(
+    AuditCallConfirmedEmail({
+      businessName: args.businessName,
+      scheduledAt: args.scheduledAt,
+      manageBookingUrl: args.manageBookingUrl,
+      dashboardUrl: args.dashboardUrl,
+    } satisfies AuditCallConfirmedEmailProps)
+  );
+  return sendEmail({
+    to: args.to,
+    subject: `Strategist call confirmed for ${args.scheduledAt}`,
     html,
   });
 }

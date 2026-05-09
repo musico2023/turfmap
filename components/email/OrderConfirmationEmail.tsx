@@ -16,6 +16,7 @@ import {
   P,
   PSmall,
   PrimaryButton,
+  SecondaryButton,
   TierBadge,
   COLORS,
 } from './EmailLayout';
@@ -27,18 +28,6 @@ export type OrderConfirmationEmailProps = {
   /** Cal.com booking link for Audit + Strategy buyers. NULL when
    *  the env isn't set or the tier doesn't include a call. */
   bookingUrl?: string | null;
-  /**
-   * Pre-formatted scheduled-call timestamp (e.g. "Tuesday, Aug 12
-   * at 2:00 pm EST"). Set on Audit upgrades from the dashboard
-   * where the strategist call is auto-scheduled at upgrade time;
-   * leave null on standalone Audit purchases where the buyer
-   * still needs to pick a slot via Cal.com.
-   *
-   * When non-null, the email's scheduling line reads "Your
-   * strategist call is scheduled for {scheduledAt}." instead of
-   * the auto-schedule promise.
-   */
-  scheduledAt?: string | null;
   /**
    * Frames the audit-tier headline as either a fresh purchase
    * ("standalone") or a TurfScan→Audit upgrade ("upgrade"). Only
@@ -89,11 +78,9 @@ export function OrderConfirmationEmail({
   tier,
   dashboardUrl,
   bookingUrl,
-  scheduledAt,
   auditPurchaseKind = 'standalone',
 }: OrderConfirmationEmailProps) {
   const tierLabel = TIER_LABEL[tier];
-  const includesCall = tier === 'audit' || tier === 'strategy';
   const callLabel =
     tier === 'strategy' ? '90-minute strategy session' : '30-minute strategist diagnostic call';
   const isRecurring = tier === 'pulse' || tier === 'pulse_plus';
@@ -103,7 +90,7 @@ export function OrderConfirmationEmail({
   // Audit-specific headline tone. Standalone framing matches the
   // generic "is on the way" template; upgrade framing acknowledges
   // the prior TurfScan purchase + the credit applied. Both keep
-  // the same deliverables block + scheduling line below.
+  // the same deliverables block + Cal.com booking section below.
   const auditHeadline = isAuditUpgrade
     ? 'You upgraded to Visibility Audit.'
     : 'Your TurfMap Visibility Audit — what happens next.';
@@ -187,12 +174,15 @@ export function OrderConfirmationEmail({
         />
       )}
 
-      {/* Scheduling block — different copy for audit vs. strategy
-       *  because the audit's auto-schedule mechanic is different
-       *  from strategy's hand-scheduled flow. Audit copy diverges
-       *  further on whether the call is already scheduled (upgrade
-       *  flow with scheduledAt set) or not (standalone flow). */}
-      {isAudit && scheduledAt ? (
+      {/* Audit booking block — Cal.com confirmation is required.
+       *  No auto-scheduling: the buyer picks a time themselves so
+       *  there's never a "we picked a slot you can't make" case.
+       *  Primary CTA is the Cal.com link; secondary is the dashboard.
+       *  If the buyer doesn't book within 20 minutes of this email,
+       *  the audit-call-reminders cron sends a follow-up nudge. When
+       *  Cal.com fires BOOKING_CREATED, we send a confirmation email
+       *  with the locked-in time. */}
+      {isAudit && (
         <Section
           style={{
             marginTop: 12,
@@ -203,44 +193,47 @@ export function OrderConfirmationEmail({
           }}
         >
           <P>
-            <strong>Your strategist call is scheduled for {scheduledAt}.</strong>
+            <strong>Required next step: book your strategist call.</strong>
             <br />
-            We&rsquo;ll send a calendar invite shortly. The 90-Day
-            Roadmap PDF lands in your inbox within 24 hours of the
-            call.
+            Pick a 30-minute slot that works for you. Your audit
+            doesn&rsquo;t start until the call is on the calendar —
+            this is where we walk through your map, confirm the
+            verticals, and align the 90-Day Roadmap to your business.
           </P>
-        </Section>
-      ) : isAudit ? (
-        <Section
-          style={{
-            marginTop: 12,
-            padding: 16,
-            backgroundColor: COLORS.BG,
-            border: `1px solid ${COLORS.BORDER}`,
-            borderRadius: 6,
-          }}
-        >
-          <P>
-            <strong>Your strategist diagnostic call:</strong>
-            <br />
-            We auto-schedule within 1 business day — you&rsquo;ll get
-            a calendar invite to confirm. The 90-Day Roadmap PDF
-            lands in your inbox within 24 hours of the call.
-          </P>
-          {bookingUrl && (
+          {bookingUrl ? (
             <PrimaryButton href={bookingUrl}>
-              Pick your time now →
+              Pick your time →
             </PrimaryButton>
+          ) : (
+            <PSmall>
+              Booking link is being provisioned. We&rsquo;ll email it
+              within 1 business day — or hit reply if you&rsquo;d
+              rather coordinate directly.
+            </PSmall>
           )}
+          <PSmall>
+            Haven&rsquo;t booked in 20 minutes? We&rsquo;ll send a
+            quick reminder. The 90-Day Roadmap PDF lands within 24
+            hours of the call.
+          </PSmall>
         </Section>
-      ) : null}
+      )}
 
-      <PrimaryButton href={dashboardUrl}>
-        Open my TurfMap →
-      </PrimaryButton>
+      {/* Dashboard CTA. For audit, this is the SECONDARY action —
+       *  the primary action is booking the call above. For other
+       *  tiers, dashboard remains the primary lime button. */}
+      {isAudit ? (
+        <SecondaryButton href={dashboardUrl}>
+          Open my TurfMap →
+        </SecondaryButton>
+      ) : (
+        <PrimaryButton href={dashboardUrl}>
+          Open my TurfMap →
+        </PrimaryButton>
+      )}
 
       {/* Strategy tier keeps its prior booking block — the audit's
-       *  re-templated scheduling section above replaces this for
+       *  re-templated booking section above replaces this for
        *  audit only. */}
       {tier === 'strategy' && bookingUrl && (
         <Section

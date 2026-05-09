@@ -379,7 +379,22 @@ export async function POST(req: NextRequest) {
     // succeeded) and return a degraded success.
     const errMsg = failedScans.map((r) => (r.ok ? '' : r.error)).join('; ');
     console.error('[orders/fulfill] partial scan failure', errMsg);
-    await markLeadOrderFulfilled(supabase, body.sessionId, client.id);
+    // Same metadata stamp as the success path so the audit-call
+    // reminder cron + Cal.com webhook still wire up correctly even
+    // when the scan itself partially failed.
+    const isAuditTierPartial =
+      session.tier === 'audit' || session.tier === 'strategy';
+    await markLeadOrderFulfilled(
+      supabase,
+      body.sessionId,
+      client.id,
+      isAuditTierPartial
+        ? {
+            audit_call_status: 'unbooked',
+            audit_call_initiated_at: new Date().toISOString(),
+          }
+        : undefined
+    );
 
     // Pulse+ welcome still fires on partial failure — the citation-
     // build onboarding form is independent of scan completion, and the
@@ -418,10 +433,22 @@ export async function POST(req: NextRequest) {
   }
 
   // ─── 8. Mark lead_order fulfilled ──────────────────────────────────────
+  // For Audit + Strategy tiers, also stamp the call-tracking
+  // metadata used by the Cal.com webhook + audit-call-reminders
+  // cron. Initial state is 'unbooked' — the cron picks up rows in
+  // this state that are >20 min old and haven't been reminded yet,
+  // and the Cal.com BOOKING_CREATED webhook flips them to 'booked'.
+  const isAuditTier = session.tier === 'audit' || session.tier === 'strategy';
   const fulfilled = await markLeadOrderFulfilled(
     supabase,
     body.sessionId,
-    client.id
+    client.id,
+    isAuditTier
+      ? {
+          audit_call_status: 'unbooked',
+          audit_call_initiated_at: new Date().toISOString(),
+        }
+      : undefined
   );
   if (!fulfilled.ok) {
     // Non-fatal — the data is all written, the lead_orders row just

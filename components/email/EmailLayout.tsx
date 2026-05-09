@@ -378,6 +378,47 @@ export function TierBadge({ tier }: { tier: 'pulse' | 'pulse_plus' }) {
 }
 
 /**
+ * Outlined button — pairs with PrimaryButton when the email needs
+ * two CTAs and one shouldn't compete with the other (e.g. "Pick
+ * your time" primary + "Open my TurfMap" secondary on the audit
+ * confirmation). Same dimensions as PrimaryButton so they stack
+ * cleanly. Transparent fill + subtle border + lighter text — reads
+ * as "available, not urgent" against the dark email shell.
+ */
+export function SecondaryButton({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <table cellPadding={0} cellSpacing={0} role="presentation" style={{ margin: '12px 0 8px 0' }}>
+      <tr>
+        <td>
+          <a
+            href={href}
+            style={{
+              display: 'inline-block',
+              backgroundColor: 'transparent',
+              color: TEXT,
+              fontWeight: 600,
+              fontSize: 14,
+              padding: '11px 20px',
+              borderRadius: 6,
+              border: `1px solid ${BORDER}`,
+              textDecoration: 'none',
+            }}
+          >
+            {children}
+          </a>
+        </td>
+      </tr>
+    </table>
+  );
+}
+
+/**
  * Subdued inline link for secondary actions in an email — e.g. the
  * "Cancel trial" affordance on the day-28 reminder, where the
  * primary CTA is "Manage subscription" and we don't want the

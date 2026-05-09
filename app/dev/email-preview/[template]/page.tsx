@@ -21,6 +21,8 @@ import {
 } from '@/lib/auth/agency';
 import { OrderConfirmationEmail } from '@/components/email/OrderConfirmationEmail';
 import { ScanReadyEmail } from '@/components/email/ScanReadyEmail';
+import { AuditCallReminderEmail } from '@/components/email/AuditCallReminderEmail';
+import { AuditCallConfirmedEmail } from '@/components/email/AuditCallConfirmedEmail';
 import { PortalInviteEmail } from '@/components/email/PortalInviteEmail';
 import { PulsePlusWelcomeEmail } from '@/components/email/PulsePlusWelcomeEmail';
 import { StripeSetupLinkEmail } from '@/components/email/StripeSetupLinkEmail';
@@ -85,10 +87,6 @@ async function renderTemplate(
       const includeBooking = single(search.booking) === '1';
       const auditPurchaseKind =
         single(search.kind) === 'upgrade' ? 'upgrade' : 'standalone';
-      const scheduledAt =
-        single(search.scheduled) === '1'
-          ? 'Tuesday, Aug 12 at 2:00 pm EST'
-          : null;
       const tierLabel = {
         scan: 'TurfScan',
         audit: 'Visibility Audit',
@@ -111,8 +109,33 @@ async function renderTemplate(
               includeBooking && (tier === 'audit' || tier === 'strategy')
                 ? previewBookingUrlForTier(tier)
                 : null,
-            scheduledAt,
             auditPurchaseKind,
+          })
+        ),
+      };
+    }
+    case 'audit-call-reminder': {
+      return {
+        subject: 'One more step: book your TurfMap strategist call',
+        html: await render(
+          AuditCallReminderEmail({
+            businessName: MOCK_BUSINESS,
+            bookingUrl: previewBookingUrlForTier('audit'),
+          })
+        ),
+      };
+    }
+    case 'audit-call-confirmed': {
+      const scheduledAt = 'Tuesday, Aug 12 at 2:00 pm EDT';
+      return {
+        subject: `Strategist call confirmed for ${scheduledAt}`,
+        html: await render(
+          AuditCallConfirmedEmail({
+            businessName: MOCK_BUSINESS,
+            scheduledAt,
+            manageBookingUrl:
+              'https://cal.com/booking/abc123?manage=1',
+            dashboardUrl: MOCK_DASHBOARD_URL,
           })
         ),
       };

@@ -35,16 +35,16 @@ const TEMPLATES: TemplateLink[] = [
       { label: 'Pulse+', query: 'tier=pulse_plus' },
       { label: 'TurfScan ($99)', query: 'tier=scan' },
       {
-        label: 'Audit ($499) — standalone, with booking',
+        label: 'Audit ($499) — standalone, with Cal.com link',
         query: 'tier=audit&booking=1',
       },
       {
-        label: 'Audit ($499) — standalone, no booking URL',
+        label: 'Audit ($499) — standalone, no Cal.com link',
         query: 'tier=audit',
       },
       {
-        label: 'Audit upgrade ($197) — auto-scheduled call',
-        query: 'tier=audit&kind=upgrade&scheduled=1',
+        label: 'Audit upgrade ($197) — with Cal.com link',
+        query: 'tier=audit&kind=upgrade&booking=1',
       },
       {
         label: 'Strategy ($1,497) — with booking',
@@ -62,6 +62,20 @@ const TEMPLATES: TemplateLink[] = [
       { label: 'Without metrics', query: 'metrics=0' },
       { label: 'With PDF attachment', query: 'metrics=1&pdf=1' },
     ],
+  },
+  {
+    slug: 'audit-call-reminder',
+    name: 'Audit call reminder',
+    blurb:
+      "Sent ~20 minutes after a Visibility Audit purchase if the buyer hasn't booked their Cal.com strategist call yet. Fired by /api/cron/audit-call-reminders.",
+    variants: [{ label: 'Default', query: '' }],
+  },
+  {
+    slug: 'audit-call-confirmed',
+    name: 'Audit call confirmed',
+    blurb:
+      'Sent when Cal.com fires BOOKING_CREATED for a Visibility Audit buyer. TurfMap-branded follow-up alongside Cal.com’s own calendar invite.',
+    variants: [{ label: 'Default', query: '' }],
   },
   {
     slug: 'portal-invite',

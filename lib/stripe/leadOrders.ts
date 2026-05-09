@@ -94,22 +94,101 @@ export async function getLeadOrderBySessionId(
 }
 
 /** Mark a lead_order as fulfilled — writes the client_id we just
- *  created, transitions status from 'pending' → 'fulfilled'. */
+ *  created, transitions status from 'pending' → 'fulfilled'.
+ *
+ *  When `metadataPatch` is provided, merges its keys into the
+ *  existing stripe_metadata JSONB. Used by the audit fulfill path
+ *  to stamp `audit_call_status: 'unbooked'` so the
+ *  /api/cron/audit-call-reminders job can find buyers who haven't
+ *  booked yet. */
 export async function markLeadOrderFulfilled(
   supabase: SupabaseLike,
   sessionId: string,
-  clientId: string
+  clientId: string,
+  metadataPatch?: Record<string, unknown>
 ): Promise<{ ok: boolean; error?: string }> {
+  // If a metadata patch is supplied, fold it into the existing
+  // stripe_metadata. Two roundtrips (read then write) keeps the
+  // merge logic in app code rather than relying on PG's jsonb
+  // patch ops — fine because this is a low-volume per-order path.
+  let mergedMetadata: Record<string, unknown> | null = null;
+  if (metadataPatch) {
+    const { data: existing } = await supabase
+      .from('lead_orders')
+      .select('stripe_metadata')
+      .eq('stripe_session_id', sessionId)
+      .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
+    mergedMetadata = {
+      ...(existing?.stripe_metadata ?? {}),
+      ...metadataPatch,
+    };
+  }
+
+  const update: Record<string, unknown> = {
+    status: 'fulfilled',
+    client_id: clientId,
+  };
+  if (mergedMetadata) update.stripe_metadata = mergedMetadata;
+
   const { error } = await supabase
     .from('lead_orders')
-    .update({
-      status: 'fulfilled',
-      client_id: clientId,
-    })
+    .update(update)
     .eq('stripe_session_id', sessionId);
 
   if (error) {
     console.error('[lead_orders] markLeadOrderFulfilled failed', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+/**
+ * Patch stripe_metadata on a lead_orders row identified by client_id.
+ * Used by the Cal.com webhook to flip audit_call_status from
+ * 'unbooked' → 'booked' (or 'cancelled') and by the reminder cron
+ * to stamp audit_call_reminded_at.
+ *
+ * Idempotent — the merge means re-running with the same patch is a
+ * no-op against existing keys and additive against new ones.
+ */
+export async function patchLeadOrderMetadataByClientId(
+  supabase: SupabaseLike,
+  clientId: string,
+  metadataPatch: Record<string, unknown>
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: existing, error: readErr } = await supabase
+    .from('lead_orders')
+    .select('id, stripe_metadata')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      stripe_metadata: Record<string, unknown> | null;
+    }>();
+  if (readErr) {
+    console.error(
+      '[lead_orders] patchLeadOrderMetadataByClientId read failed',
+      readErr
+    );
+    return { ok: false, error: readErr.message };
+  }
+  if (!existing) {
+    return { ok: false, error: 'no lead_orders row for this client' };
+  }
+  const merged = {
+    ...(existing.stripe_metadata ?? {}),
+    ...metadataPatch,
+  };
+  const { error } = await supabase
+    .from('lead_orders')
+    .update({ stripe_metadata: merged })
+    .eq('id', existing.id);
+  if (error) {
+    console.error(
+      '[lead_orders] patchLeadOrderMetadataByClientId update failed',
+      error
+    );
     return { ok: false, error: error.message };
   }
   return { ok: true };
