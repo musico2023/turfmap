@@ -323,7 +323,7 @@ export function CitationOnboardingForm({
                       type="time"
                       value={d.open}
                       onChange={(e) => updateDay(key, { open: e.target.value })}
-                      className={`${inputClass} max-w-[110px]`}
+                      className={`${inputClass} w-[140px]`}
                       required
                     />
                     <span className="text-zinc-600">–</span>
@@ -331,7 +331,7 @@ export function CitationOnboardingForm({
                       type="time"
                       value={d.close}
                       onChange={(e) => updateDay(key, { close: e.target.value })}
-                      className={`${inputClass} max-w-[110px]`}
+                      className={`${inputClass} w-[140px]`}
                       required
                     />
                   </>
