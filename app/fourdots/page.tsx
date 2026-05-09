@@ -671,7 +671,7 @@ export default async function ScanLandingPage({
            *  buyer who's committed to $49 ignores it without
            *  feeling pulled. */}
           <p className="mt-6 text-xs text-zinc-600 text-center leading-relaxed">
-            Want a strategist to walk through your map after the scan?{' '}
+            Want a 90-day Roadmap built around your map?{' '}
             <a
               href="https://www.turfmap.ai/#section-04"
               className="text-zinc-400 hover:text-zinc-200 transition-colors underline-offset-2 hover:underline"

@@ -34,12 +34,22 @@ const TEMPLATES: TemplateLink[] = [
       { label: 'Pulse', query: 'tier=pulse' },
       { label: 'Pulse+', query: 'tier=pulse_plus' },
       { label: 'TurfScan ($99)', query: 'tier=scan' },
-      { label: 'Audit ($499) — with booking', query: 'tier=audit&booking=1' },
+      {
+        label: 'Audit ($499) — standalone, with booking',
+        query: 'tier=audit&booking=1',
+      },
+      {
+        label: 'Audit ($499) — standalone, no booking URL',
+        query: 'tier=audit',
+      },
+      {
+        label: 'Audit upgrade ($197) — auto-scheduled call',
+        query: 'tier=audit&kind=upgrade&scheduled=1',
+      },
       {
         label: 'Strategy ($1,497) — with booking',
         query: 'tier=strategy&booking=1',
       },
-      { label: 'Audit — no booking URL', query: 'tier=audit' },
     ],
   },
   {

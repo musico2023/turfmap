@@ -83,6 +83,12 @@ async function renderTemplate(
         | 'pulse'
         | 'pulse_plus';
       const includeBooking = single(search.booking) === '1';
+      const auditPurchaseKind =
+        single(search.kind) === 'upgrade' ? 'upgrade' : 'standalone';
+      const scheduledAt =
+        single(search.scheduled) === '1'
+          ? 'Tuesday, Aug 12 at 2:00 pm EST'
+          : null;
       const tierLabel = {
         scan: 'TurfScan',
         audit: 'Visibility Audit',
@@ -90,8 +96,12 @@ async function renderTemplate(
         pulse: 'TurfMap Pulse',
         pulse_plus: 'TurfMap Pulse+',
       }[tier];
+      const subject =
+        tier === 'audit'
+          ? `Your TurfMap Visibility Audit — what happens next`
+          : `Your ${tierLabel} is processing — ${MOCK_BUSINESS}`;
       return {
-        subject: `Your ${tierLabel} is processing — ${MOCK_BUSINESS}`,
+        subject,
         html: await render(
           OrderConfirmationEmail({
             businessName: MOCK_BUSINESS,
@@ -101,6 +111,8 @@ async function renderTemplate(
               includeBooking && (tier === 'audit' || tier === 'strategy')
                 ? previewBookingUrlForTier(tier)
                 : null,
+            scheduledAt,
+            auditPurchaseKind,
           })
         ),
       };

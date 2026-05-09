@@ -195,6 +195,15 @@ export async function sendOrderConfirmation(args: {
    *  configured yet — email falls back to "your strategist will
    *  email" copy. */
   bookingUrl?: string | null;
+  /** Pre-formatted scheduled-call timestamp for Audit upgrades
+   *  ("Tuesday, Aug 12 at 2:00 pm EST"). Standalone Audit
+   *  purchases leave this null; the email shows the auto-schedule
+   *  promise instead. Ignored on tiers other than audit. */
+  scheduledAt?: string | null;
+  /** 'upgrade' for the TurfScan→Audit dashboard upsell flow,
+   *  'standalone' (default) for direct Stripe-Checkout audit
+   *  purchases. Only affects audit-tier headline copy. */
+  auditPurchaseKind?: 'standalone' | 'upgrade';
 }): Promise<boolean> {
   const html = await render(
     OrderConfirmationEmail({
@@ -202,11 +211,21 @@ export async function sendOrderConfirmation(args: {
       tier: args.tier,
       dashboardUrl: args.dashboardUrl,
       bookingUrl: args.bookingUrl ?? null,
+      scheduledAt: args.scheduledAt ?? null,
+      auditPurchaseKind: args.auditPurchaseKind,
     })
   );
+  // Audit gets a dedicated subject line ("what happens next") that
+  // matches the email's intent — the deliverables list + scheduling
+  // section read as a roadmap, not a generic processing receipt.
+  // Other tiers keep the "is processing" framing.
+  const subject =
+    args.tier === 'audit'
+      ? `Your TurfMap Visibility Audit — what happens next`
+      : `Your ${TIER_LABELS_FOR_SUBJECT[args.tier]} is processing — ${args.businessName}`;
   return sendEmail({
     to: args.to,
-    subject: `Your ${TIER_LABELS_FOR_SUBJECT[args.tier]} is processing — ${args.businessName}`,
+    subject,
     html,
   });
 }
