@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, Clock, Loader2 } from 'lucide-react';
 
 /**
@@ -79,7 +79,10 @@ type MonitoringSpec = {
    *  Hidden when the buyer toggles to annual (the annual price
    *  doesn't have the minimum-commitment surface). */
   monthlySubNote?: string;
-  tagline: string;
+  /** Tagline accepts ReactNode so we can use <strong> for value-phrase
+   *  emphasis (e.g. Pulse+'s "**fixes it for you**"). Pulse keeps a
+   *  plain string and the type is wide enough to hold both. */
+  tagline: ReactNode;
   /** "Everything in Pulse, plus:" line for the upgrade tier */
   inheritsFrom?: string;
   features: FeatureGroup[];
@@ -125,7 +128,15 @@ const TIERS: MonitoringSpec[] = [
     annualTotal: '$950',
     annualSavingsDollars: '$238',
     monthlySubNote: '3-month minimum subscription',
-    tagline: "Pulse tells you what's broken. Pulse+ fixes it for you.",
+    tagline: (
+      <>
+        Pulse tells you what&rsquo;s broken. Pulse+{' '}
+        <strong className="font-semibold text-zinc-100">
+          fixes it for you
+        </strong>
+        .
+      </>
+    ),
     inheritsFrom: 'Everything in Pulse, plus:',
     features: [
       {

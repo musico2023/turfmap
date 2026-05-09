@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, Gift, Loader2 } from 'lucide-react';
 
 /**
@@ -29,8 +29,12 @@ type TierSpec = {
   name: string;
   price: string;
   priceCadence: string;
-  tagline: string;
-  features: string[];
+  /** Tagline + features accept ReactNode so we can use <strong> for
+   *  disciplined emphasis on value phrases (e.g. "**90-day Roadmap**"
+   *  in the Visibility Audit tagline). Render-site uses index-based
+   *  keys for the features list since ReactNode isn't a stable key. */
+  tagline: ReactNode;
+  features: ReactNode[];
   /** Bonus row rendered with a Gift icon + lime-tinted text below the
    *  feature list. Mirrors the attach-banner offer ("Buy any audit,
    *  get 30 days of Pulse free") inside each card so the bonus is
@@ -64,16 +68,36 @@ const TIERS: TierSpec[] = [
     name: 'Visibility Audit',
     price: '$499',
     priceCadence: 'one-time',
-    tagline: 'Scan + 90-day Roadmap built around your map.',
+    tagline: (
+      <>
+        Scan + <strong className="font-semibold text-zinc-200">90-day Roadmap</strong> built around your map.
+      </>
+    ),
     features: [
       'Everything in TurfScan',
-      '30-minute strategist diagnostic call — live competitor teardown + score interpretation',
+      <>
+        30-minute{' '}
+        <strong className="font-semibold text-zinc-100">
+          strategist diagnostic call
+        </strong>{' '}
+        — live competitor teardown + score interpretation
+      </>,
       'Per-vertical NAP audit — every directory specific to your trade',
       'Competitor analysis with heatmap overlay (your nearest 3 competitors)',
-      '90-Day Visibility Roadmap (PDF) — week-by-week action plan with projected TurfScore lift per action',
+      <>
+        <strong className="font-semibold text-zinc-100">
+          90-Day Visibility Roadmap (PDF)
+        </strong>{' '}
+        — week-by-week action plan with projected TurfScore lift per action
+      </>,
       '30-day automated re-scan to measure progress',
       '60-day strategist check-in call',
-      'TurfScore Lift Promise: minimum 10-point lift, or we redo the analysis free',
+      <>
+        <strong className="font-semibold text-zinc-100">
+          TurfScore Lift Promise
+        </strong>
+        : minimum 10-point lift, or we redo the analysis free
+      </>,
     ],
     bonus: '30 days of TurfMap Pulse, free',
     cta: 'Order Visibility Audit',
@@ -183,8 +207,12 @@ function PricingCard({ tier }: { tier: TierSpec }) {
       <p className="text-sm text-zinc-400 leading-snug mb-6">{tier.tagline}</p>
 
       <ul className="space-y-2.5 mb-5 flex-1">
-        {tier.features.map((f) => (
-          <li key={f} className="flex items-start gap-2.5 text-sm text-zinc-300">
+        {tier.features.map((f, i) => (
+          // Index-based key: features can be ReactNode (we use <strong>
+          // inline for value-phrase emphasis), so the prior key={f}
+          // pattern won't compile. The list is static + doesn't reorder,
+          // so index is stable.
+          <li key={i} className="flex items-start gap-2.5 text-sm text-zinc-300">
             <Check
               size={14}
               strokeWidth={2.75}
