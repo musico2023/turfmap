@@ -560,6 +560,12 @@ export type VisibilityAuditRow = {
   sixty_day_prompted_at: string | null;
   sixty_day_check_scheduled_at: string | null;
   sixty_day_check_completed_at: string | null;
+  /** Phase 3 milestone-email gates. Set to NOW() when the
+   *  corresponding cron-driven email lands; subsequent sweeps skip
+   *  rows where the field IS NOT NULL so we never double-send. */
+  prep_email_sent_at: string | null;
+  day_25_reminder_sent_at: string | null;
+  day_67_followup_sent_at: string | null;
   roadmap_pdf_url: string | null;
   prep_notes_url: string | null;
   starting_turfscore: number | null;

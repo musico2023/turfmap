@@ -62,6 +62,22 @@ import {
   type AuditCallConfirmedEmailProps,
 } from '@/components/email/AuditCallConfirmedEmail';
 import {
+  StrategistPrepEmail,
+  type StrategistPrepEmailProps,
+} from '@/components/email/StrategistPrepEmail';
+import {
+  Day25ReminderEmail,
+  type Day25ReminderEmailProps,
+} from '@/components/email/Day25ReminderEmail';
+import {
+  SixtyDayPromptEmail,
+  type SixtyDayPromptEmailProps,
+} from '@/components/email/SixtyDayPromptEmail';
+import {
+  Day67FollowupEmail,
+  type Day67FollowupEmailProps,
+} from '@/components/email/Day67FollowupEmail';
+import {
   StripeSetupLinkEmail,
   type StripeSetupLinkEmailProps,
 } from '@/components/email/StripeSetupLinkEmail';
@@ -653,6 +669,72 @@ export async function sendAuditCallReminder(args: {
     subject: `One more step: book your TurfMap strategist call`,
     html,
     scheduledAt: args.scheduledAt,
+  });
+}
+
+/**
+ * Strategist Prep email — to anthony@fourdots.io, 24h pre-call.
+ * Carries signed URLs for the Roadmap PDF + Strategist Prep Notes
+ * (markdown), plus an inline at-a-glance summary so Anthony can
+ * scan the subject line + body and walk into the call already
+ * loaded with the diagnosis + LLM Fit Score.
+ *
+ * The destination is the operator's email, not the buyer's. Phase
+ * 3 cron sends to anthony@fourdots.io specifically; we don't pass
+ * `to` because the destination is constant for this template.
+ */
+export async function sendStrategistPrep(args: {
+  /** Operator email — defaults to anthony@fourdots.io but accepts
+   *  override for testing. */
+  to: string;
+  props: StrategistPrepEmailProps;
+}): Promise<boolean> {
+  const html = await render(StrategistPrepEmail(args.props));
+  const subject = `Tomorrow's audit call: ${args.props.businessName} (${args.props.trade}, ${args.props.market}) — TurfScore ${args.props.currentTurfScore}, LLM Fit ${args.props.llmFitScore}/5`;
+  return sendEmailOk({
+    to: args.to,
+    subject,
+    html,
+  });
+}
+
+/** Day-25 buyer re-scan reminder — 5 days before the 30-day re-scan. */
+export async function sendDay25Reminder(args: {
+  to: string;
+  props: Day25ReminderEmailProps;
+}): Promise<boolean> {
+  const html = await render(Day25ReminderEmail(args.props));
+  return sendEmailOk({
+    to: args.to,
+    subject: `Your TurfMap re-scan runs in 5 days — ${args.props.businessName}`,
+    html,
+  });
+}
+
+/** Day-53 buyer 60-day check-in prompt. Includes Cal.com link. */
+export async function sendSixtyDayPrompt(args: {
+  to: string;
+  props: SixtyDayPromptEmailProps;
+}): Promise<boolean> {
+  const html = await render(SixtyDayPromptEmail(args.props));
+  return sendEmailOk({
+    to: args.to,
+    subject: `Your TurfMap 60-day check-in — pick a time`,
+    html,
+  });
+}
+
+/** Day-67 buyer follow-up — fires only when 60-day check-in is
+ *  still unscheduled at day 67. Slack mirrors this to #llm-leads. */
+export async function sendDay67Followup(args: {
+  to: string;
+  props: Day67FollowupEmailProps;
+}): Promise<boolean> {
+  const html = await render(Day67FollowupEmail(args.props));
+  return sendEmailOk({
+    to: args.to,
+    subject: `Quick nudge on your 60-day check-in — ${args.props.businessName}`,
+    html,
   });
 }
 

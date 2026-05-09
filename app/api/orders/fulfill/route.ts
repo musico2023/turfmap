@@ -60,8 +60,9 @@ import {
 } from '@/lib/email/resend';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
-import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade } from '@/lib/audit/llmFitScore';
+import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import { notifyLlmFitAudit } from '@/lib/audit/operatorSlack';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -574,6 +575,25 @@ export async function POST(req: NextRequest) {
           '[orders/fulfill] createVisibilityAudit failed (non-fatal)',
           auditResult.error
         );
+      } else if (shouldPitchLlm(fitBreakdown.score)) {
+        // Fire the operator Slack notification for fit-4-and-up
+        // audits. Fail-soft — if the webhook isn't configured or
+        // the call fails, we log + continue. The audit is still
+        // captured; this is just a manual-touch nudge for Anthony's
+        // pipeline awareness.
+        await notifyLlmFitAudit({
+          businessName: body.businessName.trim(),
+          trade: body.keywords[0] ?? 'unknown',
+          market: geocode.components?.city ?? body.address.trim(),
+          currentTurfScore: primaryScanResult.turfScore,
+          llmFitScore: fitBreakdown.score,
+          auditDashboardUrl: `${origin}/clients/${client.public_id}`,
+        }).catch((e) => {
+          console.error(
+            '[orders/fulfill] notifyLlmFitAudit failed (non-fatal)',
+            e instanceof Error ? e.message : String(e)
+          );
+        });
       }
     } catch (e) {
       // Same fail-soft pattern as the rest of the post-fulfill block.

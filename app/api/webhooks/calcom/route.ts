@@ -49,7 +49,12 @@ import crypto from 'node:crypto';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { patchLeadOrderMetadataByClientId } from '@/lib/stripe/leadOrders';
 import { sendAuditCallConfirmed, cancelScheduledEmail } from '@/lib/email/resend';
-import type { ClientRow, LeadOrderRow } from '@/lib/supabase/types';
+import { patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import type {
+  ClientRow,
+  LeadOrderRow,
+  VisibilityAuditRow,
+} from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
@@ -213,6 +218,32 @@ export async function POST(req: Request) {
     }
   }
 
+  // Phase 3: also resolve the visibility_audits row for this order.
+  // The row may not exist for legacy audits (pre-Phase-1) or for
+  // strategy tier (which doesn't get a visibility_audits row by
+  // design). Both cases are handled by the IS-NULL guards below.
+  const { data: audit } = await supabase
+    .from('visibility_audits')
+    .select('id, sixty_day_check_scheduled_at, strategist_call_completed_at')
+    .eq('lead_order_id', order.id)
+    .maybeSingle<
+      Pick<
+        VisibilityAuditRow,
+        'id' | 'sixty_day_check_scheduled_at' | 'strategist_call_completed_at'
+      >
+    >();
+
+  // Detect whether this booking is for the 60-day check-in vs. the
+  // initial strategist call. The Cal.com URL we generate carries a
+  // `60day=1` query param in the bookerUrl when it's the check-in
+  // (see lib/integrations/calcom). The booking's `bookerUrl` reflects
+  // back; if it has 60day=1 we treat as the check-in, otherwise it's
+  // the initial strategist call. Same Cal.com event type either way
+  // — the metadata flag distinguishes.
+  const isSixtyDayBooking =
+    typeof payload.bookerUrl === 'string' &&
+    /\b60day=1\b/.test(payload.bookerUrl);
+
   // Cancellation path: flip status, clear booked_at if any, no
   // email (Cal.com sends a cancellation notice itself; doubling up
   // would be noise).
@@ -225,6 +256,20 @@ export async function POST(req: Request) {
       // never existed), so no future cancel is needed.
       audit_reminder_email_id: null,
     });
+    // Mirror the cancellation onto visibility_audits when present.
+    // 60-day cancellations clear sixty_day_check_scheduled_at so the
+    // day-67 follow-up cron picks the buyer up again. Initial-call
+    // cancellations clear strategist_call_scheduled_at + flip status
+    // back to pending_call_schedule.
+    if (audit) {
+      const patch: Partial<VisibilityAuditRow> = isSixtyDayBooking
+        ? { sixty_day_check_scheduled_at: null }
+        : {
+            strategist_call_scheduled_at: null,
+            status: 'pending_call_schedule',
+          };
+      await patchVisibilityAudit(supabase, audit.id, patch);
+    }
     return NextResponse.json({ ok: true, action: 'cancelled' });
   }
 
@@ -243,6 +288,31 @@ export async function POST(req: Request) {
     // any). Stale ID lying around could confuse a future operator.
     audit_reminder_email_id: null,
   });
+
+  // Phase 3 — mirror onto visibility_audits. Whether this is the
+  // initial strategist call or the 60-day check-in is decided by
+  // isSixtyDayBooking above, computed from the bookerUrl's
+  // `60day=1` flag. This is also where status advances from
+  // pending_call_schedule → call_scheduled, so the milestone cron
+  // can later find the row + send the 24h-pre-call prep email.
+  if (audit && payload.startTime) {
+    if (isSixtyDayBooking) {
+      // 60-day check-in booking. Stamp the scheduled timestamp;
+      // status doesn't advance here (we only flip to
+      // sixty_day_completed when the call.end webhook fires).
+      await patchVisibilityAudit(supabase, audit.id, {
+        sixty_day_check_scheduled_at: payload.startTime,
+      });
+    } else {
+      // Initial strategist call booking. Advance status if the row
+      // is still in pending_call_schedule; idempotent against
+      // Cal.com's at-least-once retries.
+      await patchVisibilityAudit(supabase, audit.id, {
+        status: 'call_scheduled',
+        strategist_call_scheduled_at: payload.startTime,
+      });
+    }
+  }
 
   // Skip the confirmation email if we've already sent one — Cal.com
   // delivers BOOKING_CREATED at-least-once, and a refreshed delivery
