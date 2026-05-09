@@ -106,9 +106,9 @@ const RoadmapAction = z.object({
   action: z
     .string()
     .min(8)
-    .max(200)
+    .max(500)
     .describe(
-      'Specific, buyer-customized action in 8-25 words. Reference real findings (NAP gaps, missing categories, competitor differentials) when present.'
+      "Specific, buyer-customized action. 8-25 words is the target — referencing real findings (NAP gaps, missing categories, competitor differentials) often pushes longer. Up to ~50 words accepted; the PDF / dashboard truncate visually, but we don't reject content for length."
     ),
   category: CategoryEnum.describe(
     'One of the allowed action categories. Pick the closest fit.'
