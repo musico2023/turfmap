@@ -396,14 +396,23 @@ const styles = StyleSheet.create({
   // (the focus of this Roadmap) keeps the lime accent so it visually
   // dominates; Demand and Systems get distinct accents so the buyer
   // can scan which pillar each action sits under.
-  pillarBadge: {
+  //
+  // The badge is a flex-centered View+Text pair (rather than a styled
+  // Text alone) because react-pdf's vertical text-centering via
+  // lineHeight is unreliable across the SDK's font-metric variants —
+  // the v1.2 render had the V/D/S letters sitting visibly off-center
+  // top. Flex centering produces deterministic alignment.
+  pillarBadgeBox: {
     width: 18,
     height: 18,
     borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillarBadgeText: {
     fontSize: 9,
     fontWeight: 700,
-    textAlign: 'center',
-    lineHeight: 1.85, // visually centers the V/D/S glyph in the box
+    lineHeight: 1,
   },
   // Page-4 legend row that introduces the V/D/S badge taxonomy.
   // Inline beneath the H2 so the buyer sees the key before parsing
@@ -421,14 +430,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  pillarBadgeSm: {
+  pillarBadgeSmBox: {
     width: 14,
     height: 14,
     borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillarBadgeSmText: {
     fontSize: 7,
     fontWeight: 700,
-    textAlign: 'center',
-    lineHeight: 2,
+    lineHeight: 1,
   },
   legendLabel: {
     fontSize: 8.5,
@@ -492,22 +504,14 @@ const styles = StyleSheet.create({
     padding: 10,
     alignItems: 'center',
   },
-  // Replaces the pillar emojis (📍 🎯 ⚙️) — Helvetica can't render
-  // them. A small lime square is the implicit "this is the visibility
-  // pillar your roadmap covers" marker; the muted variant is for the
-  // other two pillars where we want presence-without-emphasis so the
-  // page-6 segue lands harder.
+  // Pillar marker squares for the page-5 mini-row. Color comes from
+  // PILLAR_PALETTE so the visual taxonomy matches the page-4 row
+  // badges 1:1. The previous "muted gray for non-Visibility pillars"
+  // treatment broke the link — buyers couldn't tell that a D badge
+  // on page 4 corresponded to the demand pillar on page 5/6.
   pillarMiniDot: {
     width: 10,
     height: 10,
-    backgroundColor: C.lime,
-    borderRadius: 2,
-    marginBottom: 6,
-  },
-  pillarMiniDotMuted: {
-    width: 10,
-    height: 10,
-    backgroundColor: C.textFaint,
     borderRadius: 2,
     marginBottom: 6,
   },
@@ -547,18 +551,14 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  // Larger square markers for the page-6 pillar boxes. Lime variant
-  // for VISIBILITY (your-pillar emphasis), muted for the others.
+  // Page-6 pillar-box markers. Color comes per-call from
+  // PILLAR_PALETTE so the V/D/S taxonomy stays consistent with the
+  // page-4 row badges + page-5 mini-row dots. (The accented lime
+  // border on the VISIBILITY box still carries the "your pillar"
+  // emphasis — the marker square just identifies the pillar.)
   pillarSquare: {
     width: 14,
     height: 14,
-    backgroundColor: C.lime,
-    borderRadius: 3,
-  },
-  pillarSquareMuted: {
-    width: 14,
-    height: 14,
-    backgroundColor: C.textFaint,
     borderRadius: 3,
   },
   pillarTitle: { fontSize: 11, color: C.text, fontWeight: 700 },
@@ -697,19 +697,27 @@ function priorityStyle(p: ActionPriority): { bg: string; fg: string } {
 }
 
 /**
- * Pillar badge color treatment.
+ * Pillar palette — single source of truth for the V/D/S colorway.
+ * Used by:
+ *   - page-4 row badges + legend
+ *   - page-5 mini-pillar dot row
+ *   - page-6 large pillar-box squares
+ * Keeping all three sites on the same constants means the buyer's
+ * visual taxonomy stays coherent: a lime mark on page 4 ties to a
+ * lime square on page 5/6 ties back to the V badge.
  *   - Visibility (lime): this Roadmap's focus — visually dominant
  *   - Demand (cyan-ish blue): paid-traffic + conversion side
  *   - Systems (lavender): infrastructure / workflow side
- *
- * All three sit on a foreground that's visually distinct from the
- * surrounding row so the eye picks them up at a glance. Same
- * lightweight palette the dashboard product uses for pillar tags.
  */
+const PILLAR_PALETTE: Readonly<Record<Pillar, { bg: string; fg: string }>> =
+  Object.freeze({
+    visibility: { bg: C.lime, fg: '#000' },
+    demand: { bg: '#4adcff', fg: '#001d2a' },
+    systems: { bg: '#c19bff', fg: '#1a0d2a' },
+  });
+
 function pillarStyle(p: Pillar): { bg: string; fg: string } {
-  if (p === 'visibility') return { bg: C.lime, fg: '#000' };
-  if (p === 'demand') return { bg: '#4adcff', fg: '#001d2a' };
-  return { bg: '#c19bff', fg: '#1a0d2a' }; // systems
+  return PILLAR_PALETTE[p];
 }
 
 function napStatusStyle(s: RoadmapPdfNapFinding['status']): {
@@ -787,17 +795,33 @@ const COVER_CANVAS = 280;
 const COVER_CELL = COVER_CANVAS / COVER_GRID; // ~31pt
 const COVER_CELL_R = COVER_CELL * 0.42;
 
+// Heatmap rank → color + label, matched 1:1 with the dashboard's
+// HeatmapGrid component (components/turfmap/HeatmapGrid.tsx). The
+// dashboard treats a cell as a 4-state: visible at position 1, 2, or
+// 3 in Google's local pack — or absent (null). There is no "ranked
+// 4+" tier because Google's local pack only exposes top-3 to
+// searchers; anything beyond is either not surfaced or not relevant
+// to the buyer's visibility decisioning.
+//
+// The previous PDF version (v1.2) was leaking the synthesizer's
+// rank-4-through-20 tiers into the heatmap, producing yellow/orange
+// circles WITHOUT labels — confusing to a buyer who sees the same
+// heatmap on the dashboard with a clean 1/2/3/— treatment. This
+// brings the PDF + dashboard into visual parity.
 function rankColor(rank: number | null): string {
-  if (rank === null) return '#3a3a3a';
-  if (rank <= 3) return C.lime;
-  if (rank <= 10) return '#e8e54a';
-  if (rank <= 20) return C.warn;
+  if (rank === null) return C.bad; // not in 3-pack → red
+  if (rank === 1) return C.lime;
+  if (rank === 2) return '#e8e54a'; // yellow
+  if (rank === 3) return C.warn; // orange
+  // Defensive — synthesizer should never emit ranks > 3 anymore,
+  // but if a cell slips through (e.g. real scan data with stale
+  // out-of-pack ranks), treat it the same as "not in 3-pack."
   return C.bad;
 }
 
 function rankLabel(rank: number | null): string {
-  if (rank === null) return '';
-  if (rank > 20) return '20+';
+  if (rank === null) return '—';
+  if (rank > 3) return '—'; // see rankColor — defensive fallthrough
   return String(rank);
 }
 
@@ -832,29 +856,23 @@ function CoverHeatmap({ cells }: { cells: RoadmapPdfCell[] }) {
         const cx = COVER_CELL / 2 + c.x * COVER_CELL;
         const cy = COVER_CELL / 2 + c.y * COVER_CELL;
         const color = rankColor(c.rank);
-        // Only render the rank number for top-3 cells. Google's
-        // visible local pack only surfaces top-3 results — ranks
-        // 4-20 mean "Google indexes you for this query but a
-        // searcher in this cell never sees you." Rendering the
-        // raw position number for those (e.g. "8" or "11") was
-        // confusing on the first review pass; the color tier alone
-        // carries the "you're in the long tail / outside the visible
-        // pack" signal.
-        const showLabel = c.rank !== null && c.rank <= 3;
+        // Every cell carries a label now — '1' / '2' / '3' for
+        // visible-in-pack cells, '—' for absent. Mirrors the
+        // dashboard's HeatmapGrid 1:1 so a buyer flipping between
+        // the PDF and the live product sees identical glyphs +
+        // colors.
         return (
           <G key={`${c.x}-${c.y}`}>
             <Circle cx={cx} cy={cy} r={COVER_CELL_R} fill={color} fillOpacity={0.96} />
-            {showLabel ? (
-              <Text
-                x={cx}
-                y={cy + 3.5}
-                textAnchor="middle"
-                style={{ fontSize: 9, fontWeight: 700 }}
-                fill="black"
-              >
-                {rankLabel(c.rank)}
-              </Text>
-            ) : null}
+            <Text
+              x={cx}
+              y={cy + 3.5}
+              textAnchor="middle"
+              style={{ fontSize: 11, fontWeight: 700 }}
+              fill="black"
+            >
+              {rankLabel(c.rank)}
+            </Text>
           </G>
         );
       })}
@@ -923,8 +941,7 @@ function PageCover({ data }: { data: RoadmapPdfData }) {
             <CoverHeatmap cells={data.cells} />
           </View>
           <Text style={styles.coverHeatmapLegend}>
-            Lime cells (with numbers) = visible to searchers in Google&apos;s 3-pack ·
-            Yellow/orange/red = indexed but outside the visible pack · Gray = absent
+            1 = top of pack (lime) · 2 = second (yellow) · 3 = third (orange) · — = not in 3-pack (red)
           </Text>
         </View>
       ) : null}
@@ -1077,15 +1094,21 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
       </Text>
       <View style={styles.legendRow}>
         <View style={styles.legendItem}>
-          <Text style={[styles.pillarBadgeSm, { backgroundColor: C.lime, color: '#000' }]}>V</Text>
+          <View style={[styles.pillarBadgeSmBox, { backgroundColor: C.lime }]}>
+            <Text style={[styles.pillarBadgeSmText, { color: '#000' }]}>V</Text>
+          </View>
           <Text style={styles.legendLabel}>Visibility — your Roadmap&apos;s focus</Text>
         </View>
         <View style={styles.legendItem}>
-          <Text style={[styles.pillarBadgeSm, { backgroundColor: '#4adcff', color: '#001d2a' }]}>D</Text>
+          <View style={[styles.pillarBadgeSmBox, { backgroundColor: '#4adcff' }]}>
+            <Text style={[styles.pillarBadgeSmText, { color: '#001d2a' }]}>D</Text>
+          </View>
           <Text style={styles.legendLabel}>Demand — paid traffic + conversion</Text>
         </View>
         <View style={styles.legendItem}>
-          <Text style={[styles.pillarBadgeSm, { backgroundColor: '#c19bff', color: '#1a0d2a' }]}>S</Text>
+          <View style={[styles.pillarBadgeSmBox, { backgroundColor: '#c19bff' }]}>
+            <Text style={[styles.pillarBadgeSmText, { color: '#1a0d2a' }]}>S</Text>
+          </View>
           <Text style={styles.legendLabel}>Systems — review automation, CRM, follow-up</Text>
         </View>
       </View>
@@ -1119,14 +1142,16 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
                   <Text style={styles.rmDifficulty}>{a.difficulty}</Text>
                   <Text style={styles.rmLift}>+{a.projectedScoreLift}</Text>
                   <View style={styles.rmPillarCell}>
-                    <Text
+                    <View
                       style={[
-                        styles.pillarBadge,
-                        { backgroundColor: pillar.bg, color: pillar.fg },
+                        styles.pillarBadgeBox,
+                        { backgroundColor: pillar.bg },
                       ]}
                     >
-                      {PILLAR_LABEL[a.pillar]}
-                    </Text>
+                      <Text style={[styles.pillarBadgeText, { color: pillar.fg }]}>
+                        {PILLAR_LABEL[a.pillar]}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               );
@@ -1256,19 +1281,34 @@ function PageProjection({ data }: { data: RoadmapPdfData }) {
 
       <View style={styles.pillarRow}>
         <View style={styles.pillarMiniAccent}>
-          <View style={styles.pillarMiniDot} />
+          <View
+            style={[
+              styles.pillarMiniDot,
+              { backgroundColor: PILLAR_PALETTE.visibility.bg },
+            ]}
+          />
           <Text style={styles.pillarMiniTitle}>VISIBILITY</Text>
           <Text style={styles.pillarMiniSub}>This audit + roadmap</Text>
         </View>
         <View style={styles.pillarMini}>
-          <View style={styles.pillarMiniDotMuted} />
+          <View
+            style={[
+              styles.pillarMiniDot,
+              { backgroundColor: PILLAR_PALETTE.demand.bg },
+            ]}
+          />
           <Text style={styles.pillarMiniTitle}>DEMAND</Text>
           <Text style={styles.pillarMiniSub}>
             Google + Meta ads, conversion funnel
           </Text>
         </View>
         <View style={styles.pillarMini}>
-          <View style={styles.pillarMiniDotMuted} />
+          <View
+            style={[
+              styles.pillarMiniDot,
+              { backgroundColor: PILLAR_PALETTE.systems.bg },
+            ]}
+          />
           <Text style={styles.pillarMiniTitle}>SYSTEMS</Text>
           <Text style={styles.pillarMiniSub}>
             Email follow-up, CRM, attribution
@@ -1304,7 +1344,12 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
       <View style={styles.pillar3Row}>
         <View style={styles.pillarBox}>
           <View style={styles.pillarIconRow}>
-            <View style={styles.pillarSquareMuted} />
+            <View
+              style={[
+                styles.pillarSquare,
+                { backgroundColor: PILLAR_PALETTE.demand.bg },
+              ]}
+            />
             <Text style={styles.pillarTitle}>DEMAND</Text>
           </View>
           <Text style={styles.pillarItem}>• Google Ads (search + Performance Max)</Text>
@@ -1315,7 +1360,12 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
 
         <View style={styles.pillarBoxAccent}>
           <View style={styles.pillarIconRow}>
-            <View style={styles.pillarSquare} />
+            <View
+              style={[
+                styles.pillarSquare,
+                { backgroundColor: PILLAR_PALETTE.visibility.bg },
+              ]}
+            />
             <Text style={styles.pillarTitle}>VISIBILITY</Text>
           </View>
           <Text style={styles.pillarItem}>• Google Business Profile optimization</Text>
@@ -1328,7 +1378,12 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
 
         <View style={styles.pillarBox}>
           <View style={styles.pillarIconRow}>
-            <View style={styles.pillarSquareMuted} />
+            <View
+              style={[
+                styles.pillarSquare,
+                { backgroundColor: PILLAR_PALETTE.systems.bg },
+              ]}
+            />
             <Text style={styles.pillarTitle}>SYSTEMS</Text>
           </View>
           <Text style={styles.pillarItem}>• Review velocity (SMS + email post-job)</Text>

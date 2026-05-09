@@ -309,8 +309,10 @@ function parseNapFindings(
  * being viewed.
  *
  * Conventions: x=0..8 left→right, y=0..8 top→bottom. Center is (4,4).
- * Rank: null = absent / not in pack. 1-3 = lime top-3. 4-10 yellow.
- * 11-20 orange. >20 red.
+ * Rank: 1 / 2 / 3 = visible in Google's local 3-pack at that
+ * position. null = not in pack. (No rank > 3 — Google's local pack
+ * doesn't expose any rank past 3, and the dashboard heatmap
+ * collapses everything else to "absent.")
  */
 function synthesizeCellsForProfile(
   profileKey: string
@@ -323,41 +325,47 @@ function synthesizeCellsForProfile(
 
       if (profileKey === 'high') {
         // HVAC fixture: visible only within ~1.5mi of HQ, dark in
-        // SE + N quadrants. Center cells top-3, near-center top-10,
-        // SE/N dark.
+        // SE + N quadrants. Center top-1, near-center top-2/3,
+        // outside dark.
         const inSEQuadrant = x > 5 && y > 5;
         const inNQuadrant = y < 2;
-        if (distFromCenter < 1.5) {
-          rank = Math.max(1, Math.round(distFromCenter) + 1);
-        } else if (inSEQuadrant || inNQuadrant) {
-          rank = null; // dark
-        } else if (distFromCenter < 3) {
-          rank = Math.round(4 + distFromCenter * 2);
+        if (inSEQuadrant || inNQuadrant) {
+          rank = null;
+        } else if (distFromCenter < 0.8) {
+          rank = 1;
+        } else if (distFromCenter < 1.5) {
+          rank = 2;
+        } else if (distFromCenter < 2.2) {
+          rank = 3;
         } else {
-          rank = null; // out of pack
+          rank = null;
         }
       } else if (profileKey === 'low') {
-        // Landscaper fixture: 9 of 81 cells, all clustered within
-        // 1mi of HQ. Almost everywhere dark.
-        if (distFromCenter < 1.5) {
-          rank = Math.round(2 + distFromCenter * 2);
+        // Landscaper fixture: tiny TurfReach. Only ~9 cells in pack,
+        // all near HQ.
+        if (distFromCenter < 0.8) {
+          rank = 2;
+        } else if (distFromCenter < 1.4) {
+          rank = 3;
         } else {
           rank = null;
         }
       } else if (profileKey === 'medium') {
         // Plumber fixture: holds central + W quadrants, dark in
-        // SE + along lakefront (E edge). 31% TurfReach.
+        // SE + along lakefront (E edge). ~30% TurfReach.
         const inWQuadrant = x < 4;
         const inSEQuadrant = x > 5 && y > 5;
         const inEEdge = x > 6;
-        if (distFromCenter < 1) {
-          rank = Math.max(1, Math.round(distFromCenter) + 1);
-        } else if (inWQuadrant && distFromCenter < 4) {
-          rank = Math.round(3 + distFromCenter);
-        } else if (inSEQuadrant || inEEdge) {
+        if (inSEQuadrant || inEEdge) {
           rank = null;
-        } else if (distFromCenter < 3) {
-          rank = Math.round(8 + distFromCenter);
+        } else if (distFromCenter < 0.8) {
+          rank = 1;
+        } else if (distFromCenter < 1.5) {
+          rank = 2;
+        } else if (inWQuadrant && distFromCenter < 3) {
+          rank = 3;
+        } else if (distFromCenter < 2.4) {
+          rank = 3;
         } else {
           rank = null;
         }
