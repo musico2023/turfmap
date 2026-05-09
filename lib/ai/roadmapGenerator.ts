@@ -106,9 +106,8 @@ const RoadmapAction = z.object({
   action: z
     .string()
     .min(8)
-    .max(500)
     .describe(
-      "Specific, buyer-customized action. 8-25 words is the target — referencing real findings (NAP gaps, missing categories, competitor differentials) often pushes longer. Up to ~50 words accepted; the PDF / dashboard truncate visually, but we don't reject content for length."
+      "Specific, buyer-customized action. 8-25 words is the target — referencing real findings (NAP gaps, missing categories, competitor differentials) often pushes longer. PDF/dashboard truncate visually if needed; we don't reject for length."
     ),
   category: CategoryEnum.describe(
     'One of the allowed action categories. Pick the closest fit.'
@@ -136,7 +135,6 @@ const RoadmapOutput = z.object({
   diagnosis: z
     .string()
     .min(20)
-    .max(600)
     .describe(
       "1-2 sentences diagnosing the primary visibility gap (proximity / prominence / relevance + the specific lever). Aim for one sentence; two is acceptable when needed for specificity."
     ),
