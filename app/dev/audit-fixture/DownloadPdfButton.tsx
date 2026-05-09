@@ -28,6 +28,7 @@ type PdfPayload = {
     week: number;
     action: string;
     category: ActionCategory;
+    pillar: 'visibility' | 'demand' | 'systems';
     difficulty: DifficultyRating;
     priority: ActionPriority;
     projectedScoreLift: number;

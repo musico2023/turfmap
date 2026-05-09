@@ -54,6 +54,7 @@ const PdfActionSchema = z.object({
     'nap_consistency',
     'other',
   ]),
+  pillar: z.enum(['visibility', 'demand', 'systems']),
   difficulty: z.enum(['DIY-easy', 'DIY-medium', 'DIY-hard']),
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   projectedScoreLift: z.number().int().min(0),

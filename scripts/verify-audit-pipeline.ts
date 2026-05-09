@@ -26,6 +26,8 @@ import {
   ACTION_CATEGORY_BY_ID,
   isLlmCovered,
   nudgeForAction,
+  pillarForAction,
+  PILLAR_LABEL,
 } from '../lib/audit/actionCategories';
 import {
   HEURISTIC_LIFTS,
@@ -224,20 +226,74 @@ for (const cat of expectedCategories) {
   );
 }
 
-expect(
-  '"other" is NOT LLM-covered',
-  isLlmCovered('other') === false
-);
-expect(
-  '"review_velocity" IS LLM-covered',
-  isLlmCovered('review_velocity') === true
-);
-
-// All non-"other" categories should be LLM-covered.
+// Under the new pillar model, ALL categories (including 'other')
+// are LLM-covered — LLM spans all three pillars. The `llmCovered`
+// flag is now effectively true everywhere; kept as a field for
+// backwards-compat with the dashboard nudge gating.
 for (const c of ACTION_CATEGORIES) {
-  if (c.id === 'other') continue;
   expect(`${c.id} is LLM-covered`, c.llmCovered === true);
 }
+expect(
+  'isLlmCovered("review_velocity") true',
+  isLlmCovered('review_velocity') === true
+);
+expect('isLlmCovered("other") true', isLlmCovered('other') === true);
+
+// ─── pillar mapping ──────────────────────────────────────────────────
+section('pillar mapping');
+
+expect(
+  'review_velocity → systems',
+  pillarForAction({ category: 'review_velocity' }) === 'systems'
+);
+expect(
+  'gbp_optimization → visibility',
+  pillarForAction({ category: 'gbp_optimization' }) === 'visibility'
+);
+expect(
+  'directory_claiming → visibility',
+  pillarForAction({ category: 'directory_claiming' }) === 'visibility'
+);
+expect(
+  'nap_consistency → visibility',
+  pillarForAction({ category: 'nap_consistency' }) === 'visibility'
+);
+expect(
+  'schema_integration → visibility',
+  pillarForAction({ category: 'schema_integration' }) === 'visibility'
+);
+expect(
+  'gbp_photos → visibility',
+  pillarForAction({ category: 'gbp_photos' }) === 'visibility'
+);
+
+// 'other' takes the AI's pillar choice, falls back to 'demand' when
+// none provided.
+expect(
+  'other + aiPillar=demand → demand',
+  pillarForAction({ category: 'other', aiPillar: 'demand' }) === 'demand'
+);
+expect(
+  'other + aiPillar=systems → systems',
+  pillarForAction({ category: 'other', aiPillar: 'systems' }) === 'systems'
+);
+expect(
+  'other + no aiPillar → demand fallback',
+  pillarForAction({ category: 'other' }) === 'demand'
+);
+
+// Fixed-pillar categories: AI's pillar field is OVERRIDDEN. Even
+// if the model picked 'demand' for review_velocity (wrong), the
+// resolver returns 'systems' (canonical).
+expect(
+  'review_velocity overrides AI choice',
+  pillarForAction({ category: 'review_velocity', aiPillar: 'demand' }) === 'systems'
+);
+
+// Pillar labels render as single letters.
+expect('PILLAR_LABEL.visibility === V', PILLAR_LABEL.visibility === 'V');
+expect('PILLAR_LABEL.demand === D', PILLAR_LABEL.demand === 'D');
+expect('PILLAR_LABEL.systems === S', PILLAR_LABEL.systems === 'S');
 
 // ─── nudgeForAction visibility logic ────────────────────────────────────
 section('nudgeForAction');

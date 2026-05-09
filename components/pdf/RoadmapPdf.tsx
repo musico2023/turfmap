@@ -40,7 +40,11 @@ import {
   Circle,
   G,
 } from '@react-pdf/renderer';
-import { ACTION_CATEGORY_BY_ID } from '@/lib/audit/actionCategories';
+import {
+  ACTION_CATEGORY_BY_ID,
+  PILLAR_LABEL,
+  type Pillar,
+} from '@/lib/audit/actionCategories';
 import type {
   ActionCategory,
   ActionPriority,
@@ -380,21 +384,55 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     paddingTop: 1,
   },
-  rmLlmTagCell: {
-    width: 24,
+  rmPillarCell: {
+    width: 28,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    paddingTop: 3,
+    paddingTop: 1,
   },
-  // Replaces the 📍 emoji that Helvetica can't render. A small
-  // lime-filled square is unambiguous in a dark-themed table and
-  // carries the same "this row is LLM-covered" semantic as the pin
-  // emoji, but with a glyph the PDF font stack actually has.
-  rmLlmTag: {
-    width: 8,
-    height: 8,
-    backgroundColor: C.lime,
-    borderRadius: 1.5,
+  // Pillar badges. Each replaces what was a single lime "this is LLM"
+  // tag with a three-color taxonomy that matches the Demand /
+  // Visibility / Systems pillar architecture. The Visibility pillar
+  // (the focus of this Roadmap) keeps the lime accent so it visually
+  // dominates; Demand and Systems get distinct accents so the buyer
+  // can scan which pillar each action sits under.
+  pillarBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    fontSize: 9,
+    fontWeight: 700,
+    textAlign: 'center',
+    lineHeight: 1.85, // visually centers the V/D/S glyph in the box
+  },
+  // Page-4 legend row that introduces the V/D/S badge taxonomy.
+  // Inline beneath the H2 so the buyer sees the key before parsing
+  // the table — no need to scroll back up to figure out what a
+  // colored letter means.
+  legendRow: {
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 6,
+    marginBottom: 12,
+    flexWrap: 'wrap',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pillarBadgeSm: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    fontSize: 7,
+    fontWeight: 700,
+    textAlign: 'center',
+    lineHeight: 2,
+  },
+  legendLabel: {
+    fontSize: 8.5,
+    color: C.textDim,
   },
   priorityPill: {
     width: 36,
@@ -585,9 +623,16 @@ export type RoadmapPdfAction = {
   week: number;
   action: string;
   category: ActionCategory;
+  /** LLM pillar (V/D/S). Drives the colored badge on each row. All
+   *  pillars are LLM-covered; the badge replaces the previous
+   *  "lime-tagged = LLM, untagged = not LLM" framing because that
+   *  framing was wrong (LLM covers all three pillars). */
+  pillar: Pillar;
   difficulty: DifficultyRating;
   priority: ActionPriority;
   projectedScoreLift: number;
+  /** Retained for backwards-compat; effectively true for every
+   *  action under the new pillar model. */
   llmCovered: boolean;
 };
 
@@ -649,6 +694,22 @@ function priorityStyle(p: ActionPriority): { bg: string; fg: string } {
   if (p === 'HIGH') return { bg: C.lime, fg: '#000' };
   if (p === 'MEDIUM') return { bg: C.warn, fg: '#000' };
   return { bg: '#3a3a3a', fg: '#999' };
+}
+
+/**
+ * Pillar badge color treatment.
+ *   - Visibility (lime): this Roadmap's focus — visually dominant
+ *   - Demand (cyan-ish blue): paid-traffic + conversion side
+ *   - Systems (lavender): infrastructure / workflow side
+ *
+ * All three sit on a foreground that's visually distinct from the
+ * surrounding row so the eye picks them up at a glance. Same
+ * lightweight palette the dashboard product uses for pillar tags.
+ */
+function pillarStyle(p: Pillar): { bg: string; fg: string } {
+  if (p === 'visibility') return { bg: C.lime, fg: '#000' };
+  if (p === 'demand') return { bg: '#4adcff', fg: '#001d2a' };
+  return { bg: '#c19bff', fg: '#1a0d2a' }; // systems
 }
 
 function napStatusStyle(s: RoadmapPdfNapFinding['status']): {
@@ -771,10 +832,19 @@ function CoverHeatmap({ cells }: { cells: RoadmapPdfCell[] }) {
         const cx = COVER_CELL / 2 + c.x * COVER_CELL;
         const cy = COVER_CELL / 2 + c.y * COVER_CELL;
         const color = rankColor(c.rank);
+        // Only render the rank number for top-3 cells. Google's
+        // visible local pack only surfaces top-3 results — ranks
+        // 4-20 mean "Google indexes you for this query but a
+        // searcher in this cell never sees you." Rendering the
+        // raw position number for those (e.g. "8" or "11") was
+        // confusing on the first review pass; the color tier alone
+        // carries the "you're in the long tail / outside the visible
+        // pack" signal.
+        const showLabel = c.rank !== null && c.rank <= 3;
         return (
           <G key={`${c.x}-${c.y}`}>
             <Circle cx={cx} cy={cy} r={COVER_CELL_R} fill={color} fillOpacity={0.96} />
-            {c.rank !== null && c.rank <= 20 ? (
+            {showLabel ? (
               <Text
                 x={cx}
                 y={cy + 3.5}
@@ -853,7 +923,8 @@ function PageCover({ data }: { data: RoadmapPdfData }) {
             <CoverHeatmap cells={data.cells} />
           </View>
           <Text style={styles.coverHeatmapLegend}>
-            Lime = top-3 pack · Yellow/orange = top-10 · Red = top-20 · Gray = absent
+            Lime cells (with numbers) = visible to searchers in Google&apos;s 3-pack ·
+            Yellow/orange/red = indexed but outside the visible pack · Gray = absent
           </Text>
         </View>
       ) : null}
@@ -1000,11 +1071,24 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
       <Header data={data} pageLabel="THE 90-DAY ROADMAP" />
 
       <Text style={styles.h2}>The 90-day Roadmap</Text>
-      <Text style={[styles.bodyTight, { marginBottom: 6 }]}>
-        Each row carries a projected TurfScore lift in points. Lime-tagged
-        actions are part of Fourdots Digital&apos;s Local Lead Machine —
-        done-for-you implementation discussed on the strategist call.
+      <Text style={[styles.bodyTight, { marginBottom: 4 }]}>
+        Each row carries a projected TurfScore lift in points and a
+        pillar badge:
       </Text>
+      <View style={styles.legendRow}>
+        <View style={styles.legendItem}>
+          <Text style={[styles.pillarBadgeSm, { backgroundColor: C.lime, color: '#000' }]}>V</Text>
+          <Text style={styles.legendLabel}>Visibility — your Roadmap&apos;s focus</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <Text style={[styles.pillarBadgeSm, { backgroundColor: '#4adcff', color: '#001d2a' }]}>D</Text>
+          <Text style={styles.legendLabel}>Demand — paid traffic + conversion</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <Text style={[styles.pillarBadgeSm, { backgroundColor: '#c19bff', color: '#1a0d2a' }]}>S</Text>
+          <Text style={styles.legendLabel}>Systems — review automation, CRM, follow-up</Text>
+        </View>
+      </View>
 
       {phases.map((phase) => {
         const phaseActions = data.actions
@@ -1019,6 +1103,7 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
             </View>
             {phaseActions.map((a, i) => {
               const p = priorityStyle(a.priority);
+              const pillar = pillarStyle(a.pillar);
               return (
                 <View key={i} style={styles.roadmapRow} wrap={false}>
                   <Text style={styles.rmWeek}>W{a.week}</Text>
@@ -1033,8 +1118,15 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
                   <Text style={styles.rmAction}>{a.action}</Text>
                   <Text style={styles.rmDifficulty}>{a.difficulty}</Text>
                   <Text style={styles.rmLift}>+{a.projectedScoreLift}</Text>
-                  <View style={styles.rmLlmTagCell}>
-                    {a.llmCovered ? <View style={styles.rmLlmTag} /> : null}
+                  <View style={styles.rmPillarCell}>
+                    <Text
+                      style={[
+                        styles.pillarBadge,
+                        { backgroundColor: pillar.bg, color: pillar.fg },
+                      ]}
+                    >
+                      {PILLAR_LABEL[a.pillar]}
+                    </Text>
                   </View>
                 </View>
               );
@@ -1045,11 +1137,12 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
 
       <View style={styles.llmCallout}>
         <Text>
-          Lime-tagged actions are part of Fourdots Digital&apos;s Local Lead
-          Machine — done-for-you implementation that includes
-          visibility, demand generation, and lead-capture systems.
-          We&apos;ll discuss whether your operation is a fit on the
-          strategist call.
+          All three pillars (V, D, S) are covered under Fourdots
+          Digital&apos;s Local Lead Machine — the done-for-you
+          implementation. This Roadmap focuses on Visibility (V) —
+          what you can execute solo. The Demand and Systems actions
+          surfaced here are the bridge into the LLM conversation we
+          have on the strategist call.
         </Text>
       </View>
 
@@ -1226,10 +1319,10 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
             <Text style={styles.pillarTitle}>VISIBILITY</Text>
           </View>
           <Text style={styles.pillarItem}>• Google Business Profile optimization</Text>
-          <Text style={styles.pillarItem}>• Review velocity (SMS + email post-job)</Text>
           <Text style={styles.pillarItem}>• Top-30 directory NAP consistency</Text>
           <Text style={styles.pillarItem}>• LocalBusiness schema integration</Text>
           <Text style={styles.pillarItem}>• GBP photo asset system</Text>
+          <Text style={styles.pillarItem}>• Long-tail local-SEO content</Text>
           <Text style={styles.pillarOurs}>YOUR ROADMAP COVERS THIS PILLAR</Text>
         </View>
 
@@ -1238,6 +1331,7 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
             <View style={styles.pillarSquareMuted} />
             <Text style={styles.pillarTitle}>SYSTEMS</Text>
           </View>
+          <Text style={styles.pillarItem}>• Review velocity (SMS + email post-job)</Text>
           <Text style={styles.pillarItem}>• Automated email follow-up sequences</Text>
           <Text style={styles.pillarItem}>• CRM + lead tracking + attribution</Text>
           <Text style={styles.pillarItem}>• Monthly performance reporting</Text>

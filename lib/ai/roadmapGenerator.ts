@@ -36,6 +36,8 @@ import {
   ALLOWED_ACTION_CATEGORIES,
   ACTION_CATEGORIES,
   isLlmCovered,
+  pillarForAction,
+  type Pillar,
 } from '@/lib/audit/actionCategories';
 import type { ActionCategory } from '@/lib/supabase/types';
 
@@ -112,6 +114,19 @@ const RoadmapAction = z.object({
   category: CategoryEnum.describe(
     'One of the allowed action categories. Pick the closest fit.'
   ),
+  /** Which Local Lead Machine pillar this action lives under. For
+   *  fixed-pillar categories (review_velocity = systems, gbp_* +
+   *  nap_* + directory_* + schema = visibility) the render site
+   *  overrides whatever the AI emits with the canonical mapping —
+   *  so the field really only matters when category is 'other'.
+   *  We still ask the AI to populate it always for consistency
+   *  and future-proofing (e.g., if we add `paid_ads` as a category
+   *  later, the pillar field stays meaningful). */
+  pillar: z
+    .enum(['visibility', 'demand', 'systems'])
+    .describe(
+      "LLM pillar this action lives under. 'visibility' = organic local pack work (GBP, NAP, directories, schema, photos, local SEO content). 'demand' = paid traffic + conversion (Google/Meta Ads, landing funnels, creative). 'systems' = lead capture + workflow (review automation, CRM, email follow-up, attribution). For category='review_velocity' use systems. For category='gbp_*' / 'nap_*' / 'directory_*' / 'schema_*' use visibility. For category='other' pick the pillar that genuinely fits — landing pages = demand, CRM/follow-up = systems, long-tail content = visibility."
+    ),
   difficulty: z
     .enum(['DIY-easy', 'DIY-medium', 'DIY-hard'])
     .describe(
@@ -164,15 +179,20 @@ You work for Fourdots Digital. The roadmap is delivered as part of a $499 Visibi
 YOUR JOB:
 1. Diagnose the buyer's primary visibility gap (proximity / prominence / relevance) in one sentence.
 2. Select 8-12 specific actions across 12 weeks.
-3. Tag each action with a category from the allowed list, a difficulty rating, and a priority.
+3. Tag each action with a category, an LLM pillar, a difficulty rating, and a priority.
 4. Order actions so weeks 1-4 (Foundation) handle the most urgent fixes, weeks 5-8 (Authority) build review/GBP momentum, weeks 9-12 (Optimization) are long-tail.
 
 CONSTRAINTS:
 - Be specific. "Claim Apple Maps Connect listing" beats "Improve directory presence." Reference the buyer's actual findings (specific missing directories, NAP inconsistencies, competitor differentials) when present in the input.
 - DO NOT estimate the score lift per action. The system computes that downstream from a calibrated heuristic — you focus on selection + sequencing + clarity.
-- Use the action categories below. Pick the closest fit; use 'other' sparingly (only for trade-specific or buyer-specific actions that don't map to a named category).
-- Prefer actions the buyer can execute themselves over actions requiring third parties. The roadmap is a self-execution plan; LLM (the done-for-you upgrade) is positioned separately on PDF page 7.
+- Use the action categories below. Pick the closest fit; use 'other' sparingly (only for actions that don't map to a named visibility-pillar category — most often that's a demand-pillar landing page or a systems-pillar workflow).
+- THIS ROADMAP IS A VISIBILITY-PILLAR DELIVERABLE. Most actions (8-10 of 12) should be category-driven Visibility work the buyer can execute solo. 1-2 Demand or Systems actions are acceptable and useful — they're the bridge into the strategist call's Local Lead Machine discussion.
 - Do not invent data. If the buyer's NAP audit didn't run, don't reference specific directory names — use generic "claim missing directories on the top-trade-relevant sites" framing.
+
+PILLAR ASSIGNMENT (always set the pillar field):
+- VISIBILITY pillar: GBP optimization, GBP photos, NAP consistency, directory claiming, schema integration, long-tail local-SEO content. → category: gbp_optimization | gbp_photos | nap_consistency | directory_claiming | schema_integration (and pillar: 'visibility' for an 'other' action that's pure local-SEO content)
+- SYSTEMS pillar: review velocity automation (post-job SMS/email systems), CRM, email follow-up sequences, attribution. → category: review_velocity (always pillar: 'systems'), or 'other' with pillar: 'systems' for non-review systems work
+- DEMAND pillar: paid ads, Google Ads / Meta Ads strategy, landing pages, conversion funnels, creative refresh. → category: 'other' with pillar: 'demand'
 
 ACTION CATEGORIES:
 
@@ -270,9 +290,14 @@ export type GeneratedRoadmap = {
       /** Heuristic lift for this action, computed downstream from
        *  HEURISTIC_LIFTS. */
       projectedScoreLift: number;
-      /** Whether this action's category is LLM-covered. Drives the
-       *  📍 LLM tag in the PDF. */
+      /** Whether this action's category is LLM-covered. Now true for
+       *  every category — kept for backwards-compat. */
       llmCovered: boolean;
+      /** Resolved pillar after applying the canonical category→pillar
+       *  override (so a model-emitted pillar that disagrees with a
+       *  fixed-pillar category is corrected here, not at the render
+       *  site). */
+      resolvedPillar: Pillar;
     }
   >;
   /** Sum of projectedScoreLift across actions completed in the first
@@ -327,10 +352,19 @@ export async function generateRoadmap(
     const next = (positionInCategory.get(action.category) ?? 0) + 1;
     positionInCategory.set(action.category, next);
     const projectedScoreLift = liftForAction(action.category, next);
+    // Resolve pillar: for fixed-pillar categories the canonical
+    // mapping wins (model-emitted pillar can be wrong); for 'other'
+    // we trust the AI's pick.
+    const resolvedPillar = pillarForAction({
+      category: action.category,
+      aiPillar: action.pillar,
+    });
     return {
       ...action,
+      pillar: resolvedPillar, // overwrite the model's pillar with the resolved one
       projectedScoreLift,
       llmCovered: isLlmCovered(action.category),
+      resolvedPillar,
     };
   });
 

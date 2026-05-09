@@ -179,6 +179,7 @@ async function FixtureResult({ profileKey }: { profileKey: string }) {
       week: a.week,
       action: a.action,
       category: a.category as ActionCategory,
+      pillar: a.pillar as 'visibility' | 'demand' | 'systems',
       difficulty: a.difficulty as DifficultyRating,
       priority: a.priority as ActionPriority,
       projectedScoreLift: a.projectedScoreLift,
@@ -444,6 +445,7 @@ type FixturePayload = {
       week: number;
       action: string;
       category: string;
+      pillar: string;
       difficulty: string;
       priority: string;
       projectedScoreLift: number;
