@@ -492,6 +492,108 @@ export type CitationSubmittedProfile = {
   photo_urls: string[] | null;
 };
 
+// ─── Visibility Audits (migration 0022) ───────────────────────────────
+
+/** Lifecycle states for a Visibility Audit purchase. Linear progression;
+ *  rows never go backwards. Status is what the cron sweeps + dashboards
+ *  filter on, so the values are exhaustive and constrained by a CHECK. */
+export type VisibilityAuditStatus =
+  | 'pending_call_schedule'
+  | 'call_scheduled'
+  | 'call_completed'
+  | 'post_call_sent'
+  | 'sixty_day_prompted'
+  | 'sixty_day_completed';
+
+/** Action category — drives the dashboard nudge text + LLM service
+ *  mapping. The 'other' bucket is the catchall for buyer-specific
+ *  actions the AI surfaces that don't fit a named category. Anything
+ *  in the named categories (review_velocity, gbp_*, etc.) is
+ *  considered LLM-covered by lib/audit/actionCategories.ts. */
+export type ActionCategory =
+  | 'review_velocity'
+  | 'directory_claiming'
+  | 'gbp_optimization'
+  | 'gbp_photos'
+  | 'schema_integration'
+  | 'nap_consistency'
+  | 'other';
+
+export type DifficultyRating = 'DIY-easy' | 'DIY-medium' | 'DIY-hard';
+export type ActionPriority = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** LLM Fit Score breakdown, stored on visibility_audits.llm_fit_breakdown.
+ *  Surfaced in the strategist prep notes so Anthony can see why the
+ *  score landed where it did. */
+export type LlmFitBreakdown = {
+  /** Final 1-5 score that was computed. */
+  score: number;
+  /** Inputs that fed the rules engine. NULL signals a missing input
+   *  (we couldn't determine the value, not "FALSE"). */
+  inputs: {
+    /** "low" (<$50K/mo), "mid" ($50-150K/mo), "high" ($150K+/mo). */
+    revenue_band: 'low' | 'mid' | 'high' | null;
+    /** TRUE for HVAC/Roofing/Plumbing/Electrical/Renovation/Restoration/
+     *  Landscaping/Windows-Doors. */
+    trade_fit: boolean | null;
+    /** TRUE for major metros (population ≥100K typically). */
+    metro_fit: boolean | null;
+    /** TRUE if Apify or Apollo data shows currently-active paid ads. */
+    ad_active: boolean | null;
+    /** Raw review count from GBP, fed through the revenue inference. */
+    review_count: number | null;
+  };
+  /** Rule hits — the named rules that fired. Useful for debugging
+   *  why a buyer landed at 4 vs. 5 without re-running the engine. */
+  rule_hits: string[];
+};
+
+export type VisibilityAuditRow = {
+  id: string;
+  lead_order_id: string;
+  scan_id: string;
+  client_id: string;
+  status: VisibilityAuditStatus;
+  strategist_call_scheduled_at: string | null;
+  strategist_call_completed_at: string | null;
+  post_call_email_sent_at: string | null;
+  sixty_day_prompted_at: string | null;
+  sixty_day_check_scheduled_at: string | null;
+  sixty_day_check_completed_at: string | null;
+  roadmap_pdf_url: string | null;
+  prep_notes_url: string | null;
+  starting_turfscore: number | null;
+  lift_promise_target_score: number | null;
+  actual_lift_score: number | null;
+  lift_promise_met: boolean | null;
+  llm_fit_score: number | null;
+  llm_fit_breakdown: LlmFitBreakdown | null;
+  snippet_used: 'llm_pitch' | 'audit_only' | null;
+  llm_application_sent_at: string | null;
+  llm_application_completed_at: string | null;
+  fathom_recording_url: string | null;
+  fathom_summary: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RoadmapActionRow = {
+  id: string;
+  audit_id: string;
+  week_number: number;
+  action_text: string;
+  action_category: ActionCategory;
+  projected_score_lift: number;
+  difficulty_rating: DifficultyRating;
+  priority: ActionPriority;
+  llm_covered: boolean;
+  completed: boolean;
+  completed_at: string | null;
+  created_at: string;
+};
+
+// ─── Citations (BrightLocal Citation Builder, migration 0012, cont.) ──
+
 /** A single citation-build order. One row per (location, vendor order).
  *  Re-orders after churn create new rows; the partial unique constraint
  *  in 0012 prevents duplicate live orders for the same location. */

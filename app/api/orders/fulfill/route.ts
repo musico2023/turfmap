@@ -60,6 +60,8 @@ import {
 } from '@/lib/email/resend';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
+import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade } from '@/lib/audit/llmFitScore';
+import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -512,16 +514,83 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // The primary scan result is referenced by both the
+  // visibility_audits stamp (Phase 1, below) and the scan-ready
+  // email (Section 9, further below). Pull it once here so both
+  // can read it without duplicating the index lookup.
+  const primaryScanResult = scanResults[0];
+
+  // ─── 8c. Stamp the visibility_audits row (Phase 1 foundation) ────────
+  // For Audit tier only: insert a visibility_audits row capturing
+  // the buyer's starting state + LLM Fit Score. Phase 2 will add
+  // Roadmap PDF generation; Phase 3 will populate the call-completion
+  // + 60-day-prompt fields. For Phase 1 we just want the row to exist
+  // + the Fit Score to be computed at purchase time so the
+  // strategist's prep notes (when generated 24h before the call)
+  // reference the score that informed the call, not whatever the
+  // data says tomorrow.
+  //
+  // Strategy tier ($1,497) is a different deliverable (3-keyword scan
+  // + 90-min session) and isn't routed through this pipeline.
+  if (
+    session.tier === 'audit' &&
+    primaryScanResult?.ok &&
+    fulfilled.ok
+  ) {
+    try {
+      // Trade fit: infer from the primary keyword. Conservative
+      // matcher — only TRUE when we can confidently classify into
+      // one of the LLM_TARGET_TRADES; otherwise NULL ("we don't
+      // know") rather than FALSE.
+      const tradeFit = inferTradeFitFromKeyword(body.keywords[0]);
+
+      const fitBreakdown = computeLlmFitScore({
+        // We don't yet have Apollo revenue data at fulfillment time
+        // — leave the band null so the score's confidence-penalty
+        // rule kicks in. Phase 4 (Apollo enrichment) will re-stamp
+        // the score with revenue + ad-active signals when those
+        // resolve asynchronously.
+        revenueBand: null,
+        tradeFit,
+        // Metro fit needs a population dataset we haven't wired
+        // yet. Pass null so the score doesn't disqualify based on
+        // an unknown.
+        metroFit: null,
+        adActive: null,
+        reviewCount: null,
+      });
+
+      const auditResult = await createVisibilityAudit(supabase, {
+        leadOrderId: lead.id,
+        scanId: primaryScanResult.scanId,
+        clientId: client.id,
+        startingTurfScore: primaryScanResult.turfScore,
+        liftPromiseTargetScore: null, // populated by the Roadmap pipeline (Phase 2)
+        llmFitScore: fitBreakdown.score,
+        llmFitBreakdown: fitBreakdown,
+      });
+      if (!auditResult.ok) {
+        console.error(
+          '[orders/fulfill] createVisibilityAudit failed (non-fatal)',
+          auditResult.error
+        );
+      }
+    } catch (e) {
+      // Same fail-soft pattern as the rest of the post-fulfill block.
+      console.error(
+        '[orders/fulfill] visibility_audits stamp threw (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   // ─── 9. Send the scan-ready email + (Pulse+) welcome email ────────────
   // Both are fire-and-await with errors swallowed inside the senders,
   // so a transient Resend hiccup doesn't fail the order. The dashboard
   // success state on /order/success is still the primary delivery path
   // — email is the secondary "you can come back anytime" handoff.
-  // Pull the score family from the primary scan (= first one in
-  // scanResults; runs in keyword-order, primary keyword is index 0).
   // For multi-keyword tiers (Strategy / Pulse+), the email surfaces
   // the primary keyword's metrics — clearest single-number summary.
-  const primaryScanResult = scanResults[0];
   const scanReadyMetrics =
     primaryScanResult && primaryScanResult.ok
       ? {
@@ -603,4 +672,48 @@ function errorForLoadSession(err: LoadSessionError): NextResponse {
         { status: 502 }
       );
   }
+}
+
+/**
+ * Map a buyer's primary keyword to one of the LLM target trades.
+ * Returns the matched trade or null when no confident classification
+ * is possible. Used at audit fulfillment to compute the buyer's
+ * tradeFit signal for the LLM Fit Score; called once per order, so
+ * O(n*m) string matching against the keyword is fine.
+ *
+ * Intentionally narrow: we only flip tradeFit=TRUE when the keyword
+ * unambiguously names one of LLM_TARGET_TRADES. Any ambiguous keyword
+ * ("local services", "home services") returns null so the Fit
+ * Score treats it as unknown rather than falsely positive.
+ */
+function inferTradeFitFromKeyword(keyword: string | undefined): boolean | null {
+  if (!keyword) return null;
+  const k = keyword.toLowerCase();
+  // Each entry: array of canonical-trade keywords that, if present,
+  // resolve to that trade. Order matters only insofar as more-specific
+  // matches should appear before broader ones — none of these
+  // currently overlap, so order is alphabetical.
+  const TRADE_KEYWORDS: Array<{ trade: LlmTargetTrade; needles: string[] }> = [
+    { trade: 'electrical', needles: ['electrician', 'electrical'] },
+    { trade: 'hvac', needles: ['hvac', 'heating', 'air conditioning', 'a/c repair', 'furnace'] },
+    { trade: 'landscaping', needles: ['landscap', 'lawn care', 'lawn maintenance'] },
+    { trade: 'plumbing', needles: ['plumb', 'drain cleaning', 'water heater'] },
+    { trade: 'renovation', needles: ['renovat', 'remodel', 'kitchen remodel', 'bathroom remodel'] },
+    { trade: 'restoration', needles: ['restoration', 'water damage', 'fire damage', 'mold remediation'] },
+    { trade: 'roofing', needles: ['roof'] },
+    { trade: 'windows_doors', needles: ['windows', 'doors', 'window install', 'door install'] },
+  ];
+  for (const { trade, needles } of TRADE_KEYWORDS) {
+    for (const needle of needles) {
+      if (k.includes(needle)) {
+        // Sanity-check the matched trade is in the canonical list.
+        // (Belt-and-suspenders — if LLM_TARGET_TRADES drifts, we'd
+        // rather a typecheck error here than a runtime mis-classify.)
+        if ((LLM_TARGET_TRADES as readonly string[]).includes(trade)) {
+          return true;
+        }
+      }
+    }
+  }
+  return null; // unknown — not a confident TRUE or FALSE
 }
