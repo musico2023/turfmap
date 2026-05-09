@@ -107,8 +107,73 @@ async function handle(req: Request) {
   const supabase = getServerSupabase();
   const now = Date.now();
 
-  // Run all four sweeps concurrently. They touch disjoint rows
-  // (different gate columns) so there's no risk of write contention.
+  // Debug-trigger path: when ?force_audit_id=<uuid> is on the
+  // request, run the pre-call branch against that specific audit
+  // row only — bypassing both the time-window filter and the
+  // prep_email_sent_at IS NULL gate. Used by the operator to
+  // verify the end-to-end pipeline (Claude generation → PDF render
+  // → Storage upload → Anthony's email) without waiting for a
+  // real audit row to land in the 23-25h pre-call window.
+  //
+  // Auth is unchanged (still Bearer CRON_SECRET) so this is safe
+  // to ship: only operators with the secret can fire it. The send
+  // is idempotent at the email layer (Resend deduplicates if the
+  // exact same payload hits within seconds), and the row stamp
+  // overwrites cleanly.
+  const url = new URL(req.url);
+  const forceAuditId = url.searchParams.get('force_audit_id');
+  if (forceAuditId) {
+    const { data: audit, error } = await supabase
+      .from('visibility_audits')
+      .select('*')
+      .eq('id', forceAuditId)
+      .maybeSingle<VisibilityAuditRow>();
+    if (error) {
+      return NextResponse.json(
+        { error: `lookup failed: ${error.message}` },
+        { status: 500 }
+      );
+    }
+    if (!audit) {
+      return NextResponse.json(
+        { error: `no visibility_audits row with id "${forceAuditId}"` },
+        { status: 404 }
+      );
+    }
+    if (!audit.strategist_call_scheduled_at) {
+      return NextResponse.json(
+        {
+          error:
+            'audit has no strategist_call_scheduled_at — book a Cal.com slot first so the prep email has a date to reference',
+          audit_id: audit.id,
+        },
+        { status: 422 }
+      );
+    }
+    try {
+      const outcome = await generateAndEmailPrepForAudit(supabase, audit);
+      return NextResponse.json({
+        ok: true,
+        forced: true,
+        audit_id: audit.id,
+        outcome,
+      });
+    } catch (e) {
+      return NextResponse.json(
+        {
+          ok: false,
+          forced: true,
+          audit_id: audit.id,
+          error: e instanceof Error ? e.message : String(e),
+        },
+        { status: 500 }
+      );
+    }
+  }
+
+  // Normal path: run all four sweeps concurrently. They touch
+  // disjoint rows (different gate columns) so there's no risk of
+  // write contention.
   const [preCall, day25, day53, day67] = await Promise.all([
     sweepPreCall(supabase, now),
     sweepDay25(supabase, now),
