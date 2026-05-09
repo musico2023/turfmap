@@ -375,7 +375,17 @@ export default async function EmailPreviewRenderer({
   params: Promise<{ template: string }>;
   searchParams: Promise<SearchParams>;
 }) {
-  const me = await requireAgencyUserOrRedirect('/dev/email-preview');
+  // Same env-resilience guard as the index page — see
+  // app/dev/email-preview/page.tsx for the rationale.
+  let me: { email: string };
+  try {
+    me = await requireAgencyUserOrRedirect('/dev/email-preview');
+  } catch (e) {
+    if (e instanceof Error && /SUPABASE_URL|SUPABASE_ANON_KEY/.test(e.message)) {
+      return <PreviewUnavailable />;
+    }
+    throw e;
+  }
   if (!isAgencyOwnerEmail(me.email)) notFound();
 
   const { template } = await params;
@@ -449,6 +459,29 @@ export default async function EmailPreviewRenderer({
           sandbox="allow-same-origin"
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Fallback rendered when the dev email preview is hit in an
+ * environment where Supabase auth env vars aren't configured. See
+ * app/dev/email-preview/page.tsx for the rationale.
+ */
+function PreviewUnavailable() {
+  return (
+    <div className="min-h-screen w-full text-white px-8 py-12 max-w-2xl">
+      <h1 className="font-display text-xl font-bold mb-3">
+        Email preview unavailable.
+      </h1>
+      <p className="text-sm text-zinc-400 leading-relaxed">
+        This dev tool requires Supabase auth env vars
+        (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY) to
+        gate access. They aren&rsquo;t configured in this environment.
+        Use a Production deployment or a local dev server with{' '}
+        <code className="font-mono text-zinc-200">.env.local</code>{' '}
+        populated to see rendered email templates.
+      </p>
     </div>
   );
 }

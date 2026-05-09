@@ -140,7 +140,24 @@ const TEMPLATES: TemplateLink[] = [
 ];
 
 export default async function EmailPreviewIndex() {
-  const me = await requireAgencyUserOrRedirect('/dev/email-preview');
+  // The auth call throws when NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY
+  // aren't configured in the running environment (Preview deploys
+  // sometimes scope envs to Production only). The dev email
+  // preview is a developer tool — it shouldn't 500 the response
+  // and trip Vercel's post-build smoke check, just because
+  // someone hit it from a Preview without Supabase wired. Catch
+  // the env-missing case + render a benign fallback. Real auth
+  // failures (no user, wrong domain) keep their existing redirect
+  // / notFound() semantics via re-throw.
+  let me: { email: string };
+  try {
+    me = await requireAgencyUserOrRedirect('/dev/email-preview');
+  } catch (e) {
+    if (e instanceof Error && /SUPABASE_URL|SUPABASE_ANON_KEY/.test(e.message)) {
+      return <PreviewUnavailable />;
+    }
+    throw e;
+  }
   if (!isAgencyOwnerEmail(me.email)) notFound();
 
   return (
@@ -187,6 +204,31 @@ export default async function EmailPreviewIndex() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Fallback rendered when the dev email preview is hit in an
+ * environment where Supabase auth env vars aren't configured. Keeps
+ * the page from 500-ing and tripping Vercel's post-build smoke
+ * checks. Visible-but-uninteractive so anyone who lands here knows
+ * the page exists but isn't usable in this environment.
+ */
+function PreviewUnavailable() {
+  return (
+    <div className="min-h-screen w-full text-white px-8 py-12 max-w-2xl">
+      <h1 className="font-display text-xl font-bold mb-3">
+        Email preview unavailable.
+      </h1>
+      <p className="text-sm text-zinc-400 leading-relaxed">
+        This dev tool requires Supabase auth env vars
+        (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY) to
+        gate access. They aren&rsquo;t configured in this environment.
+        Use a Production deployment or a local dev server with{' '}
+        <code className="font-mono text-zinc-200">.env.local</code>{' '}
+        populated to see rendered email templates.
+      </p>
     </div>
   );
 }
