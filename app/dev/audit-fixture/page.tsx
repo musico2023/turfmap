@@ -22,6 +22,12 @@ import {
   isAgencyOwnerEmail,
   requireAgencyUserOrRedirect,
 } from '@/lib/auth/agency';
+import { DownloadPdfButton } from './DownloadPdfButton';
+import type {
+  ActionCategory,
+  ActionPriority,
+  DifficultyRating,
+} from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -157,11 +163,55 @@ async function FixtureResult({ profileKey }: { profileKey: string }) {
     );
   }
 
+  // Assemble the PDF payload from the API response. The PDF takes
+  // a different shape than the API returns (fields renamed +
+  // flattened); we transform once here so the client island gets
+  // exactly what the /api/audit/preview-pdf endpoint validates.
+  const pdfPayload = {
+    businessName: payload.buyer.businessName,
+    trade: payload.buyer.trade,
+    market: payload.buyer.market,
+    auditDate: payload.buyer.auditDate,
+    currentTurfScore: payload.buyer.currentTurfScore,
+    projectedTurfScore: payload.buyer.projectedTurfScore,
+    diagnosis: payload.roadmap.diagnosis,
+    actions: payload.roadmap.actions.map((a) => ({
+      week: a.week,
+      action: a.action,
+      category: a.category as ActionCategory,
+      difficulty: a.difficulty as DifficultyRating,
+      priority: a.priority as ActionPriority,
+      projectedScoreLift: a.projectedScoreLift,
+      llmCovered: a.llmCovered,
+    })),
+    napFindings: payload.buyer.napFindings,
+    competitors: payload.buyer.competitors,
+    ninetyDayTargetLift: payload.roadmap.ninetyDayTargetLift,
+  };
+
   return (
     <div className="space-y-6">
       <FitBreakdownCard payload={payload} />
       <RoadmapCard payload={payload} />
       <PrepCard payload={payload} />
+      <div
+        className="border rounded-lg p-5"
+        style={{
+          background: 'var(--color-card)',
+          borderColor: 'var(--color-border-bright)',
+        }}
+      >
+        <h2 className="font-display text-lg font-semibold mb-2">
+          Preview the deliverable
+        </h2>
+        <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+          Renders the in-memory roadmap as a 6-page PDF and downloads
+          it. Same template the production fulfillment pipeline will
+          use; storage upload + buyer-facing email are deferred to
+          Phase 3.
+        </p>
+        <DownloadPdfButton payload={pdfPayload} />
+      </div>
     </div>
   );
 }
@@ -351,6 +401,23 @@ function Td({
 type FixturePayload = {
   profile: string;
   label: string;
+  buyer: {
+    businessName: string;
+    trade: string;
+    market: string;
+    currentTurfScore: number;
+    projectedTurfScore: number;
+    auditDate: string;
+    napFindings: Array<{
+      status: 'MISSING' | 'INCONSISTENT' | 'LIVE';
+      text: string;
+    }>;
+    competitors: Array<{
+      name: string;
+      turfScore: number;
+      differential?: string;
+    }>;
+  };
   fit: {
     score: number;
     inputs: {

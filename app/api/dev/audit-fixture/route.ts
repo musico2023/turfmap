@@ -212,9 +212,31 @@ export async function GET(req: Request) {
     );
   }
 
+  // Build a small synthetic NAP findings + competitor list parsed
+  // from the fixture's free-text summaries. The viewer + PDF button
+  // need structured data; the AI prompt only sees the free-text
+  // summaries. This keeps the fixture single-source-of-truth for
+  // the buyer profile without forcing a structured-input refactor
+  // of the AI generators.
+  const napFindings = parseNapFindings(fixture.roadmap.napFindingsSummary);
+  const competitors = parseCompetitors(fixture.roadmap.competitorSummary);
+
   return NextResponse.json({
     profile: profileKey,
     label: fixture.label,
+    // Buyer context the PDF renderer needs (the AI generators got it
+    // via prompt; the viewer + Download-PDF button need it as
+    // structured fields).
+    buyer: {
+      businessName: fixture.roadmap.businessName,
+      trade: fixture.roadmap.trade,
+      market: fixture.roadmap.market,
+      currentTurfScore: fixture.roadmap.currentTurfScore,
+      projectedTurfScore: fixture.prep.projectedTurfScore,
+      auditDate: new Date().toISOString().slice(0, 10),
+      napFindings,
+      competitors,
+    },
     fit: fitBreakdown,
     roadmap: {
       diagnosis: roadmap.diagnosis,
@@ -236,4 +258,59 @@ export async function GET(req: Request) {
       markdown: prep.markdown,
     },
   });
+}
+
+// ─── Free-text → structured fixture parsers ────────────────────────────
+//
+// The fixture profiles store NAP findings + competitor lists as
+// free-text dashes-and-newlines summaries (because that's what the
+// AI prompt eats). Parse those out to structured rows for the PDF
+// + viewer.
+
+function parseNapFindings(
+  summary: string | null
+): Array<{ status: 'MISSING' | 'INCONSISTENT' | 'LIVE'; text: string }> {
+  if (!summary) return [];
+  return summary
+    .split('\n')
+    .map((line) => line.replace(/^[\s-]+/, '').trim())
+    .filter(Boolean)
+    .map((line) => {
+      const lower = line.toLowerCase();
+      let status: 'MISSING' | 'INCONSISTENT' | 'LIVE';
+      if (lower.includes('missing')) status = 'MISSING';
+      else if (lower.includes('inconsistency') || lower.includes('inconsistent')) status = 'INCONSISTENT';
+      else status = 'LIVE';
+      return { status, text: line };
+    });
+}
+
+function parseCompetitors(
+  summary: string | null
+): Array<{ name: string; turfScore: number; differential?: string }> {
+  if (!summary) return [];
+  // Match lines like:
+  //   "1. Air-Pro Heating: TurfScore 71, holds 58% of cells..."
+  //   "2. ComfortMaster TX: TurfScore 64, dominates SE quadrant..."
+  return summary
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(
+        /^\d+\.\s*(.+?):\s*TurfScore\s+(\d+)(?:\s*[\(,—-]\s*(.+))?/i
+      );
+      if (!match) {
+        // Best effort: take the line as a name + 0 score so we don't
+        // drop competitors when the format drifts. The PDF will still
+        // render the row.
+        return { name: line.replace(/^\d+\.\s*/, ''), turfScore: 0 };
+      }
+      const [, name, score, differential] = match;
+      return {
+        name: name.trim(),
+        turfScore: Number(score),
+        differential: differential ? differential.replace(/[)]+$/, '').trim() : undefined,
+      };
+    });
 }
