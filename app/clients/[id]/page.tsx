@@ -7,7 +7,11 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 import { Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { listLocations, resolveLocation } from '@/lib/supabase/locations';
+import {
+  listLocations,
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import type {
   CitationOrderRow,
@@ -594,6 +598,8 @@ export default async function ClientDashboardPage({
             <CitationsPanel
               order={citationOrder ?? null}
               clientPublicId={client.public_id}
+              locationId={activeLocation.id}
+              locationLabel={locationDisplayLabel(activeLocation)}
             />
           </div>
         )}

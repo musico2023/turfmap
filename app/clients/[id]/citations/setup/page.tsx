@@ -21,7 +21,12 @@ import { Header } from '@/components/turfmap/Header';
 import { CitationOnboardingForm } from '@/components/turfmap/CitationOnboardingForm';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
-import { listLocations, resolveLocation } from '@/lib/supabase/locations';
+import {
+  listLocations,
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
+import { LocationPickerNotice } from '@/components/turfmap/LocationPickerNotice';
 import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 
 export default async function CitationSetupPage({
@@ -79,6 +84,23 @@ export default async function CitationSetupPage({
             live within 2 weeks; full propagation takes 6–8 weeks.
           </p>
         </div>
+
+        <LocationPickerNotice
+          clientPublicId={client.public_id}
+          activeLocation={{
+            id: activeLocation.id,
+            label: locationDisplayLabel(activeLocation),
+            street_address: activeLocation.street_address,
+            city: activeLocation.city,
+            region: activeLocation.region,
+          }}
+          otherLocations={locations
+            .filter((l) => l.id !== activeLocation.id)
+            .map((l) => ({
+              id: l.id,
+              label: locationDisplayLabel(l),
+            }))}
+        />
 
         <CitationOnboardingForm
           clientId={client.id}

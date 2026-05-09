@@ -59,12 +59,22 @@ const DIR_LABEL: Record<CitationDirectoryEntry['status'], string> = {
 export function CitationsPanel({
   order,
   clientPublicId,
+  locationId,
+  locationLabel,
 }: {
   order: CitationOrderRow | null;
   clientPublicId: string;
+  locationId: string;
+  locationLabel: string;
 }) {
   if (!order) {
-    return <NoOrderCard clientPublicId={clientPublicId} />;
+    return (
+      <NoOrderCard
+        clientPublicId={clientPublicId}
+        locationId={locationId}
+        locationLabel={locationLabel}
+      />
+    );
   }
 
   const dirs = order.per_directory ?? [];
@@ -200,7 +210,15 @@ function DirRow({ entry }: { entry: CitationDirectoryEntry }) {
   );
 }
 
-function NoOrderCard({ clientPublicId }: { clientPublicId: string }) {
+function NoOrderCard({
+  clientPublicId,
+  locationId,
+  locationLabel,
+}: {
+  clientPublicId: string;
+  locationId: string;
+  locationLabel: string;
+}) {
   return (
     <div
       id="citations"
@@ -215,12 +233,14 @@ function NoOrderCard({ clientPublicId }: { clientPublicId: string }) {
           <h3 className="font-display text-lg font-bold">Citations</h3>
           <p className="text-xs text-zinc-500 mt-0.5">
             Pulse+ includes citation building across ~25 directories. Finish
-            the citation profile to kick it off.
+            the citation profile for{' '}
+            <span className="text-zinc-300">{locationLabel}</span> to kick
+            it off.
           </p>
         </div>
       </div>
       <Link
-        href={`/clients/${clientPublicId}/citations/setup`}
+        href={`/clients/${clientPublicId}/citations/setup?location=${locationId}`}
         className="text-sm font-bold px-4 py-2 rounded inline-flex items-center gap-2 transition-all hover:brightness-110"
         style={{
           background: 'var(--color-lime)',
