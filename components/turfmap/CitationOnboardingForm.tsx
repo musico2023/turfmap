@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronRight, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { CategoryCombobox } from '@/components/turfmap/CategoryCombobox';
+import { GBP_CATEGORIES } from '@/lib/citations/gbp-categories';
 
 /**
  * Pulse+ citation-build onboarding form. Collects the BrightLocal-
@@ -76,9 +78,17 @@ export function CitationOnboardingForm({
   const router = useRouter();
   const [, startTransition] = useTransition();
 
-  const [primaryCategory, setPrimaryCategory] = useState(industry ?? '');
+  // Only prefill if the client's industry matches a known GBP category;
+  // otherwise leave blank so the operator picks from the dropdown.
+  const prefilledPrimary = useMemo(() => {
+    if (!industry) return '';
+    const match = GBP_CATEGORIES.find(
+      (c) => c.toLowerCase() === industry.toLowerCase()
+    );
+    return match ?? '';
+  }, [industry]);
+  const [primaryCategory, setPrimaryCategory] = useState(prefilledPrimary);
   const [additionalCategories, setAdditionalCategories] = useState<string[]>([]);
-  const [newCategory, setNewCategory] = useState('');
   const [description, setDescription] = useState('');
   const [website, setWebsite] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
@@ -88,13 +98,12 @@ export function CitationOnboardingForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const onAddCategory = () => {
-    const v = newCategory.trim();
+  const onAddCategory = (v: string) => {
     if (!v) return;
     if (additionalCategories.length >= 9) return;
     if (additionalCategories.includes(v)) return;
+    if (v === primaryCategory) return;
     setAdditionalCategories([...additionalCategories, v]);
-    setNewCategory('');
   };
   const onRemoveCategory = (c: string) =>
     setAdditionalCategories(additionalCategories.filter((x) => x !== c));
@@ -188,17 +197,26 @@ export function CitationOnboardingForm({
       {/* Categories */}
       <Section title="Business categories" subtitle="Used by directories to classify your listing.">
         <Field label="Primary category" required help="The main thing you sell — must match a Google Business Profile category.">
-          <input
-            type="text"
+          <CategoryCombobox
             value={primaryCategory}
-            onChange={(e) => setPrimaryCategory(e.target.value)}
-            placeholder="e.g. Plumber, Dental Clinic, Cafe"
+            onChange={(v) => {
+              setPrimaryCategory(v);
+              // If the new primary was already in the additional list,
+              // drop it from there to avoid duplicates.
+              if (additionalCategories.includes(v)) {
+                setAdditionalCategories(
+                  additionalCategories.filter((c) => c !== v)
+                );
+              }
+            }}
+            options={GBP_CATEGORIES}
+            placeholder="Select a primary category"
             required
-            className={inputClass}
+            inputClassName={inputClass}
           />
         </Field>
 
-        <Field label={`Additional categories (${additionalCategories.length}/9)`} help="Up to 9 secondary categories.">
+        <Field label={`Additional categories (${additionalCategories.length}/9)`} help="Pick up to 9 secondary GBP categories.">
           <div className="flex flex-wrap gap-2 mb-2">
             {additionalCategories.map((c) => (
               <span
@@ -221,32 +239,30 @@ export function CitationOnboardingForm({
               </span>
             ))}
           </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  onAddCategory();
-                }
-              }}
-              placeholder="Emergency Plumber"
-              className={inputClass}
-              disabled={additionalCategories.length >= 9}
+          {additionalCategories.length < 9 ? (
+            <CategoryCombobox
+              value=""
+              onChange={onAddCategory}
+              options={GBP_CATEGORIES}
+              placeholder="+ Add a secondary category"
+              disabledOptions={
+                primaryCategory
+                  ? [primaryCategory, ...additionalCategories]
+                  : additionalCategories
+              }
+              inputClassName={inputClass}
             />
-            <Button
-              type="button"
-              variant="secondary"
-              size="md"
-              onClick={onAddCategory}
-              disabled={!newCategory.trim() || additionalCategories.length >= 9}
-              leftIcon={<Plus size={12} />}
+          ) : (
+            <div
+              className="text-[11px] text-zinc-600 font-mono px-3 py-2 rounded border"
+              style={{
+                background: 'var(--color-bg)',
+                borderColor: 'var(--color-border)',
+              }}
             >
-              Add
-            </Button>
-          </div>
+              Max of 9 secondary categories reached.
+            </div>
+          )}
         </Field>
       </Section>
 
