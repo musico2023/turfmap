@@ -105,7 +105,7 @@ const PrepOutput = z.object({
   /** 3-5 bullets — the most important things Anthony should know
    *  before the call. */
   keyFindings: z
-    .array(z.string().min(15).max(280))
+    .array(z.string().min(15).max(500))
     .min(3)
     .max(5)
     .describe(
@@ -115,7 +115,7 @@ const PrepOutput = z.object({
   competitiveContext: z
     .string()
     .min(40)
-    .max(420)
+    .max(800)
     .describe(
       "2-4 sentences naming the top competitor (if present in input), their TurfScore, and what they're doing differently. If no competitor data is provided, write 'No competitor data available — surface this on the call as a follow-up.'"
     ),
@@ -142,11 +142,11 @@ const PrepOutput = z.object({
    *  rendered inline, and 2-3 anticipated objections. Length depends
    *  on Fit Score (4-5 = full segues; 1-3 = short, no LLM segue). */
   talkingPoints: z
-    .array(z.string().min(15).max(420))
+    .array(z.string().min(15).max(800))
     .min(5)
-    .max(7)
+    .max(8)
     .describe(
-      "5-7 ordered talking points. Open with diagnosis, follow with fastest-win, then segues for Fit Score 4-5 (or skip + redirect for Fit Score 2-3). End with 2-3 anticipated buyer objections + responses."
+      "5-7 ordered talking points (up to 8 if needed). Open with diagnosis, follow with fastest-win, then segues for Fit Score 4-5 (or skip + redirect for Fit Score 2-3). End with 2-3 anticipated buyer objections + responses. Each point can run long when it incorporates the verbatim segue or an objection-and-response pair."
     ),
 });
 

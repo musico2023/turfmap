@@ -126,26 +126,31 @@ const RoadmapAction = z.object({
 });
 
 const RoadmapOutput = z.object({
-  /** One-line diagnosis of the buyer's primary visibility gap. Used
-   *  on PDF page 1 + as the anchor for the strategist call's opening
-   *  framing. */
+  /** One-paragraph diagnosis of the buyer's primary visibility gap.
+   *  Used on PDF page 1 + as the anchor for the strategist call's
+   *  opening framing. We don't cap length tightly — Claude
+   *  occasionally writes 1-2 sentences instead of strictly one,
+   *  and rejecting the output for a 5-character overrun would be
+   *  silly. The prompt asks for one sentence; if the model needs
+   *  a second to be specific, we accept it. */
   diagnosis: z
     .string()
     .min(20)
-    .max(280)
+    .max(600)
     .describe(
-      "One-sentence diagnosis of the primary visibility gap (proximity / prominence / relevance + the specific lever)."
+      "1-2 sentences diagnosing the primary visibility gap (proximity / prominence / relevance + the specific lever). Aim for one sentence; two is acceptable when needed for specificity."
     ),
-  /** 8-12 actions across the 12 weeks. The model can leave some weeks
-   *  empty if the buyer doesn't need 12 weeks of work. Phase boundaries
-   *  (1-4 / 5-8 / 9-12) are enforced through ordering, not explicit
-   *  fields — phase 1 actions land in weeks 1-4, etc. */
+  /** 8-12 actions across the 12 weeks; we accept up to 15 to give
+   *  the model room when a complex audit warrants more work. Phase
+   *  boundaries (1-4 / 5-8 / 9-12) are enforced through week_number
+   *  ordering, not explicit fields — phase 1 actions land in weeks
+   *  1-4, etc. */
   actions: z
     .array(RoadmapAction)
     .min(8)
-    .max(12)
+    .max(15)
     .describe(
-      '8-12 prioritized actions across the 12 weeks. Phase 1 (weeks 1-4) = Foundation: NAP/directory/critical fixes. Phase 2 (weeks 5-8) = Authority: review velocity, GBP optimization, secondary directories. Phase 3 (weeks 9-12) = Optimization: long-tail directories, schema, content. Distribute roughly evenly.'
+      '8-12 prioritized actions across the 12 weeks (up to 15 if needed). Phase 1 (weeks 1-4) = Foundation: NAP/directory/critical fixes. Phase 2 (weeks 5-8) = Authority: review velocity, GBP optimization, secondary directories. Phase 3 (weeks 9-12) = Optimization: long-tail directories, schema, content. Distribute roughly evenly.'
     ),
 });
 
