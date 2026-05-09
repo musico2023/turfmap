@@ -49,40 +49,53 @@ function RotatingLabel() {
   // children don't contribute to the inline-block's layout box; the
   // 1em / lh:1 keeps the eyebrow vertically aligned with the
   // surrounding "Google Maps audit for local … · from $99" text.
-  // minWidth needs to fit the widest label *with the parent's
-  // 0.22em letter-spacing baked in*, not just the raw character
-  // count. "LANDSCAPERS" is 11 chars; with 0.22em tracking each
-  // glyph occupies ~1.22ch of horizontal space, so the actual
-  // rendered width is ~13.5ch. The previous 11ch min was too tight
-  // for "HVAC PROS" (9 chars + space, ~11ch tracked) and forced the
-  // absolute child to wrap at the space — "HVAC" on one line, "PROS"
-  // pushed to a second line, mangling the eyebrow. 14ch gives us
-  // headroom for the widest entry without shifting surrounding text.
+  // Layout strategy: an invisible "ghost" of the longest label sits
+  // in normal flow inside the container. The ghost gives the
+  // container its width AND its line-box — so the container inherits
+  // the same line-height + half-leading the surrounding eyebrow
+  // text uses. Without the ghost, an empty inline-block has no inline
+  // content, defaults to height:1em with no half-leading, and its
+  // baseline falls ~1px above the surrounding text's baseline (the
+  // bug the user reported: lime text rendered visibly higher than
+  // the gray text around it).
   //
-  // whiteSpace: nowrap on the inner spans is the belt-and-suspenders
-  // — even if a future label exceeds the container width, it won't
-  // wrap, it'll just overflow visually (catchable in QA).
+  // The active label sits over the ghost as an absolute child with
+  // inset:0 — same width AND height as the ghost, so its line-box
+  // matches the ghost's line-box exactly. With identical font,
+  // font-size, and line-height, the glyphs land in the same vertical
+  // position as the ghost's would, keeping every label visually
+  // co-baselined with the surrounding "Google Maps audit for local
+  // … · from $99" text.
+  //
+  // Pick the widest label deterministically rather than hard-coding
+  // 'LANDSCAPERS' — protects against future label edits that swap
+  // the longest entry.
+  const widestLabel = ROTATING_LABELS.reduce(
+    (a, b) => (b.length > a.length ? b : a),
+    ROTATING_LABELS[0]
+  );
   return (
     <span
       style={{
         position: 'relative',
         display: 'inline-block',
-        minWidth: '14ch',
-        height: '1em',
-        lineHeight: 1,
         textAlign: 'left',
-        verticalAlign: 'baseline',
       }}
       aria-live="polite"
     >
+      {/* Width + line-box anchor. Visibility:hidden keeps it taking
+       *  layout space without rendering, so the container size +
+       *  baseline track the surrounding text exactly. */}
+      <span style={{ visibility: 'hidden' }} aria-hidden>
+        {widestLabel}
+      </span>
       {ROTATING_LABELS.map((label, i) => (
         <span
           key={label}
           aria-hidden={i !== idx}
           style={{
             position: 'absolute',
-            top: 0,
-            left: 0,
+            inset: 0,
             color: 'var(--color-lime)',
             opacity: i === idx ? 1 : 0,
             transition: `opacity ${FADE_MS}ms ease-in-out`,
