@@ -49,12 +49,14 @@ import {
   keywordCountForTier,
   markLeadOrderFailed,
   markLeadOrderFulfilled,
+  patchLeadOrderMetadataByClientId,
 } from '@/lib/stripe/leadOrders';
 import { STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
 import {
   sendOrderConfirmation,
   sendScanReady,
   sendPulsePlusWelcome,
+  sendAuditCallReminder,
 } from '@/lib/email/resend';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
@@ -434,10 +436,9 @@ export async function POST(req: NextRequest) {
 
   // ─── 8. Mark lead_order fulfilled ──────────────────────────────────────
   // For Audit + Strategy tiers, also stamp the call-tracking
-  // metadata used by the Cal.com webhook + audit-call-reminders
-  // cron. Initial state is 'unbooked' — the cron picks up rows in
-  // this state that are >20 min old and haven't been reminded yet,
-  // and the Cal.com BOOKING_CREATED webhook flips them to 'booked'.
+  // metadata used by the Cal.com webhook. Initial state is
+  // 'unbooked' — the Cal.com BOOKING_CREATED webhook flips it to
+  // 'booked' (and cancels the queued reminder email below).
   const isAuditTier = session.tier === 'audit' || session.tier === 'strategy';
   const fulfilled = await markLeadOrderFulfilled(
     supabase,
@@ -458,6 +459,57 @@ export async function POST(req: NextRequest) {
       '[orders/fulfill] markLeadOrderFulfilled failed (non-fatal)',
       fulfilled.error
     );
+  }
+
+  // ─── 8b. Queue the audit-call reminder via Resend scheduled-send ──────
+  // For Audit + Strategy buyers: schedule a 20-min-delayed reminder
+  // email pointing at their Cal.com booking link. If they book inside
+  // the window, the Cal.com webhook handler cancels this scheduled
+  // email so they don't get a "you forgot to book" nudge after just
+  // confirming. We persist the returned email ID on
+  // lead_orders.stripe_metadata.audit_reminder_email_id so the webhook
+  // knows which Resend email to cancel.
+  //
+  // Why scheduled-send instead of a Vercel Cron sweep: Vercel Hobby
+  // tier caps cron frequency at daily. Resend's scheduled-send
+  // delivers the same UX (precise 20-min mark, cancellable) and works
+  // on any plan. The /api/cron/audit-call-reminders route is kept in
+  // the repo as a manual fallback but is no longer auto-fired.
+  if (isAuditTier && bookingUrl && fulfilled.ok) {
+    const scheduledAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    try {
+      const reminderResult = await sendAuditCallReminder({
+        to: body.email,
+        businessName: body.businessName.trim(),
+        bookingUrl,
+        scheduledAt,
+      });
+      if (reminderResult.ok && reminderResult.id) {
+        // Stamp the email ID + scheduled time onto the lead_orders
+        // row so the Cal.com webhook can cancel the queued send if
+        // a booking lands inside the 20-min window.
+        await patchLeadOrderMetadataByClientId(supabase, client.id, {
+          audit_reminder_email_id: reminderResult.id,
+          audit_reminder_scheduled_at: scheduledAt,
+        });
+      } else {
+        // Non-fatal — scan + onboarding already succeeded; the buyer
+        // has the success page + the dashboard email already. Worst
+        // case they don't get the 20-min nudge, the operator picks
+        // them up via the agency dashboard's pending-bookings view.
+        console.error(
+          '[orders/fulfill] sendAuditCallReminder schedule failed',
+          { ok: reminderResult.ok, hasId: !!reminderResult.id }
+        );
+      }
+    } catch (e) {
+      // Same rationale as above — log + continue, don't fail the
+      // order on a downstream email-scheduling hiccup.
+      console.error(
+        '[orders/fulfill] sendAuditCallReminder threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
   }
 
   // ─── 9. Send the scan-ready email + (Pulse+) welcome email ────────────

@@ -1,12 +1,30 @@
 /**
- * Vercel Cron — audit-call booking reminders.
+ * NOT a Vercel Cron in production anymore — kept as an
+ * operator-triggerable safety-net + fallback sweep. The primary
+ * mechanism for audit-call reminders is now Resend's scheduled-send
+ * (queued from /api/orders/fulfill, cancelled from the Cal.com
+ * webhook on BOOKING_CREATED). Vercel Hobby tier caps cron
+ * frequency at daily, so the original sub-daily schedule
+ * deploy-failed; pulling the cron entry from vercel.json was the
+ * unblock for the production pipeline.
  *
- * Schedule (vercel.json): every 5 minutes. Sweeps the lead_orders
- * table for audit/strategy buyers who haven't booked their Cal.com
- * strategist call yet AND whose order is at least 20 minutes old.
- * Sends a single AuditCallReminderEmail per buyer, then stamps
- * audit_call_reminded_at on the row so the next sweep doesn't
- * re-send.
+ * This route still works (sweeps the same rows + sends the same
+ * email + stamps the same metadata) so an operator can hit it
+ * manually (Bearer CRON_SECRET) if Resend's scheduled queue ever
+ * misbehaves, or to mop up legacy orders that pre-date the
+ * scheduled-send wiring.
+ *
+ * Pulled from vercel.json's cron list because Vercel Hobby tier
+ * caps cron frequency at daily — any sub-daily schedule would
+ * deploy-fail.
+ *
+ * --- original docs follow ---
+ *
+ * Sweeps the lead_orders table for audit/strategy buyers who
+ * haven't booked their Cal.com strategist call yet AND whose order
+ * is at least 20 minutes old. Sends a single AuditCallReminderEmail
+ * per buyer, then stamps audit_call_reminded_at on the row so the
+ * next sweep doesn't re-send.
  *
  * State machine (stored in lead_orders.stripe_metadata):
  *
@@ -188,17 +206,19 @@ async function handle(req: Request) {
     }
 
     try {
-      const ok = await sendAuditCallReminder({
+      // Immediate send (scheduledAt omitted) — this fallback sweep
+      // already filters on age >20m so the reminder is "due now".
+      const result = await sendAuditCallReminder({
         to: row.email,
         businessName: client.business_name,
         bookingUrl,
       });
-      if (ok) {
+      if (result.ok) {
         sent++;
       } else {
         failures.push({
           orderId: row.id,
-          reason: 'sendAuditCallReminder returned false',
+          reason: 'sendAuditCallReminder returned ok=false',
         });
       }
     } catch (e) {

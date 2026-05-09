@@ -48,7 +48,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { patchLeadOrderMetadataByClientId } from '@/lib/stripe/leadOrders';
-import { sendAuditCallConfirmed } from '@/lib/email/resend';
+import { sendAuditCallConfirmed, cancelScheduledEmail } from '@/lib/email/resend';
 import type { ClientRow, LeadOrderRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -187,6 +187,31 @@ export async function POST(req: Request) {
   const existingMeta =
     (order.stripe_metadata as Record<string, unknown> | null) ?? {};
   const existingStatus = existingMeta.audit_call_status;
+  const reminderEmailId =
+    typeof existingMeta.audit_reminder_email_id === 'string'
+      ? (existingMeta.audit_reminder_email_id as string)
+      : null;
+
+  // If a queued audit-call reminder is sitting in Resend's scheduled
+  // queue, cancel it. The reminder is a 20-min nudge for buyers who
+  // haven't booked yet — once the booking lands (created or
+  // cancelled), that nudge becomes either redundant (created) or
+  // misleading (cancelled), so kill it either way. cancelScheduledEmail
+  // returns true on already-sent / already-cancelled, so this is
+  // idempotent across Cal.com's retried webhook deliveries.
+  if (reminderEmailId) {
+    try {
+      await cancelScheduledEmail(reminderEmailId);
+    } catch (e) {
+      // Don't 500 — the state flip below is the load-bearing piece.
+      // Worst case the buyer gets one stale reminder; not a regression
+      // from the previous (cron-based) world.
+      console.error(
+        '[calcom-webhook] cancelScheduledEmail threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
 
   // Cancellation path: flip status, clear booked_at if any, no
   // email (Cal.com sends a cancellation notice itself; doubling up
@@ -196,6 +221,9 @@ export async function POST(req: Request) {
       audit_call_status: 'cancelled',
       audit_call_cancelled_at: new Date().toISOString(),
       audit_call_uid: payload.uid ?? null,
+      // Clear the reminder ID — the email has been cancelled (or
+      // never existed), so no future cancel is needed.
+      audit_reminder_email_id: null,
     });
     return NextResponse.json({ ok: true, action: 'cancelled' });
   }
@@ -211,6 +239,9 @@ export async function POST(req: Request) {
     audit_call_uid: payload.uid ?? null,
     audit_call_start_time: payload.startTime ?? null,
     audit_call_manage_url: payload.bookerUrl ?? null,
+    // Clear the reminder ID — we just cancelled the queued send (if
+    // any). Stale ID lying around could confuse a future operator.
+    audit_reminder_email_id: null,
   });
 
   // Skip the confirmation email if we've already sent one — Cal.com

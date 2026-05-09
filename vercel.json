@@ -28,10 +28,6 @@
     {
       "path": "/api/cron/refresh-gbp-signals",
       "schedule": "0 14 * * 1"
-    },
-    {
-      "path": "/api/cron/audit-call-reminders",
-      "schedule": "*/5 * * * *"
     }
   ]
 }

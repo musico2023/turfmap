@@ -119,24 +119,40 @@ type SendArgs = {
   text?: string;
   /** PDF or other binary attachments. */
   attachments?: Array<{ filename: string; content: Buffer | string }>;
+  /** ISO 8601 timestamp for Resend's scheduled-send. When set, Resend
+   *  holds the email in its queue and dispatches at this time instead
+   *  of immediately. The returned `id` can be passed to
+   *  `cancelScheduledEmail()` to abort delivery before the scheduled
+   *  time fires (e.g. when a Cal.com booking lands inside the
+   *  audit-call reminder's 20-minute window).
+   *
+   *  Used in place of a Vercel Cron job for the audit-call-reminder —
+   *  Hobby tier caps cron frequency at daily, and Resend's
+   *  scheduled-send delivers the same UX without that constraint. */
+  scheduledAt?: string;
 };
+
+/** Result of a send attempt. `ok` is the success flag the existing
+ *  callers already use; `id` is the Resend email ID (used to cancel
+ *  scheduled sends — see `cancelScheduledEmail`). */
+export type SendResult = { ok: boolean; id?: string };
 
 /**
  * Low-level send. Use the higher-level functions below for typed
- * email payloads. Returns true on success, false on any failure
- * (including no-API-key, SDK error, Resend rejection). Never throws.
+ * email payloads. Returns `{ ok, id? }` — `ok` is false on any
+ * failure (no-API-key, SDK error, Resend rejection). Never throws.
  */
-export async function sendEmail(args: SendArgs): Promise<boolean> {
+export async function sendEmail(args: SendArgs): Promise<SendResult> {
   const resend = await getResend();
   if (!resend) {
     console.warn(
       `[resend] RESEND_API_KEY not set — skipping send to "${args.to}" (subject: "${args.subject}")`
     );
-    return false;
+    return { ok: false };
   }
 
   try {
-    const { error } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromAddress(),
       to: args.to,
       replyTo: replyToAddress(),
@@ -147,22 +163,77 @@ export async function sendEmail(args: SendArgs): Promise<boolean> {
         filename: a.filename,
         content: a.content,
       })),
+      // Resend SDK accepts `scheduledAt` on the same payload — when
+      // present, the email is queued instead of sent immediately.
+      scheduledAt: args.scheduledAt,
     });
     if (error) {
       console.error(
         `[resend] send failed to "${args.to}" (subject: "${args.subject}"):`,
         error
       );
-      return false;
+      return { ok: false };
     }
-    return true;
+    return { ok: true, id: data?.id };
   } catch (e) {
     console.error(
       `[resend] send threw to "${args.to}" (subject: "${args.subject}"):`,
       e instanceof Error ? e.message : String(e)
     );
+    return { ok: false };
+  }
+}
+
+/**
+ * Cancel a previously-scheduled email. Used by the Cal.com webhook
+ * when a buyer books their strategist call inside the 20-minute
+ * audit-reminder window — the scheduled reminder would otherwise
+ * fire after the booking was already made, which reads as a bug to
+ * the buyer ("you just confirmed; why are you nudging me?").
+ *
+ * Returns true on successful cancel (or 404 — already-sent /
+ * already-cancelled both count as "the reminder won't fire"). False
+ * on transport errors so the caller can log + decide whether to
+ * retry.
+ */
+export async function cancelScheduledEmail(id: string): Promise<boolean> {
+  const resend = await getResend();
+  if (!resend) {
+    console.warn(
+      `[resend] RESEND_API_KEY not set — cannot cancel scheduled email ${id}`
+    );
     return false;
   }
+  try {
+    const { error } = await resend.emails.cancel(id);
+    if (error) {
+      // Resend returns a not-found error if the email already sent
+      // or was already cancelled. Treat that as success — the goal
+      // is "this email won't be delivered" and that's already true.
+      const msg = (error as { message?: string }).message ?? String(error);
+      if (/not[_ -]?found|404/i.test(msg)) {
+        return true;
+      }
+      console.error(`[resend] cancel failed for ${id}:`, error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error(
+      `[resend] cancel threw for ${id}:`,
+      e instanceof Error ? e.message : String(e)
+    );
+    return false;
+  }
+}
+
+/** Boolean-only convenience wrapper around `sendEmail` for callers
+ *  that don't care about the email ID. Most templated senders below
+ *  use this — the only ones that need the full `{ ok, id }` shape
+ *  are scheduled sends (currently just the audit-call reminder). */
+async function sendEmailOk(args: SendArgs): Promise<boolean> {
+  const r = await sendEmail(args);
+  return r.ok;
 }
 
 // ─── Templated senders ─────────────────────────────────────────────────────
@@ -225,7 +296,7 @@ export async function sendOrderConfirmation(args: {
     args.tier === 'audit'
       ? `Your TurfMap Visibility Audit — what happens next`
       : `Your ${TIER_LABELS_FOR_SUBJECT[args.tier]} is processing — ${args.businessName}`;
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject,
     html,
@@ -252,7 +323,7 @@ export async function sendScanReady(args: {
       hasPdfAttachment: Boolean(args.pdf),
     })
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `Your TurfMap is ready — ${args.businessName}`,
     html,
@@ -280,7 +351,7 @@ export async function sendPortalInvite(args: {
       magicLinkUrl: args.magicLinkUrl,
     } satisfies PortalInviteEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `You've been invited to view ${args.businessName}'s TurfMap`,
     html,
@@ -308,7 +379,7 @@ export async function sendSignInLink(args: {
       businessName: args.businessName ?? null,
     } satisfies SignInLinkEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: args.businessName
       ? `Your TurfMap sign-in link — ${args.businessName}`
@@ -345,7 +416,7 @@ export async function sendStripeSetupLink(args: {
       checkoutUrl: args.checkoutUrl,
     } satisfies StripeSetupLinkEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `Set up your ${tierLabel} account — ${args.businessName}`,
     html,
@@ -374,7 +445,7 @@ export async function sendWeeklyCompetitorSummary(args: {
       portalUrl: args.portalUrl,
     } satisfies WeeklyCompetitorSummaryEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `Weekly competitor summary — ${args.businessName}`,
     html,
@@ -408,7 +479,7 @@ export async function sendMonthlyPdf(args: {
       portalUrl: args.portalUrl,
     } satisfies MonthlyPdfEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `Your monthly TurfMap — ${args.businessName}`,
     html,
@@ -461,7 +532,22 @@ export async function sendDeliveryAlert(args: {
       )
       .join('\n');
 
-  return sendEmail({ to: args.to, subject, html, text });
+  return sendEmailOk({ to: args.to, subject, html, text });
+}
+
+/**
+ * Schedule a payload via Resend's scheduled-send. Internal helper
+ * shared by `sendAuditCallReminder` (and any future senders that
+ * need to fire delayed). Returns the full `{ ok, id }` so callers
+ * can persist the ID for a later cancel.
+ *
+ * Implementation note: identical to `sendEmail` — only difference
+ * is that we expose the ID. Kept as a separate helper to make the
+ * intent at call sites obvious ("we want the ID back, not just
+ * success/failure").
+ */
+async function sendEmailWithId(args: SendArgs): Promise<SendResult> {
+  return sendEmail(args);
 }
 
 /**
@@ -481,7 +567,7 @@ export async function sendPulsePlusWelcome(args: {
       onboardingUrl: args.onboardingUrl,
     } satisfies PulsePlusWelcomeEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `Welcome to TurfMap Pulse+ — finish your setup`,
     html,
@@ -516,7 +602,7 @@ export async function sendPulseTrialEnding(args: {
       cancelTrialUrl: args.cancelTrialUrl,
     } satisfies PulseTrialEndingEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `Your TurfMap Pulse trial ends in 3 days`,
     html,
@@ -525,27 +611,48 @@ export async function sendPulseTrialEnding(args: {
 
 /**
  * Audit-call reminder. Triggered ~20 minutes after a Visibility
- * Audit purchase if the buyer hasn't booked a Cal.com slot yet —
- * fired by the audit-call-reminders cron (not inline at fulfill
- * time, so a function timeout never silently drops it). Once-only
- * per lead_orders row: caller stamps audit_call_reminded_at on the
- * lead_orders.stripe_metadata to dedupe across cron retries.
+ * Audit purchase if the buyer hasn't booked a Cal.com slot yet.
+ *
+ * Mechanism: Resend scheduled-send. Caller passes `scheduledAt` set
+ * to `now() + 20m`. Resend holds the email in its queue and dispatches
+ * at that time; we get back an `id` we can later pass to
+ * `cancelScheduledEmail()` if the buyer books inside the window
+ * (Cal.com webhook fires BOOKING_CREATED → we cancel the queued
+ * email so the buyer doesn't get a "you forgot to book" nudge after
+ * just confirming their booking).
+ *
+ * Why scheduled-send instead of a Vercel Cron sweep: Vercel Hobby
+ * tier caps cron frequency at daily (any sub-daily schedule like an
+ * every-5-minutes cron would deploy-fail on Hobby). Resend's
+ * scheduled-send handles the delay without a cron, so this works on
+ * any plan and is also more precise (fires exactly at the 20-min
+ * mark rather than at the next cron tick).
+ *
+ * Returns `{ ok, id }` so the caller can persist the ID on
+ * `lead_orders.stripe_metadata.audit_reminder_email_id` for the
+ * cancel path. If `scheduledAt` is omitted the email sends
+ * immediately (used by the legacy cron route as a fallback safety
+ * net + by ad-hoc operator triggers).
  */
 export async function sendAuditCallReminder(args: {
   to: string;
   businessName: string;
   bookingUrl: string;
-}): Promise<boolean> {
+  /** ISO 8601 timestamp. When set, Resend schedules the send for
+   *  this time; when omitted, sends immediately. */
+  scheduledAt?: string;
+}): Promise<SendResult> {
   const html = await render(
     AuditCallReminderEmail({
       businessName: args.businessName,
       bookingUrl: args.bookingUrl,
     } satisfies AuditCallReminderEmailProps)
   );
-  return sendEmail({
+  return sendEmailWithId({
     to: args.to,
     subject: `One more step: book your TurfMap strategist call`,
     html,
+    scheduledAt: args.scheduledAt,
   });
 }
 
@@ -573,7 +680,7 @@ export async function sendAuditCallConfirmed(args: {
       dashboardUrl: args.dashboardUrl,
     } satisfies AuditCallConfirmedEmailProps)
   );
-  return sendEmail({
+  return sendEmailOk({
     to: args.to,
     subject: `Strategist call confirmed for ${args.scheduledAt}`,
     html,
