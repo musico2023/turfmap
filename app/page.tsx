@@ -7,6 +7,7 @@ import {
   Eye,
   FileText,
   MapPin,
+  ShieldCheck,
   Sparkles,
   Target,
   Zap,
@@ -430,6 +431,50 @@ export default function MarketingLanding() {
           }
         />
         <PricingCards />
+
+        {/* Lift Promise callout — surfaces the audit guarantee
+         *  outside the pricing-card bullet list so it doesn't get
+         *  buried as bullet #8. Visible just below the Path A
+         *  cards so any operator who scrolls past the audit price
+         *  sees the risk reversal before they bounce. Lime accent
+         *  border, ShieldCheck icon, terse + promise-shaped copy
+         *  matching the homepage's other small-card vocabulary
+         *  (the "Multiple locations? Add them linearly" affordance
+         *  on Path B). Audit + Strategy share the guarantee — both
+         *  tiers' purchases trigger the 30-day re-scan + 60-day
+         *  check-in flow that the promise is grounded in. */}
+        <div
+          className="mt-10 mx-auto max-w-3xl rounded-lg border p-5 flex items-start gap-3"
+          style={{
+            background: 'var(--color-card-glow)',
+            borderColor: 'var(--color-border-bright)',
+            boxShadow: '0 0 24px #c5ff3a14',
+          }}
+        >
+          <ShieldCheck
+            size={18}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div className="text-sm text-zinc-300 leading-relaxed">
+            <span className="font-semibold text-zinc-100">
+              Backed by the TurfScore Lift Promise.
+            </span>{' '}
+            <span className="text-zinc-400">
+              Every Visibility Audit and Strategy Session ships with a{' '}
+              <strong className="font-semibold text-zinc-200">
+                minimum 10-point TurfScore lift in 30 days
+              </strong>{' '}
+              — measured by the automated re-scan that&rsquo;s built
+              into your audit. If your map doesn&rsquo;t move 10 points
+              after you&rsquo;ve executed the 90-Day Roadmap,{' '}
+              <strong className="font-semibold text-zinc-200">
+                we redo the analysis at no charge.
+              </strong>
+            </span>
+          </div>
+        </div>
+
         <PathFooterNote>
           Audit buyers who decide they want full implementation typically
           engage{' '}
@@ -527,9 +572,11 @@ export default function MarketingLanding() {
                     queries in parallel against Google&rsquo;s local-pack feed.
                     After you fill in your business details on the order form,
                     you&rsquo;ll get an email with a link to your map and your
-                    AI Coach playbook. The Visibility Audit and Strategy
-                    Session add our strategist&rsquo;s written diagnosis,
-                    which lands within 2 business days.
+                    AI Coach Fix List. The Visibility Audit adds a 30-min
+                    strategist call (you pick the slot), and the 90-Day
+                    Roadmap PDF lands within 24 hours of that call. Strategy
+                    Session adds a 90-min strategist deep-dive scheduled
+                    within 2 business days.
                   </>
                 ),
               },
@@ -652,6 +699,26 @@ export default function MarketingLanding() {
                     area to show you where you&rsquo;re visible, where
                     you&rsquo;re not, and what to fix. You&rsquo;re paying
                     for the diagnosis and the fix list, not just the data.
+                  </>
+                ),
+              },
+              {
+                q: "What if my TurfScore doesn't go up after the Visibility Audit?",
+                a: (
+                  <>
+                    Every Visibility Audit ships with a{' '}
+                    <strong className="font-semibold text-zinc-200">
+                      10-point TurfScore Lift Promise
+                    </strong>
+                    : if your 30-day automated re-scan doesn&rsquo;t
+                    show at least a 10-point lift after you&rsquo;ve
+                    executed the 90-Day Roadmap, we redo the analysis
+                    at no charge. The 60-day strategist check-in
+                    catches anything the first roadmap missed and
+                    adjusts the plan. The promise is the contract —
+                    we wouldn&rsquo;t put it in writing if it
+                    didn&rsquo;t hold up across the categories we
+                    work in.
                   </>
                 ),
               },
