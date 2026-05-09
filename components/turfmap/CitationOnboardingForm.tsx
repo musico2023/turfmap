@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, Plus, X } from 'lucide-react';
+import { ChevronRight, Loader2, Plus, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { CategoryCombobox } from '@/components/turfmap/CategoryCombobox';
 import { GBP_CATEGORIES } from '@/lib/citations/gbp-categories';
@@ -93,6 +93,9 @@ export function CitationOnboardingForm({
   const [website, setWebsite] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [hours, setHours] = useState<Record<string, DayState>>(DEFAULT_HOURS);
 
   const [submitting, setSubmitting] = useState(false);
@@ -118,6 +121,46 @@ export function CitationOnboardingForm({
   };
   const onRemovePhoto = (u: string) =>
     setPhotos(photos.filter((x) => x !== u));
+
+  const onUploadFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const remaining = 10 - photos.length;
+      const slice = Array.from(files).slice(0, remaining);
+      const uploaded: string[] = [];
+      for (const file of slice) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('client_id', clientId);
+        fd.append('location_id', locationId);
+        const res = await fetch('/api/citations/photos', {
+          method: 'POST',
+          body: fd,
+        });
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok || !data.url) {
+          throw new Error(
+            data.error ?? `upload failed (HTTP ${res.status}) — ${file.name}`
+          );
+        }
+        uploaded.push(data.url);
+      }
+      setPhotos((prev) => {
+        const next = [...prev];
+        for (const url of uploaded) {
+          if (!next.includes(url)) next.push(url);
+        }
+        return next.slice(0, 10);
+      });
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const updateDay = (key: string, patch: Partial<DayState>) =>
     setHours((s) => ({ ...s, [key]: { ...s[key], ...patch } }));
@@ -324,6 +367,7 @@ export function CitationOnboardingForm({
                       value={d.open}
                       onChange={(e) => updateDay(key, { open: e.target.value })}
                       className={`${inputClass} w-[140px]`}
+                      style={{ colorScheme: 'dark' }}
                       required
                     />
                     <span className="text-zinc-600">–</span>
@@ -332,6 +376,7 @@ export function CitationOnboardingForm({
                       value={d.close}
                       onChange={(e) => updateDay(key, { close: e.target.value })}
                       className={`${inputClass} w-[140px]`}
+                      style={{ colorScheme: 'dark' }}
                       required
                     />
                   </>
@@ -343,56 +388,125 @@ export function CitationOnboardingForm({
       </Section>
 
       {/* Photos */}
-      <Section title="Photos" subtitle="Up to 10 public URLs. Storefront, team, work-in-progress all good.">
-        <Field label={`Photo URLs (${photos.length}/10)`} help="Links to publicly-accessible images. Local file uploads coming in a follow-up.">
-          <div className="space-y-2 mb-2">
-            {photos.map((u) => (
-              <div
-                key={u}
-                className="flex items-center gap-2 text-xs font-mono px-3 py-2 rounded border"
+      <Section title="Photos" subtitle="Up to 10 photos. Storefront, team, and work-in-progress all good.">
+        <Field label={`Photos (${photos.length}/10)`} help="JPG, PNG, or WebP up to 5 MB each.">
+          {photos.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+              {photos.map((u) => (
+                <div
+                  key={u}
+                  className="relative group rounded-md overflow-hidden border aspect-[4/3]"
+                  style={{
+                    background: 'var(--color-bg)',
+                    borderColor: 'var(--color-border)',
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={u}
+                    alt="Citation photo"
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onRemovePhoto(u)}
+                    className="absolute top-1.5 right-1.5 rounded-full p-1 bg-black/70 text-zinc-200 hover:text-red-400 hover:bg-black opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {photos.length < 10 ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                className="hidden"
+                onChange={(e) => onUploadFiles(e.target.files)}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full border border-dashed rounded-md px-4 py-6 flex flex-col items-center justify-center gap-2 text-zinc-400 hover:text-zinc-100 hover:border-zinc-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   background: 'var(--color-bg)',
                   borderColor: 'var(--color-border)',
                 }}
               >
-                <span className="flex-1 truncate text-zinc-300">{u}</span>
-                <button
-                  type="button"
-                  onClick={() => onRemovePhoto(u)}
-                  className="text-zinc-500 hover:text-red-400"
-                  title="Remove"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={newPhotoUrl}
-              onChange={(e) => setNewPhotoUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  onAddPhoto();
-                }
+                {uploading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span className="text-xs font-mono">Uploading…</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={18} />
+                    <span className="text-sm font-semibold">Upload photos</span>
+                    <span className="text-[11px] text-zinc-600 font-mono">
+                      JPG, PNG, WebP · max 5 MB each · up to {10 - photos.length} more
+                    </span>
+                  </>
+                )}
+              </button>
+
+              {uploadError && (
+                <p className="text-xs text-red-400 font-mono mt-2">
+                  {uploadError}
+                </p>
+              )}
+
+              {/* URL paste fallback for the rare case the operator
+                  already has a hosted asset URL in hand. Hidden behind
+                  a details tag so it doesn't crowd the upload CTA. */}
+              <details className="mt-3 group">
+                <summary className="text-[11px] text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors select-none list-none">
+                  Have a URL instead? Paste it here →
+                </summary>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="url"
+                    value={newPhotoUrl}
+                    onChange={(e) => setNewPhotoUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onAddPhoto();
+                      }
+                    }}
+                    placeholder="https://..."
+                    className={inputClass}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    onClick={onAddPhoto}
+                    disabled={!newPhotoUrl.trim()}
+                    leftIcon={<Plus size={12} />}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </details>
+            </>
+          ) : (
+            <div
+              className="text-[11px] text-zinc-600 font-mono px-3 py-2 rounded border text-center"
+              style={{
+                background: 'var(--color-bg)',
+                borderColor: 'var(--color-border)',
               }}
-              placeholder="https://..."
-              className={inputClass}
-              disabled={photos.length >= 10}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              size="md"
-              onClick={onAddPhoto}
-              disabled={!newPhotoUrl.trim() || photos.length >= 10}
-              leftIcon={<Plus size={12} />}
             >
-              Add
-            </Button>
-          </div>
+              Max of 10 photos reached.
+            </div>
+          )}
         </Field>
       </Section>
 
