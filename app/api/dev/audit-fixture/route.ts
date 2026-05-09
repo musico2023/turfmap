@@ -220,6 +220,10 @@ export async function GET(req: Request) {
   // of the AI generators.
   const napFindings = parseNapFindings(fixture.roadmap.napFindingsSummary);
   const competitors = parseCompetitors(fixture.roadmap.competitorSummary);
+  // Synthetic 81-cell heatmap matching the profile's described
+  // pattern. In production the cells come from the buyer's
+  // scan_points table; this is dev-fixture-only.
+  const cells = synthesizeCellsForProfile(profileKey);
 
   return NextResponse.json({
     profile: profileKey,
@@ -236,6 +240,7 @@ export async function GET(req: Request) {
       auditDate: new Date().toISOString().slice(0, 10),
       napFindings,
       competitors,
+      cells,
     },
     fit: fitBreakdown,
     roadmap: {
@@ -277,12 +282,93 @@ function parseNapFindings(
     .filter(Boolean)
     .map((line) => {
       const lower = line.toLowerCase();
+      // Order matters. "live, but address unit-number missing" contains
+      // both "missing" and "live" — the inconsistency keywords have
+      // to win first, otherwise the row gets a red MISSING pill when
+      // it's actually a partially-functional listing with NAP issues.
+      const inconsistencyHit =
+        lower.includes('inconsistency') ||
+        lower.includes('inconsistent') ||
+        lower.includes('differs') ||
+        lower.includes('mismatch') ||
+        // "live, but X missing" — the "live, but" hedge is our signal
+        // that the row is technically live but has quality issues.
+        /\blive,\s*but\b/.test(lower);
       let status: 'MISSING' | 'INCONSISTENT' | 'LIVE';
-      if (lower.includes('missing')) status = 'MISSING';
-      else if (lower.includes('inconsistency') || lower.includes('inconsistent')) status = 'INCONSISTENT';
+      if (inconsistencyHit) status = 'INCONSISTENT';
+      else if (lower.includes('missing')) status = 'MISSING';
       else status = 'LIVE';
       return { status, text: line };
     });
+}
+
+/**
+ * Generate 81 synthetic cells matching each fixture's narrative.
+ * Production reads cells from scan_points; this is the dev-only
+ * stand-in that keeps the cover heatmap responsive to the profile
+ * being viewed.
+ *
+ * Conventions: x=0..8 left→right, y=0..8 top→bottom. Center is (4,4).
+ * Rank: null = absent / not in pack. 1-3 = lime top-3. 4-10 yellow.
+ * 11-20 orange. >20 red.
+ */
+function synthesizeCellsForProfile(
+  profileKey: string
+): Array<{ x: number; y: number; rank: number | null }> {
+  const cells: Array<{ x: number; y: number; rank: number | null }> = [];
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const distFromCenter = Math.sqrt((x - 4) ** 2 + (y - 4) ** 2);
+      let rank: number | null;
+
+      if (profileKey === 'high') {
+        // HVAC fixture: visible only within ~1.5mi of HQ, dark in
+        // SE + N quadrants. Center cells top-3, near-center top-10,
+        // SE/N dark.
+        const inSEQuadrant = x > 5 && y > 5;
+        const inNQuadrant = y < 2;
+        if (distFromCenter < 1.5) {
+          rank = Math.max(1, Math.round(distFromCenter) + 1);
+        } else if (inSEQuadrant || inNQuadrant) {
+          rank = null; // dark
+        } else if (distFromCenter < 3) {
+          rank = Math.round(4 + distFromCenter * 2);
+        } else {
+          rank = null; // out of pack
+        }
+      } else if (profileKey === 'low') {
+        // Landscaper fixture: 9 of 81 cells, all clustered within
+        // 1mi of HQ. Almost everywhere dark.
+        if (distFromCenter < 1.5) {
+          rank = Math.round(2 + distFromCenter * 2);
+        } else {
+          rank = null;
+        }
+      } else if (profileKey === 'medium') {
+        // Plumber fixture: holds central + W quadrants, dark in
+        // SE + along lakefront (E edge). 31% TurfReach.
+        const inWQuadrant = x < 4;
+        const inSEQuadrant = x > 5 && y > 5;
+        const inEEdge = x > 6;
+        if (distFromCenter < 1) {
+          rank = Math.max(1, Math.round(distFromCenter) + 1);
+        } else if (inWQuadrant && distFromCenter < 4) {
+          rank = Math.round(3 + distFromCenter);
+        } else if (inSEQuadrant || inEEdge) {
+          rank = null;
+        } else if (distFromCenter < 3) {
+          rank = Math.round(8 + distFromCenter);
+        } else {
+          rank = null;
+        }
+      } else {
+        rank = null;
+      }
+
+      cells.push({ x, y, rank });
+    }
+  }
+  return cells;
 }
 
 function parseCompetitors(
@@ -307,10 +393,15 @@ function parseCompetitors(
         return { name: line.replace(/^\d+\.\s*/, ''), turfScore: 0 };
       }
       const [, name, score, differential] = match;
+      // Don't strip trailing `)` — earlier I assumed it was a regex
+      // artifact, but the fixture data legitimately contains
+      // "(380 reviews vs. buyer 218)" where the closing paren is part
+      // of the meaningful prose. Stripping it produced unbalanced
+      // parens in the rendered PDF.
       return {
         name: name.trim(),
         turfScore: Number(score),
-        differential: differential ? differential.replace(/[)]+$/, '').trim() : undefined,
+        differential: differential ? differential.trim() : undefined,
       };
     });
 }

@@ -186,6 +186,7 @@ async function FixtureResult({ profileKey }: { profileKey: string }) {
     })),
     napFindings: payload.buyer.napFindings,
     competitors: payload.buyer.competitors,
+    cells: payload.buyer.cells,
     ninetyDayTargetLift: payload.roadmap.ninetyDayTargetLift,
   };
 
@@ -416,6 +417,11 @@ type FixturePayload = {
       name: string;
       turfScore: number;
       differential?: string;
+    }>;
+    cells: Array<{
+      x: number;
+      y: number;
+      rank: number | null;
     }>;
   };
   fit: {

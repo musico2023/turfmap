@@ -71,6 +71,12 @@ const PdfCompetitorSchema = z.object({
   differential: z.string().optional(),
 });
 
+const PdfCellSchema = z.object({
+  x: z.number().int().min(0).max(8),
+  y: z.number().int().min(0).max(8),
+  rank: z.number().int().nullable(),
+});
+
 const PdfDataSchema = z.object({
   businessName: z.string().min(1),
   trade: z.string().min(1),
@@ -82,6 +88,7 @@ const PdfDataSchema = z.object({
   actions: z.array(PdfActionSchema).min(1),
   napFindings: z.array(PdfNapFindingSchema),
   competitors: z.array(PdfCompetitorSchema),
+  cells: z.array(PdfCellSchema).optional(),
   ninetyDayTargetLift: z.number().int().min(0),
 });
 

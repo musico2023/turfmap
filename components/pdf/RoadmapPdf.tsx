@@ -37,6 +37,8 @@ import {
   Svg,
   Rect,
   Line,
+  Circle,
+  G,
 } from '@react-pdf/renderer';
 import { ACTION_CATEGORY_BY_ID } from '@/lib/audit/actionCategories';
 import type {
@@ -130,7 +132,10 @@ const styles = StyleSheet.create({
   italic: { fontStyle: 'italic' },
 
   // ─── Page 1 — cover ─────────────────────────────────────────────────
-  coverHero: { marginTop: 24, marginBottom: 20 },
+  // Tightened from the v1 first-render: page now also carries the
+  // heatmap so the title block needs to step out of the way. Title
+  // shrinks from 28→24pt, hero margins compact, sub copy moves up.
+  coverHero: { marginTop: 8, marginBottom: 14 },
   coverEyebrow: {
     fontSize: 8,
     color: C.lime,
@@ -139,38 +144,38 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   coverTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 700,
     color: C.text,
-    lineHeight: 1.05,
-    marginBottom: 10,
+    lineHeight: 1.1,
+    marginBottom: 8,
   },
   coverSub: {
-    fontSize: 11,
+    fontSize: 10,
     color: C.textDim,
     lineHeight: 1.5,
-    marginBottom: 4,
+    marginBottom: 2,
   },
 
   scoreRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 18,
-    marginBottom: 18,
+    marginTop: 0,
+    marginBottom: 12,
   },
   scoreCell: {
     flex: 1,
     backgroundColor: C.card,
     border: `1px solid ${C.border}`,
     borderRadius: 6,
-    padding: 12,
+    padding: 10,
   },
   scoreCellHi: {
     flex: 1,
     backgroundColor: C.cardGlow,
     border: `1px solid ${C.borderBright}`,
     borderRadius: 6,
-    padding: 12,
+    padding: 10,
   },
   scoreLabel: {
     fontSize: 7,
@@ -178,15 +183,39 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     marginBottom: 4,
   },
-  scoreValue: { fontSize: 28, color: C.text, fontWeight: 700, lineHeight: 1 },
+  scoreValue: { fontSize: 24, color: C.text, fontWeight: 700, lineHeight: 1 },
   scoreValueLime: {
-    fontSize: 28,
+    fontSize: 24,
     color: C.lime,
     fontWeight: 700,
     lineHeight: 1,
   },
   scoreSub: { fontSize: 8, color: C.textMuted, marginTop: 4 },
 
+  // Cover-page heatmap container. Sits between the title block and
+  // the score cards so the buyer's first visceral impression of the
+  // document is "yes, that's actually my map" rather than "yet
+  // another deliverable."
+  coverHeatmapBox: {
+    backgroundColor: C.card,
+    border: `1px solid ${C.border}`,
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 16,
+  },
+  coverHeatmapLabel: {
+    fontSize: 7,
+    color: C.textMuted,
+    letterSpacing: 1.4,
+    marginBottom: 8,
+    fontWeight: 700,
+  },
+  coverHeatmapLegend: {
+    fontSize: 7,
+    color: C.textFaint,
+    marginTop: 8,
+    textAlign: 'center',
+  },
   promiseBox: {
     backgroundColor: C.cardGlow,
     border: `1px solid ${C.borderBright}`,
@@ -230,18 +259,39 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     border: `1px solid ${C.border}`,
     borderRadius: 6,
-    padding: 10,
+    padding: 12,
     marginBottom: 6,
-    alignItems: 'center',
+    // alignItems: 'flex-start' so the rank number sits at the top of
+    // the row and the inner name/differential column flows beneath
+    // each other naturally. The previous 'center' was collapsing the
+    // inner column and overlapping name + differential on the first
+    // render.
+    alignItems: 'flex-start',
   },
   competitorRank: {
     fontSize: 18,
     color: C.textMuted,
     fontWeight: 700,
     width: 28,
+    paddingTop: 1,
   },
-  competitorName: { fontSize: 11, color: C.text, fontWeight: 700, flex: 1 },
-  competitorScore: { fontSize: 14, color: C.lime, fontWeight: 700, marginLeft: 8 },
+  competitorBody: {
+    flex: 1,
+    flexDirection: 'column',
+    paddingRight: 12,
+  },
+  competitorName: {
+    fontSize: 11,
+    color: C.text,
+    fontWeight: 700,
+    marginBottom: 3,
+  },
+  competitorDiff: {
+    fontSize: 8.5,
+    color: C.textDim,
+    lineHeight: 1.45,
+  },
+  competitorScore: { fontSize: 18, color: C.lime, fontWeight: 700, paddingTop: 1 },
 
   compoundCallout: {
     backgroundColor: C.cardGlow,
@@ -272,10 +322,15 @@ const styles = StyleSheet.create({
     fontSize: 7,
     fontWeight: 700,
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 3,
-    marginRight: 8,
-    width: 56,
+    marginRight: 10,
+    // Wide enough that "MISMATCH" + "MISSING" + "LIVE" all fit on a
+    // single line without the 'INCONSISTENT' wrapping bug we saw on
+    // the first render. Using "MISMATCH" instead of "INCONSISTENT"
+    // is a deliberate copy choice — same meaning, half the chars,
+    // and reads as more concrete to a non-technical buyer.
+    width: 72,
     textAlign: 'center',
   },
   napText: { fontSize: 9, color: C.text, flex: 1, lineHeight: 1.4 },
@@ -325,11 +380,21 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     paddingTop: 1,
   },
+  rmLlmTagCell: {
+    width: 24,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 3,
+  },
+  // Replaces the 📍 emoji that Helvetica can't render. A small
+  // lime-filled square is unambiguous in a dark-themed table and
+  // carries the same "this row is LLM-covered" semantic as the pin
+  // emoji, but with a glyph the PDF font stack actually has.
   rmLlmTag: {
-    width: 18,
-    fontSize: 8,
-    textAlign: 'center',
-    paddingTop: 1,
+    width: 8,
+    height: 8,
+    backgroundColor: C.lime,
+    borderRadius: 1.5,
   },
   priorityPill: {
     width: 36,
@@ -381,7 +446,33 @@ const styles = StyleSheet.create({
     padding: 10,
     alignItems: 'center',
   },
-  pillarMiniIcon: { fontSize: 16, marginBottom: 4 },
+  pillarMiniAccent: {
+    flex: 1,
+    backgroundColor: C.cardGlow,
+    border: `1px solid ${C.borderBright}`,
+    borderRadius: 6,
+    padding: 10,
+    alignItems: 'center',
+  },
+  // Replaces the pillar emojis (📍 🎯 ⚙️) — Helvetica can't render
+  // them. A small lime square is the implicit "this is the visibility
+  // pillar your roadmap covers" marker; the muted variant is for the
+  // other two pillars where we want presence-without-emphasis so the
+  // page-6 segue lands harder.
+  pillarMiniDot: {
+    width: 10,
+    height: 10,
+    backgroundColor: C.lime,
+    borderRadius: 2,
+    marginBottom: 6,
+  },
+  pillarMiniDotMuted: {
+    width: 10,
+    height: 10,
+    backgroundColor: C.textFaint,
+    borderRadius: 2,
+    marginBottom: 6,
+  },
   pillarMiniTitle: { fontSize: 8, color: C.text, fontWeight: 700 },
   pillarMiniSub: {
     fontSize: 7,
@@ -415,10 +506,23 @@ const styles = StyleSheet.create({
   pillarIconRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    gap: 8,
+    marginBottom: 10,
   },
-  pillarIcon: { fontSize: 14 },
+  // Larger square markers for the page-6 pillar boxes. Lime variant
+  // for VISIBILITY (your-pillar emphasis), muted for the others.
+  pillarSquare: {
+    width: 14,
+    height: 14,
+    backgroundColor: C.lime,
+    borderRadius: 3,
+  },
+  pillarSquareMuted: {
+    width: 14,
+    height: 14,
+    backgroundColor: C.textFaint,
+    borderRadius: 3,
+  },
   pillarTitle: { fontSize: 11, color: C.text, fontWeight: 700 },
   pillarItem: {
     fontSize: 7.5,
@@ -426,12 +530,18 @@ const styles = StyleSheet.create({
     lineHeight: 1.5,
     marginBottom: 3,
   },
+  // Lime, uppercase, letterspaced — reads as a tag/callout for the
+  // accented VISIBILITY pillar without leaning on a Unicode arrow
+  // glyph the PDF font doesn't have.
   pillarOurs: {
     fontSize: 7,
     color: C.lime,
     fontWeight: 700,
-    marginTop: 6,
-    fontStyle: 'italic',
+    marginTop: 8,
+    paddingTop: 6,
+    borderTop: `1px solid ${C.borderBright}`,
+    letterSpacing: 1.4,
+    textAlign: 'center',
   },
 
   qualifyBox: {
@@ -495,6 +605,16 @@ export type RoadmapPdfCompetitor = {
   differential?: string;
 };
 
+/** One cell on the 9x9 grid. Mirrors the shape used by TurfReport.tsx
+ *  so a future shared module could deduplicate. `rank` is null when
+ *  the buyer doesn't appear in the local pack at all for that cell;
+ *  1-3 means top-3 pack, 4-10 = top-10, 11-20 = top-20, >20 = absent. */
+export type RoadmapPdfCell = {
+  x: number;
+  y: number;
+  rank: number | null;
+};
+
 export type RoadmapPdfData = {
   businessName: string;
   trade: string;
@@ -511,6 +631,12 @@ export type RoadmapPdfData = {
   actions: RoadmapPdfAction[];
   napFindings: RoadmapPdfNapFinding[];
   competitors: RoadmapPdfCompetitor[];
+  /** 81 cells of the geo-grid scan, one per search point on the 9x9
+   *  grid. Optional: when null/empty, page 1 omits the heatmap and
+   *  falls back to the score cards alone. Production fulfillment
+   *  pulls these from the buyer's scan_points table; the dev fixture
+   *  synthesizes them from the cell-pattern summary. */
+  cells?: RoadmapPdfCell[];
   /** Sums computed by the AI generator. The phase totals (4w / 8w /
    *  12w) drive the bar chart on page 5; we recompute here from
    *  actions[] to stay decoupled from the upstream sum logic. */
@@ -586,18 +712,129 @@ function Footer() {
   );
 }
 
+// ─── Cover heatmap (compact 9x9) ──────────────────────────────────────
+//
+// Smaller-than-TurfReport's-version-on-purpose. The TurfReport PDF
+// renders a 320pt-wide hero heatmap; the Roadmap cover is already
+// dense (title + heatmap + score cards + Lift Promise + footer) so
+// this gets a tighter ~280pt canvas + smaller cell radius. Same
+// rank-color tiers as the dashboard so the document reads as
+// continuous with the live product.
+
+const COVER_GRID = 9;
+const COVER_CANVAS = 280;
+const COVER_CELL = COVER_CANVAS / COVER_GRID; // ~31pt
+const COVER_CELL_R = COVER_CELL * 0.42;
+
+function rankColor(rank: number | null): string {
+  if (rank === null) return '#3a3a3a';
+  if (rank <= 3) return C.lime;
+  if (rank <= 10) return '#e8e54a';
+  if (rank <= 20) return C.warn;
+  return C.bad;
+}
+
+function rankLabel(rank: number | null): string {
+  if (rank === null) return '';
+  if (rank > 20) return '20+';
+  return String(rank);
+}
+
+function CoverHeatmap({ cells }: { cells: RoadmapPdfCell[] }) {
+  return (
+    <Svg width={COVER_CANVAS} height={COVER_CANVAS}>
+      {/* Faint grid lines so the 9x9 structure reads even with
+       *  empty cells. Intentionally subtle — same #1f1f1f shade
+       *  TurfReport.tsx uses. */}
+      {Array.from({ length: COVER_GRID + 1 }).map((_, i) => (
+        <G key={`grid-${i}`}>
+          <Line
+            x1={i * COVER_CELL}
+            y1={0}
+            x2={i * COVER_CELL}
+            y2={COVER_CANVAS}
+            stroke="#1f1f1f"
+            strokeWidth={1}
+          />
+          <Line
+            x1={0}
+            y1={i * COVER_CELL}
+            x2={COVER_CANVAS}
+            y2={i * COVER_CELL}
+            stroke="#1f1f1f"
+            strokeWidth={1}
+          />
+        </G>
+      ))}
+
+      {cells.map((c) => {
+        const cx = COVER_CELL / 2 + c.x * COVER_CELL;
+        const cy = COVER_CELL / 2 + c.y * COVER_CELL;
+        const color = rankColor(c.rank);
+        return (
+          <G key={`${c.x}-${c.y}`}>
+            <Circle cx={cx} cy={cy} r={COVER_CELL_R} fill={color} fillOpacity={0.96} />
+            {c.rank !== null && c.rank <= 20 ? (
+              <Text
+                x={cx}
+                y={cy + 3.5}
+                textAnchor="middle"
+                style={{ fontSize: 9, fontWeight: 700 }}
+                fill="black"
+              >
+                {rankLabel(c.rank)}
+              </Text>
+            ) : null}
+          </G>
+        );
+      })}
+
+      {/* center pin */}
+      <Circle
+        cx={COVER_CANVAS / 2}
+        cy={COVER_CANVAS / 2}
+        r={8}
+        fill="white"
+        stroke="black"
+        strokeWidth={2}
+      />
+      <Circle
+        cx={COVER_CANVAS / 2}
+        cy={COVER_CANVAS / 2}
+        r={3.5}
+        fill="black"
+      />
+    </Svg>
+  );
+}
+
 // ─── Page 1: cover + snapshot ─────────────────────────────────────────
 
 function PageCover({ data }: { data: RoadmapPdfData }) {
   const lift = data.projectedTurfScore - data.currentTurfScore;
+  // "a/an" article check — the lift number can be vowel-sound-leading
+  // ("an 8-point lift") or consonant-leading ("a 10-point lift") and
+  // the wrong article reads as a typo to the buyer. English number
+  // pronunciation cheat: 8, 11, 18, and any 8X starts with a vowel
+  // sound; everything else starts with a consonant. This Roadmap's
+  // lift range is realistically 10-40, so the rule is simple.
+  const liftFirstDigit = lift.toString()[0];
+  const liftArticle =
+    liftFirstDigit === '8' || lift === 11 || lift === 18 ? 'an' : 'a';
   return (
     <Page size="LETTER" style={styles.page}>
       <Header data={data} pageLabel="COVER" />
 
       <View style={styles.coverHero}>
         <Text style={styles.coverEyebrow}>VISIBILITY AUDIT — 90-DAY ROADMAP</Text>
+        {/* Line break after "don't." per the buyer-readability pass.
+         *  The previous single-line title wrapped awkwardly at the
+         *  page-margin breakpoint; explicit two-line layout keeps
+         *  the rhetorical beat ("where you win / where you don't /
+         *  what to do next") intact regardless of viewport width. */}
         <Text style={styles.coverTitle}>
-          Where you win. Where you don&apos;t. What to do next.
+          Where you win. Where you don&apos;t.{'\n'}
+          What to do next.
         </Text>
         <Text style={styles.coverSub}>
           {data.businessName} — {data.trade} in {data.market}
@@ -606,6 +843,20 @@ function PageCover({ data }: { data: RoadmapPdfData }) {
           81-point geo-grid scan, completed {data.auditDate}.
         </Text>
       </View>
+
+      {data.cells && data.cells.length > 0 ? (
+        <View style={styles.coverHeatmapBox}>
+          <Text style={styles.coverHeatmapLabel}>
+            CURRENT TERRITORY HEATMAP — 81 SEARCH POINTS, 1.6mi RADIUS
+          </Text>
+          <View style={{ alignItems: 'center' }}>
+            <CoverHeatmap cells={data.cells} />
+          </View>
+          <Text style={styles.coverHeatmapLegend}>
+            Lime = top-3 pack · Yellow/orange = top-10 · Red = top-20 · Gray = absent
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.scoreRow}>
         <View style={styles.scoreCell}>
@@ -625,18 +876,12 @@ function PageCover({ data }: { data: RoadmapPdfData }) {
       <View style={styles.promiseBox}>
         <Text style={styles.promiseLabel}>TURFSCORE LIFT PROMISE</Text>
         <Text style={styles.promiseText}>
-          We&apos;re projecting a {lift}-point lift to {data.projectedTurfScore} in
-          30 days based on this Roadmap. Minimum 10-point lift in 30
-          days, or we redo the analysis at no charge.
+          We&apos;re projecting {liftArticle} {lift}-point lift to{' '}
+          {data.projectedTurfScore} in 30 days based on this Roadmap.
+          Minimum 10-point lift in 30 days, or we redo the analysis at
+          no charge.
         </Text>
       </View>
-
-      <Text style={[styles.bodyTight, { marginTop: 18, color: C.textMuted }]}>
-        This document distills your 81-point geo-grid scan, NAP audit
-        findings, and competitive context into a 12-week execution
-        plan. Each action carries a projected lift; complete weeks
-        1–4 to hit the 30-day target.
-      </Text>
 
       <Footer />
     </Page>
@@ -665,14 +910,12 @@ function PageGap({ data }: { data: RoadmapPdfData }) {
         </Text>
       ) : (
         data.competitors.slice(0, 3).map((c, i) => (
-          <View key={i} style={styles.competitorRow}>
+          <View key={i} style={styles.competitorRow} wrap={false}>
             <Text style={styles.competitorRank}>{i + 1}</Text>
-            <View style={{ flex: 1 }}>
+            <View style={styles.competitorBody}>
               <Text style={styles.competitorName}>{c.name}</Text>
               {c.differential ? (
-                <Text style={[styles.bodyTight, { marginTop: 2 }]}>
-                  {c.differential}
-                </Text>
+                <Text style={styles.competitorDiff}>{c.differential}</Text>
               ) : null}
             </View>
             <Text style={styles.competitorScore}>{c.turfScore}</Text>
@@ -715,6 +958,12 @@ function PageNap({ data }: { data: RoadmapPdfData }) {
         ) : (
           data.napFindings.map((f, i) => {
             const s = napStatusStyle(f.status);
+            // Display label is decoupled from the canonical status
+            // value so we keep type strictness internally while
+            // shipping shorter, more buyer-readable pills.
+            // INCONSISTENT → MISMATCH (8 chars vs. 12, fits the pill).
+            const pillLabel =
+              f.status === 'INCONSISTENT' ? 'MISMATCH' : f.status;
             return (
               <View key={i} style={styles.napFinding}>
                 <Text
@@ -723,7 +972,7 @@ function PageNap({ data }: { data: RoadmapPdfData }) {
                     { backgroundColor: s.bg, color: s.fg },
                   ]}
                 >
-                  {f.status}
+                  {pillLabel}
                 </Text>
                 <Text style={styles.napText}>{f.text}</Text>
               </View>
@@ -752,8 +1001,8 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
 
       <Text style={styles.h2}>The 90-day Roadmap</Text>
       <Text style={[styles.bodyTight, { marginBottom: 6 }]}>
-        Each row carries a projected TurfScore lift in points. Tagged
-        actions (📍) are part of Fourdots Digital&apos;s Local Lead Machine —
+        Each row carries a projected TurfScore lift in points. Lime-tagged
+        actions are part of Fourdots Digital&apos;s Local Lead Machine —
         done-for-you implementation discussed on the strategist call.
       </Text>
 
@@ -784,7 +1033,9 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
                   <Text style={styles.rmAction}>{a.action}</Text>
                   <Text style={styles.rmDifficulty}>{a.difficulty}</Text>
                   <Text style={styles.rmLift}>+{a.projectedScoreLift}</Text>
-                  <Text style={styles.rmLlmTag}>{a.llmCovered ? '📍' : ''}</Text>
+                  <View style={styles.rmLlmTagCell}>
+                    {a.llmCovered ? <View style={styles.rmLlmTag} /> : null}
+                  </View>
                 </View>
               );
             })}
@@ -794,7 +1045,7 @@ function PageRoadmap({ data }: { data: RoadmapPdfData }) {
 
       <View style={styles.llmCallout}>
         <Text>
-          Tagged actions (📍) are part of Fourdots Digital&apos;s Local Lead
+          Lime-tagged actions are part of Fourdots Digital&apos;s Local Lead
           Machine — done-for-you implementation that includes
           visibility, demand generation, and lead-capture systems.
           We&apos;ll discuss whether your operation is a fit on the
@@ -841,7 +1092,7 @@ function PageProjection({ data }: { data: RoadmapPdfData }) {
 
       <View style={styles.chartBox}>
         <Text style={styles.chartLabel}>
-          PROJECTED TURFSCORE BY PHASE — START → 90 DAYS
+          PROJECTED TURFSCORE BY PHASE — START TO 90 DAYS
         </Text>
         <Svg width={CHART_W} height={CHART_H + 24}>
           {/* Y-axis baseline */}
@@ -911,20 +1162,20 @@ function PageProjection({ data }: { data: RoadmapPdfData }) {
       </Text>
 
       <View style={styles.pillarRow}>
-        <View style={styles.pillarMini}>
-          <Text style={styles.pillarMiniIcon}>📍</Text>
+        <View style={styles.pillarMiniAccent}>
+          <View style={styles.pillarMiniDot} />
           <Text style={styles.pillarMiniTitle}>VISIBILITY</Text>
           <Text style={styles.pillarMiniSub}>This audit + roadmap</Text>
         </View>
         <View style={styles.pillarMini}>
-          <Text style={styles.pillarMiniIcon}>🎯</Text>
+          <View style={styles.pillarMiniDotMuted} />
           <Text style={styles.pillarMiniTitle}>DEMAND</Text>
           <Text style={styles.pillarMiniSub}>
             Google + Meta ads, conversion funnel
           </Text>
         </View>
         <View style={styles.pillarMini}>
-          <Text style={styles.pillarMiniIcon}>⚙️</Text>
+          <View style={styles.pillarMiniDotMuted} />
           <Text style={styles.pillarMiniTitle}>SYSTEMS</Text>
           <Text style={styles.pillarMiniSub}>
             Email follow-up, CRM, attribution
@@ -960,7 +1211,7 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
       <View style={styles.pillar3Row}>
         <View style={styles.pillarBox}>
           <View style={styles.pillarIconRow}>
-            <Text style={styles.pillarIcon}>🎯</Text>
+            <View style={styles.pillarSquareMuted} />
             <Text style={styles.pillarTitle}>DEMAND</Text>
           </View>
           <Text style={styles.pillarItem}>• Google Ads (search + Performance Max)</Text>
@@ -971,7 +1222,7 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
 
         <View style={styles.pillarBoxAccent}>
           <View style={styles.pillarIconRow}>
-            <Text style={styles.pillarIcon}>📍</Text>
+            <View style={styles.pillarSquare} />
             <Text style={styles.pillarTitle}>VISIBILITY</Text>
           </View>
           <Text style={styles.pillarItem}>• Google Business Profile optimization</Text>
@@ -979,12 +1230,12 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
           <Text style={styles.pillarItem}>• Top-30 directory NAP consistency</Text>
           <Text style={styles.pillarItem}>• LocalBusiness schema integration</Text>
           <Text style={styles.pillarItem}>• GBP photo asset system</Text>
-          <Text style={styles.pillarOurs}>← Your Roadmap covers this pillar.</Text>
+          <Text style={styles.pillarOurs}>YOUR ROADMAP COVERS THIS PILLAR</Text>
         </View>
 
         <View style={styles.pillarBox}>
           <View style={styles.pillarIconRow}>
-            <Text style={styles.pillarIcon}>⚙️</Text>
+            <View style={styles.pillarSquareMuted} />
             <Text style={styles.pillarTitle}>SYSTEMS</Text>
           </View>
           <Text style={styles.pillarItem}>• Automated email follow-up sequences</Text>

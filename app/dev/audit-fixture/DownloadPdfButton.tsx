@@ -42,6 +42,7 @@ type PdfPayload = {
     turfScore: number;
     differential?: string;
   }>;
+  cells: Array<{ x: number; y: number; rank: number | null }>;
   ninetyDayTargetLift: number;
 };
 
