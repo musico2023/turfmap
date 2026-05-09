@@ -9,9 +9,9 @@ import { buildHeroCells, HERO_METRICS } from './heroSeed';
 /**
  * Rotating vertical labels for the hero eyebrow. Cycles every
  * ROTATE_MS ms with a CSS opacity fade so the swap doesn't yank the
- * reader's eye. Container width is fixed at 11ch so the longest
- * label ("LANDSCAPERS", 11 chars) doesn't shift the layout when
- * shorter labels render.
+ * reader's eye. Container width is fixed (see minWidth below) so
+ * the longest label doesn't shift the layout when shorter labels
+ * render.
  */
 const ROTATING_LABELS = [
   'BUSINESSES',
@@ -49,12 +49,25 @@ function RotatingLabel() {
   // children don't contribute to the inline-block's layout box; the
   // 1em / lh:1 keeps the eyebrow vertically aligned with the
   // surrounding "Google Maps audit for local … · from $99" text.
+  // minWidth needs to fit the widest label *with the parent's
+  // 0.22em letter-spacing baked in*, not just the raw character
+  // count. "LANDSCAPERS" is 11 chars; with 0.22em tracking each
+  // glyph occupies ~1.22ch of horizontal space, so the actual
+  // rendered width is ~13.5ch. The previous 11ch min was too tight
+  // for "HVAC PROS" (9 chars + space, ~11ch tracked) and forced the
+  // absolute child to wrap at the space — "HVAC" on one line, "PROS"
+  // pushed to a second line, mangling the eyebrow. 14ch gives us
+  // headroom for the widest entry without shifting surrounding text.
+  //
+  // whiteSpace: nowrap on the inner spans is the belt-and-suspenders
+  // — even if a future label exceeds the container width, it won't
+  // wrap, it'll just overflow visually (catchable in QA).
   return (
     <span
       style={{
         position: 'relative',
         display: 'inline-block',
-        minWidth: '11ch',
+        minWidth: '14ch',
         height: '1em',
         lineHeight: 1,
         textAlign: 'left',
@@ -73,6 +86,7 @@ function RotatingLabel() {
             color: 'var(--color-lime)',
             opacity: i === idx ? 1 : 0,
             transition: `opacity ${FADE_MS}ms ease-in-out`,
+            whiteSpace: 'nowrap',
           }}
         >
           {label}
