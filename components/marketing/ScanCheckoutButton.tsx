@@ -43,7 +43,7 @@ export type ScanCheckoutButtonProps = {
 };
 
 /**
- * Single-purpose CTA button for the /scan exit-intent lander.
+ * Single-purpose CTA button for the /fourdots exit-intent lander.
  *
  * Bundles: loading state, attribution-aware checkout-API call, GA4
  * `begin_checkout` event firing, and a graceful error fallback that

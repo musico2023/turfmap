@@ -331,7 +331,7 @@ async function syncSubscription(
   // and the new status is 'active', the buyer's trial ended and the
   // first $39 charge succeeded. Fire to GA4 via Measurement Protocol
   // so the funnel report can attribute the conversion to the source
-  // campaign (utm_source/utm_medium that the original /scan attach
+  // campaign (utm_source/utm_medium that the original /fourdots attach
   // session stamped on subscription metadata). Fire-and-forget — the
   // event is telemetry, not business-critical.
   if (

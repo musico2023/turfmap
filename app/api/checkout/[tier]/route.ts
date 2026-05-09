@@ -155,7 +155,7 @@ export async function POST(
   const cadenceParam = url.searchParams.get('cadence');
   const cadence: Cadence = isCadence(cadenceParam) ? cadenceParam : 'monthly';
 
-  // Coupon + attribution params. The /scan lander forwards these from
+  // Coupon + attribution params. The /fourdots lander forwards these from
   // the popup URL so the buyer never has to manually paste a code on
   // the Stripe checkout page, and so we can attribute the conversion
   // back to the source campaign in Stripe + GA4.
