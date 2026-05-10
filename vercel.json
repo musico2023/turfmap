@@ -7,7 +7,7 @@
     },
     {
       "path": "/api/cron/poll-citations",
-      "schedule": "0 12 * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/reset-citation-quotas",

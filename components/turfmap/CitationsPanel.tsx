@@ -4,6 +4,7 @@ import type {
   CitationDirectoryEntry,
   CitationOrderRow,
 } from '@/lib/supabase/types';
+import { PollCitationsNowButton } from '@/components/turfmap/PollCitationsNowButton';
 
 /**
  * Pulse+ "Citations" panel rendered on the agency dashboard.
@@ -104,16 +105,19 @@ export function CitationsPanel({
             {needsReviewCount > 0 && ` · ${needsReviewCount} need attention`}
           </p>
         </div>
-        <span
-          className="text-[10px] uppercase tracking-[0.18em] font-semibold px-2 py-1 rounded font-mono whitespace-nowrap"
-          style={{
-            color: TONE_COLOR[statusInfo.tone],
-            border: `1px solid ${TONE_COLOR[statusInfo.tone]}33`,
-            background: `${TONE_COLOR[statusInfo.tone]}10`,
-          }}
-        >
-          {statusInfo.label}
-        </span>
+        <div className="flex items-center gap-2">
+          <PollCitationsNowButton orderId={order.id} />
+          <span
+            className="text-[10px] uppercase tracking-[0.18em] font-semibold px-2 py-1 rounded font-mono whitespace-nowrap"
+            style={{
+              color: TONE_COLOR[statusInfo.tone],
+              border: `1px solid ${TONE_COLOR[statusInfo.tone]}33`,
+              background: `${TONE_COLOR[statusInfo.tone]}10`,
+            }}
+          >
+            {statusInfo.label}
+          </span>
+        </div>
       </div>
 
       {/* Progress bar — % live */}

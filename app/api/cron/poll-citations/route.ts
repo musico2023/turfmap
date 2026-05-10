@@ -1,17 +1,20 @@
 /**
  * Vercel Cron — citation-order status polling.
  *
- * Schedule (vercel.json): daily at 12:00 UTC. Was every 6 hours
- * pre-Hobby-tier-limit (commit 50a14bb downgraded to daily).
+ * Schedule (vercel.json): hourly. Citation orders typically resolve
+ * over 6-8 weeks so the cadence is conservative, but going hourly
+ * lets fresh submissions show progress within an hour rather than
+ * up to a full day. Vercel Cron skips a tick if the previous one is
+ * still running, so overlap isn't a concern.
+ *
+ * Operators who want immediate feedback can trigger a single-order
+ * poll on demand via POST /api/citations/poll (agency-gated; no
+ * CRON_SECRET required) — see the "Poll now" button in
+ * components/turfmap/CitationsPanel.tsx.
  *
  * For each citation_orders row in queued/in_progress state (and not
- * paused), polls the citation directory for the latest per-directory
- * status, rewrites per_directory + status on the row, and stamps
- * updated_at.
- *
- * No fan-out — citation orders typically resolve over 6-8 weeks, so
- * a daily cadence is plenty. Vercel Cron will skip a tick if the
- * previous one is still running, so we don't worry about overlap.
+ * paused), polls BL for the latest per-directory status, rewrites
+ * per_directory + status on the row, and stamps updated_at.
  *
  * Auth: `Authorization: Bearer ${CRON_SECRET}` — same pattern as the
  * weekly-scans cron. Vercel Cron sets this header automatically when
