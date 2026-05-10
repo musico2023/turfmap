@@ -61,7 +61,7 @@ const Body = z.object({
   client_id: z.string().uuid(),
   location_id: z.string().uuid(),
   profile: ProfileSchema,
-  industry: z.string().max(80).optional(),
+  industry: z.string().max(80).nullish(),
 });
 
 export async function POST(req: Request) {
