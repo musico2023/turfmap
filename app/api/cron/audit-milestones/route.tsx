@@ -385,7 +385,14 @@ async function generateAndEmailPrepForAudit(
       llmFitLabel: llmFitLabel(audit.llm_fit_score ?? 3),
       topFinding: prep.keyFindings[0] ?? 'See prep notes for details.',
       roadmapPdfUrl: upload.roadmapUrl,
-      prepNotesUrl: upload.prepNotesUrl,
+      // Prep notes URL points at our own /api/audit/[id]/prep-notes
+      // route, not the Supabase signed URL. Supabase Storage forces
+      // text/plain + CSP:sandbox on signed-URL HTML responses (XSS
+      // prevention), which makes the styled HTML render as raw
+      // source. Our route fetches the same Storage file server-side
+      // and serves it from www.turfmap.ai with correct Content-Type.
+      // Auth-gated to fourdots-domain operators.
+      prepNotesUrl: `${appOrigin()}/api/audit/${audit.id}/prep-notes`,
       dashboardUrl: `${appOrigin()}/portal/${client.public_id}`,
     },
   });
@@ -394,10 +401,14 @@ async function generateAndEmailPrepForAudit(
 
   // Stamp the audit row. prep_email_sent_at is the gate; the URLs
   // are stored for re-delivery via Phase-4 dashboard if needed.
+  // The roadmap PDF stays on the Supabase signed URL (PDFs aren't
+  // subject to the same CSP downgrade as HTML); the prep-notes URL
+  // points at our route so it survives the same XSS-prevention
+  // flow that breaks signed-URL HTML.
   await patchVisibilityAudit(supabase, audit.id, {
     prep_email_sent_at: new Date().toISOString(),
     roadmap_pdf_url: upload.roadmapUrl,
-    prep_notes_url: upload.prepNotesUrl,
+    prep_notes_url: `${appOrigin()}/api/audit/${audit.id}/prep-notes`,
     lift_promise_target_score: projectedTurfScore,
   });
 
