@@ -33,7 +33,11 @@ const BUCKETS = [
     id: 'audit-roadmaps',
     public: false,
     fileSizeLimit: 10 * 1024 * 1024, // 10 MB — PDFs are typically <100kb
-    allowedMimeTypes: ['application/pdf', 'text/markdown', 'text/plain'],
+    // text/html added in Phase 3.1 — prep notes now render as
+    // styled HTML at upload (see lib/audit/storage.ts) so operators
+    // get a proper-looking deliverable when they open the signed
+    // URL instead of unrendered markdown.
+    allowedMimeTypes: ['application/pdf', 'text/html', 'text/markdown', 'text/plain'],
   },
 ];
 
@@ -42,7 +46,20 @@ async function main() {
   for (const cfg of BUCKETS) {
     const { data: existing } = await supabase.storage.getBucket(cfg.id);
     if (existing) {
-      console.log(`✓ bucket "${cfg.id}" already exists (public=${existing.public})`);
+      // Existing bucket — sync the config in case anything has
+      // drifted (e.g., we added text/html to allowedMimeTypes after
+      // the bucket was first provisioned). updateBucket is a no-op
+      // when nothing changed; cheap to always call.
+      const { error } = await supabase.storage.updateBucket(cfg.id, {
+        public: cfg.public,
+        fileSizeLimit: cfg.fileSizeLimit,
+        allowedMimeTypes: cfg.allowedMimeTypes,
+      });
+      if (error) {
+        console.error(`✗ failed to update "${cfg.id}":`, error.message);
+        process.exit(1);
+      }
+      console.log(`✓ bucket "${cfg.id}" config synced (public=${cfg.public})`);
       continue;
     }
     const { error } = await supabase.storage.createBucket(cfg.id, {

@@ -4,7 +4,7 @@
  * strategist call. Carries:
  *
  *   - The buyer-facing Roadmap PDF (signed Storage URL)
- *   - The internal Strategist Prep Notes markdown (signed Storage URL)
+ *   - The internal Strategist Prep Notes (styled HTML, signed Storage URL)
  *   - Inline summary: TurfScore, LLM Fit Score, biggest finding
  *   - Quick links: buyer dashboard, audit row in agency dashboard
  *
