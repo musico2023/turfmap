@@ -734,7 +734,14 @@ function mapProfileToCreatePayload(
   const flatHours = flattenHoursForBl(p.hours ?? {});
 
   const payload: Record<string, string> = {
+    // BL's /v4/cb/create example shows `location_id` (underscore) but
+    // their response payloads use `location-id` (hyphen) — and the
+    // underscored form was rejected as missing in production. Send
+    // all three plausible variants; BL takes the one it expects and
+    // ignores the rest.
     location_id: blLocationId,
+    'location-id': blLocationId,
+    locationId: blLocationId,
     campaign_name: truncate(`${p.business_name} — ${p.city ?? ''}`.trim(), 100),
     business_name: p.business_name,
     website_address: stripProtocol(p.website ?? ''),
