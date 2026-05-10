@@ -121,7 +121,7 @@ export function DeliveryAlertEmail({ clients }: DeliveryAlertEmailProps) {
       </table>
       <PSmall>
         Click any name to jump to the agency dashboard, then hit{' '}
-        <strong>Re-scan turf</strong> to retry. If the issue is upstream
+        <strong>Re-scan turf</strong>{' '}to retry. If the issue is upstream
         (DataForSEO outage, geocoding failure), you&rsquo;ll see the error
         inline and can decide whether to refund proactively.
       </PSmall>

@@ -29,7 +29,7 @@ export function PortalInviteEmail({
     >
       <H1>You&rsquo;re invited.</H1>
       <P>
-        <strong>{businessName}</strong> has shared their local-visibility
+        <strong>{businessName}</strong>{' '}has shared their local-visibility
         dashboard with you — geo-grid heatmaps, score movement over time,
         competitor analysis, and a strategist-grade AI Coach playbook.
       </P>

@@ -44,7 +44,7 @@ export function StripeSetupLinkEmail({
       </P>
       <H1>Set up your {tierLabel} account.</H1>
       <P>
-        Your account for <strong>{businessName}</strong> is provisioned
+        Your account for <strong>{businessName}</strong>{' '}is provisioned
         and ready. Click the button below to complete payment setup
         with Stripe — same checkout you&rsquo;d see on any modern
         subscription product.

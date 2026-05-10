@@ -46,7 +46,7 @@ export function AuditCallConfirmedEmail({
       <H1>You&rsquo;re booked.</H1>
       <P>
         Your TurfMap strategist call for{' '}
-        <strong>{businessName}</strong> is confirmed — see you on the
+        <strong>{businessName}</strong>{' '}is confirmed — see you on the
         call.
       </P>
 
@@ -58,14 +58,14 @@ export function AuditCallConfirmedEmail({
       />
 
       <P>
-        <strong>Before the call:</strong> nothing required. We&rsquo;ll
+        <strong>Before the call:</strong>{' '}nothing required. We&rsquo;ll
         come prepared with your map, the AI Coach Fix List, and a
         first cut of the 90-Day Roadmap. The call is for confirming
         priorities + tuning to your business.
       </P>
 
       <P>
-        <strong>After the call:</strong> the finalized 90-Day Roadmap
+        <strong>After the call:</strong>{' '}the finalized 90-Day Roadmap
         PDF lands in your inbox within 24 hours. From there we run a
         30-day re-scan to measure progress and a 60-day check-in
         call to adjust the plan.

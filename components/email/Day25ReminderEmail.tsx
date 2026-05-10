@@ -52,14 +52,14 @@ export function Day25ReminderEmail(props: Day25ReminderEmailProps) {
       />
 
       <P>
-        We projected a <strong>+{targetLift}-point</strong> lift if
+        We projected a <strong>+{targetLift}-point</strong>{' '}lift if
         you complete the Foundation-phase actions (Weeks 1–4 of your
         Roadmap). The Lift Promise floor is +10 points — minimum 10,
         or we redo the analysis at no charge.
       </P>
 
       <P>
-        <strong>If you&rsquo;re behind:</strong> the Roadmap is
+        <strong>If you&rsquo;re behind:</strong>{' '}the Roadmap is
         sequenced for a reason — the highest-impact actions are in
         Weeks 1–4. Knock those out this week if you can; the rescan
         will reflect them.

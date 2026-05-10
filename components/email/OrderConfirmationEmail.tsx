@@ -267,7 +267,7 @@ export function OrderConfirmationEmail({
        *  measurable claim before they sit on the call. */}
       {isAudit && (
         <PSmall>
-          <strong>TurfScore Lift Promise.</strong> Your roadmap is built
+          <strong>TurfScore Lift Promise.</strong>{' '}Your roadmap is built
           to deliver a minimum 10-point TurfScore lift in 30 days. If
           your re-scan doesn&rsquo;t show that lift after you&rsquo;ve
           executed the plan, we&rsquo;ll redo the analysis at no charge.

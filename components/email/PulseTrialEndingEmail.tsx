@@ -90,10 +90,10 @@ export function PulseTrialEndingEmail({
       </P>
       <P>
         On <strong>{chargeDate}</strong>, your card will be charged{' '}
-        <strong>$39</strong> to continue Pulse.
+        <strong>$39</strong>{' '}to continue Pulse.
       </P>
       <P>
-        <strong>To keep watching:</strong> do nothing. We&rsquo;ll
+        <strong>To keep watching:</strong>{' '}do nothing. We&rsquo;ll
         keep re-scanning every Monday and the AI Coach playbook will
         refresh weekly.
       </P>
