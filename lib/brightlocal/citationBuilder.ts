@@ -180,7 +180,19 @@ export async function submitCitationOrder(
   // Step 1 — create campaign.
   const createPayload = mapProfileToCreatePayload(input, blLocationId);
   const create = await postForm(config.apiKey, '/v4/cb/create', createPayload);
-  if (!create.ok) return create.error;
+  if (!create.ok) {
+    // Annotate the operator-facing error with the resolved BL
+    // location id so we can tell at a glance whether the right value
+    // was passed through. (e.g. "Location ID is required" together
+    // with location_id_sent="" reveals an extractor bug; the same
+    // error with a concrete numeric id reveals a permissions /
+    // ownership issue on the BL side.)
+    return {
+      ok: false,
+      kind: create.error.kind,
+      message: `${create.error.message} [blLocationId="${blLocationId}", source=${locationRes.source}]`,
+    };
+  }
   const campaignId = extractCampaignId(create.json);
   if (!campaignId) {
     return {
@@ -309,7 +321,7 @@ export async function pauseMaintenance(
 // ─── BL location resolution ────────────────────────────────────────────────
 
 type EnsureLocationResult =
-  | { ok: true; locationId: string }
+  | { ok: true; locationId: string; source: 'search' | 'create' }
   | {
       ok: false;
       error: {
@@ -344,7 +356,7 @@ async function ensureBlLocation(
   );
   if (!search.ok) return { ok: false, error: search.error };
   const existingId = extractFirstLocationId(search.json);
-  if (existingId) return { ok: true, locationId: existingId };
+  if (existingId) return { ok: true, locationId: existingId, source: 'search' };
 
   // Step B — create. BL's location endpoint uses hyphenated keys
   // (vs underscored on /v4/cb/create) and a similar but distinct
@@ -395,7 +407,7 @@ async function ensureBlLocation(
       },
     };
   }
-  return { ok: true, locationId: newId };
+  return { ok: true, locationId: newId, source: 'create' };
 }
 
 function extractFirstLocationId(json: unknown): string | null {
