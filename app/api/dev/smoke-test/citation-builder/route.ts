@@ -154,76 +154,124 @@ export async function GET() {
   // location-id / locationId. Try different param shapes inline so
   // one round-trip identifies the right one.
   const sddLocationId = '4061311';
-  const cbCreateProbes: Array<{ name: string; body: Record<string, string> }> = [
+  // Probe across BL endpoint paths AND content-types. The same error
+  // "Location ID is required" coming back from every form-encoded
+  // variant suggests BL might not be parsing our body at all. Sweep
+  // possibilities: JSON content-type, alternate paths, header auth.
+  const cbVariants: Array<{
+    name: string;
+    method: 'POST' | 'PUT';
+    path: string;
+    body: string;
+    headers: Record<string, string>;
+  }> = [
     {
-      name: 'minimal create with location_id (underscore)',
-      body: {
+      name: 'POST /v4/cb/create + Content-Type: application/json',
+      method: 'POST',
+      path: '/v4/cb/create',
+      body: JSON.stringify({
+        location_id: Number(sddLocationId),
+        campaign_name: 'PROBE',
+        business_name: 'Probe',
+      }),
+      headers: { 'content-type': 'application/json' },
+    },
+    {
+      name: 'POST /v4/cb/create + form, location_id as integer-coerced',
+      method: 'POST',
+      path: '/v4/cb/create',
+      body: new URLSearchParams({
         location_id: sddLocationId,
-        campaign_name: 'PROBE — DO NOT FULFILL',
-        business_name: 'Probe',
-      },
-    },
-    {
-      name: 'create with location[id] nested',
-      body: {
-        'location[id]': sddLocationId,
+        'location-id': sddLocationId,
         campaign_name: 'PROBE',
         business_name: 'Probe',
-      },
+        // Some BL endpoints require these:
+        client_id: '0',
+      }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
     },
     {
-      name: 'create with locations[0] array',
-      body: {
-        'locations[0]': sddLocationId,
+      name: 'POST /v4/cb (no /create suffix) + form',
+      method: 'POST',
+      path: '/v4/cb',
+      body: new URLSearchParams({
+        location_id: sddLocationId,
         campaign_name: 'PROBE',
         business_name: 'Probe',
-      },
+      }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
     },
     {
-      name: 'create with location_id in URL query',
-      body: {
+      name: 'POST /v4/cb/campaigns + form',
+      method: 'POST',
+      path: '/v4/cb/campaigns',
+      body: new URLSearchParams({
+        location_id: sddLocationId,
         campaign_name: 'PROBE',
         business_name: 'Probe',
-      },
+      }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    },
+    {
+      name: 'POST /v2/cb/create + form (V2 path)',
+      method: 'POST',
+      path: '/v2/cb/create',
+      body: new URLSearchParams({
+        location_id: sddLocationId,
+        campaign_name: 'PROBE',
+        business_name: 'Probe',
+      }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    },
+    {
+      name: 'POST /v4/cb/create + multipart/form-data',
+      method: 'POST',
+      path: '/v4/cb/create',
+      body: 'multipart-marker', // built below
+      headers: {},
     },
   ];
+
   const cbProbes = await Promise.all(
-    cbCreateProbes.map(async (p, i) => {
+    cbVariants.map(async (v) => {
       const expires = Math.floor(Date.now() / 1000) + 1800;
-      let url = `https://tools.brightlocal.com/seo-tools/api/v4/cb/create?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
-      // Last variant: append location_id to query string instead of body.
-      if (i === cbCreateProbes.length - 1) {
-        url += `&location_id=${sddLocationId}`;
+      const url = `https://tools.brightlocal.com/seo-tools/api${v.path}?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
+      let body: BodyInit = v.body;
+      const headers: Record<string, string> = { ...v.headers };
+      if (v.body === 'multipart-marker') {
+        const fd = new FormData();
+        fd.append('location_id', sddLocationId);
+        fd.append('campaign_name', 'PROBE');
+        fd.append('business_name', 'Probe');
+        body = fd;
+        // Let fetch set the multipart boundary header.
+        delete headers['content-type'];
       }
-      const body = new URLSearchParams(p.body);
       try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
-        });
+        const res = await fetch(url, { method: v.method, headers, body });
         const text = await res.text().catch(() => '');
+        const stillLocationIdRequired =
+          /location[_-]id.*required/i.test(text);
         return {
-          name: `cb/create probe — ${p.name}`,
-          method: 'POST',
-          url: '/v4/cb/create',
+          name: `cb-create probe — ${v.name}`,
+          method: v.method,
+          url: v.path,
           status: res.status,
           ok: res.ok,
-          body_excerpt: text.slice(0, 600),
-          notes:
-            text.includes('"location_id"') && text.includes('required')
-              ? 'Still rejects: this shape does not satisfy location_id requirement.'
-              : text.includes('"location_id"') && text.includes('not allowed')
-                ? 'Field exists but BL rejects this format.'
-                : !text.includes('location_id')
-                  ? 'PROGRESS: location_id no longer appears in errors. Inspect remaining errors.'
-                  : 'Inspect body.',
+          body_excerpt: text.slice(0, 500),
+          notes: stillLocationIdRequired
+            ? 'Same "location_id required" — body not parsed or shape rejected.'
+            : res.status === 404
+              ? 'Path not found.'
+              : res.ok
+                ? 'SUCCESS — campaign created. USE THIS SHAPE.'
+                : 'Different error — body parsed; inspect for next required field.',
         };
       } catch (e) {
         return {
-          name: `cb/create probe — ${p.name}`,
-          method: 'POST',
-          url: '/v4/cb/create',
+          name: `cb-create probe — ${v.name}`,
+          method: v.method,
+          url: v.path,
           status: null,
           ok: false,
           body_excerpt: e instanceof Error ? e.message : String(e),
