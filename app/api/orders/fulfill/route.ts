@@ -464,6 +464,35 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ─── 8a2. Stamp prospects.converted_at if this was a cold-email buyer
+  // The /yourmap lander forwards ?prospect_id=<nanoid> through the
+  // Stripe Checkout session metadata. When fulfillment lands, mark
+  // the prospect as converted so (a) the lander's 410-already-
+  // converted gate fires on subsequent visits, and (b) the
+  // cold-email funnel dashboard can join conversions back to the
+  // originating outreach record. Idempotent — second fulfillment
+  // hits the same row and overwrites with the same timestamp.
+  if (session.prospectId && fulfilled.ok) {
+    try {
+      const { error: prospectErr } = await supabase
+        .from('prospects')
+        .update({ converted_at: new Date().toISOString() })
+        .eq('id', session.prospectId)
+        .is('converted_at', null);
+      if (prospectErr) {
+        console.error(
+          '[orders/fulfill] prospects.converted_at stamp failed (non-fatal)',
+          prospectErr.message
+        );
+      }
+    } catch (e) {
+      console.error(
+        '[orders/fulfill] prospects stamp threw (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   // ─── 8b. Queue the audit-call reminder via Resend scheduled-send ──────
   // For Audit + Strategy buyers: schedule a 20-min-delayed reminder
   // email pointing at their Cal.com booking link. If they book inside

@@ -48,6 +48,19 @@ const COUPONS: Record<string, CouponDescriptor> = {
     stripeKind: 'promotion_code',
     label: '$50 off',
   },
+  // MAPCHECK50 — cold-email cohort coupon for /yourmap traffic.
+  // Same discount math as FOURDOTS50 ($99 → $49) but a different
+  // code so we can attribute conversions per acquisition channel.
+  // Stripe-side promotion code MUST exist before traffic arrives;
+  // operator creates it in the Stripe dashboard.
+  MAPCHECK50: {
+    code: 'MAPCHECK50',
+    validForTier: 'scan',
+    listPriceCents: 9900,
+    discountCents: 5000,
+    stripeKind: 'promotion_code',
+    label: '$50 off',
+  },
 };
 
 /**

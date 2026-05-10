@@ -16,6 +16,12 @@ export type ScanCheckoutButtonProps = {
   utmMedium?: string | null;
   utmCampaign?: string | null;
   gclid?: string | null;
+  /** Cold-email cohort prospect id (10-char nanoid from the prospects
+   *  table). When set, forwarded to the checkout API + stamped onto
+   *  Stripe session metadata so the fulfill route can mark
+   *  prospects.converted_at on payment success. Only the /yourmap
+   *  lander supplies this. */
+  prospectId?: string | null;
   /** Visible CTA text. Caller-controlled so the lander can render
    *  the offer math inline ("Get my $49 TurfScan →"). */
   label: string;
@@ -65,6 +71,7 @@ export function ScanCheckoutButton({
   utmMedium,
   utmCampaign,
   gclid,
+  prospectId,
   label,
   clientReferenceId,
   centered = false,
@@ -93,6 +100,9 @@ export function ScanCheckoutButton({
         utm_source: utmSource ?? undefined,
         utm_medium: utmMedium ?? undefined,
         utm_campaign: utmCampaign ?? undefined,
+        // Cold-email cohort identifier — surfaces prospect-level
+        // funnel attribution alongside campaign-level UTMs in GA4.
+        prospect_id: prospectId ?? undefined,
       });
     }
 
@@ -106,6 +116,7 @@ export function ScanCheckoutButton({
     if (utmCampaign) params.set('utm_campaign', utmCampaign);
     if (gclid) params.set('gclid', gclid);
     if (clientReferenceId) params.set('client_reference_id', clientReferenceId);
+    if (prospectId) params.set('prospect_id', prospectId);
     const qs = params.toString();
     const apiUrl = `/api/checkout/scan${qs ? `?${qs}` : ''}`;
 

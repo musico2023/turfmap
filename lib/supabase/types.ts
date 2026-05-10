@@ -492,6 +492,30 @@ export type CitationSubmittedProfile = {
   photo_urls: string[] | null;
 };
 
+// ─── Cold-email prospects (migration 0024) ────────────────────────────
+
+/** A single cold-email prospect. Written by the lead-gen pipeline,
+ *  read by /yourmap for personalization, stamped on conversion +
+ *  audit upgrade. ID is a short nanoid embedded in outreach URLs. */
+export type ProspectRow = {
+  id: string;
+  business_name: string;
+  city: string;
+  trade: string;
+  preview_score: number;
+  invisibility_count: number;
+  top_competitor_name: string | null;
+  top_competitor_share_pct: number | null;
+  email_sent_at: string | null;
+  email_campaign: string | null;
+  source_pipeline_run_id: string | null;
+  page_viewed_at: string | null;
+  view_count: number;
+  converted_at: string | null;
+  upgraded_to_audit_at: string | null;
+  created_at: string;
+};
+
 // ─── Visibility Audits (migration 0022) ───────────────────────────────
 
 /** Lifecycle states for a Visibility Audit purchase. Linear progression;

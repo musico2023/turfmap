@@ -165,6 +165,11 @@ export async function POST(
   const utmCampaign = url.searchParams.get('utm_campaign') ?? '';
   const gclid = url.searchParams.get('gclid') ?? '';
   const clientReferenceId = url.searchParams.get('client_reference_id') ?? '';
+  // Cold-email cohort attribution. /yourmap forwards this so the
+  // fulfill route can stamp prospects.converted_at when the buyer
+  // completes payment + the funnel dashboard can join conversions
+  // back to the originating outreach record.
+  const prospectId = url.searchParams.get('prospect_id') ?? '';
 
   const secretKey = process.env.STRIPE_SECRET_KEY;
   const resolved = resolvePriceEnv(tierParam, cadence);
@@ -268,6 +273,9 @@ export async function POST(
   if (utmCampaign) attribution.utm_campaign = utmCampaign;
   if (gclid) attribution.gclid = gclid;
   if (couponParam) attribution.coupon = couponParam;
+  // Cold-email cohort marker — fulfill route reads this back from
+  // the session metadata + stamps prospects.converted_at.
+  if (prospectId) attribution.prospect_id = prospectId;
 
   // Build the session params. We try with the resolved discount
   // first; if Stripe rejects (invalid coupon, expired, tier-

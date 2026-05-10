@@ -35,6 +35,10 @@ export type LoadedSession = {
   amountTotal: number | null;
   /** ISO currency code. */
   currency: string | null;
+  /** Cold-email cohort prospect id, if the session originated from
+   *  a /yourmap purchase. NULL for organic / popup-cohort buyers.
+   *  Fulfill route uses this to stamp prospects.converted_at. */
+  prospectId: string | null;
 };
 
 /** Errors callers should distinguish: we want a clean way to know
@@ -140,6 +144,15 @@ export async function loadCheckoutSession(
       : null) ??
     null;
 
+  // Optional cold-email cohort marker, set by /api/checkout/[tier]
+  // when the lander forwarded ?prospect_id=<nanoid>. Read back here
+  // so callers can stamp prospects.converted_at without re-fetching
+  // the session.
+  const prospectId =
+    session.metadata && 'prospect_id' in session.metadata
+      ? String(session.metadata.prospect_id) || null
+      : null;
+
   return {
     sessionId,
     tier: tierRaw,
@@ -149,5 +162,6 @@ export async function loadCheckoutSession(
     paymentStatus: session.payment_status ?? null,
     amountTotal: session.amount_total ?? null,
     currency: session.currency ?? null,
+    prospectId,
   };
 }
