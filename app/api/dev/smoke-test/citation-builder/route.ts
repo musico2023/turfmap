@@ -148,20 +148,16 @@ export async function GET() {
   // ("The selected choice is invalid"). Probe a battery of candidate
   // values with an otherwise-minimal payload to find the right one.
   const langCandidates = [
-    'EN_CA',
-    'en_ca',
-    'en-ca',
-    'EN-CA',
-    'english_canada',
-    'english-canada',
-    'English Canada',
-    'English (Canada)',
-    'canadian',
-    'canadian-english',
-    'British',
-    '2',
-    '13',
-    '4105',
+    // BL UI radio id pattern is `language_CAN:EN_0` — these are the
+    // most likely interpretations of that markup as an actual
+    // submitted value.
+    'CAN:EN',
+    'CAN:EN_0',
+    'CAN:FR',
+    'CAN:FR_1',
+    'CAN_EN',
+    'CAN-EN',
+    'language_CAN:EN_0',
   ];
   const langProbes = await Promise.all(
     langCandidates.map((lang) => probeLanguageValue(apiKey, lang))

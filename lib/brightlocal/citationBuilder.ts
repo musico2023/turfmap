@@ -443,13 +443,14 @@ function idFromAnyShape(o: Record<string, unknown>): string | null {
 function languageEnumFor(country: string): string | null {
   switch (country) {
     case 'CAN':
-      return 'CAN:EN_0';
+      // Symfony radio id `language_CAN:EN_0` → submitted value is
+      // `CAN:EN` (the trailing `_0` is the radio index in the id, not
+      // part of the choice value).
+      return 'CAN:EN';
     case 'USA':
     case 'GBR':
       return null;
     default:
-      // Unknown / single-language country. Omit and hope BL accepts;
-      // operator can wire the right enum here when we expand.
       return null;
   }
 }
