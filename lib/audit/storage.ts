@@ -68,16 +68,21 @@ export async function uploadPrepNotes(
   const html = renderPrepNotesHtml(args.markdown);
   const path = `${args.auditId}/prep-notes.html`;
   // Upload as a UTF-8 Buffer rather than a Blob. The Blob path was
-  // resulting in the served file getting a generic content-type
-  // (text/plain or octet-stream) regardless of the explicit
-  // `contentType` option, which made the browser render the HTML as
-  // raw source code instead of a styled page. The Buffer pattern
-  // matches what we use for the PDF upload and produces a reliable
-  // Content-Type: text/html; charset=utf-8 in the response headers.
+  // letting the SDK serve the file with a generic content-type that
+  // browsers rendered as raw source code. The Buffer + explicit
+  // contentType pattern (matching the PDF upload) lands a real
+  // text/html response.
+  //
+  // Note: the contentType is plain `text/html` without `; charset=utf-8`
+  // because Supabase's bucket-mime allowlist does strict-equal matching
+  // and would reject the parameterized form even though `text/html` is
+  // allowed. Encoding is still correct for browsers because the HTML
+  // body itself includes `<meta charset="UTF-8">` which all major
+  // browsers honor.
   const { error } = await supabase.storage
     .from(AUDIT_ROADMAPS_BUCKET)
     .upload(path, Buffer.from(html, 'utf-8'), {
-      contentType: 'text/html; charset=utf-8',
+      contentType: 'text/html',
       upsert: true,
     });
   if (error) {
