@@ -148,20 +148,30 @@ export async function GET() {
   // ("The selected choice is invalid"). Probe a battery of candidate
   // values with an otherwise-minimal payload to find the right one.
   const langCandidates = [
-    'English',
-    'EN',
-    'en-CA',
-    'en_CA',
-    'en-US',
-    'en-GB',
-    'eng',
-    '1',
-    '0',
+    'EN_CA',
+    'en_ca',
+    'en-ca',
+    'EN-CA',
+    'english_canada',
+    'english-canada',
+    'English Canada',
+    'English (Canada)',
+    'canadian',
+    'canadian-english',
+    'British',
+    '2',
+    '13',
+    '4105',
   ];
   const langProbes = await Promise.all(
     langCandidates.map((lang) => probeLanguageValue(apiKey, lang))
   );
   probes.push(...langProbes);
+
+  // Also: USA payload with NO language field (sanity check — does
+  // BL only require language for CA and similar?). If this passes,
+  // we can omit language outside multi-language countries.
+  probes.push(await probeLanguageValue(apiKey, '__OMIT__', 'USA'));
 
   const auth1Ok =
     probes[0]!.status != null &&
@@ -291,25 +301,29 @@ async function runRawProbe(args: {
  *  collide with the real production data. */
 async function probeLanguageValue(
   apiKey: string,
-  lang: string
+  lang: string,
+  country: string = 'CAN'
 ): Promise<Probe> {
   const expires = Math.floor(Date.now() / 1000) + 1800;
   const url = `https://tools.brightlocal.com/seo-tools/api/v2/clients-and-locations/locations/?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
-  // Minimal CA payload — enough fields that BL gets to validating
-  // language without short-circuiting on a missing required field.
-  const ref = `_smoketest_lang_${lang.replace(/[^a-z0-9]/gi, '')}_${Date.now()}`;
-  const body = new URLSearchParams({
+  const ref = `_smoketest_lang_${lang.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}`;
+  const fields: Record<string, string> = {
     name: 'Smoke Test (delete me)',
     'location-reference': ref,
     'business-category-id': '605',
-    country: 'CAN',
-    language: lang,
+    country,
+    url: 'https://example.com',
     address1: '1 Test St',
-    region: 'ON',
-    city: 'Toronto',
-    postcode: 'M5V 1A1',
-    telephone: '+1 416-555-0100',
-  });
+    region: country === 'USA' ? 'NY' : 'ON',
+    city: country === 'USA' ? 'New York' : 'Toronto',
+    postcode: country === 'USA' ? '10001' : 'M5V 1A1',
+    telephone: country === 'USA' ? '+1 212-555-0100' : '+1 416-555-0100',
+  };
+  // Sentinel "__OMIT__" lets us probe what happens when no language
+  // field is sent at all — useful for confirming whether language is
+  // CA-only or required across the board.
+  if (lang !== '__OMIT__') fields.language = lang;
+  const body = new URLSearchParams(fields);
   try {
     const res = await fetch(url, {
       method: 'POST',
