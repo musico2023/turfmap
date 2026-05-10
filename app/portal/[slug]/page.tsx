@@ -52,6 +52,7 @@ import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { AuditUpgradePanel } from '@/components/marketing/AuditUpgradePanel';
 import { ClientBillingPanel } from '@/components/turfmap/ClientBillingPanel';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { resolveTier } from '@/lib/subscription/tier';
@@ -265,6 +266,54 @@ export default async function ClientPortalPage({
           projected_impact: string | null;
         }>()
     : { data: null };
+
+  // Audit-upgrade panel gating. Three conditions must all hold:
+  //   1. Buyer is on TurfScan tier (one_time billing mode), not
+  //      already on audit / pulse / strategy
+  //   2. No visibility_audits row for this client (= not already
+  //      upgraded; defends against double-upgrade)
+  //   3. Within 24 hours of the original lead_orders.created_at —
+  //      the spec'd upgrade window
+  // All three derived server-side so the client component only
+  // gets a boolean + a pre-formatted time-remaining string.
+  let showAuditUpgrade = false;
+  let upgradeTimeRemainingLabel: string | null = null;
+  if (client.billing_mode === 'one_time') {
+    const [{ data: existingAudit }, { data: scanLeadOrder }] =
+      await Promise.all([
+        supabase
+          .from('visibility_audits')
+          .select('id')
+          .eq('client_id', clientUuid)
+          .limit(1)
+          .maybeSingle<{ id: string }>(),
+        supabase
+          .from('lead_orders')
+          .select('created_at')
+          .eq('client_id', clientUuid)
+          .eq('tier', 'scan')
+          .eq('status', 'fulfilled')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<{ created_at: string }>(),
+      ]);
+    if (!existingAudit && scanLeadOrder) {
+      const orderAgeMs =
+        Date.now() - new Date(scanLeadOrder.created_at).getTime();
+      const remainingMs = 24 * 60 * 60 * 1000 - orderAgeMs;
+      if (remainingMs > 0) {
+        showAuditUpgrade = true;
+        const hours = Math.floor(remainingMs / (60 * 60 * 1000));
+        const minutes = Math.floor(
+          (remainingMs % (60 * 60 * 1000)) / (60 * 1000)
+        );
+        upgradeTimeRemainingLabel =
+          hours > 0
+            ? `Upgrade window closes in ${hours}h ${minutes}m. After that, $499 from scratch.`
+            : `Upgrade window closes in ${minutes}m. After that, $499 from scratch.`;
+      }
+    }
+  }
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -482,6 +531,23 @@ export default async function ClientPortalPage({
             scanComplete={Boolean(latestScan)}
           />
         </div>
+
+        {/* Audit-upgrade panel — TurfScan buyers within their 24h
+         *  upgrade window. Sits beneath the Fix List per spec; the
+         *  results-aware copy ("Your TurfScore is X. The Fix List
+         *  above shows you what to do, but...") leans on the
+         *  preceding AICoach context. After 24h or after upgrade
+         *  the gating server-side hides this entirely. */}
+        {showAuditUpgrade && (
+          <div className="lg:col-span-12">
+            <AuditUpgradePanel
+              source="dashboard"
+              clientId={clientUuid}
+              currentScore={latestScan?.turf_score ?? null}
+              timeRemainingLabel={upgradeTimeRemainingLabel ?? undefined}
+            />
+          </div>
+        )}
 
         {showBillingPanel && (
           <div className="lg:col-span-12">

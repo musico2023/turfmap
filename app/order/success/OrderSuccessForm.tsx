@@ -9,6 +9,7 @@ import {
 import { CalEmbed } from '@/components/turfmap/CalEmbed';
 import { OnboardingWizard } from '@/components/turfmap/OnboardingWizard';
 import { PulseAttachPanel } from '@/components/turfmap/PulseAttachPanel';
+import { AuditUpgradePanel } from '@/components/marketing/AuditUpgradePanel';
 import { SuccessBurst } from '@/components/animations/SuccessBurst';
 import type { OnboardingStep } from '@/lib/supabase/types';
 
@@ -428,6 +429,19 @@ export function OrderSuccessForm({
                 </p>
               </div>
             </div>
+
+            {/* Audit upgrade panel — only shown to TurfScan buyers
+             *  (the upgrade is meaningful only when they bought the
+             *  $99 scan tier, not audit/strategy/pulse). Sits above
+             *  the Pulse attach panel; lime accent vs. Pulse's amber
+             *  so the two don't visually compete. The endpoint
+             *  enforces the 24h window server-side too. */}
+            {tier === 'scan' && sessionId && (
+              <AuditUpgradePanel
+                source="order_success"
+                sessionId={sessionId}
+              />
+            )}
 
             <PulseAttachPanel
               publicId={publicId}

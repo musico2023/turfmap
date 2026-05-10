@@ -48,11 +48,16 @@ import { getStripe } from '@/lib/stripe/client';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { tierFromPriceId } from '@/lib/stripe/tierFromPrice';
 import { runScanForLocation } from '@/lib/scans/runScan';
-import { sendPulseTrialEnding } from '@/lib/email/resend';
+import { sendPulseTrialEnding, sendOrderConfirmation } from '@/lib/email/resend';
 import { fireMeasurementProtocolEvent } from '@/lib/analytics/measurementProtocol';
+import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
+import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import type {
   ClientLocationRow,
   ClientRow,
+  LeadOrderRow,
+  ScanRow,
   SubscriptionStatus,
   SubscriptionTier,
   TrackedKeywordRow,
@@ -137,11 +142,28 @@ export async function POST(req: Request) {
         await markPastDue(supabase, invoice);
         break;
       }
-      // Other events (checkout.session.completed, invoice.paid, etc.)
-      // are intentionally ignored here — checkout fulfillment lives
-      // in /api/orders/fulfill and runs on the success page; if a
-      // buyer never lands there, this webhook is the safety net we'd
-      // wire next.
+      case 'checkout.session.completed': {
+        // Routes ONLY for audit-upgrade sessions — the standard
+        // TurfScan / Pulse / Pulse+ checkout fulfillment still
+        // happens in /api/orders/fulfill via the success-page form.
+        // Audit upgrades skip that form entirely (the buyer is
+        // already a client; we have all their data) so the webhook
+        // is the only place fulfillment can happen.
+        const session = event.data.object as Stripe.Checkout.Session;
+        const source =
+          session.metadata && 'source' in session.metadata
+            ? String(session.metadata.source)
+            : null;
+        if (source === 'audit_upgrade') {
+          await handleAuditUpgradeCompletion(supabase, session);
+        }
+        break;
+      }
+      // Other events (invoice.paid, etc.) are intentionally ignored
+      // here — TurfScan / Pulse / Pulse+ checkout fulfillment lives
+      // in /api/orders/fulfill and runs on the success-page form
+      // submit; if a buyer never lands there, this webhook is the
+      // safety net we'd wire next.
       default:
         break;
     }
@@ -665,4 +687,261 @@ async function markPastDue(
       `clients past_due-update failed for customer ${customerId}: ${error.message}`
     );
   }
+}
+
+// ─── Audit-upgrade fulfillment ────────────────────────────────────────
+//
+// Fired from checkout.session.completed when metadata.source =
+// 'audit_upgrade'. Creates the audit-tier lead_orders row, marks it
+// fulfilled, computes LLM Fit Score, creates visibility_audits row
+// (which the Phase-3 milestone cron picks up for prep-PDF
+// generation 24h pre-call), stamps prospects.upgraded_to_audit_at
+// when the original purchase was a cold-email cohort, and sends the
+// audit order-confirmation email so the buyer has the Cal.com
+// booking link in their inbox in addition to the success-page
+// embed.
+//
+// Idempotent. Stripe webhooks deliver at-least-once; this handler
+// no-ops if the lead_orders row already exists for the upgrade
+// session.
+
+async function handleAuditUpgradeCompletion(
+  supabase: ReturnType<typeof getServerSupabase>,
+  session: Stripe.Checkout.Session
+): Promise<void> {
+  const meta = (session.metadata ?? {}) as Record<string, string>;
+  const originalScanId = meta.original_scan_id ?? null;
+  const originalLeadOrderId = meta.original_lead_order_id ?? null;
+  const clientId = meta.client_id ?? null;
+  const prospectId = meta.prospect_id ?? null;
+
+  if (!originalScanId || !originalLeadOrderId || !clientId) {
+    console.error(
+      '[audit-upgrade] session missing required metadata',
+      session.id,
+      meta
+    );
+    return;
+  }
+
+  // Idempotency check — has this upgrade session already been
+  // fulfilled? Look for a lead_orders row with this exact
+  // stripe_session_id. Stripe webhook retries hit the same path.
+  const { data: existing } = await supabase
+    .from('lead_orders')
+    .select('id, status')
+    .eq('stripe_session_id', session.id)
+    .maybeSingle<Pick<LeadOrderRow, 'id' | 'status'>>();
+  if (existing) {
+    return;
+  }
+
+  // Resolve the original lead_orders row for buyer email + scan
+  // context.
+  const { data: originalLeadOrder } = await supabase
+    .from('lead_orders')
+    .select('*')
+    .eq('id', originalLeadOrderId)
+    .maybeSingle<LeadOrderRow>();
+  if (!originalLeadOrder) {
+    console.error(
+      '[audit-upgrade] original lead_orders row not found',
+      originalLeadOrderId
+    );
+    return;
+  }
+
+  // Resolve the client.
+  const { data: client } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', clientId)
+    .maybeSingle<ClientRow>();
+  if (!client) {
+    console.error('[audit-upgrade] client not found', clientId);
+    return;
+  }
+
+  // Resolve the original scan for LLM Fit Score inputs + the
+  // visibility_audits.scan_id reference.
+  const { data: scan } = await supabase
+    .from('scans')
+    .select('*')
+    .eq('id', originalScanId)
+    .maybeSingle<ScanRow>();
+  if (!scan) {
+    console.error('[audit-upgrade] original scan not found', originalScanId);
+    return;
+  }
+
+  // Create the lead_orders row for the upgrade purchase. Marks it
+  // fulfilled immediately since the buyer skipped the post-checkout
+  // form — they're already a client. audit_call_status: 'unbooked'
+  // matches the standalone-audit fulfill flow so the Cal.com
+  // webhook handler can stamp 'booked' when the buyer schedules.
+  const buyerEmail =
+    originalLeadOrder.email ??
+    session.customer_details?.email ??
+    null;
+
+  const { data: newLeadOrder, error: leadInsertErr } = await supabase
+    .from('lead_orders')
+    .insert({
+      stripe_session_id: session.id,
+      tier: 'audit',
+      email: buyerEmail,
+      client_id: client.id,
+      status: 'fulfilled',
+      stripe_metadata: {
+        source: 'audit_upgrade',
+        upgrade_placement: meta.upgrade_placement ?? null,
+        original_scan_id: originalScanId,
+        original_lead_order_id: originalLeadOrderId,
+        prospect_id: prospectId,
+        amount_total: session.amount_total ?? null,
+        audit_call_status: 'unbooked',
+        audit_call_initiated_at: new Date().toISOString(),
+      },
+    })
+    .select('*')
+    .single<LeadOrderRow>();
+
+  if (leadInsertErr || !newLeadOrder) {
+    console.error(
+      '[audit-upgrade] lead_orders insert failed',
+      leadInsertErr?.message
+    );
+    return;
+  }
+
+  // Compute LLM Fit Score against the buyer's known signals. At
+  // upgrade time we typically don't have richer data (Apollo
+  // enrichment, ad-active flags) than at the original purchase, so
+  // tradeFit is the primary signal. Trade is inferred from the
+  // primary tracked keyword.
+  const { data: primaryKeyword } = await supabase
+    .from('tracked_keywords')
+    .select('*')
+    .eq('client_id', client.id)
+    .eq('is_primary', true)
+    .maybeSingle<TrackedKeywordRow>();
+  const tradeFit = primaryKeyword
+    ? inferTradeFitFromKeyword(primaryKeyword.keyword)
+    : null;
+  const fitBreakdown = computeLlmFitScore({
+    revenueBand: null,
+    tradeFit,
+    metroFit: null,
+    adActive: null,
+    reviewCount: null,
+  });
+
+  // Create the visibility_audits row. The Phase-3 milestone cron
+  // sweeps this 24h before strategist_call_scheduled_at + generates
+  // the prep PDF + emails Anthony.
+  const auditResult = await createVisibilityAudit(supabase, {
+    leadOrderId: newLeadOrder.id,
+    scanId: scan.id,
+    clientId: client.id,
+    startingTurfScore: scan.turf_score,
+    liftPromiseTargetScore: null,
+    llmFitScore: fitBreakdown.score,
+    llmFitBreakdown: fitBreakdown,
+  });
+  if (!auditResult.ok) {
+    console.error(
+      '[audit-upgrade] visibility_audits insert failed (non-fatal)',
+      auditResult.error
+    );
+  }
+
+  // Stamp prospects.upgraded_to_audit_at when the original purchase
+  // was from the cold-email cohort. Idempotent — only updates rows
+  // where the column is still null.
+  if (prospectId) {
+    try {
+      await supabase
+        .from('prospects')
+        .update({ upgraded_to_audit_at: new Date().toISOString() })
+        .eq('id', prospectId)
+        .is('upgraded_to_audit_at', null);
+    } catch (e) {
+      console.error(
+        '[audit-upgrade] prospects.upgraded_to_audit_at stamp failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  // Send the order confirmation email — same template as a $499
+  // standalone audit purchase, includes the Cal.com booking link
+  // pre-filled with the buyer's email + business name.
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.turfmap.ai';
+  const dashboardUrl = `${origin}/portal/${client.public_id}`;
+  const bookingUrl = buyerEmail
+    ? calcomBookingUrlForTier({
+        tier: 'audit',
+        email: buyerEmail,
+        businessName: client.business_name,
+      })
+    : null;
+  if (buyerEmail) {
+    try {
+      await sendOrderConfirmation({
+        to: buyerEmail,
+        businessName: client.business_name,
+        tier: 'audit',
+        dashboardUrl,
+        bookingUrl,
+        auditPurchaseKind: 'upgrade',
+      });
+    } catch (e) {
+      console.error(
+        '[audit-upgrade] order confirmation email failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+}
+
+/** Same trade-keyword matcher used in /api/orders/fulfill. Duplicated
+ *  rather than extracted into lib/audit/ since the heuristic might
+ *  diverge per surface in the future. */
+function inferTradeFitFromKeyword(
+  keyword: string | undefined
+): boolean | null {
+  if (!keyword) return null;
+  const k = keyword.toLowerCase();
+  const TRADE_NEEDLES = [
+    'electrician',
+    'electrical',
+    'hvac',
+    'heating',
+    'air conditioning',
+    'a/c repair',
+    'furnace',
+    'landscap',
+    'lawn care',
+    'lawn maintenance',
+    'plumb',
+    'drain cleaning',
+    'water heater',
+    'renovat',
+    'remodel',
+    'kitchen remodel',
+    'bathroom remodel',
+    'restoration',
+    'water damage',
+    'fire damage',
+    'mold remediation',
+    'roof',
+    'windows',
+    'doors',
+    'window install',
+    'door install',
+  ];
+  for (const needle of TRADE_NEEDLES) {
+    if (k.includes(needle)) return true;
+  }
+  return null;
 }
