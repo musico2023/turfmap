@@ -177,30 +177,32 @@ export async function submitCitationOrder(
   if (!locationRes.ok) return locationRes.error;
   const blLocationId = locationRes.locationId;
 
-  // Step 1 — create campaign.
-  const createPayload = mapProfileToCreatePayload(input, blLocationId);
-  const create = await postForm(config.apiKey, '/v4/cb/create', createPayload);
-  if (!create.ok) {
-    // Annotate the operator-facing error with the resolved BL
-    // location id so we can tell at a glance whether the right value
-    // was passed through. (e.g. "Location ID is required" together
-    // with location_id_sent="" reveals an extractor bug; the same
-    // error with a concrete numeric id reveals a permissions /
-    // ownership issue on the BL side.)
+  // Step 1 — create campaign on BL's NEW Management APIs surface:
+  //   POST https://api.brightlocal.com/manage/v1/citation-builder
+  //   Header  x-api-key: <key>
+  //   Header  Content-Type: application/json
+  //   Body    { "location_id": <number> }
+  //   Resp    201 { "campaign_id": <number> }
+  //
+  // Per the official Stoplight docs at
+  // developer.brightlocal.com/docs/management-apis/c069xg926oruf-create-campaign,
+  // the (deprecated) PHP-helper-repo `/v4/cb/create` endpoint that we
+  // were targeting before is gone. The new endpoint takes ONLY
+  // location_id (+ optional email_alerts) — campaign metadata
+  // (categories, hours, photos, descriptions) all live ON THE
+  // LOCATION object created in step 0, not on the campaign.
+  const createRes = await createCampaignManageV1(
+    config.apiKey,
+    blLocationId
+  );
+  if (!createRes.ok) {
     return {
       ok: false,
-      kind: create.error.kind,
-      message: `${create.error.message} [blLocationId="${blLocationId}", source=${locationRes.source}]`,
+      kind: createRes.error.kind,
+      message: `${createRes.error.message} [blLocationId="${blLocationId}", source=${locationRes.source}]`,
     };
   }
-  const campaignId = extractCampaignId(create.json);
-  if (!campaignId) {
-    return {
-      ok: false,
-      kind: 'remote_error',
-      message: `BL create response missing campaign_id: ${truncate(JSON.stringify(create.json), 240)}`,
-    };
-  }
+  const campaignId = createRes.campaignId;
 
   // Step 2 — upload photos. Best-effort; a photo failing isn't a
   // showstopper for the submission. Operator can re-upload later via
@@ -553,6 +555,98 @@ function flattenHoursForBlLocation(
   }
   out['opening-hours[regular][apply-to-all]'] = 'false';
   return out;
+}
+
+// ─── Citation Builder campaign create (Management APIs surface) ────────────
+
+const MANAGE_V1_BASE = 'https://api.brightlocal.com/manage/v1';
+
+type CreateCampaignResult =
+  | { ok: true; campaignId: string }
+  | {
+      ok: false;
+      error: {
+        ok: false;
+        kind: 'remote_error' | 'rate_limited';
+        message: string;
+      };
+    };
+
+async function createCampaignManageV1(
+  apiKey: string,
+  blLocationId: string
+): Promise<CreateCampaignResult> {
+  const numericId = Number(blLocationId);
+  if (!Number.isFinite(numericId)) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: `cannot create campaign — BL location id "${blLocationId}" is not numeric`,
+      },
+    };
+  }
+  const body = JSON.stringify({ location_id: numericId });
+  let res: Response;
+  try {
+    res = await fetch(`${MANAGE_V1_BASE}/citation-builder`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body,
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: e instanceof Error ? e.message : String(e),
+      },
+    };
+  }
+  if (res.status === 429) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'rate_limited',
+        message: 'BL rate limit reached — retry in 60s',
+      },
+    };
+  }
+  const text = await res.text().catch(() => '');
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: `BL /manage/v1/citation-builder ${res.status}: ${truncate(text, 240)}`,
+      },
+    };
+  }
+  let json: { campaign_id?: number | string } = {};
+  try {
+    json = text.length > 0 ? JSON.parse(text) : {};
+  } catch {
+    /* fall through */
+  }
+  if (json.campaign_id == null) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: `BL create response missing campaign_id: ${truncate(text, 240)}`,
+      },
+    };
+  }
+  return { ok: true, campaignId: String(json.campaign_id) };
 }
 
 // ─── BL HTTP plumbing ──────────────────────────────────────────────────────
