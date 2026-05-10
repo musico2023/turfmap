@@ -73,56 +73,90 @@ export async function GET() {
     })
   );
 
-  // Probes 2..N: candidate citation-builder paths. The path baked into
-  // lib/brightlocal/citationBuilder.ts is a placeholder — the smoke
-  // test confirmed it's wrong. BL's real Management APIs use /v2/
-  // (per their public PHP helper repo), and BL Help Center articles
-  // call these "campaigns" not "orders". Probe a battery so the next
-  // run tells us exactly which one BL accepts.
-  const candidates: Array<{ method: 'GET' | 'POST'; path: string }> = [
-    // /v2 + 'campaigns' is the strongest hypothesis — matches BL helper
-    // repo's /v2/{slug}/get-all convention + Help Center terminology.
-    { method: 'GET', path: '/v2/cb/get-all' },
-    { method: 'GET', path: '/v2/citation-builder/get-all' },
-    { method: 'GET', path: '/v2/citation-builder/campaigns' },
-    { method: 'GET', path: '/v2/citation-builder/orders' },
-    // Other plausible bases.
-    { method: 'GET', path: '/v1/citation-builder/campaigns' },
-    { method: 'GET', path: '/management/v1/citation-builder/campaigns' },
-    { method: 'GET', path: '/data/v1/citation-builder/campaigns' },
-  ];
-  const candidateProbes = await Promise.all(
-    candidates.map((c) =>
-      runProbe({
-        name: `candidate path probe (${c.method} ${c.path})`,
-        method: c.method,
-        url: `${BL_BASE}${c.path}`,
-        apiKey,
-        notesFromStatus: (s) =>
-          s === 404
-            ? 'NOT THIS ONE: 404, path does not exist.'
-            : s === 401 || s === 403
-              ? 'CHECK: auth rejected here but accepted on the audit endpoint — Citation Builder may not be enabled on this account, or this path uses different auth.'
-              : s === 405
-                ? 'PATH EXISTS (405 method-not-allowed) — try a different HTTP method.'
-                : s != null && s >= 200 && s < 300
-                  ? 'PATH EXISTS (2xx). USE THIS.'
-                  : s != null && s >= 400 && s < 500
-                    ? 'PATH LIKELY EXISTS (4xx with auth accepted) — payload/method may differ. Inspect body excerpt.'
-                    : 'Review body excerpt.',
-      })
-    )
-  );
-  probes.push(...candidateProbes);
+  // Probe 2: BL Citation Builder lives on a DIFFERENT host with
+  // DIFFERENT auth than the audit-side product we already use:
+  //   host:  tools.brightlocal.com/seo-tools/api
+  //   path:  /v4/cb/get-all
+  //   auth:  api-key, sig, expires as query params
+  //          (sig = base64(HMAC-SHA1(apiKey + expires, apiSecret)))
+  //          PHP client marks apiSecret as @deprecated, so we probe
+  //          with apiKey only first; if that 401s, sig is required.
+  // Source: github.com/BrightLocal/apiclient-php/Examples/CitationBuilder
+  const CB_BASE = 'https://tools.brightlocal.com/seo-tools/api';
+  const CB_PATH = '/v4/cb/get-all';
+
+  // Probe 2a: api-key only (best case — secret was deprecated).
+  const expires = Math.floor(Date.now() / 1000) + 1800;
+  const cbUrlKeyOnly = `${CB_BASE}${CB_PATH}?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
+  probes.push({
+    ...(await runRawProbe({
+      name: 'citation-builder GET /v4/cb/get-all (api-key only)',
+      method: 'GET',
+      url: cbUrlKeyOnly,
+    })),
+    notes: '',
+  });
+  const probe2a = probes[probes.length - 1]!;
+  probe2a.notes =
+    probe2a.status === 404
+      ? 'BAD: 404 — path wrong even on the new host.'
+      : probe2a.status === 401 || probe2a.status === 403
+        ? 'AUTH MODE: api-key alone insufficient — need sig+expires HMAC. Set BRIGHTLOCAL_API_SECRET to enable.'
+        : probe2a.status != null && probe2a.status >= 200 && probe2a.status < 300
+          ? 'PATH + AUTH OK. USE THIS. (api-key-only auth works.)'
+          : probe2a.status != null && probe2a.status >= 400 && probe2a.status < 500
+            ? 'PATH LIKELY OK (4xx with auth accepted). Inspect body for the actual error.'
+            : 'Review body excerpt.';
+
+  // Probe 2b: sig+expires HMAC. Only meaningful if BRIGHTLOCAL_API_SECRET
+  // is set. Otherwise we report "secret not set" and skip the call.
+  const apiSecret = process.env.BRIGHTLOCAL_API_SECRET;
+  if (apiSecret) {
+    const sig = await hmacSha1Base64(apiKey + expires, apiSecret);
+    const cbUrlSigned = `${cbUrlKeyOnly}&sig=${encodeURIComponent(sig)}`;
+    probes.push({
+      ...(await runRawProbe({
+        name: 'citation-builder GET /v4/cb/get-all (api-key + sig HMAC)',
+        method: 'GET',
+        url: cbUrlSigned.replace(apiSecret, '<redacted>'),
+        actualUrl: cbUrlSigned,
+      })),
+      notes: '',
+    });
+    const probe2b = probes[probes.length - 1]!;
+    probe2b.notes =
+      probe2b.status === 401 || probe2b.status === 403
+        ? 'BAD: HMAC auth still rejected — secret may be wrong or Citation Builder not enabled on this BL plan.'
+        : probe2b.status != null && probe2b.status >= 200 && probe2b.status < 300
+          ? 'PATH + SIGNED AUTH OK. USE THIS. (sig+expires required.)'
+          : 'Review body excerpt.';
+  } else {
+    probes.push({
+      name: 'citation-builder GET /v4/cb/get-all (signed auth)',
+      method: 'GET',
+      url: '(skipped — BRIGHTLOCAL_API_SECRET not set)',
+      status: null,
+      ok: false,
+      body_excerpt: null,
+      notes:
+        'BRIGHTLOCAL_API_SECRET not set in this environment. If the api-key-only probe above returned 401/403, add the secret env var (from your BL account) and re-run.',
+    });
+  }
 
   const auth1Ok =
     probes[0]!.status != null &&
     probes[0]!.status !== 401 &&
     probes[0]!.status !== 403;
-  const anyCandidateLooksRight = candidateProbes.some(
-    (p) => p.status != null && p.status !== 404 && p.status !== 401 && p.status !== 403
+  const anyCbOk = probes.slice(1).some(
+    (p) =>
+      p.status != null &&
+      p.status >= 200 &&
+      p.status < 500 &&
+      p.status !== 404 &&
+      p.status !== 401 &&
+      p.status !== 403
   );
-  const overallOk = auth1Ok && anyCandidateLooksRight;
+  const overallOk = auth1Ok && anyCbOk;
 
   return NextResponse.json(
     {
@@ -185,4 +219,63 @@ async function runProbe(args: {
       notes: 'Network error — could not reach BrightLocal.',
     };
   }
+}
+
+/** Like runProbe but no x-api-key header injection — for hosts/paths
+ *  that auth via query params instead. */
+async function runRawProbe(args: {
+  name: string;
+  method: string;
+  url: string;
+  /** Optional fetch URL when `url` is a redacted display value. */
+  actualUrl?: string;
+}): Promise<Omit<Probe, 'notes'>> {
+  try {
+    const res = await fetch(args.actualUrl ?? args.url, {
+      method: args.method,
+    });
+    let bodyExcerpt: string | null = null;
+    if (args.method !== 'HEAD') {
+      try {
+        const text = await res.text();
+        bodyExcerpt = text.slice(0, 400);
+      } catch {
+        bodyExcerpt = '(could not read body)';
+      }
+    }
+    return {
+      name: args.name,
+      method: args.method,
+      url: args.url,
+      status: res.status,
+      ok: res.ok,
+      body_excerpt: bodyExcerpt,
+    };
+  } catch (e) {
+    return {
+      name: args.name,
+      method: args.method,
+      url: args.url,
+      status: null,
+      ok: false,
+      body_excerpt: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/** HMAC-SHA1(message, key) → base64. Matches BL's PHP client signing. */
+async function hmacSha1Base64(message: string, key: string): Promise<string> {
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(key),
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(message));
+  const bytes = new Uint8Array(sig);
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
 }
