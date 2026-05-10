@@ -147,6 +147,93 @@ export async function GET() {
   // on /v2/clients-and-locations/locations/ for Canadian addresses
   // ("The selected choice is invalid"). Probe a battery of candidate
   // values with an otherwise-minimal payload to find the right one.
+  // Direct /v4/cb/create probe with SDD's known-good location id
+  // (4061311). We've confirmed the lookup works, the BL location
+  // exists, the value gets passed through — but BL keeps rejecting
+  // "Location ID is required" even when we send location_id /
+  // location-id / locationId. Try different param shapes inline so
+  // one round-trip identifies the right one.
+  const sddLocationId = '4061311';
+  const cbCreateProbes: Array<{ name: string; body: Record<string, string> }> = [
+    {
+      name: 'minimal create with location_id (underscore)',
+      body: {
+        location_id: sddLocationId,
+        campaign_name: 'PROBE — DO NOT FULFILL',
+        business_name: 'Probe',
+      },
+    },
+    {
+      name: 'create with location[id] nested',
+      body: {
+        'location[id]': sddLocationId,
+        campaign_name: 'PROBE',
+        business_name: 'Probe',
+      },
+    },
+    {
+      name: 'create with locations[0] array',
+      body: {
+        'locations[0]': sddLocationId,
+        campaign_name: 'PROBE',
+        business_name: 'Probe',
+      },
+    },
+    {
+      name: 'create with location_id in URL query',
+      body: {
+        campaign_name: 'PROBE',
+        business_name: 'Probe',
+      },
+    },
+  ];
+  const cbProbes = await Promise.all(
+    cbCreateProbes.map(async (p, i) => {
+      const expires = Math.floor(Date.now() / 1000) + 1800;
+      let url = `https://tools.brightlocal.com/seo-tools/api/v4/cb/create?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
+      // Last variant: append location_id to query string instead of body.
+      if (i === cbCreateProbes.length - 1) {
+        url += `&location_id=${sddLocationId}`;
+      }
+      const body = new URLSearchParams(p.body);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+        const text = await res.text().catch(() => '');
+        return {
+          name: `cb/create probe — ${p.name}`,
+          method: 'POST',
+          url: '/v4/cb/create',
+          status: res.status,
+          ok: res.ok,
+          body_excerpt: text.slice(0, 600),
+          notes:
+            text.includes('"location_id"') && text.includes('required')
+              ? 'Still rejects: this shape does not satisfy location_id requirement.'
+              : text.includes('"location_id"') && text.includes('not allowed')
+                ? 'Field exists but BL rejects this format.'
+                : !text.includes('location_id')
+                  ? 'PROGRESS: location_id no longer appears in errors. Inspect remaining errors.'
+                  : 'Inspect body.',
+        };
+      } catch (e) {
+        return {
+          name: `cb/create probe — ${p.name}`,
+          method: 'POST',
+          url: '/v4/cb/create',
+          status: null,
+          ok: false,
+          body_excerpt: e instanceof Error ? e.message : String(e),
+          notes: 'Network error.',
+        };
+      }
+    })
+  );
+  probes.push(...cbProbes);
+
   // Reference-lookup discovery. BL's q param doesn't find locations
   // by location-reference (we see "already in use" on create even
   // when search returned []). Probe a few candidate lookup shapes
