@@ -73,53 +73,56 @@ export async function GET() {
     })
   );
 
-  // Probe 2: citation-builder root. Confirms the product is enabled
-  // on the account and the endpoint path is correct.
-  probes.push(
-    await runProbe({
-      name: 'citation-builder list (GET /data/v1/citation-builder/orders)',
-      method: 'GET',
-      url: `${BL_BASE}/data/v1/citation-builder/orders`,
-      apiKey,
-      notesFromStatus: (s) =>
-        s === 401 || s === 403
-          ? 'BAD: auth rejected on citation-builder — Citation Builder may not be enabled on this BL plan, or the endpoint path is wrong.'
-          : s === 404
-            ? 'BAD: 404 — endpoint path is almost certainly wrong. Check BL docs.'
-            : s != null && s >= 200 && s < 300
-              ? 'OK: endpoint exists and is callable.'
-              : s != null && s >= 400 && s < 500
-                ? 'PARTIAL: endpoint exists but rejected the request. Method may be wrong (some BL endpoints reject GET on collections); not necessarily a blocker.'
-                : 'Unexpected response — review body excerpt.',
-    })
+  // Probes 2..N: candidate citation-builder paths. The path baked into
+  // lib/brightlocal/citationBuilder.ts is a placeholder — the smoke
+  // test confirmed it's wrong. BL's real Management APIs use /v2/
+  // (per their public PHP helper repo), and BL Help Center articles
+  // call these "campaigns" not "orders". Probe a battery so the next
+  // run tells us exactly which one BL accepts.
+  const candidates: Array<{ method: 'GET' | 'POST'; path: string }> = [
+    // /v2 + 'campaigns' is the strongest hypothesis — matches BL helper
+    // repo's /v2/{slug}/get-all convention + Help Center terminology.
+    { method: 'GET', path: '/v2/cb/get-all' },
+    { method: 'GET', path: '/v2/citation-builder/get-all' },
+    { method: 'GET', path: '/v2/citation-builder/campaigns' },
+    { method: 'GET', path: '/v2/citation-builder/orders' },
+    // Other plausible bases.
+    { method: 'GET', path: '/v1/citation-builder/campaigns' },
+    { method: 'GET', path: '/management/v1/citation-builder/campaigns' },
+    { method: 'GET', path: '/data/v1/citation-builder/campaigns' },
+  ];
+  const candidateProbes = await Promise.all(
+    candidates.map((c) =>
+      runProbe({
+        name: `candidate path probe (${c.method} ${c.path})`,
+        method: c.method,
+        url: `${BL_BASE}${c.path}`,
+        apiKey,
+        notesFromStatus: (s) =>
+          s === 404
+            ? 'NOT THIS ONE: 404, path does not exist.'
+            : s === 401 || s === 403
+              ? 'CHECK: auth rejected here but accepted on the audit endpoint — Citation Builder may not be enabled on this account, or this path uses different auth.'
+              : s === 405
+                ? 'PATH EXISTS (405 method-not-allowed) — try a different HTTP method.'
+                : s != null && s >= 200 && s < 300
+                  ? 'PATH EXISTS (2xx). USE THIS.'
+                  : s != null && s >= 400 && s < 500
+                    ? 'PATH LIKELY EXISTS (4xx with auth accepted) — payload/method may differ. Inspect body excerpt.'
+                    : 'Review body excerpt.',
+      })
+    )
   );
+  probes.push(...candidateProbes);
 
-  // Probe 3: HEAD on the same path. Cheaper, sometimes BL rejects
-  // GET on collection endpoints but accepts HEAD as an existence
-  // check. Confirms 404 vs 405 vs 200/2xx.
-  probes.push(
-    await runProbe({
-      name: 'citation-builder existence (HEAD /data/v1/citation-builder/orders)',
-      method: 'HEAD',
-      url: `${BL_BASE}/data/v1/citation-builder/orders`,
-      apiKey,
-      notesFromStatus: (s) =>
-        s === 404
-          ? 'BAD: endpoint not found at this path.'
-          : s === 405
-            ? 'OK: 405 (method not allowed) — endpoint exists, just doesn\'t allow HEAD. Path is correct.'
-            : s != null && s >= 200 && s < 300
-              ? 'OK: endpoint exists.'
-              : 'Review body excerpt.',
-    })
-  );
-
-  const overallOk =
+  const auth1Ok =
     probes[0]!.status != null &&
     probes[0]!.status !== 401 &&
-    probes[0]!.status !== 403 &&
-    probes[1]!.status !== 404 &&
-    probes[2]!.status !== 404;
+    probes[0]!.status !== 403;
+  const anyCandidateLooksRight = candidateProbes.some(
+    (p) => p.status != null && p.status !== 404 && p.status !== 401 && p.status !== 403
+  );
+  const overallOk = auth1Ok && anyCandidateLooksRight;
 
   return NextResponse.json(
     {
