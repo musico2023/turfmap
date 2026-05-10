@@ -353,26 +353,6 @@ async function ensureBlLocation(
   const p = input.profile;
   const flatHours = flattenHoursForBlLocation(p.hours ?? {});
   const country = p.country_code ?? 'USA';
-  // BL requires `language` on locations in multi-language countries
-  // (CA, BE, CH, etc.) and rejects every enum value we've probed via
-  // the API — the enum appears to be account-scoped/dynamic. Until we
-  // have the canonical value (operator needs to add a CA location
-  // once via the BL UI so we can read back what BL stores in the
-  // language field), short-circuit multi-language countries with a
-  // clear operator-facing error. For USA + GBR, omit the field
-  // entirely — smoke-test confirmed that works.
-  if (country !== 'USA' && country !== 'GBR') {
-    return {
-      ok: false,
-      error: {
-        ok: false,
-        kind: 'invalid_profile',
-        message:
-          `BL Citation Builder location create rejects every "language" enum value we have probed for country=${country}. ` +
-          `Workaround: an operator needs to create one ${country} location manually via the BL UI so we can read back the canonical language value, then wire it into lib/brightlocal/citationBuilder.ts.`,
-      },
-    };
-  }
   const addPayload: Record<string, string> = {
     name: truncate(p.business_name, 100),
     'location-reference': input.locationReference,
@@ -386,6 +366,16 @@ async function ensureBlLocation(
     postcode: p.postcode ?? '',
     telephone: p.phone ?? '',
   };
+  // BL's `language` enum is keyed `${COUNTRY}:${LANG}_${INDEX}`,
+  // discovered via DOM inspection of BL's UI radio field:
+  //   id="language_CAN:EN_0"  → English (Canada)
+  //   id="language_CAN:FR_1"  → French (Canada)
+  // Single-language countries (USA, GBR) accept omitted language;
+  // multi-language ones (CAN, BEL, CHE, etc.) require an explicit
+  // value. Default to English for our v1 audience; map other locales
+  // here when we expand.
+  const language = languageEnumFor(country);
+  if (language) addPayload.language = language;
   Object.assign(addPayload, flatHours);
 
   const add = await postForm(
@@ -441,6 +431,27 @@ function idFromAnyShape(o: Record<string, unknown>): string | null {
     if (typeof v === 'number' || typeof v === 'string') return String(v);
   }
   return null;
+}
+
+/** BL's per-country language enum. Keys are ISO-3166-1 alpha-3
+ *  country codes; values are BL's enum value (or null when the field
+ *  should be omitted). Format derived from BL UI inspection:
+ *  `${COUNTRY_CODE}:${LANG}_${RADIO_INDEX}` (the trailing `_N` is part
+ *  of the canonical value, not a Symfony id suffix as one might
+ *  assume — confirmed by Anthony via the BL Add-Location radio
+ *  field markup). Default to English where the country supports it. */
+function languageEnumFor(country: string): string | null {
+  switch (country) {
+    case 'CAN':
+      return 'CAN:EN_0';
+    case 'USA':
+    case 'GBR':
+      return null;
+    default:
+      // Unknown / single-language country. Omit and hope BL accepts;
+      // operator can wire the right enum here when we expand.
+      return null;
+  }
 }
 
 function flattenHoursForBlLocation(
