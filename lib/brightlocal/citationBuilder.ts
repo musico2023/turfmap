@@ -1,92 +1,77 @@
 /**
  * BrightLocal Citation Builder API wrapper.
  *
- * Sister module to lib/brightlocal/client.ts (which handles the
- * read-side Citation Tracker audit). Same auth (x-api-key), same
- * base URL — just a different product surface.
+ * Sister module to lib/brightlocal/client.ts (audit-side Citation
+ * Tracker). NOTE: these are TWO DIFFERENT BL APIs running on
+ * DIFFERENT hosts with DIFFERENT auth models. Don't conflate them.
  *
- * This wrapper exposes three primitives the rest of the app needs:
+ *   audit-side (lib/brightlocal/client.ts):
+ *     host: api.brightlocal.com
+ *     auth: x-api-key header
+ *     body: JSON
  *
- *   submitCitationOrder()  — POST a business profile to BL; receive
- *                            an order id we can poll later.
- *   pollCitationOrder()    — GET per-directory status for an order.
- *   pauseMaintenance()     — tell BL to stop syncing future NAP edits
- *                            for an order (used when a Pulse+ buyer
- *                            downgrades to Pulse).
+ *   citation-builder (this file):
+ *     host: tools.brightlocal.com/seo-tools/api
+ *     auth: api-key + expires query params
+ *           (sig+HMAC-SHA1 historically required; deprecated as of
+ *           the latest BrightLocal/apiclient-php release — api-key
+ *           alone is sufficient now)
+ *     body: form-encoded (application/x-www-form-urlencoded);
+ *           image upload uses multipart/form-data
  *
- * ─── ENDPOINT PATHS — VERIFY BEFORE GOING LIVE ──────────────────────────
+ * Endpoints (verified against BrightLocal/apiclient-php Examples):
+ *   POST  /v4/cb/create                       — create campaign,
+ *                                               returns campaign_id
+ *   POST  /v2/cb/upload/{campaignId}/image    — upload one photo
+ *                                               (multipart)
+ *   POST  /v2/cb/confirm-and-pay              — actually queue
+ *                                               submissions
+ *                                               (autoselect=Y lets BL
+ *                                               pick directories from
+ *                                               the package)
+ *   GET   /v4/cb/get?campaign-id=             — campaign metadata +
+ *                                               status
+ *   GET   /v2/cb/citations?campaign-id=       — per-directory status
  *
- * The exact path components (under /data/v1/...) for the Citation
- * Builder product need to be confirmed against BrightLocal's current
- * developer docs once Anthony enables Citation Builder on the BL
- * account. The placeholder paths below mirror their published
- * convention but every consumer should treat the call sites as
- * "implementation TBD post-credentials" until smoke-tested.
+ * Pause: BL doesn't expose a documented "pause syncing" endpoint in
+ * the public examples. We mark maintenance_paused locally and stop
+ * polling; operator pauses sync on the BL dashboard if needed.
  *
- * Until then: every function returns a typed { ok: false } envelope
- * with `kind: 'not_configured'` when CITATION_BUILDER_ENABLED is unset,
- * so the rest of the app can ship and fall back to manual fulfillment
- * cleanly.
- *
- * ─── Required env ──────────────────────────────────────────────────────
- *   BRIGHTLOCAL_API_KEY              — same as audit-side (already set)
- *   CITATION_BUILDER_ENABLED         — gate flag; set to 'true' once
- *                                      you've smoke-tested against
- *                                      BL's sandbox or live API
+ * Required env:
+ *   BRIGHTLOCAL_API_KEY                — same key as audit-side
+ *                                        (Citation Builder must be
+ *                                        enabled on the BL plan)
+ *   CITATION_BUILDER_ENABLED           — 'true' to actually fire
+ *                                        requests; otherwise every
+ *                                        function returns
+ *                                        { ok: false, kind:
+ *                                          'not_configured' }
+ *   BRIGHTLOCAL_CB_PACKAGE_ID          — optional, defaults to
+ *                                        'cb15'. The BL package SKU
+ *                                        the campaign should be
+ *                                        billed under.
  */
 
 import type {
   CitationDirectoryEntry,
   CitationDirectoryStatus,
+  CitationOrderStatus,
   CitationSubmittedProfile,
 } from '@/lib/supabase/types';
 
-const BL_BASE = 'https://api.brightlocal.com';
+const BL_BASE = 'https://tools.brightlocal.com/seo-tools/api';
 
-/** Path components — confirm against BL docs. See header comment. */
-const ENDPOINT = {
-  /** POST — create a citation-build order. */
-  submit: '/data/v1/citation-builder/orders',
-  /** GET — fetch order status + per-directory submission state. */
-  status: (orderId: string) =>
-    `/data/v1/citation-builder/orders/${encodeURIComponent(orderId)}`,
-  /** POST — pause ongoing sync without canceling already-live citations. */
-  pause: (orderId: string) =>
-    `/data/v1/citation-builder/orders/${encodeURIComponent(orderId)}/pause`,
-} as const;
+/** BL category id used as a generic fallback. The category-id field
+ *  is required by BL's create-campaign endpoint but is a numeric BL
+ *  internal id distinct from the GBP category strings we collect.
+ *  605 is "Restaurant" in BL's example; in practice BL assigns
+ *  citations based on the `business_categories` JSON list anyway, so
+ *  a fallback id is acceptable for v1. Replace with a per-vertical
+ *  lookup once the BL BusinessCategories endpoint is wired up. */
+const FALLBACK_CATEGORY_ID = 605;
 
-const HOME_DIRECTORY_SET = [
-  // The default ~25 directories targeted on a citation order. BL
-  // accepts a list of directory slugs and submits to each. Mirrors
-  // the slug convention in lib/brightlocal/directories.ts; final
-  // industry-aware selection happens at submit time via
-  // chooseDirectorySet() below.
-  'bing',
-  'apple-maps',
-  'facebook',
-  'yelp',
-  'yellowpages',
-  'foursquare',
-  'mapquest',
-  'tripadvisor',
-  'angi',
-  'thumbtack',
-  'houzz',
-  'manta',
-  'merchantcircle',
-  'citysearch',
-  'localpages',
-  'cylex',
-  'showmelocal',
-  'hotfrog',
-  'brownbook',
-  'tupalo',
-  'judysbook',
-  'businesslistings',
-  'whereto',
-  'ezlocal',
-  'iglobal',
-] as const;
+/** Default Citation Builder package SKU. Override via env. */
+const DEFAULT_PACKAGE_ID = 'cb15';
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -95,18 +80,30 @@ export type SubmitOrderInput = {
    *  required NAP fields plus categories + hours + photos for BL's
    *  submission engine to fan out. */
   profile: CitationSubmittedProfile;
-  /** Industry profile from lib/brightlocal/directories — drives the
-   *  per-vertical directory set. */
+  /** Industry profile (informational; carried for future per-vertical
+   *  category-id lookup). */
   industry: string | null;
-  /** Optional override of the default directory set. Used by the
-   *  re-sync flow to target only the directories that need updating. */
+  /** Operator/buyer contact info. BL requires contact name + email on
+   *  every campaign. We derive these from the agency user submitting
+   *  the order. */
+  contact: {
+    firstname: string;
+    lastname: string;
+    email: string;
+  };
+  /** Optional override of BL's default directory selection. When unset
+   *  we let BL autoselect from the package. */
   directories?: string[];
 };
 
 export type SubmitOrderResult =
   | {
       ok: true;
+      /** BL's campaign id, persisted to citation_orders.brightlocal_order_id. */
       orderId: string;
+      /** The list of directories BL will submit to (when autoselect
+       *  the list is unknown until poll, so we return [] in that
+       *  case). */
       directories: string[];
       wholesaleCents: number;
     }
@@ -124,7 +121,7 @@ export type PollOrderResult =
   | {
       ok: true;
       orderId: string;
-      status: 'queued' | 'in_progress' | 'complete' | 'partial' | 'failed';
+      status: CitationOrderStatus;
       perDirectory: CitationDirectoryEntry[];
       orderError: string | null;
     }
@@ -141,9 +138,14 @@ export type PauseMaintenanceResult =
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /**
- * Submit a new citation-build order to BrightLocal. Idempotency is the
- * caller's responsibility — pair this call with a `citation_orders`
- * row insert in a single transaction so a retry doesn't double-submit.
+ * Submit a new citation-build campaign to BrightLocal. Three-step:
+ *   1. POST /v4/cb/create       → campaign_id
+ *   2. for each photo URL → POST /v2/cb/upload/{id}/image (best-effort)
+ *   3. POST /v2/cb/confirm-and-pay  → actually queues submissions
+ *
+ * Idempotency is the caller's responsibility — pair with a
+ * citation_orders insert in the same transaction so a retry doesn't
+ * re-create + re-pay.
  */
 export async function submitCitationOrder(
   input: SubmitOrderInput
@@ -151,12 +153,6 @@ export async function submitCitationOrder(
   const config = getConfig();
   if (!config.ok) return config;
 
-  const directories =
-    input.directories ?? chooseDirectorySet(input.industry);
-
-  // Required-field validation BEFORE round-tripping to BL — saves a
-  // pointless API call when the profile is half-filled. Missing NAP
-  // fields are by far the most common failure mode.
   const missing = findMissingProfileFields(input.profile);
   if (missing.length > 0) {
     return {
@@ -166,82 +162,71 @@ export async function submitCitationOrder(
     };
   }
 
-  try {
-    const res = await fetch(`${BL_BASE}${ENDPOINT.submit}`, {
-      method: 'POST',
-      headers: {
-        'x-api-key': config.apiKey,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        // Shape conforms to BL's Citation Builder submission payload.
-        // Confirm field names against current BL docs — any mismatch
-        // here surfaces as a 4xx with the exact missing/unexpected
-        // field name in the response body.
-        business_name: input.profile.business_name,
-        address: input.profile.street_address,
-        city: input.profile.city,
-        region: input.profile.region,
-        postcode: input.profile.postcode,
-        country: input.profile.country_code,
-        phone: input.profile.phone,
-        website: input.profile.website,
-        primary_category: input.profile.primary_category,
-        additional_categories: input.profile.additional_categories,
-        description: input.profile.description,
-        hours: input.profile.hours,
-        photo_urls: input.profile.photo_urls,
-        directories,
-      }),
-    });
-
-    if (res.status === 429) {
-      return {
-        ok: false,
-        kind: 'rate_limited',
-        message: 'BL rate limit reached — retry in 60s',
-      };
-    }
-    if (!res.ok) {
-      const body = await res.text();
-      return {
-        ok: false,
-        kind: 'remote_error',
-        message: `BL submit ${res.status}: ${body.slice(0, 240)}`,
-      };
-    }
-
-    const data = (await res.json()) as {
-      order_id?: string;
-      directories?: string[];
-      wholesale_cents?: number;
-    };
-    if (!data.order_id) {
-      return {
-        ok: false,
-        kind: 'remote_error',
-        message: 'BL response missing order_id',
-      };
-    }
-    return {
-      ok: true,
-      orderId: data.order_id,
-      directories: data.directories ?? directories,
-      // BL's pricing typically returns in their currency unit — coerce
-      // to cents at the boundary. Default fallback is the rough
-      // ~$2.50/dir wholesale baseline; actual values come from BL.
-      wholesaleCents:
-        typeof data.wholesale_cents === 'number'
-          ? data.wholesale_cents
-          : directories.length * 250,
-    };
-  } catch (e) {
+  // Step 1 — create campaign.
+  const createPayload = mapProfileToCreatePayload(input);
+  const create = await postForm(config.apiKey, '/v4/cb/create', createPayload);
+  if (!create.ok) return create.error;
+  const campaignId = extractCampaignId(create.json);
+  if (!campaignId) {
     return {
       ok: false,
       kind: 'remote_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: `BL create response missing campaign_id: ${truncate(JSON.stringify(create.json), 240)}`,
     };
   }
+
+  // Step 2 — upload photos. Best-effort; a photo failing isn't a
+  // showstopper for the submission. Operator can re-upload later via
+  // BL dashboard if needed.
+  const photoUrls = input.profile.photo_urls ?? [];
+  for (const url of photoUrls) {
+    try {
+      const bytes = await fetchPhotoBytes(url);
+      if (!bytes) continue;
+      await uploadCampaignImage(
+        config.apiKey,
+        campaignId,
+        bytes.contentType,
+        bytes.filename,
+        bytes.data
+      );
+    } catch {
+      // Swallow. BL accepts the campaign without photos; logging here
+      // would noise prod without giving the operator anything
+      // actionable they can't already see by checking the campaign
+      // on the BL dashboard.
+    }
+  }
+
+  // Step 3 — confirm and pay. This is the moment BL is actually
+  // billed. Pre-step gating by tier already happened in the calling
+  // route (Pulse+ only).
+  const confirmPayload: Record<string, string> = {
+    campaign_id: campaignId,
+    package_id: config.packageId,
+    autoselect: input.directories ? 'N' : 'Y',
+    'remove-duplicates': 'Y',
+  };
+  if (input.directories && input.directories.length > 0) {
+    confirmPayload['citations'] = JSON.stringify(input.directories);
+  }
+  const confirm = await postForm(
+    config.apiKey,
+    '/v2/cb/confirm-and-pay',
+    confirmPayload
+  );
+  if (!confirm.ok) return confirm.error;
+
+  // BL doesn't return a wholesale price on confirm-and-pay — it bills
+  // per package. Stamp a placeholder; the dashboard's cost rollup
+  // already keys off citation_orders.wholesale_cents so a future
+  // backfill can reconcile against BL invoicing.
+  return {
+    ok: true,
+    orderId: campaignId,
+    directories: input.directories ?? [],
+    wholesaleCents: estimatePackageCostCents(config.packageId),
+  };
 }
 
 export async function pollCitationOrder(
@@ -250,96 +235,349 @@ export async function pollCitationOrder(
   const config = getConfig();
   if (!config.ok) return config;
 
-  try {
-    const res = await fetch(`${BL_BASE}${ENDPOINT.status(orderId)}`, {
-      headers: { 'x-api-key': config.apiKey },
-    });
-    if (res.status === 404) {
+  // Campaign metadata.
+  const campaignRes = await getJson(config.apiKey, '/v4/cb/get', {
+    'campaign-id': orderId,
+  });
+  if (!campaignRes.ok) {
+    if (campaignRes.error.kind === 'remote_error' && campaignRes.status === 404) {
       return {
         ok: false,
         kind: 'not_found',
-        message: `BL order ${orderId} not found`,
+        message: `BL campaign ${orderId} not found`,
       };
     }
-    if (!res.ok) {
-      const body = await res.text();
-      return {
-        ok: false,
-        kind: 'remote_error',
-        message: `BL poll ${res.status}: ${body.slice(0, 240)}`,
-      };
-    }
-    const data = (await res.json()) as {
-      status?: string;
-      per_directory?: Array<{
-        directory?: string;
-        status?: string;
-        submitted_at?: string;
-        live_at?: string;
-        url?: string;
-        message?: string;
-      }>;
-      error?: string;
-    };
-
-    return {
-      ok: true,
-      orderId,
-      status: normalizeOrderStatus(data.status),
-      perDirectory: (data.per_directory ?? []).map(normalizeDirectoryEntry),
-      orderError: data.error ?? null,
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      kind: 'remote_error',
-      message: e instanceof Error ? e.message : String(e),
-    };
+    return campaignRes.error;
   }
+
+  // Per-directory status.
+  const citationsRes = await getJson(config.apiKey, '/v2/cb/citations', {
+    'campaign-id': orderId,
+  });
+  if (!citationsRes.ok) return citationsRes.error;
+
+  const status = normalizeOrderStatus(
+    extractCampaignStatus(campaignRes.json)
+  );
+  const perDirectory = extractCitationsList(citationsRes.json).map(
+    normalizeDirectoryEntry
+  );
+  const orderError = extractCampaignError(campaignRes.json);
+
+  return {
+    ok: true,
+    orderId,
+    status,
+    perDirectory,
+    orderError,
+  };
 }
 
 export async function pauseMaintenance(
-  orderId: string
+  _orderId: string
 ): Promise<PauseMaintenanceResult> {
   const config = getConfig();
   if (!config.ok) return config;
+  // BL's published Citation Builder examples don't include a "pause
+  // syncing" endpoint. We mark maintenance_paused locally (which
+  // stops the cron from polling) and surface a "manage on BL
+  // dashboard" notice in the operator UI when this returns
+  // 'remote_error'. Wire up the real endpoint when BL publishes one.
+  return {
+    ok: false,
+    kind: 'remote_error',
+    message:
+      'BL Citation Builder pause endpoint not yet wired. Local maintenance_paused is set; pause sync on the BL dashboard if needed.',
+  };
+}
 
-  try {
-    const res = await fetch(`${BL_BASE}${ENDPOINT.pause(orderId)}`, {
-      method: 'POST',
-      headers: { 'x-api-key': config.apiKey },
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      return {
-        ok: false,
-        kind: 'remote_error',
-        message: `BL pause ${res.status}: ${body.slice(0, 240)}`,
+// ─── BL HTTP plumbing ──────────────────────────────────────────────────────
+
+type PostResult =
+  | { ok: true; status: number; json: unknown }
+  | {
+      ok: false;
+      status: number | null;
+      error: {
+        ok: false;
+        kind: 'remote_error' | 'rate_limited';
+        message: string;
       };
-    }
-    return { ok: true };
+    };
+
+async function postForm(
+  apiKey: string,
+  path: string,
+  body: Record<string, string>
+): Promise<PostResult> {
+  const url = `${BL_BASE}${path}?${authQuery(apiKey)}`;
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(body)) params.set(k, v);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+    return parseResponse(res, path);
   } catch (e) {
     return {
       ok: false,
-      kind: 'remote_error',
-      message: e instanceof Error ? e.message : String(e),
+      status: null,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: e instanceof Error ? e.message : String(e),
+      },
     };
   }
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+type GetResult =
+  | { ok: true; status: number; json: unknown }
+  | {
+      ok: false;
+      status: number | null;
+      error: { ok: false; kind: 'remote_error'; message: string };
+    };
 
-/** Industry-aware default directory set. Conservative ~25 directories
- *  for v1; overlap with HOME_DIRECTORY_SET is intentional — the
- *  universal_core (Bing/Apple/Facebook/Yelp) appears in every
- *  vertical. Final per-industry selection should pull from
- *  lib/brightlocal/directories.ts once that module exposes a
- *  citation-builder slug list (currently it's audit-side only). */
-function chooseDirectorySet(_industry: string | null): string[] {
-  // TODO: when lib/brightlocal/directories.ts exposes a
-  // getCitationBuilderSlugsForIndustry(), call that instead. For now,
-  // ship the universal home-services starter set.
-  return [...HOME_DIRECTORY_SET];
+async function getJson(
+  apiKey: string,
+  path: string,
+  params: Record<string, string>
+): Promise<GetResult> {
+  const qs = new URLSearchParams({ ...params, ...authParams(apiKey) });
+  try {
+    const res = await fetch(`${BL_BASE}${path}?${qs.toString()}`);
+    const parsed = await parseResponse(res, path);
+    if (parsed.ok) return parsed;
+    // Pollers don't surface the rate-limited variant — they treat it
+    // as a generic remote error and the cron retries on the next
+    // sweep. Recast both kinds to remote_error.
+    return {
+      ok: false,
+      status: parsed.status,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: parsed.error.message,
+      },
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      status: null,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: e instanceof Error ? e.message : String(e),
+      },
+    };
+  }
+}
+
+async function parseResponse(
+  res: Response,
+  path: string
+): Promise<PostResult> {
+  if (res.status === 429) {
+    return {
+      ok: false,
+      status: 429,
+      error: {
+        ok: false,
+        kind: 'rate_limited',
+        message: 'BL rate limit reached — retry in 60s',
+      },
+    };
+  }
+  let json: unknown = null;
+  let text: string | null = null;
+  try {
+    text = await res.text();
+    json = text.length > 0 ? JSON.parse(text) : {};
+  } catch {
+    json = { raw: text };
+  }
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: `BL ${path} ${res.status}: ${truncate(text ?? '(empty)', 240)}`,
+      },
+    };
+  }
+  return { ok: true, status: res.status, json };
+}
+
+async function uploadCampaignImage(
+  apiKey: string,
+  campaignId: string,
+  contentType: string,
+  filename: string,
+  data: Uint8Array
+): Promise<void> {
+  const url = `${BL_BASE}/v2/cb/upload/${encodeURIComponent(campaignId)}/image?${authQuery(apiKey)}`;
+  const fd = new FormData();
+  fd.append(
+    'file',
+    new Blob([data as unknown as ArrayBuffer], { type: contentType }),
+    filename
+  );
+  await fetch(url, { method: 'POST', body: fd });
+  // Best-effort — caller swallows.
+}
+
+async function fetchPhotoBytes(
+  url: string
+): Promise<{ data: Uint8Array; contentType: string; filename: string } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+    const filename = url.split('/').pop()?.split('?')[0] ?? 'photo.jpg';
+    return { data: buf, contentType, filename };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Mapping helpers ───────────────────────────────────────────────────────
+
+function mapProfileToCreatePayload(
+  input: SubmitOrderInput
+): Record<string, string> {
+  const p = input.profile;
+
+  // Categories: BL takes business_categories as a JSON-encoded array
+  // of category names (the per-vertical id lookup is separate; we
+  // pass FALLBACK_CATEGORY_ID for now).
+  const categoriesList = [p.primary_category, ...(p.additional_categories ?? [])]
+    .filter((c): c is string => Boolean(c?.trim()))
+    .map((c) => c.trim());
+
+  // Hours: BL wants
+  //   opening_hours[regular][mon][status] = open|closed|24hrs|split
+  //   opening_hours[regular][mon][hours][0][start] = HH:MM
+  //   opening_hours[regular][mon][hours][0][end]   = HH:MM
+  // application/x-www-form-urlencoded supports nested arrays via
+  // bracket notation.
+  const flatHours = flattenHoursForBl(p.hours ?? {});
+
+  const payload: Record<string, string> = {
+    location_id: '1',
+    campaign_name: truncate(`${p.business_name} — ${p.city ?? ''}`.trim(), 100),
+    business_name: p.business_name,
+    website_address: stripProtocol(p.website ?? ''),
+    campaign_country: p.country_code ?? 'USA',
+    campaign_city: p.city ?? '',
+    campaign_state: p.region ?? '',
+    business_category_id: String(FALLBACK_CATEGORY_ID),
+    business_categories: JSON.stringify(categoriesList),
+    address1: p.street_address ?? '',
+    address2: '',
+    city: p.city ?? '',
+    region: p.region ?? '',
+    postcode: p.postcode ?? '',
+    contact_name: input.contact.lastname || input.contact.firstname || 'Owner',
+    contact_firstname: input.contact.firstname || 'Owner',
+    contact_telephone: p.phone ?? '',
+    contact_email: input.contact.email,
+    brief_description: truncate(p.description ?? '', 250),
+    full_description: p.description ?? '',
+  };
+  Object.assign(payload, flatHours);
+  return payload;
+}
+
+function flattenHoursForBl(
+  hours: Record<string, string>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+  for (const day of days) {
+    const v = hours[day];
+    if (!v || v === 'closed') {
+      out[`opening_hours[regular][${day}][status]`] = 'closed';
+      continue;
+    }
+    if (v === '24h' || v === '24hrs') {
+      out[`opening_hours[regular][${day}][status]`] = '24hrs';
+      continue;
+    }
+    // "HH:MM-HH:MM"
+    const [start, end] = v.split('-').map((s) => s.trim());
+    if (!start || !end) {
+      out[`opening_hours[regular][${day}][status]`] = 'closed';
+      continue;
+    }
+    out[`opening_hours[regular][${day}][status]`] = 'open';
+    out[`opening_hours[regular][${day}][hours][0][start]`] = start;
+    out[`opening_hours[regular][${day}][hours][0][end]`] = end;
+  }
+  out['opening_hours[regular][apply_to_all]'] = 'false';
+  return out;
+}
+
+function extractCampaignId(json: unknown): string | null {
+  const data = (json as { response?: { campaign_id?: number | string } })?.response;
+  if (!data?.campaign_id) return null;
+  return String(data.campaign_id);
+}
+
+function extractCampaignStatus(json: unknown): string | undefined {
+  const data = (json as { response?: { status?: string } })?.response;
+  return data?.status;
+}
+
+function extractCampaignError(json: unknown): string | null {
+  const data = (json as { response?: { error?: string; errors?: unknown } })?.response;
+  if (!data) return null;
+  if (typeof data.error === 'string' && data.error.length > 0) return data.error;
+  if (data.errors) {
+    try {
+      return truncate(JSON.stringify(data.errors), 400);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function extractCitationsList(json: unknown): Array<{
+  directory?: string;
+  citation_site?: string;
+  status?: string;
+  submitted_at?: string;
+  live_at?: string;
+  url?: string;
+  citation_url?: string;
+  message?: string;
+  notes?: string;
+}> {
+  const data = (
+    json as {
+      response?: {
+        results?: unknown[];
+        citations?: unknown[];
+      };
+    }
+  )?.response;
+  const list = (data?.citations ?? data?.results ?? []) as Array<Record<string, unknown>>;
+  return list.map((row) => ({
+    directory:
+      (row.directory as string | undefined) ??
+      (row.citation_site as string | undefined),
+    status: row.status as string | undefined,
+    submitted_at: row.submitted_at as string | undefined,
+    live_at: row.live_at as string | undefined,
+    url: (row.url as string | undefined) ?? (row.citation_url as string | undefined),
+    message: (row.message as string | undefined) ?? (row.notes as string | undefined),
+  }));
 }
 
 function findMissingProfileFields(p: CitationSubmittedProfile): string[] {
@@ -357,16 +595,16 @@ function findMissingProfileFields(p: CitationSubmittedProfile): string[] {
   return missing;
 }
 
-function normalizeOrderStatus(
-  s: string | undefined
-): 'queued' | 'in_progress' | 'complete' | 'partial' | 'failed' {
+function normalizeOrderStatus(s: string | undefined): CitationOrderStatus {
   switch ((s ?? '').toLowerCase()) {
     case 'queued':
     case 'pending':
+    case 'awaiting_submission':
       return 'queued';
     case 'in_progress':
     case 'submitting':
     case 'processing':
+    case 'live':
       return 'in_progress';
     case 'complete':
     case 'completed':
@@ -391,10 +629,9 @@ function normalizeDirectoryEntry(raw: {
   url?: string;
   message?: string;
 }): CitationDirectoryEntry {
-  const status = normalizeDirectoryStatus(raw.status);
   return {
     directory: raw.directory ?? 'unknown',
-    status,
+    status: normalizeDirectoryStatus(raw.status),
     submitted_at: raw.submitted_at ?? null,
     live_at: raw.live_at ?? null,
     url: raw.url ?? null,
@@ -408,12 +645,14 @@ function normalizeDirectoryStatus(
   switch ((s ?? '').toLowerCase()) {
     case 'pending':
     case 'queued':
+    case 'awaiting_submission':
       return 'pending';
     case 'submitted':
     case 'in_progress':
       return 'submitted';
     case 'live':
     case 'success':
+    case 'complete':
       return 'live';
     case 'needs_review':
     case 'manual_action_required':
@@ -427,8 +666,47 @@ function normalizeDirectoryStatus(
   }
 }
 
+function authQuery(apiKey: string): string {
+  return new URLSearchParams(authParams(apiKey)).toString();
+}
+
+function authParams(apiKey: string): Record<string, string> {
+  // BL accepts api-key alone (sig+expires HMAC was deprecated in the
+  // latest apiclient-php release; smoke test confirmed api-key-only
+  // works against /v4/cb/get-all). We still send `expires` because
+  // the docs reference it.
+  return {
+    'api-key': apiKey,
+    expires: String(Math.floor(Date.now() / 1000) + 1800),
+  };
+}
+
+function stripProtocol(url: string): string {
+  return url.replace(/^https?:\/\//i, '');
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n);
+}
+
+function estimatePackageCostCents(packageId: string): number {
+  // Rough lookup of BL's published Citation Builder package pricing.
+  // Real wholesale comes from BL invoicing; this is a placeholder so
+  // dashboard cost rollups have a non-zero value to sort by.
+  switch (packageId) {
+    case 'cb15':
+      return 8000;
+    case 'cb25':
+      return 12000;
+    case 'cb50':
+      return 22000;
+    default:
+      return 8000;
+  }
+}
+
 function getConfig():
-  | { ok: true; apiKey: string }
+  | { ok: true; apiKey: string; packageId: string }
   | { ok: false; kind: 'not_configured'; message: string } {
   if (process.env.CITATION_BUILDER_ENABLED !== 'true') {
     return {
@@ -446,5 +724,9 @@ function getConfig():
       message: 'BRIGHTLOCAL_API_KEY is not set.',
     };
   }
-  return { ok: true, apiKey };
+  return {
+    ok: true,
+    apiKey,
+    packageId: process.env.BRIGHTLOCAL_CB_PACKAGE_ID ?? DEFAULT_PACKAGE_ID,
+  };
 }

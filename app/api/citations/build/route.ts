@@ -121,9 +121,15 @@ export async function POST(req: Request) {
   }
 
   // ─── Submit to BL ─────────────────────────────────────────────────────
+  // BL requires contact name + email on every campaign — derive them
+  // from the agency operator submitting the order (we don't collect
+  // a buyer-side contact in the onboarding form).
+  const contact = splitContactName(auth.full_name, auth.email);
+
   const result = await submitCitationOrder({
     profile: parsed.profile,
     industry: parsed.industry ?? null,
+    contact,
   });
 
   if (!result.ok) {
@@ -206,4 +212,19 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ ok: true, order: row });
+}
+
+/** Split a free-form full name into first + last. Single-word names
+ *  reuse the word for both fields (BL requires both to be non-empty).
+ *  Falls back to the email local-part when no name is on the user
+ *  record. */
+function splitContactName(
+  fullName: string | null,
+  email: string
+): { firstname: string; lastname: string; email: string } {
+  const raw = fullName?.trim() || email.split('@')[0]!;
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const firstname = parts[0] ?? raw;
+  const lastname = parts.length > 1 ? parts.slice(1).join(' ') : firstname;
+  return { firstname, lastname, email };
 }
