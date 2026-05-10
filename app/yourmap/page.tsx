@@ -300,59 +300,54 @@ export default async function YourMapLandingPage({
               another dollar on local SEO.
             </p>
 
-            {/* Body paragraph — fully personalized from prospect data
-             *  when present, generic fallback otherwise. */}
-            {personalization ? (
-              <>
-                <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-4">
+            {/* Body paragraph — Sprint-2 Fix 4 streamlined to a
+             *  one-sentence framer. The buyer's actual data
+             *  (score, invisibility count, top competitor) now
+             *  lives in dedicated cards below, so this para's job
+             *  is just to introduce them and get out of the way. */}
+            <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-6">
+              {personalization ? (
+                <>
                   Our outreach team ran an 81-point geo-grid preview of{' '}
-                  {personalization.business_name} across{' '}
-                  {personalization.city}.{' '}
-                  <strong className="font-semibold text-zinc-100">
-                    Your preview TurfScore is {personalization.preview_score}{' '}
-                    ({personalization.band})
-                  </strong>
-                  {' '}— meaning customers searching from{' '}
-                  {personalization.invisibility_count}{' '}of 81 cells across
-                  your service area aren&rsquo;t seeing you in the local
-                  Map Pack.
-                </p>
-                <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-5">
-                  Order the full scan to unlock cell-level detail, the AI
-                  Coach Fix List, and the top 3 directories costing you
-                  visibility right now.
-                </p>
-                {personalization.top_competitor_name &&
-                  personalization.top_competitor_share_pct != null && (
-                    <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-7">
-                      Also:{' '}
-                      <strong className="font-semibold text-zinc-100">
-                        {personalization.top_competitor_name} is currently
-                        winning {personalization.top_competitor_share_pct}% of
-                        your service area.
-                      </strong>{' '}
-                      The full scan shows you exactly which cells they own.
-                    </p>
-                  )}
-              </>
-            ) : (
-              <>
-                <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-4">
-                  Our outreach team ran a preview of your service area on
-                  TurfMap.{' '}
-                  <strong className="font-semibold text-zinc-100">
-                    You scored in the bottom half
-                  </strong>
-                  {' '}— meaning customers searching across your service area
-                  aren&rsquo;t seeing you in the local Map Pack.
-                </p>
-                <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-7">
-                  Order the full scan to unlock cell-level detail, the AI
-                  Coach Fix List, and the top 3 directories costing you
-                  visibility right now.
-                </p>
-              </>
+                  {personalization.business_name}&rsquo;s{' '}
+                  {personalization.city} service area. The cards below
+                  show what we found — and what the full scan unlocks.
+                </>
+              ) : (
+                <>
+                  Our outreach team ran a preview of your service area
+                  on TurfMap. The cards below show what we found — and
+                  what the full scan unlocks.
+                </>
+              )}
+            </p>
+
+            {/* Your Preview Score card — Sprint-2 Fix 2. Primary
+             *  visual anchor of the hero. Renders nothing when the
+             *  fallback path is active (no personalization data); a
+             *  generic stand-in would dilute the "we already ran
+             *  your scan" framing. */}
+            {personalization && (
+              <YourPreviewScoreCard
+                score={personalization.preview_score}
+                band={personalization.band}
+              />
             )}
+
+            {/* The Competition card — Sprint-2 Fix 3. Warm-toned
+             *  accent (uses the existing palette's --color-warn /
+             *  orange channel) so it visually differentiates from
+             *  the lime YOUR PREVIEW SCORE card without alarmism.
+             *  Renders only when we have competitor data. */}
+            {personalization &&
+              personalization.top_competitor_name &&
+              personalization.top_competitor_share_pct != null && (
+                <TheCompetitionCard
+                  competitorName={personalization.top_competitor_name}
+                  sharePct={personalization.top_competitor_share_pct}
+                  city={personalization.city}
+                />
+              )}
 
             <PricePanel
               listCents={listCents}
@@ -391,22 +386,20 @@ export default async function YourMapLandingPage({
             </div>
           </div>
 
-          {/* Right: animated heatmap + score row.
-           *  The cells/scores rendered here are sample data, NOT
-           *  the buyer's real preview. The body copy on the left
-           *  states the buyer's real preview score, so without
-           *  explicit framing the buyer can confuse the on-page
-           *  heatmap with their own scan. Stack of cues to defeat
-           *  that:
-           *    1. Lime pill ABOVE the card ("ANONYMIZED EXAMPLE —
-           *       NOT YOUR DATA")
-           *    2. Strengthened caption INSIDE the card directly
-           *       beneath the heatmap visual (above the score row)
-           *    3. Score cards visually distinct so the buyer reads
-           *       them as "what your full scan reveals" not "your
-           *       current scores."
+          {/* Right: sample heatmap + score row.
+           *  Sprint-2 Fix 1 made this column visually SUBORDINATE
+           *  to the left column. Per spec:
+           *    - slightly smaller scale (opacity-reduced shell +
+           *      tighter container)
+           *    - slightly muted color treatment (lower-opacity
+           *      score cards via the `subdued` flag)
+           *    - keeps current EXAMPLE badge + caption stack
+           *  The left column is now the buyer-data anchor
+           *  (YourPreviewScoreCard + TheCompetitionCard); this
+           *  right column shows what the product looks like, not
+           *  what the buyer's data is.
            */}
-          <div className="lg:col-span-5">
+          <div className="lg:col-span-5 opacity-90">
             {/* ANONYMIZED-EXAMPLE pill — solid lime fill so it reads
              *  at a glance even when the rest of the card is being
              *  scanned. Carries enough visual weight to override
@@ -1250,4 +1243,148 @@ function TrustItem({
 function pickFirst(v: string | string[] | undefined): string | null {
   if (Array.isArray(v)) return v[0] ?? null;
   return v ?? null;
+}
+
+// ─── Sprint-2 cards: Your Preview Score + The Competition ──────────
+//
+// Both cards live in the left column of the hero between the body
+// paragraph and the pricing card. They take the place of the data
+// that used to be embedded in the body para (preview score sentence
+// + "also, competitor X is winning Y%" footnote) and surface it as
+// the visual centerpiece of the personalized cohort experience.
+
+/** Map a band label to a fill/text accent. Mirrors the dashboard's
+ *  band-color convention. Uses existing CSS-variable palette only
+ *  — no new colors introduced. */
+function bandAccent(band: string): { hex: string; fg: string } {
+  // The codebase's getTurfScoreBand returns labels: Invisible /
+  // Patchy / Solid / Dominant / Rare air. The Sprint-2 spec uses
+  // "Saturated" for 80+; we honor the codebase label ("Rare air")
+  // since that's what the data carries, but the color treatment
+  // matches the spec's intent.
+  switch (band) {
+    case 'Invisible':
+      return { hex: '#ff4d4d', fg: '#ffffff' };
+    case 'Patchy':
+      return { hex: '#ff9f3a', fg: '#000000' };
+    case 'Solid':
+      return { hex: '#e8e54a', fg: '#000000' };
+    case 'Dominant':
+      return { hex: '#c5ff3a', fg: '#000000' };
+    case 'Rare air':
+    case 'Saturated':
+      return { hex: '#c5ff3a', fg: '#000000' };
+    default:
+      return { hex: '#a1a1aa', fg: '#000000' };
+  }
+}
+
+/** Plain-English interpretation per band label. Lookup table; falls
+ *  back to a neutral string when an unfamiliar label comes through
+ *  so the card never renders empty. */
+function bandInterpretation(band: string): string {
+  switch (band) {
+    case 'Invisible':
+      return "You're missing from most of your service area. Customers searching nearby aren't seeing you in the Map Pack.";
+    case 'Patchy':
+      return 'You appear in some neighborhoods but not most. Customers in significant parts of your service area aren’t finding you.';
+    case 'Solid':
+      return 'You appear in about half your service area. Above-average operators land here.';
+    case 'Dominant':
+      return 'You appear in most of your service area. Strong local visibility.';
+    case 'Rare air':
+    case 'Saturated':
+      return 'You appear in nearly all your service area. Top-tier visibility.';
+    default:
+      return 'Your TurfScore measures how much of your service area you cover in Google’s local Map Pack.';
+  }
+}
+
+/** Your Preview Score — primary visual anchor of the hero.
+ *  Large score numeric + band label in band color + plain-English
+ *  interpretation. Lime accent border so it visually anchors as the
+ *  "your data" half of the score/competition pair. */
+function YourPreviewScoreCard({
+  score,
+  band,
+}: {
+  score: number;
+  band: string;
+}) {
+  const accent = bandAccent(band);
+  return (
+    <div
+      className="rounded-lg p-5 md:p-6 border max-w-xl mb-5"
+      style={{
+        background: 'var(--color-card-glow)',
+        borderColor: 'var(--color-border-bright)',
+        boxShadow: '0 0 30px #c5ff3a10',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">
+        <span style={{ color: 'var(--color-lime)' }}>●</span>
+        <span style={{ color: 'var(--color-lime)' }}>Your preview score</span>
+      </div>
+      <div className="flex items-baseline gap-4 flex-wrap mb-3">
+        <span
+          className="font-display font-bold text-6xl md:text-7xl leading-none"
+          style={{ color: 'var(--color-lime)' }}
+        >
+          {score}
+        </span>
+        <span
+          className="font-display text-xl md:text-2xl font-semibold uppercase tracking-wider"
+          style={{ color: accent.hex }}
+        >
+          {band}
+        </span>
+      </div>
+      <p className="text-zinc-300 text-sm md:text-base leading-relaxed">
+        {bandInterpretation(band)}
+      </p>
+    </div>
+  );
+}
+
+/** The Competition — secondary card, warm-toned accent. Sits beneath
+ *  Your Preview Score so the buyer's eye moves my-score → competitor-
+ *  hold → CTA. Uses the existing --color-warn (orange) channel as a
+ *  subtle border + tinted bg, not an alarm-style red. */
+function TheCompetitionCard({
+  competitorName,
+  sharePct,
+  city,
+}: {
+  competitorName: string;
+  sharePct: number;
+  city: string;
+}) {
+  return (
+    <div
+      className="rounded-lg p-5 md:p-6 border max-w-xl mb-5"
+      style={{
+        background: '#1f1308',
+        borderColor: '#5a2f0a',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3 text-[10px] uppercase tracking-[0.18em] font-mono font-semibold">
+        <span style={{ color: 'var(--color-warn)' }}>●</span>
+        <span style={{ color: 'var(--color-warn)' }}>The competition</span>
+      </div>
+      <h3 className="font-display text-xl md:text-2xl font-bold text-zinc-100 mb-2">
+        {competitorName}
+      </h3>
+      <p className="text-zinc-200 text-sm md:text-base leading-relaxed mb-3">
+        Currently winning{' '}
+        <strong className="font-semibold" style={{ color: 'var(--color-warn)' }}>
+          {sharePct}%
+        </strong>{' '}
+        of your service area.
+      </p>
+      <p className="text-zinc-400 text-sm leading-relaxed">
+        Their cells are visible to customers across most of {city}. The full
+        scan shows you exactly which cells they own — and where the gaps are.
+      </p>
+    </div>
+  );
 }
