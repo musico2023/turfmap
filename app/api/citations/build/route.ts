@@ -130,6 +130,7 @@ export async function POST(req: Request) {
     profile: parsed.profile,
     industry: parsed.industry ?? null,
     contact,
+    locationReference: parsed.location_id,
   });
 
   if (!result.ok) {

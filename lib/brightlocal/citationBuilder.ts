@@ -91,6 +91,11 @@ export type SubmitOrderInput = {
     lastname: string;
     email: string;
   };
+  /** Stable cross-system reference for the underlying location, used
+   *  as BL's `location-reference` so subsequent submits for the same
+   *  storefront can find the existing BL location instead of creating
+   *  a duplicate. We pass our turfmap client_locations.id (UUID). */
+  locationReference: string;
   /** Optional override of BL's default directory selection. When unset
    *  we let BL autoselect from the package. */
   directories?: string[];
@@ -162,8 +167,18 @@ export async function submitCitationOrder(
     };
   }
 
+  // Step 0 — ensure a BL "location" object exists for this storefront.
+  // BL Citation Builder campaigns reference a numeric BL-account-
+  // internal location_id, NOT our turfmap location UUID. We use our
+  // UUID as BL's `location-reference` for idempotency: re-submitting
+  // for the same storefront finds the existing BL location instead
+  // of creating a duplicate.
+  const locationRes = await ensureBlLocation(config.apiKey, input);
+  if (!locationRes.ok) return locationRes.error;
+  const blLocationId = locationRes.locationId;
+
   // Step 1 — create campaign.
-  const createPayload = mapProfileToCreatePayload(input);
+  const createPayload = mapProfileToCreatePayload(input, blLocationId);
   const create = await postForm(config.apiKey, '/v4/cb/create', createPayload);
   if (!create.ok) return create.error;
   const campaignId = extractCampaignId(create.json);
@@ -289,6 +304,140 @@ export async function pauseMaintenance(
     message:
       'BL Citation Builder pause endpoint not yet wired. Local maintenance_paused is set; pause sync on the BL dashboard if needed.',
   };
+}
+
+// ─── BL location resolution ────────────────────────────────────────────────
+
+type EnsureLocationResult =
+  | { ok: true; locationId: string }
+  | {
+      ok: false;
+      error: {
+        ok: false;
+        kind: 'remote_error' | 'rate_limited' | 'invalid_profile';
+        message: string;
+      };
+    };
+
+/**
+ * Find or create a BL "location" for this storefront and return the
+ * BL location_id. Citation Builder requires this id on every campaign;
+ * passing 1 (or any made-up id) returns 400 "Location ID is required."
+ *
+ * Idempotency: we set BL's `location-reference` to our turfmap
+ * client_locations.id (UUID). The search endpoint accepts a freeform
+ * `q` query that matches against name + reference, so re-submitting
+ * for the same storefront finds the existing BL location instead of
+ * creating a duplicate.
+ */
+async function ensureBlLocation(
+  apiKey: string,
+  input: SubmitOrderInput
+): Promise<EnsureLocationResult> {
+  // Step A — search by reference. BL's q matches against location
+  // metadata; the UUID is a unique substring guaranteed not to match
+  // any unrelated location.
+  const search = await getJson(
+    apiKey,
+    '/v2/clients-and-locations/locations/search',
+    { q: input.locationReference }
+  );
+  if (!search.ok) return { ok: false, error: search.error };
+  const existingId = extractFirstLocationId(search.json);
+  if (existingId) return { ok: true, locationId: existingId };
+
+  // Step B — create. BL's location endpoint uses hyphenated keys
+  // (vs underscored on /v4/cb/create) and a similar but distinct
+  // opening-hours nested format with `apply-to-all` instead of
+  // `apply_to_all`. Maintain two separate flatteners.
+  const p = input.profile;
+  const flatHours = flattenHoursForBlLocation(p.hours ?? {});
+  const addPayload: Record<string, string> = {
+    name: truncate(p.business_name, 100),
+    'location-reference': input.locationReference,
+    url: stripProtocol(p.website ?? ''),
+    'business-category-id': String(FALLBACK_CATEGORY_ID),
+    country: p.country_code ?? 'USA',
+    address1: p.street_address ?? '',
+    address2: '',
+    region: p.region ?? '',
+    city: p.city ?? '',
+    postcode: p.postcode ?? '',
+    telephone: p.phone ?? '',
+  };
+  Object.assign(addPayload, flatHours);
+
+  const add = await postForm(
+    apiKey,
+    '/v2/clients-and-locations/locations/',
+    addPayload
+  );
+  if (!add.ok) return { ok: false, error: add.error };
+  const newId = extractFirstLocationId(add.json);
+  if (!newId) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: `BL location create response missing location id: ${truncate(JSON.stringify(add.json), 240)}`,
+      },
+    };
+  }
+  return { ok: true, locationId: newId };
+}
+
+function extractFirstLocationId(json: unknown): string | null {
+  // Search response is shaped like { response: { results: [{ id, ... }] } }
+  // or { response: { locations: [...] } } depending on endpoint. Add
+  // response is { response: { id } } or { response: { location_id } }.
+  // Try every documented shape so we don't have to chase BL's exact
+  // field naming.
+  const r = (json as { response?: unknown })?.response as
+    | undefined
+    | {
+        id?: number | string;
+        location_id?: number | string;
+        results?: Array<{ id?: number | string; location_id?: number | string }>;
+        locations?: Array<{ id?: number | string; location_id?: number | string }>;
+      };
+  if (!r) return null;
+  if (r.id != null) return String(r.id);
+  if (r.location_id != null) return String(r.location_id);
+  const list = r.results ?? r.locations ?? [];
+  if (list.length === 0) return null;
+  const first = list[0]!;
+  if (first.id != null) return String(first.id);
+  if (first.location_id != null) return String(first.location_id);
+  return null;
+}
+
+function flattenHoursForBlLocation(
+  hours: Record<string, string>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+  for (const day of days) {
+    const v = hours[day];
+    if (!v || v === 'closed') {
+      out[`opening-hours[regular][${day}][status]`] = 'closed';
+      continue;
+    }
+    if (v === '24h' || v === '24hrs') {
+      out[`opening-hours[regular][${day}][status]`] = '24hrs';
+      continue;
+    }
+    const [start, end] = v.split('-').map((s) => s.trim());
+    if (!start || !end) {
+      out[`opening-hours[regular][${day}][status]`] = 'closed';
+      continue;
+    }
+    out[`opening-hours[regular][${day}][status]`] = 'open';
+    out[`opening-hours[regular][${day}][hours][0][start]`] = start;
+    out[`opening-hours[regular][${day}][hours][0][end]`] = end;
+  }
+  out['opening-hours[regular][apply-to-all]'] = 'false';
+  return out;
 }
 
 // ─── BL HTTP plumbing ──────────────────────────────────────────────────────
@@ -449,7 +598,8 @@ async function fetchPhotoBytes(
 // ─── Mapping helpers ───────────────────────────────────────────────────────
 
 function mapProfileToCreatePayload(
-  input: SubmitOrderInput
+  input: SubmitOrderInput,
+  blLocationId: string
 ): Record<string, string> {
   const p = input.profile;
 
@@ -469,7 +619,7 @@ function mapProfileToCreatePayload(
   const flatHours = flattenHoursForBl(p.hours ?? {});
 
   const payload: Record<string, string> = {
-    location_id: '1',
+    location_id: blLocationId,
     campaign_name: truncate(`${p.business_name} — ${p.city ?? ''}`.trim(), 100),
     business_name: p.business_name,
     website_address: stripProtocol(p.website ?? ''),
