@@ -237,6 +237,13 @@ export async function GET() {
       body: 'auth-in-body-marker', // built below
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
     },
+    {
+      name: 'POST /v4/cb/create + FULL EXAMPLE PAYLOAD (Le Bernardin shape)',
+      method: 'POST',
+      path: '/v4/cb/create',
+      body: 'full-payload-marker',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    },
   ];
 
   const cbProbes = await Promise.all(
@@ -264,6 +271,44 @@ export async function GET() {
           location_id: sddLocationId,
           campaign_name: 'PROBE',
           business_name: 'Probe',
+        }).toString();
+      }
+      if (v.body === 'full-payload-marker') {
+        // Mirror the BL CreateCampaign.php example as closely as
+        // possible (minus the long descriptions). Tests whether
+        // BL's "Location ID is required" was actually a misleading
+        // error for missing-required-fields-elsewhere.
+        body = new URLSearchParams({
+          location_id: sddLocationId,
+          campaign_name: 'PROBE — DO NOT FULFILL',
+          business_name: 'Sugar Daddy Doughnuts',
+          website_address: 'sugardaddydoughnuts.com',
+          campaign_country: 'CAN',
+          campaign_city: 'Toronto',
+          campaign_state: 'ON',
+          business_category_id: '605',
+          business_categories: '["Doughnut shop"]',
+          address1: '1 Test St',
+          address2: '',
+          city: 'Toronto',
+          region: 'ON',
+          postcode: 'M5V 1A1',
+          contact_name: 'Probe',
+          contact_firstname: 'Smoke',
+          contact_telephone: '+1 416-555-0100',
+          contact_email: 'probe@example.com',
+          brief_description: 'Probe submission — please ignore.',
+          full_description: 'Probe submission. Do not fulfill.',
+          'opening_hours[regular][apply_to_all]': 'false',
+          'opening_hours[regular][mon][status]': 'closed',
+          'opening_hours[regular][tue][status]': 'closed',
+          'opening_hours[regular][wed][status]': 'open',
+          'opening_hours[regular][wed][hours][0][start]': '09:00',
+          'opening_hours[regular][wed][hours][0][end]': '17:00',
+          'opening_hours[regular][thu][status]': 'closed',
+          'opening_hours[regular][fri][status]': 'closed',
+          'opening_hours[regular][sat][status]': 'closed',
+          'opening_hours[regular][sun][status]': 'closed',
         }).toString();
       }
       try {
