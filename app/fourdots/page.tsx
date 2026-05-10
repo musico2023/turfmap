@@ -630,11 +630,13 @@ export default async function ScanLandingPage({
             <div className="font-display text-2xl md:text-3xl font-bold mb-3">
               Ready to see your map?
             </div>
-            <p className="text-sm md:text-base text-zinc-300 mb-3 max-w-md mx-auto leading-relaxed">
+            <p className="text-sm md:text-base text-zinc-300 mb-1 max-w-md mx-auto leading-relaxed">
               <strong className="font-semibold text-zinc-100">
                 Worst case:
               </strong>{' '}
-              {formatUsd(finalCents)} confirms what you suspect.{' '}
+              {formatUsd(finalCents)} confirms what you suspect.
+            </p>
+            <p className="text-sm md:text-base text-zinc-300 mb-3 max-w-md mx-auto leading-relaxed">
               <strong className="font-semibold text-zinc-100">
                 Best case:
               </strong>{' '}

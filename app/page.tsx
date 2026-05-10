@@ -778,11 +778,15 @@ export default function MarketingLanding() {
         intro={
           <>
             If you make it to the end of this page, you already suspect
-            you&rsquo;ve got a visibility problem. Worst case:{' '}
+            you&rsquo;ve got a visibility problem.
+            <br />
+            Worst case:{' '}
             <strong className="font-semibold text-zinc-200">
               $99 confirms it
             </strong>
-            . Best case: you find a quick fix that{' '}
+            .
+            <br />
+            Best case: you find a quick fix that{' '}
             <strong className="font-semibold text-zinc-200">
               pays for itself in one new customer
             </strong>
