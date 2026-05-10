@@ -346,16 +346,28 @@ async function ensureBlLocation(
   apiKey: string,
   input: SubmitOrderInput
 ): Promise<EnsureLocationResult> {
-  // Step A — search by reference. BL's q matches against location
-  // metadata; the UUID is a unique substring guaranteed not to match
-  // any unrelated location.
+  // Step A — list all BL locations and client-side filter by
+  // location-reference. The /search endpoint's `q` param matches
+  // against location-name only (not the reference field), so a
+  // q=<UUID> query returns nothing — but a parameterless search
+  // returns the whole list as { success, locations: [{ location-id,
+  // location-reference, ... }] }. We pick the one whose reference
+  // matches our turfmap UUID. A naive list-all is fine for v1; if
+  // an account ever exceeds BL's page-size limit (~50?) we'll need
+  // to follow pagination here. NOTE: also necessary to recover from
+  // the "already exists" race when an earlier submit attempt got
+  // partway through and persisted the BL location but errored out
+  // before we wrote the campaign.
   const search = await getJson(
     apiKey,
     '/v2/clients-and-locations/locations/search',
-    { q: input.locationReference }
+    {}
   );
   if (!search.ok) return { ok: false, error: search.error };
-  const existingId = extractFirstLocationId(search.json);
+  const existingId = findLocationIdByReference(
+    search.json,
+    input.locationReference
+  );
   if (existingId) return { ok: true, locationId: existingId, source: 'search' };
 
   // Step B — create. BL's location endpoint uses hyphenated keys
@@ -395,7 +407,32 @@ async function ensureBlLocation(
     '/v2/clients-and-locations/locations/',
     addPayload
   );
-  if (!add.ok) return { ok: false, error: add.error };
+  if (!add.ok) {
+    // Recovery for the "already in use" race: list-all-then-filter
+    // earlier in the function should have caught it, but if pagination
+    // (or a stale-cache moment) lets a duplicate-create slip through,
+    // BL returns "This location reference is already in use" — at
+    // which point we know the location exists with our reference, so
+    // re-search and pick it up.
+    const msg = add.error.message;
+    if (msg.includes('location reference is already in use')) {
+      const recovery = await getJson(
+        apiKey,
+        '/v2/clients-and-locations/locations/search',
+        {}
+      );
+      if (recovery.ok) {
+        const recoveredId = findLocationIdByReference(
+          recovery.json,
+          input.locationReference
+        );
+        if (recoveredId) {
+          return { ok: true, locationId: recoveredId, source: 'search' };
+        }
+      }
+    }
+    return { ok: false, error: add.error };
+  }
   const newId = extractFirstLocationId(add.json);
   if (!newId) {
     return {
@@ -408,6 +445,29 @@ async function ensureBlLocation(
     };
   }
   return { ok: true, locationId: newId, source: 'create' };
+}
+
+/** Walk BL's list-all-locations response and return the
+ *  `location-id` of the entry whose `location-reference` exactly
+ *  matches the one we passed. Response shape:
+ *    { success: true, locations: [{ "location-id": N,
+ *                                    "location-reference": "...",
+ *                                    "location-name": "...", ... }] }
+ *  Returns null if no entry matches. */
+function findLocationIdByReference(
+  json: unknown,
+  reference: string
+): string | null {
+  const locations = (json as { locations?: Array<Record<string, unknown>> })
+    ?.locations;
+  if (!Array.isArray(locations)) return null;
+  for (const loc of locations) {
+    if (loc['location-reference'] === reference) {
+      const id = loc['location-id'] ?? loc['location_id'] ?? loc['id'];
+      if (typeof id === 'number' || typeof id === 'string') return String(id);
+    }
+  }
+  return null;
 }
 
 function extractFirstLocationId(json: unknown): string | null {
