@@ -230,12 +230,19 @@ export async function GET() {
       body: 'multipart-marker', // built below
       headers: {},
     },
+    {
+      name: 'POST /v4/cb/create + AUTH IN BODY (per PHP client)',
+      method: 'POST',
+      path: '/v4/cb/create',
+      body: 'auth-in-body-marker', // built below
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    },
   ];
 
   const cbProbes = await Promise.all(
     cbVariants.map(async (v) => {
       const expires = Math.floor(Date.now() / 1000) + 1800;
-      const url = `https://tools.brightlocal.com/seo-tools/api${v.path}?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
+      let url = `https://tools.brightlocal.com/seo-tools/api${v.path}?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
       let body: BodyInit = v.body;
       const headers: Record<string, string> = { ...v.headers };
       if (v.body === 'multipart-marker') {
@@ -246,6 +253,18 @@ export async function GET() {
         body = fd;
         // Let fetch set the multipart boundary header.
         delete headers['content-type'];
+      }
+      if (v.body === 'auth-in-body-marker') {
+        // Per BL's PHP client (Api.php::call), POSTs put api-key +
+        // expires (+ deprecated sig) in form_params, NOT the URL.
+        url = `https://tools.brightlocal.com/seo-tools/api${v.path}`;
+        body = new URLSearchParams({
+          'api-key': apiKey,
+          expires: String(expires),
+          location_id: sddLocationId,
+          campaign_name: 'PROBE',
+          business_name: 'Probe',
+        }).toString();
       }
       try {
         const res = await fetch(url, { method: v.method, headers, body });
