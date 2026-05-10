@@ -352,21 +352,33 @@ async function ensureBlLocation(
   // `apply_to_all`. Maintain two separate flatteners.
   const p = input.profile;
   const flatHours = flattenHoursForBlLocation(p.hours ?? {});
+  const country = p.country_code ?? 'USA';
+  // BL requires `language` on locations in multi-language countries
+  // (CA, BE, CH, etc.) and rejects every enum value we've probed via
+  // the API — the enum appears to be account-scoped/dynamic. Until we
+  // have the canonical value (operator needs to add a CA location
+  // once via the BL UI so we can read back what BL stores in the
+  // language field), short-circuit multi-language countries with a
+  // clear operator-facing error. For USA + GBR, omit the field
+  // entirely — smoke-test confirmed that works.
+  if (country !== 'USA' && country !== 'GBR') {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'invalid_profile',
+        message:
+          `BL Citation Builder location create rejects every "language" enum value we have probed for country=${country}. ` +
+          `Workaround: an operator needs to create one ${country} location manually via the BL UI so we can read back the canonical language value, then wire it into lib/brightlocal/citationBuilder.ts.`,
+      },
+    };
+  }
   const addPayload: Record<string, string> = {
     name: truncate(p.business_name, 100),
     'location-reference': input.locationReference,
     url: stripProtocol(p.website ?? ''),
     'business-category-id': String(FALLBACK_CATEGORY_ID),
-    country: p.country_code ?? 'USA',
-    // BL requires `language` on locations in multi-language countries
-    // (CA, BE, CH, etc.) and rejects the create otherwise. The field
-    // is enum-shaped — BL's help center uses the labels "English" and
-    // "French", so the API likely accepts the lowercase full word.
-    // Default everywhere to 'english' since (a) it's harmless on
-    // single-language countries and (b) our v1 audience is English-
-    // language home services. Operator can change on the BL dashboard
-    // if needed.
-    language: 'english',
+    country,
     address1: p.street_address ?? '',
     address2: '',
     region: p.region ?? '',
@@ -397,27 +409,37 @@ async function ensureBlLocation(
 }
 
 function extractFirstLocationId(json: unknown): string | null {
-  // Search response is shaped like { response: { results: [{ id, ... }] } }
-  // or { response: { locations: [...] } } depending on endpoint. Add
-  // response is { response: { id } } or { response: { location_id } }.
-  // Try every documented shape so we don't have to chase BL's exact
-  // field naming.
-  const r = (json as { response?: unknown })?.response as
-    | undefined
-    | {
-        id?: number | string;
-        location_id?: number | string;
-        results?: Array<{ id?: number | string; location_id?: number | string }>;
-        locations?: Array<{ id?: number | string; location_id?: number | string }>;
-      };
+  // BL's location-create response is flat: { "location-id": 4061294,
+  // "success": true } — the smoke test confirmed this exact shape.
+  // The search response wraps results in { response: { results: [...] } }.
+  // We check both shapes + every plausible field naming (id /
+  // location_id / location-id) since BL is inconsistent across
+  // endpoints.
+  const obj = json as Record<string, unknown> | null;
+  if (!obj) return null;
+
+  // Flat shape (create response).
+  const flat = idFromAnyShape(obj);
+  if (flat) return flat;
+
+  // Wrapped shape (search / get response).
+  const r = obj.response as Record<string, unknown> | undefined;
   if (!r) return null;
-  if (r.id != null) return String(r.id);
-  if (r.location_id != null) return String(r.location_id);
-  const list = r.results ?? r.locations ?? [];
+  const wrapped = idFromAnyShape(r);
+  if (wrapped) return wrapped;
+  const list =
+    (r.results as Record<string, unknown>[] | undefined) ??
+    (r.locations as Record<string, unknown>[] | undefined) ??
+    [];
   if (list.length === 0) return null;
-  const first = list[0]!;
-  if (first.id != null) return String(first.id);
-  if (first.location_id != null) return String(first.location_id);
+  return idFromAnyShape(list[0]!);
+}
+
+function idFromAnyShape(o: Record<string, unknown>): string | null {
+  for (const k of ['location-id', 'location_id', 'id']) {
+    const v = o[k];
+    if (typeof v === 'number' || typeof v === 'string') return String(v);
+  }
   return null;
 }
 
