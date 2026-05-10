@@ -264,42 +264,158 @@ export async function pollCitationOrder(
   const config = getConfig();
   if (!config.ok) return config;
 
-  // Campaign metadata.
-  const campaignRes = await getJson(config.apiKey, '/v4/cb/get', {
-    'campaign-id': orderId,
-  });
-  if (!campaignRes.ok) {
-    if (campaignRes.error.kind === 'remote_error' && campaignRes.status === 404) {
-      return {
-        ok: false,
-        kind: 'not_found',
-        message: `BL campaign ${orderId} not found`,
-      };
-    }
-    return campaignRes.error;
+  // BL's Management APIs surface returns the campaign + per-citation
+  // submission status from a SINGLE endpoint (no need for the old
+  // two-call /v4/cb/get + /v2/cb/citations dance):
+  //   GET https://api.brightlocal.com/manage/v1/citation-builder/{campaign_id}
+  // Response shape (from the official Stoplight docs):
+  //   {
+  //     campaign_id, location_id, name, lookup_status,
+  //     campaigns: [{
+  //       campaign_id, package_id, paid,
+  //       status: saved|confirmed|paid|on_hold|in_progress
+  //               |submissions_complete|complete|finished,
+  //       citations: [{ domain, type, status, profile_url, notes }],
+  //       publishers: [{ name, directories: [...] }],
+  //       citations_submission_status: { ordered, to_do, submitted,
+  //                                      pending, live, ... },
+  //     }],
+  //     ...
+  //   }
+  let res: Response;
+  try {
+    res = await fetch(
+      `${MANAGE_V1_BASE}/citation-builder/${encodeURIComponent(orderId)}`,
+      {
+        headers: {
+          'x-api-key': config.apiKey,
+          accept: 'application/json',
+        },
+      }
+    );
+  } catch (e) {
+    return {
+      ok: false,
+      kind: 'remote_error',
+      message: e instanceof Error ? e.message : String(e),
+    };
+  }
+  if (res.status === 404) {
+    return {
+      ok: false,
+      kind: 'not_found',
+      message: `BL campaign ${orderId} not found`,
+    };
+  }
+  const text = await res.text().catch(() => '');
+  if (!res.ok) {
+    return {
+      ok: false,
+      kind: 'remote_error',
+      message: `BL /manage/v1/citation-builder/${orderId} ${res.status}: ${truncate(text, 240)}`,
+    };
+  }
+  let json: ManageV1CampaignResponse = {};
+  try {
+    json = text.length > 0 ? JSON.parse(text) : {};
+  } catch {
+    /* fall through */
   }
 
-  // Per-directory status.
-  const citationsRes = await getJson(config.apiKey, '/v2/cb/citations', {
-    'campaign-id': orderId,
-  });
-  if (!citationsRes.ok) return citationsRes.error;
+  // Pick the most recent campaign aggregate; in practice there's
+  // exactly one per submit, but the schema is an array so the
+  // selection is explicit.
+  const aggregate = (json.campaigns ?? [])[0];
+  const status = normalizeManageV1Status(aggregate?.status);
 
-  const status = normalizeOrderStatus(
-    extractCampaignStatus(campaignRes.json)
+  // Map BL's per-citation rows to our CitationDirectoryEntry shape.
+  // BL returns citations as a flat array (no per-publisher nesting in
+  // our case yet — publishers[] is for managed-network listings like
+  // GPS Network/YP Network).
+  const perDirectory: CitationDirectoryEntry[] = (aggregate?.citations ?? []).map(
+    (c) => ({
+      directory: c.domain ?? 'unknown',
+      status: normalizeManageV1CitationStatus(c.status),
+      submitted_at: null,
+      live_at: null,
+      url: c.profile_url ?? null,
+      message: c.notes ?? null,
+    })
   );
-  const perDirectory = extractCitationsList(citationsRes.json).map(
-    normalizeDirectoryEntry
-  );
-  const orderError = extractCampaignError(campaignRes.json);
 
   return {
     ok: true,
     orderId,
     status,
     perDirectory,
-    orderError,
+    orderError: null,
   };
+}
+
+type ManageV1CitationRow = {
+  domain?: string;
+  type?: string;
+  status?: string;
+  profile_url?: string;
+  notes?: string;
+};
+
+type ManageV1CampaignAggregate = {
+  campaign_id?: number | string;
+  status?: string;
+  citations?: ManageV1CitationRow[];
+};
+
+type ManageV1CampaignResponse = {
+  campaign_id?: number | string;
+  location_id?: number | string;
+  name?: string;
+  lookup_status?: string;
+  campaigns?: ManageV1CampaignAggregate[];
+};
+
+function normalizeManageV1Status(s: string | undefined): CitationOrderStatus {
+  switch ((s ?? '').toLowerCase()) {
+    case 'saved':
+    case 'confirmed':
+    case 'paid':
+      return 'queued';
+    case 'on_hold':
+      return 'partial';
+    case 'in_progress':
+    case 'submissions_complete':
+      return 'in_progress';
+    case 'complete':
+    case 'finished':
+      return 'complete';
+    default:
+      return 'in_progress';
+  }
+}
+
+function normalizeManageV1CitationStatus(
+  s: string | undefined
+): CitationDirectoryStatus {
+  switch ((s ?? '').toLowerCase()) {
+    case 'pending':
+    case 'to_do':
+    case 'ordered':
+      return 'pending';
+    case 'submitted':
+      return 'submitted';
+    case 'live':
+    case 'updated':
+    case 'existing':
+    case 'replaced':
+      return 'live';
+    case 'omitted':
+      return 'needs_review';
+    case 'failed':
+    case 'rejected':
+      return 'failed';
+    default:
+      return 'pending';
+  }
 }
 
 export async function pauseMaintenance(
