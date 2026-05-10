@@ -143,6 +143,26 @@ export async function GET() {
     });
   }
 
+  // Probe 3..N: language enum discovery. BL rejects 'en' and 'english'
+  // on /v2/clients-and-locations/locations/ for Canadian addresses
+  // ("The selected choice is invalid"). Probe a battery of candidate
+  // values with an otherwise-minimal payload to find the right one.
+  const langCandidates = [
+    'English',
+    'EN',
+    'en-CA',
+    'en_CA',
+    'en-US',
+    'en-GB',
+    'eng',
+    '1',
+    '0',
+  ];
+  const langProbes = await Promise.all(
+    langCandidates.map((lang) => probeLanguageValue(apiKey, lang))
+  );
+  probes.push(...langProbes);
+
   const auth1Ok =
     probes[0]!.status != null &&
     probes[0]!.status !== 401 &&
@@ -259,6 +279,79 @@ async function runRawProbe(args: {
       status: null,
       ok: false,
       body_excerpt: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/** Probe BL's location create with a candidate language value and a
+ *  minimal otherwise-valid payload. We're only looking at the BL
+ *  validation response — if `language` no longer appears in the
+ *  errors object, that value is accepted. We attach a junk
+ *  location-reference per probe so a successful create wouldn't
+ *  collide with the real production data. */
+async function probeLanguageValue(
+  apiKey: string,
+  lang: string
+): Promise<Probe> {
+  const expires = Math.floor(Date.now() / 1000) + 1800;
+  const url = `https://tools.brightlocal.com/seo-tools/api/v2/clients-and-locations/locations/?api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
+  // Minimal CA payload — enough fields that BL gets to validating
+  // language without short-circuiting on a missing required field.
+  const ref = `_smoketest_lang_${lang.replace(/[^a-z0-9]/gi, '')}_${Date.now()}`;
+  const body = new URLSearchParams({
+    name: 'Smoke Test (delete me)',
+    'location-reference': ref,
+    'business-category-id': '605',
+    country: 'CAN',
+    language: lang,
+    address1: '1 Test St',
+    region: 'ON',
+    city: 'Toronto',
+    postcode: 'M5V 1A1',
+    telephone: '+1 416-555-0100',
+  });
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    const text = await res.text().catch(() => '(could not read body)');
+    const excerpt = text.slice(0, 400);
+    let langInvalid = false;
+    let success = false;
+    try {
+      const json = JSON.parse(text) as {
+        success?: boolean;
+        errors?: Record<string, string>;
+      };
+      success = !!json.success;
+      langInvalid = Boolean(json.errors && 'language' in json.errors);
+    } catch {
+      // Non-JSON or parse error — fall back to text inspection.
+    }
+    return {
+      name: `language candidate "${lang}"`,
+      method: 'POST',
+      url: '/v2/clients-and-locations/locations/ (CA payload)',
+      status: res.status,
+      ok: success,
+      body_excerpt: excerpt,
+      notes: success
+        ? `LANGUAGE OK: BL accepted "${lang}" and CREATED a location (delete it from BL dashboard — reference ${ref}).`
+        : !langInvalid
+          ? `LANGUAGE OK (other field rejected): "${lang}" passed language validation; failure is on a different field. USE "${lang}".`
+          : `LANGUAGE REJECTED: BL still flags language as invalid for "${lang}".`,
+    };
+  } catch (e) {
+    return {
+      name: `language candidate "${lang}"`,
+      method: 'POST',
+      url: '/v2/clients-and-locations/locations/',
+      status: null,
+      ok: false,
+      body_excerpt: e instanceof Error ? e.message : String(e),
+      notes: 'Network error.',
     };
   }
 }
