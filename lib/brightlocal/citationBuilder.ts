@@ -359,12 +359,14 @@ async function ensureBlLocation(
     'business-category-id': String(FALLBACK_CATEGORY_ID),
     country: p.country_code ?? 'USA',
     // BL requires `language` on locations in multi-language countries
-    // (CA, BE, CH, etc.) and rejects the create with "Location language
-    // should be specified for Canada" otherwise. Default everywhere to
-    // 'en' since (a) it's harmless on single-language countries and
-    // (b) our v1 audience is English-language home services. Operator
-    // can change on the BL dashboard if needed.
-    language: 'en',
+    // (CA, BE, CH, etc.) and rejects the create otherwise. The field
+    // is enum-shaped — BL's help center uses the labels "English" and
+    // "French", so the API likely accepts the lowercase full word.
+    // Default everywhere to 'english' since (a) it's harmless on
+    // single-language countries and (b) our v1 audience is English-
+    // language home services. Operator can change on the BL dashboard
+    // if needed.
+    language: 'english',
     address1: p.street_address ?? '',
     address2: '',
     region: p.region ?? '',
