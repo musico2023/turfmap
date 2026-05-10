@@ -370,8 +370,35 @@ export default async function YourMapLandingPage({
             </div>
           </div>
 
-          {/* Right: animated heatmap + score row */}
+          {/* Right: animated heatmap + score row.
+           *  Important: the cells/scores rendered here are sample
+           *  data, NOT the buyer's real preview. The body copy on
+           *  the left states the buyer's real preview score (e.g.
+           *  25), so without explicit framing the buyer can confuse
+           *  the on-page heatmap with their own scan. The lime pill
+           *  + strengthened caption below kill that ambiguity. */}
           <div className="lg:col-span-5">
+            {/* ANONYMIZED-EXAMPLE pill — solid lime fill so it reads
+             *  at a glance even when the rest of the card is being
+             *  scanned. Inline-flex w/ centered text + uppercase
+             *  treatment matches the agency-side priority-pill
+             *  pattern; carries enough visual weight to override
+             *  the buyer's first instinct ("is that my data?"). */}
+            <div className="mb-2 flex">
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] uppercase tracking-[0.16em] font-bold"
+                style={{
+                  background: 'var(--color-lime)',
+                  color: '#000',
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: '#000' }}
+                />
+                Anonymized example — not your data
+              </span>
+            </div>
             <div
               className="border rounded-lg p-5 relative"
               style={{
@@ -407,9 +434,17 @@ export default async function YourMapLandingPage({
                 />
               </div>
             </div>
-            <p className="text-[11px] text-zinc-600 font-mono mt-2 text-center">
-              Anonymized sample. Your full map will look different — and
-              will show your actual cells.
+            {/* Strengthened caption — bolds the "not your data"
+             *  claim so it survives a scan-read; also names the
+             *  three things the buyer actually gets in their full
+             *  scan so the framing is constructive, not just
+             *  disclaimer-style. */}
+            <p className="text-xs text-zinc-400 mt-3 leading-relaxed text-center max-w-xs mx-auto">
+              <strong className="text-zinc-200">
+                This is a sample heatmap, not your data.
+              </strong>{' '}
+              Your full TurfScan reveals your actual 81-cell heatmap,
+              your specific TurfScore, and your competitor positions.
             </p>
           </div>
         </div>
@@ -977,6 +1012,22 @@ function PricePanel({
         boxShadow: showDiscount ? '0 0 30px #c5ff3a14' : undefined,
       }}
     >
+      {/* Bridge line — sits at the top of the price card, between
+       *  the body paragraph (above the card) and the CTA (below
+       *  this line). Re-states the three deliverables the body
+       *  paragraph promised so the buyer doesn't have to mentally
+       *  re-link the unlock-claim to the action when their eye
+       *  hits the price + button. Kept short to preserve the panel
+       *  rhythm. */}
+      <p className="mb-4 pb-4 border-b text-xs md:text-sm text-zinc-300 leading-relaxed"
+         style={{ borderColor: 'var(--color-border)' }}
+      >
+        <strong className="text-zinc-100">
+          Cell-level detail, AI Coach Fix List, and the top 3
+          directories
+        </strong>{' '}
+        — click below to unlock all three.
+      </p>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-2">
