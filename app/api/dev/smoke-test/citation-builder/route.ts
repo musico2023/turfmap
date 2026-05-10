@@ -147,22 +147,75 @@ export async function GET() {
   // on /v2/clients-and-locations/locations/ for Canadian addresses
   // ("The selected choice is invalid"). Probe a battery of candidate
   // values with an otherwise-minimal payload to find the right one.
-  const langCandidates = [
-    // BL UI radio id pattern is `language_CAN:EN_0` — these are the
-    // most likely interpretations of that markup as an actual
-    // submitted value.
-    'CAN:EN',
-    'CAN:EN_0',
-    'CAN:FR',
-    'CAN:FR_1',
-    'CAN_EN',
-    'CAN-EN',
-    'language_CAN:EN_0',
+  // Reference-lookup discovery. BL's q param doesn't find locations
+  // by location-reference (we see "already in use" on create even
+  // when search returned []). Probe a few candidate lookup shapes
+  // against a known smoketest reference to find the one that works.
+  const knownRef = '_smoketest_lang_CAN_EN_1778389099542';
+  const lookupCandidates: Array<{ name: string; path: string }> = [
+    {
+      name: `list-all (no params)`,
+      path: `/v2/clients-and-locations/locations/`,
+    },
+    {
+      name: `list with location-reference filter`,
+      path: `/v2/clients-and-locations/locations/?location-reference=${encodeURIComponent(knownRef)}`,
+    },
+    {
+      name: `list with reference filter`,
+      path: `/v2/clients-and-locations/locations/?reference=${encodeURIComponent(knownRef)}`,
+    },
+    {
+      name: `search with location-reference param`,
+      path: `/v2/clients-and-locations/locations/search?location-reference=${encodeURIComponent(knownRef)}`,
+    },
+    {
+      name: `search with type=reference + q`,
+      path: `/v2/clients-and-locations/locations/search?type=reference&q=${encodeURIComponent(knownRef)}`,
+    },
+    {
+      name: `search by-reference path`,
+      path: `/v2/clients-and-locations/locations/by-reference/${encodeURIComponent(knownRef)}`,
+    },
   ];
-  const langProbes = await Promise.all(
-    langCandidates.map((lang) => probeLanguageValue(apiKey, lang))
+  const lookupProbes = await Promise.all(
+    lookupCandidates.map(async (c) => {
+      const expires = Math.floor(Date.now() / 1000) + 1800;
+      const sep = c.path.includes('?') ? '&' : '?';
+      const url = `https://tools.brightlocal.com/seo-tools/api${c.path}${sep}api-key=${encodeURIComponent(apiKey)}&expires=${expires}`;
+      try {
+        const res = await fetch(url, { method: 'GET' });
+        const text = await res.text().catch(() => '');
+        return {
+          name: `lookup probe — ${c.name}`,
+          method: 'GET',
+          url: c.path,
+          status: res.status,
+          ok: res.ok,
+          body_excerpt: text.slice(0, 600),
+          notes:
+            res.status === 200 && text.includes(knownRef)
+              ? `LOOKUP OK: returns the smoketest location (reference appears in body). USE THIS.`
+              : res.status === 200
+                ? `2xx but reference not in body — endpoint probably ignores the filter. Inspect.`
+                : res.status === 404
+                  ? `Path not found.`
+                  : `Status ${res.status}, inspect body.`,
+        };
+      } catch (e) {
+        return {
+          name: `lookup probe — ${c.name}`,
+          method: 'GET',
+          url: c.path,
+          status: null,
+          ok: false,
+          body_excerpt: e instanceof Error ? e.message : String(e),
+          notes: 'Network error.',
+        };
+      }
+    })
   );
-  probes.push(...langProbes);
+  probes.push(...lookupProbes);
 
   // Also: USA payload with NO language field (sanity check — does
   // BL only require language for CA and similar?). If this passes,
