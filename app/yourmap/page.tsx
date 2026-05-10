@@ -204,9 +204,16 @@ export default async function YourMapLandingPage({
 
   return (
     <div className="min-h-screen w-full text-white">
-      {/* ─── HEADER ─────────────────────────────────────────────────── */}
+      {/* ─── HEADER ───────────────────────────────────────────────────
+       *  /yourmap-specific simplification per Sprint-1 Fix 1.7: the
+       *  "Existing customer?" link from /fourdots is REMOVED here.
+       *  Cold-email cohort buyers don't have an existing TurfMap
+       *  account by definition; the link only adds cognitive
+       *  friction at the moment of conversion. /fourdots keeps the
+       *  link since FOURDOTS50 traffic includes some returning
+       *  buyers from Anthony's parent-site popup. */}
       <header
-        className="border-b px-6 md:px-10 py-4 flex items-center justify-between"
+        className="border-b px-6 md:px-10 py-4 flex items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <Link href="/" className="flex items-center gap-2.5 group">
@@ -225,12 +232,6 @@ export default async function YourMapLandingPage({
               ™
             </span>
           </span>
-        </Link>
-        <Link
-          href="/login"
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          Existing customer?
         </Link>
       </header>
 
@@ -258,19 +259,38 @@ export default async function YourMapLandingPage({
               <span>Delivered from our outreach team</span>
             </div>
 
-            {/* H1 — personalizes if prospect data loaded. Italic
-             *  emphasis on "Here's what we found." matches the
-             *  /fourdots H1 italic treatment. */}
-            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.04] tracking-tight mb-4">
+            {/* H1 — three-tier weight hierarchy per Sprint-1 Fix 1.3.
+             *  The buyer's business name is the most personally-
+             *  relevant token on the page; bolding ONLY that span
+             *  while leaving "We already mapped" at regular weight
+             *  visually anchors recognition without making the rest
+             *  of the H1 feel shouty. The italic tail keeps the
+             *  rhetorical beat ("here's what we found.") tethered
+             *  to the rest of the line.
+             *  Parent has no font-bold so individual span weights
+             *  apply; would otherwise be overridden. */}
+            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl leading-[1.04] tracking-tight mb-4 text-zinc-100">
               {personalization ? (
                 <>
-                  We already mapped {personalization.business_name}.{' '}
-                  <em>Here&rsquo;s what we found.</em>
+                  <span className="font-normal text-zinc-300">
+                    We already mapped{' '}
+                  </span>
+                  <span className="font-bold text-white">
+                    {personalization.business_name}
+                  </span>
+                  <span className="font-normal text-zinc-300">.</span>{' '}
+                  <em className="font-semibold">
+                    Here&rsquo;s what we found.
+                  </em>
                 </>
               ) : (
                 <>
-                  We already ran your preview scan.{' '}
-                  <em>Here&rsquo;s what we found.</em>
+                  <span className="font-normal text-zinc-300">
+                    We already ran your preview scan.
+                  </span>{' '}
+                  <em className="font-semibold">
+                    Here&rsquo;s what we found.
+                  </em>
                 </>
               )}
             </h1>
@@ -293,8 +313,9 @@ export default async function YourMapLandingPage({
                     ({personalization.band})
                   </strong>
                   {' '}— meaning customers searching from{' '}
-                  {personalization.invisibility_count} of 81 cells across your
-                  service area aren&rsquo;t seeing you in the local Map Pack.
+                  {personalization.invisibility_count}{' '}of 81 cells across
+                  your service area aren&rsquo;t seeing you in the local
+                  Map Pack.
                 </p>
                 <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-5">
                   Order the full scan to unlock cell-level detail, the AI
@@ -371,18 +392,24 @@ export default async function YourMapLandingPage({
           </div>
 
           {/* Right: animated heatmap + score row.
-           *  Important: the cells/scores rendered here are sample
-           *  data, NOT the buyer's real preview. The body copy on
-           *  the left states the buyer's real preview score (e.g.
-           *  25), so without explicit framing the buyer can confuse
-           *  the on-page heatmap with their own scan. The lime pill
-           *  + strengthened caption below kill that ambiguity. */}
+           *  The cells/scores rendered here are sample data, NOT
+           *  the buyer's real preview. The body copy on the left
+           *  states the buyer's real preview score, so without
+           *  explicit framing the buyer can confuse the on-page
+           *  heatmap with their own scan. Stack of cues to defeat
+           *  that:
+           *    1. Lime pill ABOVE the card ("ANONYMIZED EXAMPLE —
+           *       NOT YOUR DATA")
+           *    2. Strengthened caption INSIDE the card directly
+           *       beneath the heatmap visual (above the score row)
+           *    3. Score cards visually distinct so the buyer reads
+           *       them as "what your full scan reveals" not "your
+           *       current scores."
+           */}
           <div className="lg:col-span-5">
             {/* ANONYMIZED-EXAMPLE pill — solid lime fill so it reads
              *  at a glance even when the rest of the card is being
-             *  scanned. Inline-flex w/ centered text + uppercase
-             *  treatment matches the agency-side priority-pill
-             *  pattern; carries enough visual weight to override
+             *  scanned. Carries enough visual weight to override
              *  the buyer's first instinct ("is that my data?"). */}
             <div className="mb-2 flex">
               <span
@@ -420,7 +447,23 @@ export default async function YourMapLandingPage({
                 </div>
               </div>
               <HeatmapGrid cells={cells} />
-              <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+              {/* Caption sits IMMEDIATELY adjacent to the heatmap
+               *  visual (inside the card, between heatmap + score
+               *  row) per Sprint-1 Fix 1.1. Bold lead clause kills
+               *  any "wait, is that my data?" ambiguity on first
+               *  glance. */}
+              <p className="text-[11px] text-zinc-400 mt-3 mb-4 leading-relaxed text-center">
+                <strong className="text-zinc-200">
+                  This is a sample heatmap, not your data.
+                </strong>{' '}
+                Your full TurfScan reveals your actual 81-cell heatmap,
+                your specific TurfScore, and your competitor positions.
+              </p>
+              {/* Score cards — distinct cards (not just text) with
+               *  larger values per Fix 1.4. Buyer should read this
+               *  row as "the three numbers your full scan reveals,"
+               *  hence the heavier visual treatment. */}
+              <div className="grid grid-cols-3 gap-3 md:gap-4">
                 <ScoreReadout label="TurfReach™" value={`${reach}%`} />
                 <ScoreReadout
                   label="TurfRank™"
@@ -434,18 +477,6 @@ export default async function YourMapLandingPage({
                 />
               </div>
             </div>
-            {/* Strengthened caption — bolds the "not your data"
-             *  claim so it survives a scan-read; also names the
-             *  three things the buyer actually gets in their full
-             *  scan so the framing is constructive, not just
-             *  disclaimer-style. */}
-            <p className="text-xs text-zinc-400 mt-3 leading-relaxed text-center max-w-xs mx-auto">
-              <strong className="text-zinc-200">
-                This is a sample heatmap, not your data.
-              </strong>{' '}
-              Your full TurfScan reveals your actual 81-cell heatmap,
-              your specific TurfScore, and your competitor positions.
-            </p>
           </div>
         </div>
       </section>
@@ -489,24 +520,36 @@ export default async function YourMapLandingPage({
             }}
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-              {[
-                {
-                  priority: 'HIGH',
-                  title:
-                    'Verify your Apple Maps listing — currently unverified',
-                  body: 'iPhone users searching from the northern half of your service area get directed to a verified competitor. Verifying the listing is a 5-minute fix that immediately reclaims those cells.',
-                },
-                {
-                  priority: 'HIGH',
-                  title: 'Claim 8 missing industry directories',
-                  body: 'For this plumber: Angi, HomeAdvisor, Thumbtack, BBB, and 4 others — all absent. The exact list is industry-specific. Citation authority on the directories Google cross-references is the fastest TurfReach lever.',
-                },
-                {
-                  priority: 'MEDIUM',
-                  title: 'Normalize address format on Bing, Yelp, MapQuest',
-                  body: 'Three directories show abbreviated or malformed address strings. Fixing NAP consistency reduces noise that suppresses trust signals.',
-                },
-              ].map((a, i) => (
+              {(() => {
+                // Sprint-1 Fix 2.1 — dynamic trade reference in
+                // the second card. When the prospect's trade is
+                // known, surface it in the "For this {trade}
+                // contractor:" preamble so the personalization
+                // illusion holds for HVAC / Roofing / Plumbing
+                // etc. Falls back to "operator" when no
+                // personalization data is loaded.
+                const tradeContractor = personalization
+                  ? `${personalization.trade.toLowerCase()} contractor`
+                  : 'operator';
+                return [
+                  {
+                    priority: 'HIGH',
+                    title:
+                      'Verify your Apple Maps listing — currently unverified',
+                    body: 'iPhone users searching from the northern half of your service area get directed to a verified competitor. Verifying the listing is a 5-minute fix that immediately reclaims those cells.',
+                  },
+                  {
+                    priority: 'HIGH',
+                    title: 'Claim 8 missing industry directories',
+                    body: `For this ${tradeContractor}: Angi, HomeAdvisor, Thumbtack, BBB, and 4 others — all absent. The exact list is industry-specific. Citation authority on the directories Google cross-references is the fastest TurfReach lever.`,
+                  },
+                  {
+                    priority: 'MEDIUM',
+                    title: 'Normalize address format on Bing, Yelp, MapQuest',
+                    body: 'Three directories show abbreviated or malformed address strings. Fixing NAP consistency reduces noise that suppresses trust signals.',
+                  },
+                ];
+              })().map((a, i) => (
                 <div
                   key={i}
                   className="border rounded-md p-4 md:p-5"
@@ -1012,21 +1055,25 @@ function PricePanel({
         boxShadow: showDiscount ? '0 0 30px #c5ff3a14' : undefined,
       }}
     >
-      {/* Bridge line — sits at the top of the price card, between
-       *  the body paragraph (above the card) and the CTA (below
-       *  this line). Re-states the three deliverables the body
-       *  paragraph promised so the buyer doesn't have to mentally
-       *  re-link the unlock-claim to the action when their eye
-       *  hits the price + button. Kept short to preserve the panel
-       *  rhythm. */}
+      {/* Bridge line — Sprint-1 Fix 1.2 spec'd copy. Sits at the
+       *  TOP of the price card so it bridges from the body
+       *  paragraph (above the card) into the CTA flow (below this
+       *  line). Three middle-dot-separated phrases re-state the
+       *  body para's promises in compact form. Leading "$49"
+       *  creates immediate price-value continuity at the moment
+       *  of click; the price is parameterized via formatUsd so a
+       *  no-coupon visitor sees "$99" instead. */}
       <p className="mb-4 pb-4 border-b text-xs md:text-sm text-zinc-300 leading-relaxed"
          style={{ borderColor: 'var(--color-border)' }}
       >
         <strong className="text-zinc-100">
-          Cell-level detail, AI Coach Fix List, and the top 3
-          directories
+          {formatUsd(finalCents)} unlocks:
         </strong>{' '}
-        — click below to unlock all three.
+        full 81-cell heatmap{' '}
+        <span className="text-zinc-600">·</span>{' '}
+        AI Coach Fix List{' '}
+        <span className="text-zinc-600">·</span>{' '}
+        top 3 fixes
       </p>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
         <div>
@@ -1034,8 +1081,12 @@ function PricePanel({
             TurfScan
           </div>
           <div className="flex items-baseline gap-3 flex-wrap">
+            {/* Fix 1.5 — list price drops to font-normal so the
+             *  discounted price dominates visually. Strikethrough
+             *  + zinc-600 carries the "this was the price" framing
+             *  without the eye lingering on the bigger number. */}
             {showDiscount && (
-              <span className="font-display text-2xl md:text-3xl text-zinc-600 line-through font-semibold">
+              <span className="font-display text-2xl md:text-3xl text-zinc-600 line-through font-normal">
                 {formatUsd(listCents)}
               </span>
             )}
@@ -1070,6 +1121,17 @@ function PricePanel({
   );
 }
 
+/**
+ * Score readout — distinct card per metric per Sprint-1 Fix 1.4.
+ * Each card has a subtle border + tinted bg so the row reads as
+ * "three numbers your full scan reveals" instead of caption text
+ * under the heatmap. The TurfScore card carries an extra lime
+ * accent (highlight) since it's the headline metric.
+ *
+ * Numeric value is now ~2× the previous size (text-xl → text-2xl/3xl)
+ * to compete with the H1 weight on the left and read at a glance
+ * on mobile. Band label sits beneath in small mono.
+ */
 function ScoreReadout({
   label,
   value,
@@ -1083,25 +1145,27 @@ function ScoreReadout({
 }) {
   return (
     <div
-      className="rounded-md py-2.5"
+      className="rounded-md px-2.5 py-3 flex flex-col items-center text-center"
       style={{
-        background: highlight ? '#0d130a' : 'transparent',
-        border: highlight ? '1px solid var(--color-border-bright)' : 'none',
+        background: highlight ? '#0d130a' : 'var(--color-bg)',
+        border: `1px solid ${
+          highlight ? 'var(--color-border-bright)' : 'var(--color-border)'
+        }`,
       }}
     >
-      <div className="text-[9px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-1">
+      <div className="text-[9px] uppercase tracking-[0.16em] text-zinc-500 font-mono font-semibold mb-1.5">
         {label}
       </div>
       <div
-        className="font-display font-bold text-lg leading-none"
-        style={{ color: highlight ? 'var(--color-lime)' : '#e4e4e7' }}
+        className="font-display font-bold text-2xl md:text-3xl leading-none"
+        style={{ color: highlight ? 'var(--color-lime)' : '#f4f4f5' }}
       >
         {value}
       </div>
       {bandLabel && (
         <div
-          className="text-[9px] font-mono uppercase tracking-wider mt-1"
-          style={{ color: 'var(--color-lime)', opacity: 0.85 }}
+          className="text-[9px] font-mono uppercase tracking-wider mt-1.5"
+          style={{ color: 'var(--color-lime)' }}
         >
           {bandLabel}
         </div>
