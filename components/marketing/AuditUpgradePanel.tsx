@@ -325,7 +325,7 @@ export function AuditUpgradePanel({
               ? 'Processing payment…'
               : 'Opening checkout…'
             : savedCard
-              ? `Confirm $197 charge →`
+              ? 'Confirm $197 charge'
               : 'Add the Roadmap → $197'}
           {!busy && <ArrowRight size={14} strokeWidth={2.5} />}
         </button>
