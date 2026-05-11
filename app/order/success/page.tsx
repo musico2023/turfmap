@@ -86,10 +86,20 @@ export default async function OrderSuccessPage({
   // Audit upgrade gets its own label — buyer paid $197 net (not the
   // $499 list), and framing it as "Audit Upgrade" makes the
   // distinction from a from-scratch $499 audit purchase clear.
+  //
+  // For other tiers, show the ACTUAL paid amount (post-discount)
+  // when Stripe surfaced it. Falls back to the list-price label
+  // when amount_total is missing. This matters most for /yourmap +
+  // /fourdots buyers who paid $49 (MAPCHECK50 / FOURDOTS50) but
+  // would otherwise see "$99" in the header.
+  const paidAmountCents =
+    sessionState?.kind === 'ok' ? sessionState.amountTotalCents : null;
   const tierLabel = isAuditUpgrade
     ? 'Visibility Audit upgrade ($197)'
     : tier
-      ? formatTierLabel(tier)
+      ? paidAmountCents != null
+        ? formatTierLabelWithPaidAmount(tier, paidAmountCents)
+        : formatTierLabel(tier)
       : 'TurfMap';
   const keywordCount = tier ? keywordCountForTier(tier) : 1;
   const prefillEmail =
@@ -333,6 +343,28 @@ function formatTierLabel(tier: Tier): string {
   return TIER_LABELS[tier];
 }
 
+/** Same as formatTierLabel but substitutes the actual paid amount
+ *  (post-discount) for the list price. E.g. MAPCHECK50 buyers paid
+ *  \$49 not \$99; we want the header to reflect that, not the bare
+ *  list price. Subscription tiers (pulse / pulse_plus) keep their
+ *  recurring-price label since amount_total is the first-period
+ *  charge which can be confusing in isolation. */
+function formatTierLabelWithPaidAmount(tier: Tier, paidCents: number): string {
+  if (tier === 'pulse' || tier === 'pulse_plus') {
+    return TIER_LABELS[tier];
+  }
+  const dollars = Math.round(paidCents / 100);
+  const name =
+    tier === 'scan'
+      ? 'TurfScan'
+      : tier === 'audit'
+        ? 'Visibility Audit'
+        : tier === 'strategy'
+          ? 'Strategy Session'
+          : TIER_LABELS[tier];
+  return `${name} ($${dollars})`;
+}
+
 function isTierString(v: string | undefined): v is Tier {
   return (
     v === 'scan' ||
@@ -353,6 +385,11 @@ type SessionState =
        *  the OrderSuccessForm so it can wire the Pulse-attach panel
        *  to the same Stripe customer record. */
       customerId: string | null;
+      /** Net amount paid in cents (after promotion-code discounts).
+       *  Used in the page header to show what the buyer actually
+       *  paid, e.g. \$49 with MAPCHECK50 vs. the \$99 list price.
+       *  Null when Stripe didn't surface amount_total. */
+      amountTotalCents: number | null;
     }
   | { kind: 'warning'; message: string };
 
@@ -417,5 +454,6 @@ async function validateAndRecordSession(
     tier: result.tier,
     email: result.customerEmail,
     customerId: result.customerId,
+    amountTotalCents: result.amountTotal,
   };
 }
