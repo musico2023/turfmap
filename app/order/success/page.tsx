@@ -261,19 +261,16 @@ export default async function OrderSuccessPage({
                 <p className="text-zinc-300 leading-relaxed">
                   {isAuditUpgrade
                     ? // Audit upgrade return path: scan is paid, audit is
-                      // paid, intake still needed. Keep the framing
-                      // forward-looking rather than dwelling on the
-                      // payment-confirmation moment.
+                      // paid, intake still needed.
                       "Both the scan and the 90-day Roadmap audit are locked in. Fill out your business details below to kick everything off — we'll email your TurfMap as soon as your scan completes."
                     : tier === 'scan'
-                      ? // Scan tier: the AuditUpgradePanel may render below
-                        // BEFORE the intake form, so don't promise "fill the
-                        // form to fire your scan" until the buyer has gotten
-                        // past the upgrade decision. Neutral phrasing works
-                        // for both upgrade-panel-visible AND intake-visible
-                        // states. The body content (panel or form) provides
-                        // its own specific instructions.
-                        "Your TurfScan is locked in. There's one quick decision below before we kick off your scan."
+                      ? // Scan tier: the body component decides whether to
+                        // render the AuditUpgradePanel (pre-Skip) or the
+                        // intake form (post-Skip / post-upgrade). Header
+                        // copy stays neutral so it works in both states —
+                        // "complete the steps below" is true whether
+                        // those steps are 'upgrade decision' or 'intake'.
+                        "Your TurfScan is locked in. Complete the next steps below to fire your scan."
                       : // Audit / Strategy / other tiers that go straight to
                         // intake (no upgrade panel above): existing copy.
                         <>
