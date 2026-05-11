@@ -6,6 +6,7 @@ import { OrderSuccessForm } from './OrderSuccessForm';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { loadCheckoutSession } from '@/lib/stripe/session';
+import { getStripe } from '@/lib/stripe/client';
 import {
   ensureLeadOrder,
   keywordCountForTier,
@@ -97,6 +98,52 @@ export default async function OrderSuccessPage({
     sessionState?.kind === 'warning' ? sessionState.message : null;
   const stripeCustomerId =
     sessionState?.kind === 'ok' ? sessionState.customerId : null;
+
+  // ─── Saved-card lookup for 1-click audit upgrade ────────────────────
+  // When the buyer has a Stripe Customer with a saved card (enabled
+  // by payment_intent_data.setup_future_usage='off_session' on the
+  // scan checkout), the AuditUpgradePanel can fire a no-redirect
+  // PaymentIntent confirm. We surface the card's brand + last4
+  // server-side so the panel can render "Confirm $197 charge to
+  // Visa ending 4242" without an extra round-trip.
+  //
+  // Only runs for scan-tier orders that haven't already been
+  // upgraded. Failure is graceful — falls through to redirect-style
+  // Stripe Checkout upgrade. Don't fire on the upgrade-return path
+  // (?upgrade=audit) since we don't need to surface the upgrade
+  // panel anymore.
+  let savedCard: { brand: string; last4: string } | null = null;
+  if (
+    tier === 'scan' &&
+    stripeCustomerId &&
+    !isAuditUpgrade &&
+    !attachParam
+  ) {
+    try {
+      const stripe = await getStripe();
+      if (stripe) {
+        const pmList = await stripe.paymentMethods.list({
+          customer: stripeCustomerId,
+          type: 'card',
+          limit: 1,
+        });
+        const card = pmList.data[0]?.card;
+        if (card) {
+          savedCard = {
+            brand: card.brand ?? 'card',
+            last4: card.last4 ?? '',
+          };
+        }
+      }
+    } catch (e) {
+      // Non-fatal: panel renders without saved-card UI, buyer
+      // gets the redirect-style upgrade.
+      console.error(
+        '[order/success] saved-card lookup failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
 
   // Pulse-attach return path. When the buyer comes back from Stripe
   // with ?attach=success or ?attach=cancelled, we need to skip the
@@ -242,6 +289,7 @@ export default async function OrderSuccessPage({
               attachPublicId={attachPublicId}
               attachOnboardingStep={attachOnboardingStep}
               isAuditUpgrade={isAuditUpgrade}
+              savedCard={savedCard}
             />
           </Suspense>
         </div>

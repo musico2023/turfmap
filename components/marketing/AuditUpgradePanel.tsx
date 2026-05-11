@@ -58,6 +58,19 @@ export type AuditUpgradePanelProps = {
    *  hidden by default while the upgrade decision is pending so the
    *  two CTAs don't compete. No-op on dashboard placement. */
   onSkip?: () => void;
+  /** Order-success only. The buyer's saved Stripe card (from the
+   *  original scan purchase). When present, panel renders a
+   *  no-redirect "Confirm \$197 charge to **** 4242" button that
+   *  fires /api/upgrade/audit/confirm. When null, falls back to
+   *  Stripe Checkout redirect via /create-session. */
+  savedCard?: { brand: string; last4: string } | null;
+  /** Order-success only. Fired when the inline confirm succeeds
+   *  (no Stripe redirect). Parent transitions state to show the
+   *  audit-purchased banner + intake form. No-op when the panel
+   *  falls back to Stripe Checkout redirect (the Stripe flow
+   *  redirects away, then the page reloads with ?upgrade=audit
+   *  which the parent reads separately). */
+  onInlineConfirmSuccess?: () => void;
 };
 
 export function AuditUpgradePanel({
@@ -67,6 +80,8 @@ export function AuditUpgradePanel({
   currentScore,
   timeRemainingLabel,
   onSkip,
+  savedCard,
+  onInlineConfirmSuccess,
 }: AuditUpgradePanelProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +105,45 @@ export function AuditUpgradePanel({
     }
 
     try {
+      // 1-click path: when the buyer has a saved card from the
+      // scan purchase, fire the inline PaymentIntent confirm. No
+      // Stripe Checkout redirect — the audit upgrade processes in
+      // a single API call. On `fallback_to_checkout`, fall through
+      // to the redirect-style flow (covers 3DS challenges + edge
+      // cases where the inline path can't proceed).
+      if (savedCard && source === 'order_success' && sessionId) {
+        const confirmRes = await fetch('/api/upgrade/audit/confirm', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            source,
+            session_id: sessionId,
+          }),
+        });
+        const confirmData = (await confirmRes.json()) as {
+          ok?: boolean;
+          fallback_to_checkout?: boolean;
+          reason?: string;
+          error?: string;
+          payment_intent_id?: string;
+        };
+        if (confirmData.ok) {
+          // Success! Notify parent so it transitions to the
+          // post-upgrade state (intake form + audit-purchased
+          // banner). No redirect needed.
+          if (onInlineConfirmSuccess) onInlineConfirmSuccess();
+          setBusy(false);
+          return;
+        }
+        if (!confirmData.fallback_to_checkout) {
+          // Hard error — surface it.
+          setError(confirmData.error ?? `Upgrade failed (${confirmRes.status})`);
+          setBusy(false);
+          return;
+        }
+        // Fallback path: continue to create-session below.
+      }
+
       const res = await fetch('/api/upgrade/audit/create-session', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -232,6 +286,28 @@ export function AuditUpgradePanel({
         </span>
       </div>
 
+      {/* Saved-card row — only shown in the 1-click flow.
+       *  Surfaces what card will be charged so the buyer trusts
+       *  the no-redirect confirmation. */}
+      {savedCard && source === 'order_success' && (
+        <div
+          className="flex items-center gap-2 mb-4 text-xs text-zinc-500 font-mono px-3 py-2 rounded-md border"
+          style={{
+            background: 'var(--color-bg)',
+            borderColor: 'var(--color-border)',
+          }}
+        >
+          <span className="text-zinc-600">Paying with</span>
+          <span className="text-zinc-300 uppercase">
+            {savedCard.brand}
+          </span>
+          <span className="text-zinc-600">ending</span>
+          <span className="text-zinc-300">{savedCard.last4}</span>
+          <span className="text-zinc-700">·</span>
+          <span className="text-zinc-600">1-click charge</span>
+        </div>
+      )}
+
       {/* CTA + skip affordance */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <button
@@ -244,7 +320,13 @@ export function AuditUpgradePanel({
             color: '#000',
           }}
         >
-          {busy ? 'Opening checkout…' : 'Add the Roadmap → $197'}
+          {busy
+            ? savedCard
+              ? 'Processing payment…'
+              : 'Opening checkout…'
+            : savedCard
+              ? `Confirm $197 charge →`
+              : 'Add the Roadmap → $197'}
           {!busy && <ArrowRight size={14} strokeWidth={2.5} />}
         </button>
         {source === 'order_success' && (

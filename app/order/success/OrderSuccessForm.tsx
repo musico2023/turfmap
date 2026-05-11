@@ -41,6 +41,7 @@ export function OrderSuccessForm({
   attachPublicId,
   attachOnboardingStep,
   isAuditUpgrade,
+  savedCard,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -86,6 +87,13 @@ export function OrderSuccessForm({
    *    3. Treat upgradeChoice as effectively 'accepted' for layout
    *       decisions */
   isAuditUpgrade: boolean;
+  /** Pre-resolved Stripe saved-card metadata from the original scan
+   *  purchase. When non-null, the AuditUpgradePanel shows a
+   *  no-redirect "Confirm \$197 charge to **** 4242" button that
+   *  fires /api/upgrade/audit/confirm (off-session PaymentIntent).
+   *  When null, panel falls back to the Stripe Checkout redirect via
+   *  /api/upgrade/audit/create-session. */
+  savedCard: { brand: string; last4: string } | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -125,6 +133,12 @@ export function OrderSuccessForm({
   const [upgradeChoice, setUpgradeChoice] = useState<'pending' | 'skipped'>(
     'pending'
   );
+  /** Set to true when the 1-click inline confirm path succeeds.
+   *  Equivalent to the ?upgrade=audit URL flag from the redirect
+   *  path — used to show the "audit purchased" banner above the
+   *  intake form. Distinct from upgradeChoice='skipped' (which
+   *  means the buyer declined the upgrade). */
+  const [inlineUpgradeAccepted, setInlineUpgradeAccepted] = useState(false);
 
   // Pulse-attach return path: when the buyer comes back from Stripe
   // with ?attach=success or ?attach=cancelled, server resolves the
@@ -581,13 +595,23 @@ export function OrderSuccessForm({
     tier === 'scan' &&
     sessionId &&
     upgradeChoice === 'pending' &&
-    !isAuditUpgrade
+    !isAuditUpgrade &&
+    !inlineUpgradeAccepted
   ) {
     return (
       <AuditUpgradePanel
         source="order_success"
         sessionId={sessionId}
+        savedCard={savedCard}
         onSkip={() => setUpgradeChoice('skipped')}
+        onInlineConfirmSuccess={() => {
+          // 1-click confirm succeeded server-side. Flip choice so
+          // the next render bypasses the panel and renders the
+          // intake form with an "audit purchased" banner (same
+          // visual state as the Stripe-Checkout-redirect return
+          // path with ?upgrade=audit).
+          setInlineUpgradeAccepted(true);
+        }}
       />
     );
   }
@@ -608,7 +632,7 @@ export function OrderSuccessForm({
        *  the buyer submits this intake form, /api/orders/fulfill
        *  sweeps that row, links client_id + scan_id, creates the
        *  visibility_audits row, and stamps prospects.upgraded_to_audit_at. */}
-      {isAuditUpgrade && (
+      {(isAuditUpgrade || inlineUpgradeAccepted) && (
         <div
           className="border rounded-md px-4 py-3 -mt-2 mb-1 flex items-start gap-2.5"
           style={{
