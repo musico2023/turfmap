@@ -263,19 +263,17 @@ export function AuditUpgradePanel({
           ))}
       </ul>
 
-      {/* Pricing line — bold framing on the price, soft tail framing
-       *  the discount as buyer-status-gated rather than a mystery
-       *  credit (previous copy: "your $49 already counted" implied a
-       *  literal $49 credit toward $499, which the math doesn't
-       *  support — actual discount is $302). */}
+      {/* Pricing line — clean, no parenthetical. Previous copy was
+       *  "(your $49 already counted)" which implied a literal $49
+       *  credit toward $499 — but the actual discount is $302, so
+       *  the math was always slippery. The time-window callout
+       *  below conveys the temporal scope; this line just states
+       *  the price. */}
       <div className="mb-3">
         <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
           <strong className="text-zinc-100">
-            Normally $499. Upgrade now: $197
-          </strong>{' '}
-          <span className="text-zinc-500">
-            — buyer-only pricing for the next 24 hours.
-          </span>
+            Normally $499. Upgrade now: $197.
+          </strong>
         </p>
       </div>
 
