@@ -52,6 +52,12 @@ export type AuditUpgradePanelProps = {
    *  caller (e.g. "23h 14m left"). Dashboard placement only;
    *  optional on order-success. */
   timeRemainingLabel?: string;
+  /** Order-success only. Fired when the buyer declines the upgrade
+   *  and chooses to proceed to their TurfMap. The parent uses this
+   *  to reveal the "Your TurfMap is ready" success card, which is
+   *  hidden by default while the upgrade decision is pending so the
+   *  two CTAs don't compete. No-op on dashboard placement. */
+  onSkip?: () => void;
 };
 
 export function AuditUpgradePanel({
@@ -60,6 +66,7 @@ export function AuditUpgradePanel({
   clientId,
   currentScore,
   timeRemainingLabel,
+  onSkip,
 }: AuditUpgradePanelProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -241,9 +248,14 @@ export function AuditUpgradePanel({
           {!busy && <ArrowRight size={14} strokeWidth={2.5} />}
         </button>
         {source === 'order_success' && (
-          <span className="text-xs text-zinc-500">
+          <button
+            type="button"
+            onClick={onSkip}
+            disabled={busy}
+            className="inline-flex items-center justify-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50 px-2 py-1"
+          >
             Skip — open my TurfMap →
-          </span>
+          </button>
         )}
       </div>
 

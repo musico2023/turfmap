@@ -102,6 +102,17 @@ export function OrderSuccessForm({
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
     null
   );
+  /** Tracks the buyer's response to the AuditUpgradePanel on scan
+   *  tier fulfillments. While 'pending', the success card ("Your
+   *  TurfMap is ready" / "Open my TurfMap →") is hidden so it
+   *  doesn't compete with the upgrade CTA. Becomes 'skipped' when
+   *  the buyer clicks the "Skip — open my TurfMap →" button. The
+   *  'accepted' state isn't tracked here because clicking "Add the
+   *  Roadmap" redirects to Stripe Checkout — the buyer leaves this
+   *  page entirely. */
+  const [upgradeChoice, setUpgradeChoice] = useState<'pending' | 'skipped'>(
+    'pending'
+  );
 
   // Pulse-attach return path: when the buyer comes back from Stripe
   // with ?attach=success or ?attach=cancelled, server resolves the
@@ -405,14 +416,26 @@ export function OrderSuccessForm({
          *  stripeCustomerId; upgrade only needs sessionId). Lime
          *  accent vs. Pulse's amber so the two don't visually
          *  compete. The endpoint enforces the 24h window server-
-         *  side too. */}
-        {tier === 'scan' && sessionId && (
+         *  side too.
+         *
+         *  Visible only while upgradeChoice === 'pending' so the
+         *  "Open my TurfMap →" success card doesn't compete for
+         *  the click. Buyer either accepts (Stripe redirect away)
+         *  or hits Skip (→ 'skipped' → success card reveals). */}
+        {tier === 'scan' && sessionId && upgradeChoice === 'pending' && (
           <AuditUpgradePanel
             source="order_success"
             sessionId={sessionId}
+            onSkip={() => setUpgradeChoice('skipped')}
           />
         )}
 
+        {/* Success card / Pulse-attach panel — hidden while the
+         *  buyer is mid-decision on the audit upgrade above. For
+         *  non-scan tiers (or scan tiers after Skip), this block
+         *  is always visible. */}
+        {(tier !== 'scan' || !sessionId || upgradeChoice === 'skipped') && (
+        <>
         {showAttachPanel ? (
           // Attach-panel-primary layout. Compact celebration header,
           // then the attach panel as the hero element, then any
@@ -549,6 +572,8 @@ export function OrderSuccessForm({
               </p>
             )}
           </div>
+        )}
+        </>
         )}
       </>
     );
