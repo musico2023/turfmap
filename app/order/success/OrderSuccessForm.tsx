@@ -40,6 +40,7 @@ export function OrderSuccessForm({
   attachState,
   attachPublicId,
   attachOnboardingStep,
+  isAuditUpgrade,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -74,6 +75,17 @@ export function OrderSuccessForm({
    *  yet, so this is non-null whenever attachState='success' and
    *  the client row was resolvable. */
   attachOnboardingStep: OnboardingStep | null;
+  /** True when the buyer just completed the $197 audit-upgrade
+   *  Checkout (URL has ?upgrade=audit). The page is on the ORIGINAL
+   *  scan session_id at this point, not the audit session — the
+   *  webhook handles audit lead_orders creation server-side. We use
+   *  this flag to:
+   *    1. Surface an "audit upgrade purchased ✓" confirmation banner
+   *       above the intake form
+   *    2. Skip the AuditUpgradePanel pitch (they already upgraded)
+   *    3. Treat upgradeChoice as effectively 'accepted' for layout
+   *       decisions */
+  isAuditUpgrade: boolean;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -407,34 +419,11 @@ export function OrderSuccessForm({
           </div>
         )}
 
-        {/* Audit upgrade panel — only shown to TurfScan buyers
-         *  (the upgrade is meaningful only when they bought the
-         *  $99 scan tier, not audit/strategy/pulse). Renders here
-         *  as a peer of the showAttachPanel branch so it appears
-         *  regardless of whether the Pulse-attach panel renders —
-         *  the two have independent gating (attach needs
-         *  stripeCustomerId; upgrade only needs sessionId). Lime
-         *  accent vs. Pulse's amber so the two don't visually
-         *  compete. The endpoint enforces the 24h window server-
-         *  side too.
-         *
-         *  Visible only while upgradeChoice === 'pending' so the
-         *  "Open my TurfMap →" success card doesn't compete for
-         *  the click. Buyer either accepts (Stripe redirect away)
-         *  or hits Skip (→ 'skipped' → success card reveals). */}
-        {tier === 'scan' && sessionId && upgradeChoice === 'pending' && (
-          <AuditUpgradePanel
-            source="order_success"
-            sessionId={sessionId}
-            onSkip={() => setUpgradeChoice('skipped')}
-          />
-        )}
-
-        {/* Success card / Pulse-attach panel — hidden while the
-         *  buyer is mid-decision on the audit upgrade above. For
-         *  non-scan tiers (or scan tiers after Skip), this block
-         *  is always visible. */}
-        {(tier !== 'scan' || !sessionId || upgradeChoice === 'skipped') && (
+        {/* Post-fulfillment state. The audit-upgrade decision has
+         *  already been made BEFORE this point (pre-intake gate
+         *  renders the AuditUpgradePanel earlier), so we don't
+         *  need to surface it again here. Pulse-attach is the next
+         *  conversion opportunity in the funnel. */}
         <>
         {showAttachPanel ? (
           // Attach-panel-primary layout. Compact celebration header,
@@ -574,8 +563,32 @@ export function OrderSuccessForm({
           </div>
         )}
         </>
-        )}
       </>
+    );
+  }
+
+  // ─── Pre-intake audit-upgrade gate ────────────────────────────────
+  // When the buyer just paid for a scan tier and hasn't yet decided
+  // on the audit upgrade, show the AuditUpgradePanel ALONE — the
+  // intake form is hidden until they click Skip or come back from a
+  // successful upgrade Checkout. This forces the upsell decision
+  // BEFORE intake friction, which is where conversion intent is
+  // highest. isAuditUpgrade=true means they came back from a
+  // successful upgrade Checkout; skip the pitch and go straight to
+  // intake (with a confirmation banner).
+  if (
+    !done &&
+    tier === 'scan' &&
+    sessionId &&
+    upgradeChoice === 'pending' &&
+    !isAuditUpgrade
+  ) {
+    return (
+      <AuditUpgradePanel
+        source="order_success"
+        sessionId={sessionId}
+        onSkip={() => setUpgradeChoice('skipped')}
+      />
     );
   }
 
@@ -588,6 +601,39 @@ export function OrderSuccessForm({
         borderColor: 'var(--color-border)',
       }}
     >
+      {/* Audit-upgrade-purchased confirmation banner. Renders only
+       *  when the buyer returned from a successful $197 upgrade
+       *  Checkout (URL has ?upgrade=audit). The webhook has already
+       *  created the audit lead_orders row in pending state; when
+       *  the buyer submits this intake form, /api/orders/fulfill
+       *  sweeps that row, links client_id + scan_id, creates the
+       *  visibility_audits row, and stamps prospects.upgraded_to_audit_at. */}
+      {isAuditUpgrade && (
+        <div
+          className="border rounded-md px-4 py-3 -mt-2 mb-1 flex items-start gap-2.5"
+          style={{
+            background: 'var(--color-card-glow)',
+            borderColor: 'var(--color-border-bright)',
+          }}
+        >
+          <Check
+            size={16}
+            strokeWidth={2.75}
+            className="flex-shrink-0 mt-0.5"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div className="leading-relaxed text-sm">
+            <div className="font-semibold text-zinc-100 mb-0.5">
+              Visibility Audit upgrade purchased — $197
+            </div>
+            <div className="text-xs text-zinc-400">
+              Your audit will be queued the moment you submit your
+              business details below. Strategist call link goes out
+              after.
+            </div>
+          </div>
+        </div>
+      )}
       <Field label="Business name" required>
         <input
           type="text"

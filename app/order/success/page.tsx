@@ -44,13 +44,22 @@ export default async function OrderSuccessPage({
     tier?: string;
     session_id?: string;
     attach?: string;
+    /** Set to 'audit' when the buyer just completed the $197 audit-
+     *  upgrade Checkout (success_url stamps this). Used to override
+     *  the default audit-tier copy ("$499 order is confirmed") with
+     *  upgrade-specific copy ("$197 upgrade is confirmed — your $49
+     *  scan already counted"). When absent, falls back to default
+     *  tier-label copy. */
+    upgrade?: string;
   }>;
 }) {
   const {
     tier: tierParam,
     session_id: sessionId,
     attach: attachParam,
+    upgrade: upgradeParam,
   } = await searchParams;
+  const isAuditUpgrade = upgradeParam === 'audit';
 
   // ─── Stripe session validation + lead_orders idempotent insert ──────
   // Pulled into a helper so the rest of the render logic doesn't
@@ -73,7 +82,14 @@ export default async function OrderSuccessPage({
         ? tierParam
         : null;
 
-  const tierLabel = tier ? formatTierLabel(tier) : 'TurfMap';
+  // Audit upgrade gets its own label — buyer paid $197 net (not the
+  // $499 list), and framing it as "Audit Upgrade" makes the
+  // distinction from a from-scratch $499 audit purchase clear.
+  const tierLabel = isAuditUpgrade
+    ? 'Visibility Audit upgrade ($197)'
+    : tier
+      ? formatTierLabel(tier)
+      : 'TurfMap';
   const keywordCount = tier ? keywordCountForTier(tier) : 1;
   const prefillEmail =
     sessionState?.kind === 'ok' ? sessionState.email : null;
@@ -225,6 +241,7 @@ export default async function OrderSuccessPage({
               attachState={attachState}
               attachPublicId={attachPublicId}
               attachOnboardingStep={attachOnboardingStep}
+              isAuditUpgrade={isAuditUpgrade}
             />
           </Suspense>
         </div>

@@ -713,9 +713,17 @@ async function handleAuditUpgradeCompletion(
   const originalScanId = meta.original_scan_id ?? null;
   const originalLeadOrderId = meta.original_lead_order_id ?? null;
   const clientId = meta.client_id ?? null;
+  const pendingClientSessionId = meta.pending_client_session_id ?? null;
   const prospectId = meta.prospect_id ?? null;
 
-  if (!originalScanId || !originalLeadOrderId || !clientId) {
+  // original_lead_order_id is always required (this is the source-of-
+  // truth link back to the original TurfScan purchase). The buyer
+  // identity can come from EITHER:
+  //   (a) client_id — buyer already submitted intake before upgrading
+  //   (b) pending_client_session_id — buyer upgraded BEFORE intake;
+  //       /api/orders/fulfill will sweep this row and link client_id
+  //       when intake completes.
+  if (!originalLeadOrderId || (!clientId && !pendingClientSessionId)) {
     console.error(
       '[audit-upgrade] session missing required metadata',
       session.id,
@@ -751,34 +759,75 @@ async function handleAuditUpgradeCompletion(
     return;
   }
 
-  // Resolve the client.
-  const { data: client } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', clientId)
-    .maybeSingle<ClientRow>();
-  if (!client) {
-    console.error('[audit-upgrade] client not found', clientId);
-    return;
+  // Resolve the client. Optional — when null (buyer upgraded BEFORE
+  // submitting intake), we create the lead_orders row with
+  // client_id=null and status='pending' so /api/orders/fulfill can
+  // sweep + link it after the buyer fills intake.
+  //
+  // Race-condition handling: if this webhook fires AFTER the buyer
+  // has already submitted intake (rare but possible — Stripe webhook
+  // delivery isn't instant), originalLeadOrder.client_id may now be
+  // populated even though our session metadata said pending. Use
+  // whichever client_id is available so we don't leave the row
+  // perpetually pending.
+  let effectiveClientId: string | null =
+    clientId ?? originalLeadOrder.client_id ?? null;
+  let client: ClientRow | null = null;
+  if (effectiveClientId) {
+    const { data: c } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('id', effectiveClientId)
+      .maybeSingle<ClientRow>();
+    if (!c) {
+      console.error('[audit-upgrade] client not found', effectiveClientId);
+      // Fall through to pending path rather than fail; the sweep can
+      // try again when intake re-fires fulfill.
+      effectiveClientId = null;
+    } else {
+      client = c;
+    }
   }
 
   // Resolve the original scan for LLM Fit Score inputs + the
-  // visibility_audits.scan_id reference.
-  const { data: scan } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('id', originalScanId)
-    .maybeSingle<ScanRow>();
-  if (!scan) {
-    console.error('[audit-upgrade] original scan not found', originalScanId);
-    return;
+  // visibility_audits.scan_id reference. Optional in the pending-
+  // intake case (the scan is created alongside the client during
+  // intake fulfillment). When the race-condition recovery above
+  // resolved a client even though session metadata didn't pass
+  // originalScanId, look up the scan by client_id instead.
+  let scan: ScanRow | null = null;
+  if (originalScanId) {
+    const { data: s } = await supabase
+      .from('scans')
+      .select('*')
+      .eq('id', originalScanId)
+      .maybeSingle<ScanRow>();
+    if (!s) {
+      console.error('[audit-upgrade] original scan not found', originalScanId);
+      return;
+    }
+    scan = s;
+  } else if (client) {
+    const { data: s } = await supabase
+      .from('scans')
+      .select('*')
+      .eq('client_id', client.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<ScanRow>();
+    scan = s ?? null;
   }
 
-  // Create the lead_orders row for the upgrade purchase. Marks it
-  // fulfilled immediately since the buyer skipped the post-checkout
-  // form — they're already a client. audit_call_status: 'unbooked'
-  // matches the standalone-audit fulfill flow so the Cal.com
-  // webhook handler can stamp 'booked' when the buyer schedules.
+  // Create the lead_orders row for the upgrade purchase.
+  //
+  // When client is present (the typical post-intake upgrade path),
+  // we mark this row 'fulfilled' immediately + create
+  // visibility_audits inline. When client is null (pre-intake
+  // upgrade), we keep status='pending' so /api/orders/fulfill can
+  // recognize it as a sweep candidate when intake completes; the
+  // visibility_audits row is also deferred since its NOT NULL
+  // constraints on client_id + scan_id can't be satisfied yet.
+  const isPendingIntake = client === null;
   const buyerEmail =
     originalLeadOrder.email ??
     session.customer_details?.email ??
@@ -790,13 +839,17 @@ async function handleAuditUpgradeCompletion(
       stripe_session_id: session.id,
       tier: 'audit',
       email: buyerEmail,
-      client_id: client.id,
-      status: 'fulfilled',
+      client_id: client?.id ?? null,
+      status: isPendingIntake ? 'pending' : 'fulfilled',
       stripe_metadata: {
         source: 'audit_upgrade',
         upgrade_placement: meta.upgrade_placement ?? null,
         original_scan_id: originalScanId,
         original_lead_order_id: originalLeadOrderId,
+        // Preserve the pending-intake link so /api/orders/fulfill
+        // can find this row by scanning lead_orders WHERE
+        // stripe_metadata.pending_client_session_id = <scan session>.
+        pending_client_session_id: pendingClientSessionId,
         prospect_id: prospectId,
         amount_total: session.amount_total ?? null,
         audit_call_status: 'unbooked',
@@ -810,6 +863,18 @@ async function handleAuditUpgradeCompletion(
     console.error(
       '[audit-upgrade] lead_orders insert failed',
       leadInsertErr?.message
+    );
+    return;
+  }
+
+  // In the pending-intake path, stop here. The remaining work
+  // (visibility_audits creation, LLM fit score, prospects stamp,
+  // email send) happens in /api/orders/fulfill when the buyer
+  // submits intake.
+  if (isPendingIntake || !client || !scan) {
+    console.log(
+      '[audit-upgrade] deferred to intake-fulfillment sweep',
+      newLeadOrder.id
     );
     return;
   }

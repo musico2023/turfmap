@@ -633,6 +633,106 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ─── 8.5 Pending audit-upgrade sweep (scan tier only) ─────────────────
+  // When the buyer purchased an audit upgrade BEFORE filling intake,
+  // the webhook stored a pending lead_orders row with client_id=null
+  // and stripe_metadata.pending_client_session_id=<this scan session>.
+  // Now that intake is complete and client_id + scan_id exist, link
+  // the upgrade row → create its visibility_audits row → stamp the
+  // prospect → send the audit-upgrade confirmation email.
+  //
+  // Fail-soft: any error here doesn't fail the scan fulfillment. The
+  // pending row remains in the DB for manual recovery if needed.
+  if (session.tier === 'scan' && primaryScanResult?.ok && client) {
+    try {
+      const { data: pendingUpgrades } = await supabase
+        .from('lead_orders')
+        .select('*')
+        .eq('tier', 'audit')
+        .eq('status', 'pending')
+        .is('client_id', null)
+        .filter(
+          'stripe_metadata->>pending_client_session_id',
+          'eq',
+          session.sessionId
+        );
+
+      for (const pending of pendingUpgrades ?? []) {
+        const pendingMeta =
+          (pending.stripe_metadata as Record<string, unknown> | null) ?? {};
+
+        // Link client_id + flip to fulfilled.
+        await supabase
+          .from('lead_orders')
+          .update({
+            client_id: client.id,
+            status: 'fulfilled',
+            stripe_metadata: {
+              ...pendingMeta,
+              original_scan_id: primaryScanResult.scanId,
+              fulfilled_via_intake_sweep_at: new Date().toISOString(),
+            },
+          })
+          .eq('id', pending.id);
+
+        // Compute LLM fit score same way the audit-tier path does.
+        const tradeFit = inferTradeFitFromKeyword(body.keywords[0]);
+        const fitBreakdown = computeLlmFitScore({
+          revenueBand: null,
+          tradeFit,
+          metroFit: null,
+          adActive: null,
+          reviewCount: null,
+        });
+
+        // Create the visibility_audits row now that scan_id +
+        // client_id exist.
+        const auditResult = await createVisibilityAudit(supabase, {
+          leadOrderId: pending.id,
+          scanId: primaryScanResult.scanId,
+          clientId: client.id,
+          startingTurfScore: primaryScanResult.turfScore,
+          liftPromiseTargetScore: null,
+          llmFitScore: fitBreakdown.score,
+          llmFitBreakdown: fitBreakdown,
+        });
+        if (!auditResult.ok) {
+          console.error(
+            '[orders/fulfill] pending-upgrade visibility_audits insert failed',
+            auditResult.error,
+            pending.id
+          );
+        }
+
+        // Stamp prospects.upgraded_to_audit_at if the original
+        // purchase was from a cold-email cohort.
+        const prospectId =
+          typeof pendingMeta.prospect_id === 'string'
+            ? pendingMeta.prospect_id
+            : null;
+        if (prospectId) {
+          await supabase
+            .from('prospects')
+            .update({ upgraded_to_audit_at: new Date().toISOString() })
+            .eq('id', prospectId)
+            .is('upgraded_to_audit_at', null);
+        }
+
+        console.log(
+          '[orders/fulfill] swept pending audit_upgrade',
+          pending.id,
+          '→ client',
+          client.id
+        );
+      }
+    } catch (e) {
+      console.error(
+        '[orders/fulfill] pending-upgrade sweep threw (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   // ─── 9. Send the scan-ready email + (Pulse+) welcome email ────────────
   // Both are fire-and-await with errors swallowed inside the senders,
   // so a transient Resend hiccup doesn't fail the order. The dashboard

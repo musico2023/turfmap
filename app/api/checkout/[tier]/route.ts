@@ -300,6 +300,21 @@ export async function POST(
     // one-time buyers don't — so without this, the upgrade path
     // 400s for the majority of scan buyers.
     ...(isSubscription ? {} : { customer_creation: 'always' as const }),
+    // For one-time tiers: attach the payment method to the customer
+    // record (setup_future_usage: 'off_session') so the audit-upgrade
+    // mechanic on /order/success can charge the saved card without
+    // requiring the buyer to re-enter card details. The upgrade
+    // Checkout (which already passes `customer: customerId`) will
+    // surface the saved payment method, turning the upgrade into
+    // effectively a 1-click confirm. Stripe handles the consent
+    // disclosure microcopy automatically.
+    ...(isSubscription
+      ? {}
+      : {
+          payment_intent_data: {
+            setup_future_usage: 'off_session' as const,
+          },
+        }),
     metadata: {
       tier: tierParam,
       // Stamp cadence on subscription sessions so the

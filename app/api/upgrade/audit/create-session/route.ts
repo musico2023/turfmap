@@ -192,9 +192,20 @@ export async function POST(req: Request) {
   // contact details on the upgrade Checkout. We still fulfill the
   // upgrade correctly because the webhook attribution rides on
   // metadata.original_lead_order_id, not the customer record.
-  if (!leadOrder || !client) {
+  // leadOrder is still required (it's the original scan purchase
+  // record), but `client` is now also best-effort. When the buyer
+  // upgrades BEFORE filling the post-checkout intake form, the
+  // client row doesn't exist yet. In that case we proceed with a
+  // 'pending intake' upgrade: the webhook creates the audit
+  // lead_orders row with client_id=null, /api/orders/fulfill sweeps
+  // it when the buyer eventually submits intake, links client_id,
+  // creates the visibility_audits row, and stamps
+  // prospects.upgraded_to_audit_at. The buyer experiences the
+  // upgrade as: see panel → click Add → pay → return to intake
+  // form (no second-payment friction).
+  if (!leadOrder) {
     return NextResponse.json(
-      { error: 'could not resolve client + order pair' },
+      { error: 'no lead_orders row for this session' },
       { status: 400 }
     );
   }
@@ -202,18 +213,23 @@ export async function POST(req: Request) {
   // ─── 2. Already-upgraded check ─────────────────────────────────────
   // If the client already has a visibility_audits row, refuse to
   // create another upgrade — they've either already upgraded OR
-  // their original purchase was at the audit tier.
-  const { data: existingAudit } = await supabase
-    .from('visibility_audits')
-    .select('id')
-    .eq('client_id', client.id)
-    .limit(1)
-    .maybeSingle<{ id: string }>();
-  if (existingAudit) {
-    return NextResponse.json(
-      { error: 'this client has already upgraded to audit' },
-      { status: 400 }
-    );
+  // their original purchase was at the audit tier. Only enforceable
+  // when client exists (pre-intake upgrades skip this check; the
+  // webhook idempotency on stripe_session_id prevents the dup case
+  // even without it).
+  if (client) {
+    const { data: existingAudit } = await supabase
+      .from('visibility_audits')
+      .select('id')
+      .eq('client_id', client.id)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (existingAudit) {
+      return NextResponse.json(
+        { error: 'this client has already upgraded to audit' },
+        { status: 400 }
+      );
+    }
   }
 
   // ─── 3. 24h window check ───────────────────────────────────────────
@@ -234,25 +250,30 @@ export async function POST(req: Request) {
   }
 
   // Pull the original scan_id so the upgrade webhook can stamp it
-  // onto visibility_audits without re-querying. Take the most-recent
-  // scan for this client; if no scan exists yet (rare but possible
-  // during async fulfillment), bail.
-  const { data: scan } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('client_id', client.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<ScanRow>();
-  originalScan = scan;
-  if (!originalScan) {
-    return NextResponse.json(
-      {
-        error:
-          'no scan found for client yet — wait for the original scan to complete before upgrading',
-      },
-      { status: 400 }
-    );
+  // onto visibility_audits without re-querying. Only runs when the
+  // client already exists (i.e. intake submitted). When upgrading
+  // BEFORE intake, the scan hasn't been created yet — the webhook
+  // creates a pending audit lead_orders row with scan_id null, and
+  // /api/orders/fulfill creates both scan + visibility_audits when
+  // intake completes.
+  if (client) {
+    const { data: scan } = await supabase
+      .from('scans')
+      .select('*')
+      .eq('client_id', client.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<ScanRow>();
+    originalScan = scan;
+    if (!originalScan) {
+      return NextResponse.json(
+        {
+          error:
+            'no scan found for client yet — wait for the original scan to complete before upgrading',
+        },
+        { status: 400 }
+      );
+    }
   }
 
   // ─── 4. Resolve audit price + create upgrade session ───────────────
@@ -300,14 +321,26 @@ export async function POST(req: Request) {
   // Build attribution metadata for the upgrade session. The webhook
   // reads source=audit_upgrade to differentiate from a standalone
   // $499 audit purchase + writes the right visibility_audits row.
+  //
+  // client_id is included only when the client row exists (i.e. the
+  // buyer already submitted intake before clicking upgrade). When
+  // they upgrade BEFORE intake, we instead stamp
+  // pending_client_session_id so /api/orders/fulfill can sweep the
+  // pending upgrade row when the client is eventually created.
   const attribution: Record<string, string> = {
     tier: 'audit',
     source: 'audit_upgrade',
     upgrade_placement: body.source,
-    original_scan_id: originalScan.id,
     original_lead_order_id: leadOrder.id,
-    client_id: client.id,
   };
+  if (originalScan) {
+    attribution.original_scan_id = originalScan.id;
+  }
+  if (client) {
+    attribution.client_id = client.id;
+  } else if (body.session_id) {
+    attribution.pending_client_session_id = body.session_id;
+  }
   if (prospectIdFromMetadata) attribution.prospect_id = prospectIdFromMetadata;
 
   let session;
@@ -324,11 +357,24 @@ export async function POST(req: Request) {
         : { customer_creation: 'always' as const }),
       line_items: [{ price: auditPriceId, quantity: 1 }],
       discounts: [{ promotion_code: upgradePromoId }],
-      success_url: `${origin}/order/success?upgrade=audit&session_id={CHECKOUT_SESSION_ID}`,
+      // success_url routes back to the ORIGINAL scan session, not
+      // the new audit session. The page reads session_id and renders
+      // the post-scan intake form (still scan tier). The ?upgrade=audit
+      // flag tells the page to surface an "audit purchased ✓" banner
+      // above the intake form. The audit lead_orders row is created
+      // server-side by the webhook (in pending state if client not yet
+      // resolved, else fulfilled) — the success page doesn't need to
+      // know the audit Checkout session id at all.
+      success_url:
+        body.source === 'order_success' && body.session_id
+          ? `${origin}/order/success?upgrade=audit&session_id=${body.session_id}`
+          : `${origin}/order/success?upgrade=audit&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:
         body.source === 'order_success'
           ? `${origin}/order/success?session_id=${body.session_id}`
-          : `${origin}/portal/${client.public_id}`,
+          : client
+            ? `${origin}/portal/${client.public_id}`
+            : `${origin}/`,
       metadata: attribution,
     });
   } catch (e) {
