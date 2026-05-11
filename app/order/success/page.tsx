@@ -249,10 +249,29 @@ export default async function OrderSuccessPage({
                   Thanks — your {tierLabel} order is confirmed.
                 </h1>
                 <p className="text-zinc-300 leading-relaxed">
-                  One more step. Tell us about your business — your
-                  scan kicks off the moment you submit, and we&rsquo;ll
-                  email your TurfMap as soon as it&rsquo;s ready
-                  (typically under a minute).
+                  {isAuditUpgrade
+                    ? // Audit upgrade return path: scan is paid, audit is
+                      // paid, intake still needed. Keep the framing
+                      // forward-looking rather than dwelling on the
+                      // payment-confirmation moment.
+                      "Both the scan and the 90-day Roadmap audit are locked in. Fill out your business details below to kick everything off — we'll email your TurfMap as soon as your scan completes."
+                    : tier === 'scan'
+                      ? // Scan tier: the AuditUpgradePanel may render below
+                        // BEFORE the intake form, so don't promise "fill the
+                        // form to fire your scan" until the buyer has gotten
+                        // past the upgrade decision. Neutral phrasing works
+                        // for both upgrade-panel-visible AND intake-visible
+                        // states. The body content (panel or form) provides
+                        // its own specific instructions.
+                        "Your TurfScan is locked in. There's one quick decision below before we kick off your scan."
+                      : // Audit / Strategy / other tiers that go straight to
+                        // intake (no upgrade panel above): existing copy.
+                        <>
+                          One more step. Tell us about your business — your
+                          scan kicks off the moment you submit, and we&rsquo;ll
+                          email your TurfMap as soon as it&rsquo;s ready
+                          (typically under a minute).
+                        </>}
                 </p>
               </div>
             </div>
