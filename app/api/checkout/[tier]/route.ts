@@ -290,8 +290,16 @@ export async function POST(
     // can pre-fill it.
     // customer_creation isn't valid in subscription mode (Stripe
     // always creates a customer for subs), so only set it for
-    // one-time payments.
-    ...(isSubscription ? {} : { customer_creation: 'if_required' as const }),
+    // one-time payments. We use 'always' (not the default
+    // 'if_required') so EVERY one-time buyer gets a Stripe
+    // customer record. This is what powers the audit-upgrade
+    // mechanic on /order/success: the upgrade endpoint needs a
+    // customer id to pre-bind the upgrade Checkout to the same
+    // payment method. 'if_required' would only create a customer
+    // when the buyer ticked "save payment method," which most
+    // one-time buyers don't — so without this, the upgrade path
+    // 400s for the majority of scan buyers.
+    ...(isSubscription ? {} : { customer_creation: 'always' as const }),
     metadata: {
       tier: tierParam,
       // Stamp cadence on subscription sessions so the

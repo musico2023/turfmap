@@ -184,15 +184,14 @@ export async function POST(req: Request) {
     }
   }
 
-  if (!customerId) {
-    return NextResponse.json(
-      {
-        error:
-          'no Stripe customer attached to this purchase — cannot reuse saved payment',
-      },
-      { status: 400 }
-    );
-  }
+  // customerId is now best-effort, not required. When present, the
+  // upgrade Checkout pre-binds to the same Stripe customer so the
+  // buyer doesn't re-enter their email + card. When absent (e.g.
+  // pre-fix scan purchases that ran under customer_creation:
+  // 'if_required' and didn't save payment), Stripe collects fresh
+  // contact details on the upgrade Checkout. We still fulfill the
+  // upgrade correctly because the webhook attribution rides on
+  // metadata.original_lead_order_id, not the customer record.
   if (!leadOrder || !client) {
     return NextResponse.json(
       { error: 'could not resolve client + order pair' },
@@ -316,7 +315,13 @@ export async function POST(req: Request) {
     session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
-      customer: customerId,
+      // When customerId is present, pre-bind the upgrade Checkout so
+      // the buyer skips email + card re-entry. When absent (legacy
+      // 'if_required' purchases), let Stripe collect fresh contact
+      // info and auto-create a customer at upgrade time.
+      ...(customerId
+        ? { customer: customerId }
+        : { customer_creation: 'always' as const }),
       line_items: [{ price: auditPriceId, quantity: 1 }],
       discounts: [{ promotion_code: upgradePromoId }],
       success_url: `${origin}/order/success?upgrade=audit&session_id={CHECKOUT_SESSION_ID}`,
