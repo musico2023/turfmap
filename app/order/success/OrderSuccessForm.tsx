@@ -396,6 +396,23 @@ export function OrderSuccessForm({
           </div>
         )}
 
+        {/* Audit upgrade panel — only shown to TurfScan buyers
+         *  (the upgrade is meaningful only when they bought the
+         *  $99 scan tier, not audit/strategy/pulse). Renders here
+         *  as a peer of the showAttachPanel branch so it appears
+         *  regardless of whether the Pulse-attach panel renders —
+         *  the two have independent gating (attach needs
+         *  stripeCustomerId; upgrade only needs sessionId). Lime
+         *  accent vs. Pulse's amber so the two don't visually
+         *  compete. The endpoint enforces the 24h window server-
+         *  side too. */}
+        {tier === 'scan' && sessionId && (
+          <AuditUpgradePanel
+            source="order_success"
+            sessionId={sessionId}
+          />
+        )}
+
         {showAttachPanel ? (
           // Attach-panel-primary layout. Compact celebration header,
           // then the attach panel as the hero element, then any
@@ -429,19 +446,6 @@ export function OrderSuccessForm({
                 </p>
               </div>
             </div>
-
-            {/* Audit upgrade panel — only shown to TurfScan buyers
-             *  (the upgrade is meaningful only when they bought the
-             *  $99 scan tier, not audit/strategy/pulse). Sits above
-             *  the Pulse attach panel; lime accent vs. Pulse's amber
-             *  so the two don't visually compete. The endpoint
-             *  enforces the 24h window server-side too. */}
-            {tier === 'scan' && sessionId && (
-              <AuditUpgradePanel
-                source="order_success"
-                sessionId={sessionId}
-              />
-            )}
 
             <PulseAttachPanel
               publicId={publicId}
