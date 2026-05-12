@@ -366,7 +366,14 @@ export default async function ClientPortalPage({
         </div>
       )}
 
-      {latestScan && isFirstScan && (
+      {/* Baseline-scan-complete banner — ONLY for subscription
+       *  (Pulse / Pulse+) buyers who can actually re-scan weekly.
+       *  One-time TurfScan / Audit buyers can't trigger re-scans
+       *  from the dashboard, so the "your territory expands with
+       *  weekly re-scans" framing doesn't apply to them and was
+       *  misleading (the prior one_time copy claimed "re-scan from
+       *  the dashboard any time" which isn't a feature they have). */}
+      {latestScan && isFirstScan && client.billing_mode !== 'one_time' && (
         <div
           className="px-4 md:px-8 py-3 border-b flex items-center gap-3 text-xs"
           style={{
@@ -380,9 +387,8 @@ export default async function ClientPortalPage({
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
             </span>{' '}
-            {client.billing_mode === 'one_time'
-              ? 'This is your map — re-scan from the dashboard any time to track changes.'
-              : 'This is your starting point — your territory expands with weekly re-scans and the AI Coach playbook.'}
+            This is your starting point — your territory expands with
+            weekly re-scans and the AI Coach playbook.
           </span>
         </div>
       )}

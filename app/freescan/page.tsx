@@ -259,10 +259,8 @@ export default async function FreeScanLandingPage({
             <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-5 flex items-center gap-2 flex-wrap">
               <span style={{ color: 'var(--color-lime)' }}>●</span>
               <span style={{ color: 'var(--color-lime)' }}>
-                Your TurfMap
+                Your TurfMap preview
               </span>
-              <span className="text-zinc-600">·</span>
-              <span>Free for the Fourdots buyer list</span>
             </div>
 
             {/* H1 — three-tier weight hierarchy per Sprint-1 Fix 1.3.
