@@ -1170,7 +1170,7 @@ function ScoreReadout({
         }`,
       }}
     >
-      <div className="text-[9px] uppercase tracking-[0.16em] text-zinc-500 font-mono font-semibold mb-1.5">
+      <div className="text-[10px] tracking-[0.04em] text-zinc-500 font-mono font-semibold mb-1.5">
         {label}
       </div>
       <div

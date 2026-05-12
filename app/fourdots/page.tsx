@@ -863,7 +863,7 @@ function ScoreReadout({
         border: highlight ? '1px solid var(--color-border-bright)' : 'none',
       }}
     >
-      <div className="text-[9px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-1">
+      <div className="text-[10px] tracking-[0.04em] text-zinc-500 font-mono font-semibold mb-1">
         {label}
       </div>
       <div
