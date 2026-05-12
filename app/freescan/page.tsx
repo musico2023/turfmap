@@ -760,19 +760,21 @@ export default async function FreeScanLandingPage({
           <FAQAccordion
             items={[
               {
-                q: 'How did you get my information?',
+                // Warm-cohort framing. Replaces the cold-email
+                // "How did you get my information?" Q with the
+                // gift-explanation per campaign brief Fix 2.3. These
+                // recipients already know who Fourdots is — they
+                // filled out a booking form in the past.
+                q: 'Why is this free for me?',
                 a: (
                   <>
-                    We use publicly-available business data to identify
-                    operators with significant local SEO weakness. Your
-                    business name, address, and phone are listed publicly
-                    on Google Business Profile, Yelp, and similar
-                    directories. We ran a preview scan against this public
-                    data, identified that you were missing visibility
-                    across your service area, and reached out. No private
-                    data was accessed. If you&rsquo;d prefer not to receive
-                    further outreach, simply unsubscribe at the link in
-                    our email.
+                    You filled out a booking form on Fourdots in the
+                    past, and we kept your details on file because
+                    you&rsquo;re exactly the kind of operator I built
+                    TurfMap for. We ran a preview scan on your business
+                    this week, and I&rsquo;d like to give you the full
+                    TurfScan on the house. No card required, no upsell
+                    at the door. Just the data.
                   </>
                 ),
               },

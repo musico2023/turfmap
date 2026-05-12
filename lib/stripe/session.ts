@@ -39,6 +39,13 @@ export type LoadedSession = {
    *  a /yourmap purchase. NULL for organic / popup-cohort buyers.
    *  Fulfill route uses this to stamp prospects.converted_at. */
   prospectId: string | null;
+  /** Cohort discriminator from session.metadata.cohort. Set by the
+   *  /api/checkout/[tier] route — derives from the coupon (VIP →
+   *  crm_reactivation_q2) or prospect_id presence (cold_email). NULL
+   *  for organic / popup-cohort buyers. Drives upsell suppression on
+   *  /order/success + dashboard for warm-cohort buyers per the
+   *  campaign brief's MUST-NOT-render rules. */
+  cohort: string | null;
 };
 
 /** Errors callers should distinguish: we want a clean way to know
@@ -153,6 +160,16 @@ export async function loadCheckoutSession(
       ? String(session.metadata.prospect_id) || null
       : null;
 
+  // Cohort discriminator set by /api/checkout/[tier] (VIP coupon →
+  // crm_reactivation_q2; prospect_id present → cold_email; otherwise
+  // null). Used by /order/success + dashboard to suppress the audit
+  // upsell + Pulse attach panels for warm-cohort buyers per the
+  // campaign brief's "MUST NOT render" rules.
+  const cohort =
+    session.metadata && 'cohort' in session.metadata
+      ? String(session.metadata.cohort) || null
+      : null;
+
   return {
     sessionId,
     tier: tierRaw,
@@ -163,5 +180,6 @@ export async function loadCheckoutSession(
     amountTotal: session.amount_total ?? null,
     currency: session.currency ?? null,
     prospectId,
+    cohort,
   };
 }

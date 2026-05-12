@@ -43,6 +43,7 @@ export function OrderSuccessForm({
   isAuditUpgrade,
   savedCard,
   prospectId,
+  cohort,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -104,6 +105,14 @@ export function OrderSuccessForm({
    *  a cohort lander. The endpoint is cohort-scoped, so firing it
    *  for non-warm-cohort prospect_ids is a safe no-op. */
   prospectId: string | null;
+  /** Cohort discriminator from session.metadata.cohort. When
+   *  'crm_reactivation_q2' (VIP warm cohort), we MUST NOT render the
+   *  AuditUpgradePanel or PulseAttachPanel on /order/success — the
+   *  campaign brief explicitly suppresses commercial follow-ups at the
+   *  gift-delivery moment. Stage 2 email (auto-fired 30 min — 24 hr
+   *  after dashboard engagement) is the SOLE entry point to the audit
+   *  upgrade for this cohort. */
+  cohort: string | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -329,6 +338,15 @@ export function OrderSuccessForm({
     // the buyer hasn't already opted in or cancelled mid-flow, and
     // only when we have the data needed to bind the trial to the
     // existing Stripe customer + client row.
+    //
+    // WARM-COHORT SUPPRESSION: per campaign brief, the Pulse-attach
+    // panel MUST NOT render for crm_reactivation_q2 buyers on
+    // /order/success. They received the scan as a gift; surfacing a
+    // commercial subscription pitch at the gift-delivery moment
+    // damages the warm relationship. Only Stage 2 email (auto-fired
+    // 30 min — 24 hr post-engagement) carries any pitch for this
+    // cohort.
+    const isWarmCohort = cohort === 'crm_reactivation_q2';
     const isOneTimeTier =
       tier === 'scan' || tier === 'audit' || tier === 'strategy';
     const showAttachPanel =
@@ -336,7 +354,8 @@ export function OrderSuccessForm({
       attachState !== 'success' &&
       publicId &&
       sessionId &&
-      stripeCustomerId;
+      stripeCustomerId &&
+      !isWarmCohort;
 
     // Compact celebration vs full success card. When the attach panel
     // is the focal point of the page (most one-time-tier success
@@ -634,13 +653,21 @@ export function OrderSuccessForm({
   // highest. isAuditUpgrade=true means they came back from a
   // successful upgrade Checkout; skip the pitch and go straight to
   // intake (with a confirmation banner).
+  //
+  // WARM-COHORT SUPPRESSION: crm_reactivation_q2 buyers MUST NOT
+  // see the AuditUpgradePanel anywhere on /order/success per campaign
+  // brief. Stage 2 email is the only entry point to the audit upgrade
+  // for this cohort. cohort === 'crm_reactivation_q2' short-circuits
+  // straight to the intake form path below.
+  const isWarmCohortForUpgradeGate = cohort === 'crm_reactivation_q2';
   if (
     !done &&
     tier === 'scan' &&
     sessionId &&
     upgradeChoice === 'pending' &&
     !isAuditUpgrade &&
-    !inlineUpgradeAccepted
+    !inlineUpgradeAccepted &&
+    !isWarmCohortForUpgradeGate
   ) {
     return (
       <AuditUpgradePanel

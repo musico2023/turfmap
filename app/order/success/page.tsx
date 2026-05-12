@@ -94,13 +94,23 @@ export default async function OrderSuccessPage({
   // would otherwise see "$99" in the header.
   const paidAmountCents =
     sessionState?.kind === 'ok' ? sessionState.amountTotalCents : null;
+  // Warm-cohort detection drives both label override and the
+  // suppression rules forwarded to OrderSuccessForm.
+  const cohortFromSession =
+    sessionState?.kind === 'ok' ? sessionState.cohort : null;
+  const isWarmCohort = cohortFromSession === 'crm_reactivation_q2';
   const tierLabel = isAuditUpgrade
     ? 'Visibility Audit upgrade ($197)'
-    : tier
-      ? paidAmountCents != null
-        ? formatTierLabelWithPaidAmount(tier, paidAmountCents)
-        : formatTierLabel(tier)
-      : 'TurfMap';
+    : isWarmCohort && tier === 'scan'
+      ? // VIP warm cohort received the scan as a gift — frame it as
+        // "free TurfScan", not "TurfScan ($0)" which is awkward and
+        // commercial-sounding for the relational handoff.
+        'free TurfScan'
+      : tier
+        ? paidAmountCents != null
+          ? formatTierLabelWithPaidAmount(tier, paidAmountCents)
+          : formatTierLabel(tier)
+        : 'TurfMap';
   const keywordCount = tier ? keywordCountForTier(tier) : 1;
   const prefillEmail =
     sessionState?.kind === 'ok' ? sessionState.email : null;
@@ -263,22 +273,28 @@ export default async function OrderSuccessPage({
                     ? // Audit upgrade return path: scan is paid, audit is
                       // paid, intake still needed.
                       "Both the scan and the 90-day Roadmap audit are locked in. Fill out your business details below to kick everything off — we'll email your TurfMap as soon as your scan completes."
-                    : tier === 'scan'
-                      ? // Scan tier: the body component decides whether to
-                        // render the AuditUpgradePanel (pre-Skip) or the
-                        // intake form (post-Skip / post-upgrade). Header
-                        // copy stays neutral so it works in both states —
-                        // "complete the steps below" is true whether
-                        // those steps are 'upgrade decision' or 'intake'.
-                        "Your TurfScan is locked in. Complete the next steps below to fire your scan."
-                      : // Audit / Strategy / other tiers that go straight to
-                        // intake (no upgrade panel above): existing copy.
-                        <>
-                          One more step. Tell us about your business — your
-                          scan kicks off the moment you submit, and we&rsquo;ll
-                          email your TurfMap as soon as it&rsquo;s ready
-                          (typically under a minute).
-                        </>}
+                    : isWarmCohort && tier === 'scan'
+                      ? // VIP warm cohort: gift-delivery framing. No
+                        // commercial follow-up here (no upsell panel —
+                        // suppressed in OrderSuccessForm). Anthony-as-
+                        // human framing positions the next conversation
+                        // as relational, not transactional.
+                        "We're running your 81-point geo-grid scan. Check your inbox in under a minute. Anthony will follow up after you've had a chance to look at your map."
+                      : tier === 'scan'
+                        ? // Cold-email / paid scan tier: the body
+                          // component decides whether to render the
+                          // AuditUpgradePanel (pre-Skip) or the intake
+                          // form (post-Skip / post-upgrade). Header copy
+                          // stays neutral so it works in both states.
+                          "Your TurfScan is locked in. Complete the next steps below to fire your scan."
+                        : // Audit / Strategy / other tiers that go
+                          // straight to intake (no upgrade panel above).
+                          <>
+                            One more step. Tell us about your business —
+                            your scan kicks off the moment you submit,
+                            and we&rsquo;ll email your TurfMap as soon as
+                            it&rsquo;s ready (typically under a minute).
+                          </>}
                 </p>
               </div>
             </div>
@@ -318,6 +334,9 @@ export default async function OrderSuccessPage({
               savedCard={savedCard}
               prospectId={
                 sessionState?.kind === 'ok' ? sessionState.prospectId : null
+              }
+              cohort={
+                sessionState?.kind === 'ok' ? sessionState.cohort : null
               }
             />
           </Suspense>
@@ -396,6 +415,12 @@ type SessionState =
        *  — the trigger for the Stage 2 audit-upgrade email cron. NULL
        *  when the buyer didn't come from a cohort lander. */
       prospectId: string | null;
+      /** Cohort discriminator. 'crm_reactivation_q2' = warm cohort
+       *  (VIP coupon, /freescan) — suppresses the audit upsell + Pulse
+       *  attach panels per campaign brief's MUST-NOT-render rules.
+       *  'cold_email' = paid cold-email cohort (MAPCHECK50, /yourmap)
+       *  — standard upsell flow. NULL = organic / popup buyer. */
+      cohort: string | null;
     }
   | { kind: 'warning'; message: string };
 
@@ -462,5 +487,6 @@ async function validateAndRecordSession(
     customerId: result.customerId,
     amountTotalCents: result.amountTotal,
     prospectId: result.prospectId,
+    cohort: result.cohort,
   };
 }
