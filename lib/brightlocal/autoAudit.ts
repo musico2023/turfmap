@@ -101,14 +101,48 @@ export async function maybeRunNapAudit(
   triggeredBy: string | null,
   locationId: string | null = null
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
-  // 1. Resolve the target location (the explicit one, or the client's
+  // 1. Pull client (for billing_mode tier gate + business_name + industry).
+  //
+  // TIER GATE: NAP audits hit BrightLocal's Data API (/data/v1/listings/*).
+  // Trial cap is 250 requests, hard stop — BL doesn't auto-bill after the
+  // cap, the endpoint just stops working until a commercial-key agreement
+  // is in place (confirmed by Rhea, BL Customer Support, on 2026-05-12).
+  // Each audit = ~3-10 requests, so the trial buys us ~25-80 audits total.
+  //
+  // To preserve the trial allowance for paying customers — Pulse / Pulse+
+  // / agency-managed — skip the audit entirely for one-time tiers (free
+  // and paid TurfScans, standalone Visibility Audits, Strategy Sessions).
+  // The AI Coach falls back to general best-practices recommendations
+  // without NAP-specific findings, which is acceptable for free / one-time
+  // buyers. Pulse / Pulse+ buyers get the full NAP-driven coaching.
+  //
+  // Re-enable for all tiers once we're on a commercial BL Data API key.
+  const { data: client } = await supabase
+    .from('clients')
+    .select('business_name, industry, billing_mode')
+    .eq('id', clientId)
+    .maybeSingle<
+      Pick<ClientRow, 'business_name' | 'industry' | 'billing_mode'>
+    >();
+  if (!client) {
+    return { ran: false, reason: 'client not found' };
+  }
+  if (client.billing_mode === 'one_time') {
+    return {
+      ran: false,
+      reason:
+        'tier gate: NAP audit reserved for Pulse / Pulse+ / agency-managed clients (BL Data API trial preservation, see autoAudit.ts header)',
+    };
+  }
+
+  // 2. Resolve the target location (the explicit one, or the client's
   //    primary). No location → can't audit.
   const location = await resolveLocation(supabase, clientId, locationId);
   if (!location) {
     return { ran: false, reason: 'no location resolved for this client' };
   }
 
-  // 2. Already a recent audit for this exact location?
+  // 3. Already a recent audit for this exact location?
   const since = new Date(
     Date.now() - AUDIT_REFRESH_WINDOW_MS
   ).toISOString();
@@ -124,16 +158,6 @@ export async function maybeRunNapAudit(
     .maybeSingle<Pick<NapAuditRow, 'id' | 'status' | 'created_at'>>();
   if (recent) {
     return { ran: false, reason: `recent audit already ${recent.status}` };
-  }
-
-  // 3. Pull client (for business_name + industry).
-  const { data: client } = await supabase
-    .from('clients')
-    .select('business_name, industry')
-    .eq('id', clientId)
-    .maybeSingle<Pick<ClientRow, 'business_name' | 'industry'>>();
-  if (!client) {
-    return { ran: false, reason: 'client not found' };
   }
 
   // 4. NAP fields complete on the location?
