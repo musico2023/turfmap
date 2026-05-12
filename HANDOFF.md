@@ -1,6 +1,6 @@
 # Session Handoff — VIP Campaign + Citation Builder (Pulse+)
 
-Last updated: 2026-05-12 ~12:50am EDT
+Last updated: 2026-05-12 ~1:30am EDT
 
 ## Goal
 
@@ -45,6 +45,14 @@ Two parallel workstreams:
 - Env vars set on production Vercel (`BRIGHTLOCAL_API_KEY`, `CITATION_BUILDER_ENABLED=true`)
 - Cost: $0 — BrightLocal Management APIs unlimited per Rhea's May 11 reply
 
+### NAP audit — gated to recurring tiers to preserve BL Data API trial
+
+- `maybeRunNapAudit()` at `lib/brightlocal/autoAudit.ts` now bails early when `client.billing_mode === 'one_time'`
+- Effect: free `/freescan` (VIP) + paid `/yourmap` (cold-email) + standalone Audit / Strategy purchases NO LONGER fire NAP audits
+- Pulse / Pulse+ / agency-managed clients still get full NAP-driven AI Coach output
+- Rationale: Rhea (BL Support) confirmed May 12 that the 250-request trial cap is a HARD STOP, not an auto-billed threshold. Per-request commercial pricing requires a new commercial-key arrangement (Sales conversation in flight). One NAP audit ≈ 3-10 BL Data API requests; trial buys us ~25-80 audits total. Without this gate, the VIP campaign alone could exhaust the trial mid-launch.
+- Revert path: once commercial Data API key is in place, revert commit `850a51b` to re-enable for one-time tiers.
+
 ### Commits shipped to main today (in order)
 
 | Hash | What |
@@ -59,6 +67,7 @@ Two parallel workstreams:
 | `38addb3` | Intake keyword pre-fill + FAQ rewrite |
 | `d1daa97` | **P0**: confirm-and-pay migrated to `/manage/v1/citation-builder/{id}/confirm` PUT |
 | `850a51b` | NAP audit tier gate (Pulse / Pulse+ / agency-managed only) to preserve BL Data API trial |
+| `ab8d8be` | HANDOFF.md initial commit (this doc) |
 
 ## Files I'm actively editing
 
@@ -104,9 +113,18 @@ These are the rabbit holes that didn't pan out, so the next session doesn't repe
 ## Outstanding work (pending operator action — NOT code)
 
 1. **Send Stage 1 to 29 VIP prospects** via Superhuman snippets. CSV at `~/Claude/Projects/Lead Generation/vip_stage1_email_list.csv`. Justina's row is the 29th (last). Recommended snippet template + variable list provided in the prior message. Justina specifically needs a custom snippet (no `top_competitor_name`) — opportunity-framing pitch drafted.
-2. **Start Sugar Daddy campaign 965489 in BL dashboard** — currently parked in "Saved" state. User explicitly chose to defer until cold-email automation winds down + BL credit visibility improves.
-3. **Awaiting Connie Higgins (BrightLocal Sales) reply** with Data API per-request pricing for `/data/v1/listings/find`, `/results`, `/directories`. Rhea (Support) clarified May 12: trial cap is 250 requests HARD STOP — no auto-billing. Production requires a commercial-key arrangement. Gmail draft answering Connie's discovery questions is in Drafts; user to review + send. Once pricing is back + commercial key in place: revert commit `850a51b` to re-enable NAP audit for all tiers.
+2. **Send the Gmail draft to Connie Higgins (BL Sales)** sitting in your Drafts folder. Subject: `Re: [BrightLocal] Re: API Access`. The body answers her 3 discovery questions and asks for Data API per-request pricing + volume-tier options. Pricing details about the Pulse+ rate are deliberately scrubbed.
+3. **Start Sugar Daddy campaign 965489 in BL dashboard** — currently parked in "Saved" state. User explicitly chose to defer until cold-email automation winds down + BL credit visibility improves. Now safer to defer because the NAP audit gate (commit `850a51b`) means free TurfScans no longer burn BL trial credits.
 4. **Stripe VIP coupon in test mode** — only live mode confirmed. Optional, not blocking.
+
+## BrightLocal account state
+
+- **Account:** trial API key (`BRIGHTLOCAL_API_KEY` in Vercel prod env, set 9 days ago)
+- **Management APIs (Citation Builder):** unlimited on trial per Rhea — Citation Builder feature on Pulse+ has $0 marginal cost
+- **Data API (NAP audit):** 250-request trial cap; HARD STOP, no auto-bill. Each NAP audit = ~3-10 requests. Now gated to recurring tiers only.
+- **Sales contact:** Connie Higgins (currently asking discovery questions before quoting per-request Data API pricing). Awaiting reply once user sends the prepared Gmail draft.
+- **Citation Builder credit balance:** unknown — separate pool from Data API trial. Sugar Daddy campaign 965489 sits in "Saved" state; clicking "Start Campaign" would bill against this balance.
+- **Open campaigns in BL dashboard:** Sugar Daddy Doughnuts (965489, Saved, never started). Plus several smoke-test locations from May 10-11 (location IDs 4061311, 4061331, 4061328, 4061327, 4061326, 4062832) worth cleaning up.
 
 ## Open code todos (low priority, post-launch)
 
@@ -116,16 +134,16 @@ These are the rabbit holes that didn't pan out, so the next session doesn't repe
 
 ## Next step I'd take
 
-**Verify `/freescan?prospect_id=ay62UUG9SE&coupon=VIP&utm_*=...` renders cleanly on production.** Specifically:
+The campaign is ready for Stage 1 send. The code path was end-to-end smoke-tested on production with `vipsmoke02` (test prospect now cleaned up) — every step worked including post-suppression cohort detection, $0 checkout, engagement endpoint, Stage 2 cron fire, audit_upgrade URL redirect to Stripe.
 
-1. Does the lander handle `top_competitor_name=null` gracefully (skip "The Competition" card or show a softer state)?
-2. Does the score card render "0 INVISIBLE" correctly with the new PascalCase labels?
-3. Does the FAQ show "Why is this free for me?" as the first question (expanded)?
-4. Is the trade-pre-fill working when the user lands on `/order/success` after $0 checkout (intake form should show "landscaping" pre-filled in the Keyword field)?
+**Recommended next-session pickup order:**
 
-If all four check out, the campaign is ready for Stage 1 send. If anything looks off, fix before sending.
+1. **Visual-verify `/freescan?prospect_id=ay62UUG9SE&coupon=VIP&utm_*=...`** (Justina's URL) handles `top_competitor_name=null` cleanly. Should skip "The Competition" card or render the soft "no entrenched competitor — opportunity" framing. Quick screenshot check is enough.
+2. **Once Connie replies with Data API pricing**, evaluate whether to take a commercial key OR keep the NAP audit gate permanently. If pricing is reasonable (<$0.10/audit), re-enable for one-time tiers by reverting `850a51b`. If expensive, keep the gate and consider it a permanent feature differentiator.
+3. **First Pulse+ buyer = first real E2E test of Citation Builder.** Smoke-test endpoint passed (`{ok:true, ...}` on May 12 ~12am) but the production path (`/manage/v1/citation-builder`) wasn't probed yet. Watch the first real Pulse+ buyer's campaign closely: confirm campaign creates, photo uploads work, confirm-and-pay returns 200 from the new PUT endpoint, polling cron updates per-directory state.
+4. **Stage 2 conversion validation.** Once a real VIP buyer engages, watch them flow through the auto-fired Stage 2 email → audit upgrade Checkout → $197 redirect. This is the campaign's revenue moment — the only point we haven't validated against a real user.
 
-After that, the operator sends Stage 1 manually via Superhuman — no code work needed until either (a) Rhea replies with Data API pricing, (b) first Pulse+ buyer hits the Citation Builder path and we need to debug real /manage/v1 traffic, or (c) Stage 2 cron starts firing for engaged prospects and we want to verify the email delivery + audit upgrade conversion path lands.
+Nothing technical blocking Stage 1 send right now.
 
 ## Useful one-liners for the next session
 
