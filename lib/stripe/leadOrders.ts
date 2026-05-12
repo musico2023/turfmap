@@ -41,6 +41,14 @@ export async function ensureLeadOrder(
     payment_status: session.paymentStatus,
     amount_total: session.amountTotal,
     currency: session.currency,
+    // Cohort + prospect attribution from session.metadata. Critical
+    // for the warm-cohort suppression rules on /order/success +
+    // dashboard (cohort='crm_reactivation_q2' hides the audit upsell
+    // panel + Pulse attach panel). Reading these off the row's
+    // stripe_metadata is faster than re-fetching the Stripe session
+    // every dashboard load.
+    cohort: session.cohort,
+    prospect_id: session.prospectId,
   };
 
   // Two-step: try-insert then read-back. Postgres has ON CONFLICT
@@ -62,6 +70,34 @@ export async function ensureLeadOrder(
   if (insertError && insertError.code !== '23505') {
     console.error('[lead_orders] ensureLeadOrder insert failed', insertError);
     return null;
+  }
+
+  // Conflict path: row already existed. Merge cohort + prospect_id
+  // into its stripe_metadata so the dashboard + /order/success can
+  // read those keys on subsequent page loads. This handles two cases:
+  //   1. Rows created before this commit (pre-cohort-attribution)
+  //      that don't have cohort stamped — backfill via re-page-load.
+  //   2. Rows where the session metadata changed (e.g. operator
+  //      re-launched the buyer with a different cohort lander).
+  // Only the two keys we care about are written; other keys in the
+  // existing metadata are preserved.
+  if (insertError && insertError.code === '23505') {
+    const { data: existing } = await supabase
+      .from('lead_orders')
+      .select('stripe_metadata')
+      .eq('stripe_session_id', session.sessionId)
+      .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
+    if (existing) {
+      const merged = {
+        ...(existing.stripe_metadata ?? {}),
+        cohort: session.cohort,
+        prospect_id: session.prospectId,
+      };
+      await supabase
+        .from('lead_orders')
+        .update({ stripe_metadata: merged })
+        .eq('stripe_session_id', session.sessionId);
+    }
   }
 
   // Read back the row (whether we just inserted or conflicted).
