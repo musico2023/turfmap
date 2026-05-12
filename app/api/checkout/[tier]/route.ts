@@ -276,6 +276,20 @@ export async function POST(
   // Cold-email cohort marker — fulfill route reads this back from
   // the session metadata + stamps prospects.converted_at.
   if (prospectId) attribution.prospect_id = prospectId;
+  // Cohort discriminator for cohort-level reporting (cold_email vs
+  // crm_reactivation_q2). Derive from coupon code so the lander
+  // doesn't need to pass it explicitly: VIP → crm_reactivation_q2,
+  // otherwise default to cold_email (the original cohort). When new
+  // cohorts launch, extend the map below or pass an explicit
+  // ?cohort= URL param.
+  const cohortFromCoupon: Record<string, string> = {
+    VIP: 'crm_reactivation_q2',
+  };
+  const cohort =
+    url.searchParams.get('cohort') ??
+    cohortFromCoupon[couponParam.toUpperCase()] ??
+    (prospectId ? 'cold_email' : undefined);
+  if (cohort) attribution.cohort = cohort;
 
   // Build the session params. We try with the resolved discount
   // first; if Stripe rejects (invalid coupon, expired, tier-

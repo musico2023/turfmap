@@ -316,6 +316,9 @@ export default async function OrderSuccessPage({
               attachOnboardingStep={attachOnboardingStep}
               isAuditUpgrade={isAuditUpgrade}
               savedCard={savedCard}
+              prospectId={
+                sessionState?.kind === 'ok' ? sessionState.prospectId : null
+              }
             />
           </Suspense>
         </div>
@@ -387,6 +390,12 @@ type SessionState =
        *  paid, e.g. \$49 with MAPCHECK50 vs. the \$99 list price.
        *  Null when Stripe didn't surface amount_total. */
       amountTotalCents: number | null;
+      /** Warm-cohort prospect id captured at /yourmap or /freescan
+       *  checkout time. Forwarded to the OrderSuccessForm so it can
+       *  POST /api/prospect/[id]/engaged on the post-fulfillment view
+       *  — the trigger for the Stage 2 audit-upgrade email cron. NULL
+       *  when the buyer didn't come from a cohort lander. */
+      prospectId: string | null;
     }
   | { kind: 'warning'; message: string };
 
@@ -452,5 +461,6 @@ async function validateAndRecordSession(
     email: result.customerEmail,
     customerId: result.customerId,
     amountTotalCents: result.amountTotal,
+    prospectId: result.prospectId,
   };
 }

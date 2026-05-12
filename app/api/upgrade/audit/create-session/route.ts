@@ -61,9 +61,14 @@ const UPGRADE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const UPGRADE_COUPON_CODE = 'UPGRADE_302_CREDIT';
 
 const RequestBody = z.object({
-  source: z.enum(['order_success', 'dashboard']),
+  source: z.enum(['order_success', 'dashboard', 'stage_2_email']),
   session_id: z.string().optional(),
   client_id: z.string().uuid().optional(),
+  /** Required when source='stage_2_email'. The warm-cohort prospect
+   *  identifier acts as a capability token (same pattern /freescan
+   *  + /yourmap use). The endpoint resolves the buyer's original
+   *  TurfScan purchase via lead_orders.stripe_metadata.prospect_id. */
+  prospect_id: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -137,7 +142,7 @@ export async function POST(req: Request) {
         .maybeSingle<ClientRow>();
       client = c;
     }
-  } else {
+  } else if (body.source === 'dashboard') {
     // source: 'dashboard' — derive from client_id.
     if (!body.client_id) {
       return NextResponse.json(
@@ -181,6 +186,84 @@ export async function POST(req: Request) {
       const m = leadOrder.stripe_metadata as Record<string, unknown>;
       prospectIdFromMetadata =
         typeof m.prospect_id === 'string' ? m.prospect_id : null;
+    }
+  } else {
+    // source: 'stage_2_email' — warm-cohort buyer clicking through
+    // from the CRM-reactivation Stage 2 audit-upgrade email. The
+    // prospect_id is the capability token (same model /freescan +
+    // /yourmap use). Look up the prospect's original TurfScan
+    // lead_orders row via stripe_metadata.prospect_id and derive the
+    // buyer's Stripe customer + scan from there.
+    if (!body.prospect_id) {
+      return NextResponse.json(
+        { error: 'prospect_id required for stage_2_email source' },
+        { status: 400 }
+      );
+    }
+    prospectIdFromMetadata = body.prospect_id;
+
+    // Confirm the prospect actually exists + has converted (gates
+    // against bogus IDs or pre-purchase clicks landing here).
+    const { data: prospect } = await supabase
+      .from('prospects')
+      .select('id, converted_at')
+      .eq('id', body.prospect_id)
+      .maybeSingle<{ id: string; converted_at: string | null }>();
+    if (!prospect) {
+      return NextResponse.json(
+        { error: 'prospect not found' },
+        { status: 404 }
+      );
+    }
+    if (!prospect.converted_at) {
+      return NextResponse.json(
+        { error: 'prospect has not purchased a TurfScan yet' },
+        { status: 400 }
+      );
+    }
+
+    // Find the prospect's TurfScan lead_orders row. The fulfill route
+    // stamps stripe_metadata.prospect_id when the cohort buyer
+    // completes their scan checkout (see /api/orders/fulfill).
+    const { data: lo } = await supabase
+      .from('lead_orders')
+      .select('*')
+      .eq('tier', 'scan')
+      .filter(
+        'stripe_metadata->>prospect_id',
+        'eq',
+        body.prospect_id
+      )
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<LeadOrderRow>();
+    leadOrder = lo;
+    if (!leadOrder) {
+      return NextResponse.json(
+        { error: 'no TurfScan lead_orders row for this prospect' },
+        { status: 400 }
+      );
+    }
+    if (leadOrder.client_id) {
+      const { data: c } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', leadOrder.client_id)
+        .maybeSingle<ClientRow>();
+      client = c;
+      customerId = c?.stripe_customer_id ?? null;
+    }
+
+    // If we still don't have a customerId, try the stripe_session_id
+    // route — the original scan session's customer is the same
+    // record we'd pre-bind on the upgrade Checkout.
+    if (!customerId && leadOrder.stripe_session_id) {
+      const sessionResult = await loadCheckoutSession(
+        leadOrder.stripe_session_id
+      );
+      if (!('kind' in sessionResult)) {
+        customerId = sessionResult.customerId;
+      }
     }
   }
 
@@ -372,9 +455,11 @@ export async function POST(req: Request) {
       cancel_url:
         body.source === 'order_success'
           ? `${origin}/order/success?session_id=${body.session_id}`
-          : client
-            ? `${origin}/portal/${client.public_id}`
-            : `${origin}/`,
+          : body.source === 'stage_2_email' && body.prospect_id
+            ? `${origin}/audit-upgrade?source=stage_2_email&prospect_id=${body.prospect_id}&cancelled=1`
+            : client
+              ? `${origin}/portal/${client.public_id}`
+              : `${origin}/`,
       metadata: attribution,
     });
   } catch (e) {

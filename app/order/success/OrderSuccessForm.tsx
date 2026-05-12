@@ -42,6 +42,7 @@ export function OrderSuccessForm({
   attachOnboardingStep,
   isAuditUpgrade,
   savedCard,
+  prospectId,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -94,6 +95,15 @@ export function OrderSuccessForm({
    *  When null, panel falls back to the Stripe Checkout redirect via
    *  /api/upgrade/audit/create-session. */
   savedCard: { brand: string; last4: string } | null;
+  /** Warm-cohort prospect_id captured at /yourmap or /freescan
+   *  checkout time, sourced from the Stripe session's metadata.
+   *  When set + the buyer reaches the post-fulfillment view ("Your
+   *  TurfMap is ready"), we POST /api/prospect/[id]/engaged to stamp
+   *  prospects.scan_engaged_at — the trigger gate for the Stage 2
+   *  audit-upgrade email cron. NULL when the buyer didn't come from
+   *  a cohort lander. The endpoint is cohort-scoped, so firing it
+   *  for non-warm-cohort prospect_ids is a safe no-op. */
+  prospectId: string | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -153,6 +163,40 @@ export function OrderSuccessForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── Warm-cohort engagement stamp ────────────────────────────────
+  // When the post-fulfillment success state renders ("Your TurfMap is
+  // ready"), fire POST /api/prospect/[id]/engaged. This stamps
+  // prospects.scan_engaged_at — the trigger that gates the Stage 2
+  // audit-upgrade email cron (every 15 min, sends 30 min after engagement
+  // and within the 24h upgrade window).
+  //
+  // The endpoint is cohort-scoped to crm_reactivation_q2 server-side, so
+  // firing for cold-email cohort prospect_ids is a clean no-op. Idempotent
+  // too: subsequent calls return { status: 'noop' } once the column is
+  // already set.
+  //
+  // Gated on `done && publicId && prospectId` so we only fire once the
+  // scan has actually fulfilled — not while the form is still loading.
+  // Tracked in engagedPosted state to prevent re-fires on re-renders.
+  const [engagedPosted, setEngagedPosted] = useState(false);
+  useEffect(() => {
+    if (engagedPosted) return;
+    if (!done || !publicId || !prospectId) return;
+    setEngagedPosted(true);
+    fetch(`/api/prospect/${encodeURIComponent(prospectId)}/engaged`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+    }).catch((e) => {
+      // Non-fatal: a missed engagement stamp just means the Stage 2
+      // cron won't fire for this buyer. The buyer's experience isn't
+      // affected. Log for ops visibility.
+      console.warn(
+        '[order/success] engaged POST failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    });
+  }, [done, publicId, prospectId, engagedPosted]);
 
   const setKeywordAt = (idx: number, value: string) => {
     setKeywords((prev) => {
