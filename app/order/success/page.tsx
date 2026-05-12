@@ -119,6 +119,37 @@ export default async function OrderSuccessPage({
   const stripeCustomerId =
     sessionState?.kind === 'ok' ? sessionState.customerId : null;
 
+  // ─── Keyword pre-fill from prospect lookup ──────────────────────────
+  // The lander preview was run with a pipeline-derived keyword based
+  // on the prospect's trade. Pre-fill the intake form's "Keyword to
+  // scan" field with the prospect's trade so the buyer's full scan
+  // matches the preview-data narrative. They can edit if they want a
+  // different keyword (the form still accepts whatever they type).
+  // Only runs for scan-tier orders that came from a cohort lander
+  // (prospect_id present in session metadata). Failure is non-fatal
+  // — the field renders blank with its placeholder.
+  const prospectIdFromSession =
+    sessionState?.kind === 'ok' ? sessionState.prospectId : null;
+  let prefillKeyword: string | null = null;
+  if (tier === 'scan' && prospectIdFromSession) {
+    try {
+      const supabase = getServerSupabase();
+      const { data: prospect } = await supabase
+        .from('prospects')
+        .select('trade')
+        .eq('id', prospectIdFromSession)
+        .maybeSingle<{ trade: string | null }>();
+      if (prospect?.trade) {
+        prefillKeyword = prospect.trade;
+      }
+    } catch (e) {
+      console.error(
+        '[order/success] prospect-keyword lookup failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   // ─── Saved-card lookup for 1-click audit upgrade ────────────────────
   // When the buyer has a Stripe Customer with a saved card (enabled
   // by payment_intent_data.setup_future_usage='off_session' on the
@@ -338,6 +369,7 @@ export default async function OrderSuccessPage({
               cohort={
                 sessionState?.kind === 'ok' ? sessionState.cohort : null
               }
+              prefillKeyword={prefillKeyword}
             />
           </Suspense>
         </div>

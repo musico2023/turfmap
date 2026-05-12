@@ -812,12 +812,18 @@ export default async function YourMapLandingPage({
                 q: 'What keyword should I pick?',
                 a: (
                   <>
-                    Pick the most-searched term someone in your service
-                    area would type to find a business like yours. For a
-                    plumber, that&rsquo;s usually <code>plumber [city]</code>{' '}
-                    — not your business name, not a niche service. Unsure?
-                    Pick what you&rsquo;d type if you needed your own
-                    service in a city you don&rsquo;t live in.
+                    We pre-fill the keyword with your trade
+                    (e.g. <code>plumber</code>) — the same short term
+                    we used for the preview scan. Trade-only keywords
+                    give the cleanest geo-grid: each of the 81 points
+                    is anchored to a real lat/lon around your service
+                    area, and the trade keyword stays the same across
+                    all of them so the result is &ldquo;where do I
+                    show up for this trade as customers move around
+                    the map?&rdquo; You can override the pre-fill if
+                    you want a more specific term — just don&rsquo;t
+                    include your city in the keyword (the grid points
+                    already cover your service area).
                   </>
                 ),
               },

@@ -44,6 +44,7 @@ export function OrderSuccessForm({
   savedCard,
   prospectId,
   cohort,
+  prefillKeyword,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -113,12 +114,25 @@ export function OrderSuccessForm({
    *  after dashboard engagement) is the SOLE entry point to the audit
    *  upgrade for this cohort. */
   cohort: string | null;
+  /** Pre-fill value for the "Keyword to scan" field, sourced from
+   *  the cohort prospect's trade (e.g. "hvac", "roofer", "plumber").
+   *  When the buyer reached /order/success from a cohort lander, this
+   *  pre-fills the intake so their full scan matches the preview-data
+   *  narrative. Buyer can still edit if they want a different keyword.
+   *  NULL for organic buyers or when the prospect lookup failed. */
+  prefillKeyword: string | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
-  const [keywords, setKeywords] = useState<string[]>(
-    Array(keywordCount).fill('')
-  );
+  const [keywords, setKeywords] = useState<string[]>(() => {
+    // Pre-fill the first keyword slot with the prospect's trade when
+    // available (e.g. "hvac", "roofer"). Subsequent slots (Strategy +
+    // Pulse+ buyers get 3) stay blank so the buyer fills them with
+    // their additional keyword targets.
+    const seeded = Array(keywordCount).fill('');
+    if (prefillKeyword) seeded[0] = prefillKeyword;
+    return seeded;
+  });
   const [email, setEmail] = useState(prefillEmail ?? '');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
