@@ -851,13 +851,13 @@ export default async function FreeScanLandingPage({
               <strong className="font-semibold text-zinc-100">
                 Worst case:
               </strong>{' '}
-              you confirm what you already suspect — for free.
+              this scan confirms what you suspect.
             </p>
             <p className="text-sm md:text-base text-zinc-300 mb-3 max-w-md mx-auto leading-relaxed">
               <strong className="font-semibold text-zinc-100">
                 Best case:
               </strong>{' '}
-              one fix you didn&rsquo;t know about pays you back ten times.
+              one fix pays you back ten times over.
             </p>
             <p className="text-xs md:text-sm text-zinc-500 mb-6 max-w-md mx-auto leading-relaxed">
               {showDiscount && coupon && finalCents === 0 ? (
