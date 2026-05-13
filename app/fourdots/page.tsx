@@ -170,7 +170,13 @@ export default async function ScanLandingPage({
              *  italicized in full to match the rhythm of line 1's
              *  italic closers. Brand voice = directional, not
              *  cheerleader. */}
-            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.04] tracking-tight mb-4">
+            {/* H1 — sized one tier down from the original (4xl/5xl/6xl)
+             *  to 3xl/4xl/5xl so line 1 ("See exactly where you win —
+             *  and where you don't.") fits on a single line in the
+             *  hero column without forcing an unintended secondary
+             *  wrap before the deliberate `<br/>`. The two-line punch
+             *  only works if line 1 stays intact. */}
+            <h1 className="font-display text-3xl md:text-4xl lg:text-5xl font-bold leading-[1.04] tracking-tight mb-4">
               See exactly where you <em>win</em> — and where you{' '}
               <em>don&rsquo;t.</em>
               <br />
