@@ -43,7 +43,7 @@ export default function AICoachNudgeEmail({
     <EmailLayout
       preview={`${firstName}, your ${businessName} playbook is one click away`}
     >
-      <H1>your map is half the story</H1>
+      <H1>Your map is half the story</H1>
 
       <P>{firstName},</P>
 
@@ -55,16 +55,16 @@ export default function AICoachNudgeEmail({
        *  Lesson: when text wraps a JSX expression or inline element,
        *  always force the boundary space with {' '}. */}
       <P>
-        i noticed you opened your TurfMap for {businessName}
-        {' '}but didn&rsquo;t run the AI Coach yet. the heatmap shows
+        I noticed you opened your TurfMap for {businessName}
+        {' '}but didn&rsquo;t run the AI Coach yet. The heatmap shows
         you <em>where</em>{' '}your visibility is weak &mdash; the AI
         Coach is what turns that into a 3-step Fix List specific to
         your trade and your service area.
       </P>
 
       <P>
-        it takes one click and about 20 seconds. no form, no call, no
-        upsell. it just reads your scan data and tells you what to fix
+        It takes one click and about 20 seconds. No form, no call, no
+        upsell. It just reads your scan data and tells you what to fix
         first, in order, with projected impact.
       </P>
 
@@ -73,7 +73,7 @@ export default function AICoachNudgeEmail({
       </PrimaryButton>
 
       <PSmall>
-        if the link asks you to sign in, that&rsquo;s the magic-link
+        If the link asks you to sign in, that&rsquo;s the magic-link
         flow &mdash; punch in the email you bought with and you&rsquo;ll
         be back at your map in under a minute.
       </PSmall>
@@ -90,9 +90,9 @@ export default function AICoachNudgeEmail({
 // prospect id so a buyer never sees the same line twice if (against
 // our idempotency) the nudge fires more than once.
 export const SUBJECT_VARIANTS = [
-  'your Fix List is one click away',
-  'i noticed you didn’t run the AI Coach yet',
-  'turn your TurfMap into a 3-step Fix List',
+  'Your Fix List is one click away',
+  'I noticed you didn’t run the AI Coach yet',
+  'Turn your TurfMap into a 3-step Fix List',
 ];
 
 export function pickSubject(prospectId: string): string {
