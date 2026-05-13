@@ -47,11 +47,19 @@ export default function AICoachNudgeEmail({
 
       <P>{firstName},</P>
 
+      {/* Explicit {' '} tokens after interpolations / closing tags
+       *  because JSX collapses the whitespace between a closing `}`
+       *  or `</em>` and the next text node when they're separated by
+       *  a newline + indentation. Without them the rendered HTML
+       *  reads e.g. "Test Smoke Roofingbut" / "whereyour visibility".
+       *  Lesson: when text wraps a JSX expression or inline element,
+       *  always force the boundary space with {' '}. */}
       <P>
-        i noticed you opened your TurfMap for {businessName} but didn&rsquo;t
-        run the AI Coach yet. the heatmap shows you <em>where</em> your
-        visibility is weak &mdash; the AI Coach is what turns that into a
-        3-step Fix List specific to your trade and your service area.
+        i noticed you opened your TurfMap for {businessName}
+        {' '}but didn&rsquo;t run the AI Coach yet. the heatmap shows
+        you <em>where</em>{' '}your visibility is weak &mdash; the AI
+        Coach is what turns that into a 3-step Fix List specific to
+        your trade and your service area.
       </P>
 
       <P>

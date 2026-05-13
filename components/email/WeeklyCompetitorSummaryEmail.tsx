@@ -43,7 +43,7 @@ export function WeeklyCompetitorSummaryEmail({
     <EmailLayout
       preview={`${businessName} — competitor activity, last 7 days`}
     >
-      <H1>{businessName} — last 7 days.</H1>
+      <H1>{businessName}{' '}— last 7 days.</H1>
       <P>
         Here&rsquo;s what&rsquo;s changed in your local 3-pack since
         last Monday.
