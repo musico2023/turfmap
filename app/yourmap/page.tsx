@@ -312,12 +312,16 @@ export default async function YourMapLandingPage({
                   {personalization.business_name}&rsquo;s{' '}
                   {personalization.city} service area. The cards below
                   show what we found — and what the full scan unlocks.
+                  Then you get three specific actions &mdash; the ones
+                  with the highest impact, in priority order.
                 </>
               ) : (
                 <>
                   Our outreach team ran a preview of your service area
                   on TurfMap. The cards below show what we found — and
-                  what the full scan unlocks.
+                  what the full scan unlocks. Then you get three
+                  specific actions &mdash; the ones with the highest
+                  impact, in priority order.
                 </>
               )}
             </p>
