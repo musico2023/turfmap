@@ -12,13 +12,16 @@
  * simple and avoids two geocode hops on the same address.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { listLocations } from '@/lib/supabase/locations';
 import { resolveClientUuid } from '@/lib/supabase/client-lookup';
-import type { ClientLocationRow } from '@/lib/supabase/types';
+import { syncExtraLocationQuantity } from '@/lib/stripe/extraLocations';
+import { resolveTier } from '@/lib/subscription/tier';
+import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
+import type { ClientLocationRow, ClientRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
@@ -40,7 +43,6 @@ const NewLocationBody = z.object({
   pin_lat: z.number().min(-90).max(90).optional().nullable(),
   pin_lng: z.number().min(-180).max(180).optional().nullable(),
   service_radius_miles: z.number().min(0.1).max(10).optional(),
-  gbp_url: z.string().url().max(2048).optional().nullable(),
   /** Optional — caller can set this true to flip the primary atomically.
    *  When true, the existing primary is demoted in the same transaction. */
   is_primary: z.boolean().optional(),
@@ -128,7 +130,6 @@ export async function POST(
       pin_lat: parsed.pin_lat ?? null,
       pin_lng: parsed.pin_lng ?? null,
       service_radius_miles: parsed.service_radius_miles ?? 1.6,
-      gbp_url: parsed.gbp_url ?? null,
     })
     .select('*')
     .single<ClientLocationRow>();
@@ -139,5 +140,65 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ location: row });
+  // Google Places enrichment — fire-and-forget after the response.
+  // Looks up the GBP listing for this address, stores place_id, and
+  // writes an initial gbp_signals row. Soft-fails on every branch.
+  // We need the brand name for the search query; fall back to label
+  // or the address if the client row's business_name lookup fails.
+  after(async () => {
+    const { data: cName } = await supabase
+      .from('clients')
+      .select('business_name')
+      .eq('id', clientId)
+      .maybeSingle<{ business_name: string }>();
+    const businessName = cName?.business_name ?? row.label ?? row.address ?? '';
+    if (!businessName) return;
+    await enrichLocationFromOnboarding(supabase, {
+      locationId: row.id,
+      businessName,
+      latitude: row.latitude,
+      longitude: row.longitude,
+    });
+  });
+
+  // Per-location billing — bump the extra-location item's quantity on
+  // the client's Stripe subscription if applicable. Best-effort: a
+  // Stripe failure here doesn't roll back the location row (the
+  // operator can manually reconcile via the Stripe dashboard, and the
+  // location still works for scans). Pulse / Pulse+ subs only;
+  // agency-managed and one_time clients no-op.
+  const { data: clientRow } = await supabase
+    .from('clients')
+    .select('id, billing_mode, tier, stripe_subscription_id')
+    .eq('id', clientId)
+    .maybeSingle<
+      Pick<
+        ClientRow,
+        'id' | 'billing_mode' | 'tier' | 'stripe_subscription_id'
+      >
+    >();
+  let billingNote: { ok: boolean; message?: string; quantity?: number } | null =
+    null;
+  if (
+    clientRow?.billing_mode === 'self_serve_subscription' &&
+    clientRow.stripe_subscription_id
+  ) {
+    const tier = resolveTier(clientRow);
+    if (tier) {
+      const { count: locationCount } = await supabase
+        .from('client_locations')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId);
+      const result = await syncExtraLocationQuantity({
+        subscriptionId: clientRow.stripe_subscription_id,
+        tier,
+        numLocations: locationCount ?? 1,
+      });
+      billingNote = result.ok
+        ? { ok: true, quantity: result.quantity }
+        : { ok: false, message: result.message };
+    }
+  }
+
+  return NextResponse.json({ location: row, billing: billingNote });
 }

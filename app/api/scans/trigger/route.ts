@@ -32,7 +32,9 @@ import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { resolveLocation } from '@/lib/supabase/locations';
 import { resolveClientUuid } from '@/lib/supabase/client-lookup';
 import { runScanForLocation } from '@/lib/scans/runScan';
-import { getRescanCapStatus } from '@/lib/scans/rateLimit';
+import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
+import { isKeywordWithinCap } from '@/lib/subscription/keywordCap';
+import { tierLabel } from '@/lib/subscription/tier';
 import type { ClientRow, TrackedKeywordRow } from '@/lib/supabase/types';
 
 // Avoid IPv6 ENOTFOUND flakes on dual-stack networks.
@@ -115,26 +117,67 @@ async function runScanTrigger(req: Request) {
 
   // Resolve keyword: provided id, else this location's primary, else any
   // for this client (legacy keywords pre-multi-location had no location_id).
-  const baseQuery = supabase
-    .from('tracked_keywords')
-    .select('id, keyword')
-    .eq('client_id', clientId);
+  //
+  // Each branch builds a fresh query — the supabase-js v2 builder is
+  // mutable, so reusing one base across awaits leaks filters from prior
+  // calls (the fallback would still carry `location_id = X` and find
+  // nothing, defeating the point of falling back).
+  // When keywordId is provided, also enforce that the keyword belongs
+  // to the requested location. Without this, the trigger would happily
+  // run a sibling-location keyword against the active location's grid
+  // (the Sugar Daddy Doughnuts Union Station bug — keyword from a
+  // different location came back with 0/100 because the territory
+  // didn't match). The match is satisfied if the keyword's
+  // location_id equals the location's id, OR if the keyword is a
+  // legacy unscoped row (location_id IS NULL) — those are the only
+  // two safe states.
   let keywordRow: Pick<TrackedKeywordRow, 'id' | 'keyword'> | null = null;
   if (keywordId) {
-    const { data } = await baseQuery
+    const { data } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword, location_id')
+      .eq('client_id', clientId)
       .eq('id', keywordId)
-      .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
-    keywordRow = data ?? null;
+      .maybeSingle<
+        Pick<TrackedKeywordRow, 'id' | 'keyword' | 'location_id'>
+      >();
+    if (data) {
+      const matchesLocation =
+        data.location_id === location.id || data.location_id === null;
+      if (matchesLocation) {
+        keywordRow = { id: data.id, keyword: data.keyword };
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "That keyword belongs to a different location. Add a keyword for this location in Settings before scanning.",
+          },
+          { status: 400 }
+        );
+      }
+    }
   } else {
-    const { data: locKw } = await baseQuery
+    const { data: locKw } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword')
+      .eq('client_id', clientId)
       .eq('location_id', location.id)
       .order('is_primary', { ascending: false })
       .limit(1)
       .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
     keywordRow = locKw ?? null;
     if (!keywordRow) {
-      // Fallback: any keyword on this client (legacy rows w/o location_id).
-      const { data: anyKw } = await baseQuery
+      // Fallback ONLY to legacy keywords (location_id IS NULL) —
+      // these exist on pre-multi-location-migration clients and the
+      // brief window between client-create and the location_id stamp
+      // on the primary keyword. We deliberately do NOT fall back to
+      // a sibling location's keyword: that would scan the wrong
+      // (location, keyword) pair and return nonsense results.
+      const { data: anyKw } = await supabase
+        .from('tracked_keywords')
+        .select('id, keyword')
+        .eq('client_id', clientId)
+        .is('location_id', null)
         .order('is_primary', { ascending: false })
         .limit(1)
         .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>();
@@ -143,8 +186,34 @@ async function runScanTrigger(req: Request) {
   }
   if (!keywordRow) {
     return NextResponse.json(
-      { error: 'no tracked keyword found for this location' },
+      {
+        error:
+          'No tracked keyword for this location. Add a keyword in Settings before scanning.',
+      },
       { status: 400 }
+    );
+  }
+
+  // Tier cap: over-cap keywords don't fire scans (scheduled or
+  // on-demand). The first `cap` keywords by (is_primary DESC,
+  // created_at ASC) per location stay scannable; the rest are
+  // visible in the dashboard but inert until the operator either
+  // removes one or upgrades. See lib/subscription/keywordCap.
+  const cap = await isKeywordWithinCap(supabase, {
+    clientId,
+    locationId: location.id,
+    keywordId: keywordRow.id,
+  });
+  if (!cap.inCap) {
+    return NextResponse.json(
+      {
+        error: `Over your ${tierLabel(cap.tier)} plan: this keyword is #${cap.position} of ${cap.cap} included. Remove an earlier keyword or upgrade to scan it.`,
+        kind: 'over_cap',
+        cap: cap.cap,
+        position: cap.position,
+        tier: cap.tier,
+      },
+      { status: 403 }
     );
   }
 
@@ -153,15 +222,20 @@ async function runScanTrigger(req: Request) {
   // useful score movement (the 12h momentum window already swallows
   // them). The cap protects unit economics while leaving room for the
   // operator to legitimately re-scan after a real GBP/citation change.
-  const cap = await getRescanCapStatus(supabase, location.id);
-  if (cap.atCap) {
-    return NextResponse.json(
-      {
-        error: `Rate limit: ${cap.limit} on-demand scans per location per 24 hours. Next slot available ${cap.nextAvailableAt ?? 'soon'}.`,
-        rateLimit: cap,
-      },
-      { status: 429 }
-    );
+  //
+  // Owner bypass: agency staff in RATE_LIMIT_BYPASS_EMAILS skip the
+  // check entirely. Costs are still tracked per-scan via dfs_cost_cents.
+  if (!shouldBypassRescanCap(auth.email)) {
+    const cap = await getRescanCapStatus(supabase, location.id);
+    if (cap.atCap) {
+      return NextResponse.json(
+        {
+          error: `Rate limit: ${cap.limit} on-demand scans per location per 24 hours. Next slot available ${cap.nextAvailableAt ?? 'soon'}.`,
+          rateLimit: cap,
+        },
+        { status: 429 }
+      );
+    }
   }
 
   // Delegate to the shared scan executor. Same code path as the cron's

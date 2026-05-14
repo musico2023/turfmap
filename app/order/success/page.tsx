@@ -6,11 +6,12 @@ import { OrderSuccessForm } from './OrderSuccessForm';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { loadCheckoutSession } from '@/lib/stripe/session';
+import { getStripe } from '@/lib/stripe/client';
 import {
   ensureLeadOrder,
   keywordCountForTier,
 } from '@/lib/stripe/leadOrders';
-import type { Tier } from '@/lib/supabase/types';
+import type { ClientRow, OnboardingStep, Tier } from '@/lib/supabase/types';
 
 export const metadata: Metadata = {
   title: 'Order received — TurfMap™',
@@ -40,9 +41,26 @@ export const metadata: Metadata = {
 export default async function OrderSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tier?: string; session_id?: string }>;
+  searchParams: Promise<{
+    tier?: string;
+    session_id?: string;
+    attach?: string;
+    /** Set to 'audit' when the buyer just completed the $197 audit-
+     *  upgrade Checkout (success_url stamps this). Used to override
+     *  the default audit-tier copy ("$499 order is confirmed") with
+     *  upgrade-specific copy ("$197 upgrade is confirmed — your $49
+     *  scan already counted"). When absent, falls back to default
+     *  tier-label copy. */
+    upgrade?: string;
+  }>;
 }) {
-  const { tier: tierParam, session_id: sessionId } = await searchParams;
+  const {
+    tier: tierParam,
+    session_id: sessionId,
+    attach: attachParam,
+    upgrade: upgradeParam,
+  } = await searchParams;
+  const isAuditUpgrade = upgradeParam === 'audit';
 
   // ─── Stripe session validation + lead_orders idempotent insert ──────
   // Pulled into a helper so the rest of the render logic doesn't
@@ -65,12 +83,134 @@ export default async function OrderSuccessPage({
         ? tierParam
         : null;
 
-  const tierLabel = tier ? formatTierLabel(tier) : 'TurfMap';
+  // Audit upgrade gets its own label — buyer paid $197 net (not the
+  // $499 list), and framing it as "Audit Upgrade" makes the
+  // distinction from a from-scratch $499 audit purchase clear.
+  //
+  // For other tiers, show the ACTUAL paid amount (post-discount)
+  // when Stripe surfaced it. Falls back to the list-price label
+  // when amount_total is missing. This matters most for /yourmap +
+  // /fourdots buyers who paid $49 (MAPCHECK50 / FOURDOTS50) but
+  // would otherwise see "$99" in the header.
+  const paidAmountCents =
+    sessionState?.kind === 'ok' ? sessionState.amountTotalCents : null;
+  const tierLabel = isAuditUpgrade
+    ? 'Visibility Audit upgrade ($197)'
+    : tier
+      ? paidAmountCents != null
+        ? formatTierLabelWithPaidAmount(tier, paidAmountCents)
+        : formatTierLabel(tier)
+      : 'TurfMap';
   const keywordCount = tier ? keywordCountForTier(tier) : 1;
   const prefillEmail =
     sessionState?.kind === 'ok' ? sessionState.email : null;
   const sessionWarning =
     sessionState?.kind === 'warning' ? sessionState.message : null;
+  const stripeCustomerId =
+    sessionState?.kind === 'ok' ? sessionState.customerId : null;
+
+  // ─── Saved-card lookup for 1-click audit upgrade ────────────────────
+  // When the buyer has a Stripe Customer with a saved card (enabled
+  // by payment_intent_data.setup_future_usage='off_session' on the
+  // scan checkout), the AuditUpgradePanel can fire a no-redirect
+  // PaymentIntent confirm. We surface the card's brand + last4
+  // server-side so the panel can render "Confirm $197 charge to
+  // Visa ending 4242" without an extra round-trip.
+  //
+  // Only runs for scan-tier orders that haven't already been
+  // upgraded. Failure is graceful — falls through to redirect-style
+  // Stripe Checkout upgrade. Don't fire on the upgrade-return path
+  // (?upgrade=audit) since we don't need to surface the upgrade
+  // panel anymore.
+  let savedCard: { brand: string; last4: string } | null = null;
+  if (
+    tier === 'scan' &&
+    stripeCustomerId &&
+    !isAuditUpgrade &&
+    !attachParam
+  ) {
+    try {
+      const stripe = await getStripe();
+      if (stripe) {
+        const pmList = await stripe.paymentMethods.list({
+          customer: stripeCustomerId,
+          type: 'card',
+          limit: 1,
+        });
+        const card = pmList.data[0]?.card;
+        if (card) {
+          savedCard = {
+            brand: card.brand ?? 'card',
+            last4: card.last4 ?? '',
+          };
+        }
+      }
+    } catch (e) {
+      // Non-fatal: panel renders without saved-card UI, buyer
+      // gets the redirect-style upgrade.
+      console.error(
+        '[order/success] saved-card lookup failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  // Pulse-attach return path. When the buyer comes back from Stripe
+  // with ?attach=success or ?attach=cancelled, we need to skip the
+  // form re-render — they already filled it on the original purchase
+  // — and surface the attach confirmation/cancellation state. Look
+  // up the existing client by stripe_customer_id so we can pass the
+  // public_id down to the form, which uses it to render the success
+  // card directly (no second form pass).
+  const attachState =
+    attachParam === 'success'
+      ? ('success' as const)
+      : attachParam === 'cancelled'
+        ? ('cancelled' as const)
+        : null;
+  let attachPublicId: string | null = null;
+  let attachOnboardingStep: OnboardingStep | null = null;
+  if (attachState && stripeCustomerId) {
+    const supabase = getServerSupabase();
+    const { data: client } = await supabase
+      .from('clients')
+      .select('id, public_id, onboarding_step')
+      .eq('stripe_customer_id', stripeCustomerId)
+      .maybeSingle<
+        Pick<ClientRow, 'id' | 'public_id' | 'onboarding_step'>
+      >();
+    attachPublicId = client?.public_id ?? null;
+    attachOnboardingStep = client?.onboarding_step ?? null;
+
+    // Defensive set: when attach succeeded but the webhook hasn't
+    // fired yet (Stripe is at-least-once but eventual), the row may
+    // still have onboarding_step=null even though the trial is live.
+    // We stamp 'gbp_match' here so the wizard mounts immediately on
+    // the buyer's first return-from-Stripe load — they shouldn't
+    // wait for webhook ordering to start setup. Only acts on
+    // attach=success (skipped on cancelled), only when client_id is
+    // resolvable, and only when onboarding_step is null (so we never
+    // rewind a buyer who's already past gbp_match).
+    if (
+      attachState === 'success' &&
+      client &&
+      client.onboarding_step === null
+    ) {
+      const { error: stepErr } = await supabase
+        .from('clients')
+        .update({ onboarding_step: 'gbp_match' as const })
+        .eq('id', client.id)
+        .is('onboarding_step', null);
+      if (stepErr) {
+        console.warn(
+          '[order-success] failed to defensively set onboarding_step:',
+          stepErr.message
+        );
+      } else {
+        attachOnboardingStep = 'gbp_match';
+      }
+    }
+  }
 
   return (
     <div className="min-h-screen w-full text-white flex flex-col">
@@ -119,9 +259,29 @@ export default async function OrderSuccessPage({
                   Thanks — your {tierLabel} order is confirmed.
                 </h1>
                 <p className="text-zinc-300 leading-relaxed">
-                  One more step. Tell us about your business and we&rsquo;ll
-                  fire your scan immediately. You&rsquo;ll get an email with
-                  your TurfMap link in under a minute.
+                  {isAuditUpgrade
+                    ? // Audit upgrade return path: scan is paid, audit is
+                      // paid, intake still needed. Keep the framing
+                      // forward-looking rather than dwelling on the
+                      // payment-confirmation moment.
+                      "Both the scan and the 90-day Roadmap audit are locked in. Fill out your business details below to kick everything off — we'll email your TurfMap as soon as your scan completes."
+                    : tier === 'scan'
+                      ? // Scan tier: the AuditUpgradePanel may render below
+                        // BEFORE the intake form, so don't promise "fill the
+                        // form to fire your scan" until the buyer has gotten
+                        // past the upgrade decision. Neutral phrasing works
+                        // for both upgrade-panel-visible AND intake-visible
+                        // states. The body content (panel or form) provides
+                        // its own specific instructions.
+                        "Your TurfScan is locked in. There's one quick decision below before we kick off your scan."
+                      : // Audit / Strategy / other tiers that go straight to
+                        // intake (no upgrade panel above): existing copy.
+                        <>
+                          One more step. Tell us about your business — your
+                          scan kicks off the moment you submit, and we&rsquo;ll
+                          email your TurfMap as soon as it&rsquo;s ready
+                          (typically under a minute).
+                        </>}
                 </p>
               </div>
             </div>
@@ -153,6 +313,12 @@ export default async function OrderSuccessPage({
               sessionId={sessionId ?? null}
               keywordCount={keywordCount}
               prefillEmail={prefillEmail}
+              stripeCustomerId={stripeCustomerId}
+              attachState={attachState}
+              attachPublicId={attachPublicId}
+              attachOnboardingStep={attachOnboardingStep}
+              isAuditUpgrade={isAuditUpgrade}
+              savedCard={savedCard}
             />
           </Suspense>
         </div>
@@ -177,6 +343,28 @@ function formatTierLabel(tier: Tier): string {
   return TIER_LABELS[tier];
 }
 
+/** Same as formatTierLabel but substitutes the actual paid amount
+ *  (post-discount) for the list price. E.g. MAPCHECK50 buyers paid
+ *  \$49 not \$99; we want the header to reflect that, not the bare
+ *  list price. Subscription tiers (pulse / pulse_plus) keep their
+ *  recurring-price label since amount_total is the first-period
+ *  charge which can be confusing in isolation. */
+function formatTierLabelWithPaidAmount(tier: Tier, paidCents: number): string {
+  if (tier === 'pulse' || tier === 'pulse_plus') {
+    return TIER_LABELS[tier];
+  }
+  const dollars = Math.round(paidCents / 100);
+  const name =
+    tier === 'scan'
+      ? 'TurfScan'
+      : tier === 'audit'
+        ? 'Visibility Audit'
+        : tier === 'strategy'
+          ? 'Strategy Session'
+          : TIER_LABELS[tier];
+  return `${name} ($${dollars})`;
+}
+
 function isTierString(v: string | undefined): v is Tier {
   return (
     v === 'scan' ||
@@ -188,7 +376,21 @@ function isTierString(v: string | undefined): v is Tier {
 }
 
 type SessionState =
-  | { kind: 'ok'; tier: Tier; email: string | null }
+  | {
+      kind: 'ok';
+      tier: Tier;
+      email: string | null;
+      /** Stripe Customer id captured during the original one-time
+       *  checkout (customer_creation: 'if_required'). Forwarded to
+       *  the OrderSuccessForm so it can wire the Pulse-attach panel
+       *  to the same Stripe customer record. */
+      customerId: string | null;
+      /** Net amount paid in cents (after promotion-code discounts).
+       *  Used in the page header to show what the buyer actually
+       *  paid, e.g. \$49 with MAPCHECK50 vs. the \$99 list price.
+       *  Null when Stripe didn't surface amount_total. */
+      amountTotalCents: number | null;
+    }
   | { kind: 'warning'; message: string };
 
 /**
@@ -220,7 +422,7 @@ async function validateAndRecordSession(
         return {
           kind: 'warning',
           message:
-            "We couldn't locate your Stripe session. If you completed payment, email anthony@fourdots.io with your receipt and we'll fulfill manually.",
+            "We couldn't locate your Stripe session. If you completed payment, email support@turfmap.ai with your receipt and we'll fulfill manually.",
         };
       case 'payment_not_complete':
         return {
@@ -231,7 +433,7 @@ async function validateAndRecordSession(
         return {
           kind: 'warning',
           message:
-            "Your Stripe session doesn't have a recognized tier. Email anthony@fourdots.io with your session id.",
+            "Your Stripe session doesn't have a recognized tier. Email support@turfmap.ai with your session id.",
         };
       case 'stripe_error':
         return {
@@ -251,5 +453,7 @@ async function validateAndRecordSession(
     kind: 'ok',
     tier: result.tier,
     email: result.customerEmail,
+    customerId: result.customerId,
+    amountTotalCents: result.amountTotal,
   };
 }

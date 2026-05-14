@@ -5,8 +5,11 @@
  * renders, with three differences:
  *   1. Internal cost data (DFS cost cents) is hidden from the footer.
  *   2. Internal scan controls (Re-scan / scan ID) are hidden.
- *   3. The client's `primary_color` overrides the brand lime accent across
- *      anything that reads `var(--color-lime)`.
+ *
+ * White-label scope is just the logo. Per-client brand-accent
+ * customization was removed — every portal renders with TurfMap's
+ * standard lime + dark surfaces so an un-customized portal still
+ * looks intentional rather than like a half-finished setup.
  *
  * v1 scope: `[slug]` is the client UUID. Phase 4 may swap to a friendly
  * subdomain or a `clients.slug` column.
@@ -29,6 +32,7 @@ import {
   resolveLocation,
 } from '@/lib/supabase/locations';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
+import { KeywordSwitcher } from '@/components/turfmap/KeywordSwitcher';
 import type {
   ScanPointRow,
   ScanRow,
@@ -48,7 +52,11 @@ import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { AuditUpgradePanel } from '@/components/marketing/AuditUpgradePanel';
+import { ClientBillingPanel } from '@/components/turfmap/ClientBillingPanel';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
+import { resolveTier } from '@/lib/subscription/tier';
+import { loadSubscriptionSummary } from '@/lib/stripe/subscription';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,10 +65,10 @@ export default async function ClientPortalPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ location?: string }>;
+  searchParams: Promise<{ location?: string; keyword?: string }>;
 }) {
   const { slug } = await params;
-  const { location: locationParam } = await searchParams;
+  const { location: locationParam, keyword: keywordParam } = await searchParams;
   const supabase = getServerSupabase();
 
   // Tolerant client lookup — accepts the short public_id (default
@@ -116,23 +124,70 @@ export default async function ClientPortalPage({
     locations[0] ??
     null;
 
-  const { data: latestScan } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('client_id', client.id)
-    .eq('location_id', activeLocation?.id ?? '')
-    .eq('status', 'complete')
-    .order('completed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<ScanRow>();
-
-  const { data: keyword } = latestScan
+  // Per-location keyword list — drives the KeywordSwitcher and lets us
+  // resolve which keyword's scan to show. Mirror of the operator
+  // dashboard's resolution at app/clients/[id]/page.tsx so portal +
+  // dashboard render the same scan for the same (location, keyword).
+  const { data: locationKeywords } = activeLocation
     ? await supabase
         .from('tracked_keywords')
-        .select('*')
-        .eq('id', latestScan.keyword_id)
-        .maybeSingle<TrackedKeywordRow>()
+        .select('id, keyword, is_primary')
+        .eq('client_id', client.id)
+        .eq('location_id', activeLocation.id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+        .returns<
+          Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>[]
+        >()
     : { data: null };
+  const keywordList = locationKeywords ?? [];
+
+  let activeKeyword:
+    | Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>
+    | null = null;
+  if (keywordParam) {
+    activeKeyword =
+      keywordList.find((k) => k.id === keywordParam) ?? null;
+  }
+  if (!activeKeyword) {
+    activeKeyword =
+      keywordList.find((k) => k.is_primary) ?? keywordList[0] ?? null;
+  }
+  if (!activeKeyword) {
+    // Legacy fallback — only keywords with location_id IS NULL.
+    // Modern data has location_id stamped, so this only matches the
+    // brief migration window between client-create and the
+    // location_id stamp on the primary keyword. We deliberately do
+    // NOT fall back to a sibling location's keyword: see the
+    // matching comment in app/clients/[id]/page.tsx for the bug
+    // this prevents (Sugar Daddy Doughnuts Union Station — sibling
+    // keyword scanned the wrong territory and returned 0/100).
+    const { data: anyKw } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword, is_primary')
+      .eq('client_id', client.id)
+      .is('location_id', null)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+      .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>>();
+    activeKeyword = anyKw ?? null;
+  }
+
+  const { data: latestScan } = activeKeyword
+    ? await supabase
+        .from('scans')
+        .select('*')
+        .eq('client_id', client.id)
+        .eq('location_id', activeLocation?.id ?? '')
+        .eq('keyword_id', activeKeyword.id)
+        .eq('status', 'complete')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<ScanRow>()
+    : { data: null };
+
+  // Keyword displayed in headers = the resolved active keyword.
+  const keyword = activeKeyword;
 
   const { data: rawPoints } = latestScan
     ? await supabase
@@ -166,12 +221,18 @@ export default async function ClientPortalPage({
   const band = getTurfScoreBand(score);
   const momentumValue =
     latestScan?.momentum != null ? Number(latestScan.momentum) : null;
-  const { count: completedScanCount } = await supabase
-    .from('scans')
-    .select('id', { count: 'exact', head: true })
-    .eq('client_id', client.id)
-    .eq('location_id', activeLocation?.id ?? '')
-    .eq('status', 'complete');
+  // Per (location, keyword) scan count — gates the "Baseline scan
+  // complete" banner so it only fires for the keyword the user is
+  // actually viewing. Mirrors the operator dashboard.
+  const { count: completedScanCount } = activeKeyword
+    ? await supabase
+        .from('scans')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', client.id)
+        .eq('location_id', activeLocation?.id ?? '')
+        .eq('keyword_id', activeKeyword.id)
+        .eq('status', 'complete')
+    : { count: 0 };
   const isFirstScan = (completedScanCount ?? 0) <= 1;
 
   const ownNamePattern = new RegExp(
@@ -181,6 +242,16 @@ export default async function ClientPortalPage({
   const competitors = aggregateCompetitors(points, points.length || 1, {
     excludeNamePattern: ownNamePattern,
   });
+
+  // Billing panel data — loaded only for self-serve subscriptions.
+  // Agency-managed clients show a static "managed by your account
+  // team" row; one_time buyers don't see the panel at all.
+  const portalTier = resolveTier(client);
+  const showBillingPanel = client.billing_mode !== 'one_time';
+  const billingSummary =
+    showBillingPanel && client.stripe_subscription_id
+      ? await loadSubscriptionSummary(client.stripe_subscription_id)
+      : null;
 
   const { data: insightRow } = latestScan
     ? await supabase
@@ -196,30 +267,74 @@ export default async function ClientPortalPage({
         }>()
     : { data: null };
 
-  // Apply per-client brand color via a CSS variable override on the wrapper.
-  const accent = client.primary_color ?? '#c5ff3a';
-  const wrapperStyle = {
-    // overrides anything that reads var(--color-lime)
-    ['--color-lime' as string]: accent,
-  } as React.CSSProperties;
+  // Audit-upgrade panel gating. Three conditions must all hold:
+  //   1. Buyer is on TurfScan tier (one_time billing mode), not
+  //      already on audit / pulse / strategy
+  //   2. No visibility_audits row for this client (= not already
+  //      upgraded; defends against double-upgrade)
+  //   3. Within 24 hours of the original lead_orders.created_at —
+  //      the spec'd upgrade window
+  // All three derived server-side so the client component only
+  // gets a boolean + a pre-formatted time-remaining string.
+  let showAuditUpgrade = false;
+  let upgradeTimeRemainingLabel: string | null = null;
+  if (client.billing_mode === 'one_time') {
+    const [{ data: existingAudit }, { data: scanLeadOrder }] =
+      await Promise.all([
+        supabase
+          .from('visibility_audits')
+          .select('id')
+          .eq('client_id', clientUuid)
+          .limit(1)
+          .maybeSingle<{ id: string }>(),
+        supabase
+          .from('lead_orders')
+          .select('created_at')
+          .eq('client_id', clientUuid)
+          .eq('tier', 'scan')
+          .eq('status', 'fulfilled')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<{ created_at: string }>(),
+      ]);
+    if (!existingAudit && scanLeadOrder) {
+      const orderAgeMs =
+        Date.now() - new Date(scanLeadOrder.created_at).getTime();
+      const remainingMs = 24 * 60 * 60 * 1000 - orderAgeMs;
+      if (remainingMs > 0) {
+        showAuditUpgrade = true;
+        const hours = Math.floor(remainingMs / (60 * 60 * 1000));
+        const minutes = Math.floor(
+          (remainingMs % (60 * 60 * 1000)) / (60 * 1000)
+        );
+        upgradeTimeRemainingLabel =
+          hours > 0
+            ? `Upgrade window closes in ${hours}h ${minutes}m. After that, $499 from scratch.`
+            : `Upgrade window closes in ${minutes}m. After that, $499 from scratch.`;
+      }
+    }
+  }
 
   return (
-    <div className="min-h-screen w-full text-white" style={wrapperStyle}>
+    <div className="min-h-screen w-full text-white">
       <PortalHeader
         businessName={client.business_name}
         logoUrl={client.logo_url}
-        accent={accent}
         userEmail={user.email ?? null}
         isAgencyPreview={isAgencyPreview}
       />
 
-      {/* Location switcher — only renders when the brand has > 1
-          location. The slug in pathname matches whatever the URL has
-          (UUID or public_id), so the switcher's basePath will preserve
-          /portal/<slug> and just swap the ?location query param. */}
-      {locations.length > 1 && (
+      {/* Location + keyword switchers. KeywordSwitcher always renders
+          (as a non-interactive pill when there's a single keyword, as
+          a dropdown when there are multiple) so the active keyword is
+          always visible at the top of the portal. LocationSwitcher
+          self-hides when there's ≤ 1 location. The slug in pathname
+          matches whatever the URL has (UUID or public_id), so each
+          switcher's basePath preserves /portal/<slug> and just swaps
+          the relevant query param (?location=... / ?keyword=...). */}
+      {keywordList.length > 0 && (
         <div
-          className="border-b px-8 py-3"
+          className="border-b px-4 md:px-8 py-3 flex items-center gap-3 md:gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <LocationSwitcher
@@ -227,35 +342,44 @@ export default async function ClientPortalPage({
             locations={locations}
             activeLocationId={activeLocation?.id ?? null}
           />
+          <KeywordSwitcher
+            clientId={slug}
+            keywords={keywordList}
+            activeKeywordId={activeKeyword?.id ?? null}
+          />
         </div>
       )}
 
       {latestScan && isFirstScan && (
         <div
-          className="px-8 py-3 border-b flex items-center gap-3 text-xs"
+          className="px-4 md:px-8 py-3 border-b flex items-center gap-3 text-xs"
           style={{
             background: 'rgba(197, 255, 58, 0.05)',
             borderColor: 'var(--color-border)',
             color: '#a1a1aa',
           }}
         >
-          <Sparkles size={14} style={{ color: accent }} />
+          <Sparkles size={14} style={{ color: 'var(--color-lime)' }} />
           <span>
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
             </span>{' '}
-            This is your starting point — re-scans every 90 days will show
-            your territory expanding.
+            {client.billing_mode === 'one_time'
+              ? 'This is your map — re-scan from the dashboard any time to track changes.'
+              : 'This is your starting point — your territory expands with weekly re-scans and the AI Coach playbook.'}
           </span>
         </div>
       )}
 
-      {/* Compact business meta — no scan-trigger / cost data here */}
+      {/* Compact business meta — stacks on mobile, two columns at md+.
+       *  The "Tracked Keyword" column was removed; the active keyword
+       *  is now surfaced in the switcher strip above so showing it
+       *  again here was redundant. */}
       <div
-        className="border-b px-8 py-4 grid grid-cols-12 gap-4 items-center"
+        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 items-start md:items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="col-span-4">
+        <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
@@ -268,34 +392,28 @@ export default async function ClientPortalPage({
             )}
           </div>
         </div>
-        <div className="col-span-4">
+        <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Pin Location
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
-            <MapPin size={13} className="text-zinc-500" />
-            {activeLocation?.address ?? client.address}
-          </div>
-        </div>
-        <div className="col-span-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
-            Tracked Keyword
-          </div>
-          <div className="text-sm font-mono text-zinc-200">
-            {keyword?.keyword ?? '—'}
+            <MapPin size={13} className="text-zinc-500 flex-shrink-0" />
+            <span className="truncate">
+              {activeLocation?.address ?? client.address}
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 p-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         <div
-          className="col-span-8 border rounded-lg p-6 relative overflow-hidden"
+          className="lg:col-span-8 border rounded-lg p-4 md:p-6 relative overflow-hidden"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',
           }}
         >
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div>
               <h3 className="font-display text-xl font-bold">
                 Territory Heatmap
@@ -305,7 +423,7 @@ export default async function ClientPortalPage({
                 {activeLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6}mi radius
               </p>
             </div>
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider flex-wrap">
               {[
                 { color: '#c5ff3a', label: 'Top 3' },
                 { color: '#e8e54a', label: '4–10' },
@@ -332,7 +450,22 @@ export default async function ClientPortalPage({
           />
         </div>
 
-        <div className="col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4">
+          {/* Attribution eyebrow — keeps the score family tied to the
+              account holder visually, even when the heatmap above
+              has been toggled to a competitor view. Without this,
+              the stacked-on-mobile layout makes it look like the
+              score numbers belong to whoever the heatmap is
+              currently showing. */}
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5 flex-wrap"
+            aria-label="Score attribution"
+          >
+            <span>Visibility for</span>
+            <span className="text-zinc-200 normal-case tracking-normal font-bold">
+              {client.business_name}
+            </span>
+          </div>
           <StatCard
             variant="hero"
             label="TurfScore™"
@@ -391,17 +524,45 @@ export default async function ClientPortalPage({
           <CompetitorTable competitors={competitors} />
         </div>
 
-        <div className="col-span-12">
+        <div className="lg:col-span-12">
           <AICoach
             scanId={latestScan?.id ?? null}
             insight={insightRow ?? null}
             scanComplete={Boolean(latestScan)}
           />
         </div>
+
+        {/* Audit-upgrade panel — TurfScan buyers within their 24h
+         *  upgrade window. Sits beneath the Fix List per spec; the
+         *  results-aware copy ("Your TurfScore is X. The Fix List
+         *  above shows you what to do, but...") leans on the
+         *  preceding AICoach context. After 24h or after upgrade
+         *  the gating server-side hides this entirely. */}
+        {showAuditUpgrade && (
+          <div className="lg:col-span-12">
+            <AuditUpgradePanel
+              source="dashboard"
+              clientId={clientUuid}
+              currentScore={latestScan?.turf_score ?? null}
+              timeRemainingLabel={upgradeTimeRemainingLabel ?? undefined}
+            />
+          </div>
+        )}
+
+        {showBillingPanel && (
+          <div className="lg:col-span-12">
+            <ClientBillingPanel
+              clientId={clientUuid}
+              clientPublicId={client.public_id}
+              tier={portalTier}
+              summary={billingSummary}
+            />
+          </div>
+        )}
       </div>
 
       <footer
-        className="border-t px-8 py-4 flex items-center justify-between text-xs text-zinc-600"
+        className="border-t px-4 md:px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-zinc-600"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span>
@@ -433,20 +594,18 @@ export default async function ClientPortalPage({
 function PortalHeader({
   businessName,
   logoUrl,
-  accent,
   userEmail,
   isAgencyPreview,
 }: {
   businessName: string;
   logoUrl: string | null;
-  accent: string;
   userEmail: string | null;
   isAgencyPreview: boolean;
 }) {
   const initial = businessName.trim().charAt(0).toUpperCase() || 'T';
   return (
     <header
-      className="border-b px-8 py-5 flex items-center justify-between"
+      className="border-b px-4 md:px-8 py-5 flex items-center justify-between gap-3"
       style={{ borderColor: 'var(--color-border)' }}
     >
       <div className="flex items-center gap-3">
@@ -457,7 +616,7 @@ function PortalHeader({
             alt={businessName}
             className="w-9 h-9 rounded-md object-contain p-0.5"
             style={{
-              boxShadow: `0 0 24px ${accent}40`,
+              boxShadow: '0 0 24px #c5ff3a40',
               background: '#0a0a0a',
             }}
           />
@@ -465,8 +624,8 @@ function PortalHeader({
           <div
             className="w-9 h-9 rounded-md flex items-center justify-center font-display font-bold text-black"
             style={{
-              background: accent,
-              boxShadow: `0 0 24px ${accent}40`,
+              background: 'var(--color-lime)',
+              boxShadow: '0 0 24px #c5ff3a40',
             }}
           >
             {initial}

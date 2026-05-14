@@ -17,7 +17,16 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { resolveLocation } from '@/lib/supabase/locations';
-import type { TrackedKeywordRow } from '@/lib/supabase/types';
+import {
+  maxKeywordsPerLocation,
+  resolveTier,
+  tierLabel,
+} from '@/lib/subscription/tier';
+import type {
+  ClientRow,
+  SubscriptionTier,
+  TrackedKeywordRow,
+} from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
@@ -77,6 +86,35 @@ export async function POST(req: Request) {
     );
   }
 
+  // Per-location keyword cap — driven by tier. Pulse: 3, Pulse+: 10,
+  // NULL tier (one_time / unset): 1. Single source of truth lives in
+  // lib/subscription/tier.ts so a tier-policy change ripples cleanly.
+  const { data: clientRow } = await supabase
+    .from('clients')
+    .select('tier, billing_mode')
+    .eq('id', parsed.client_id)
+    .maybeSingle<Pick<ClientRow, 'tier' | 'billing_mode'>>();
+  if (!clientRow) {
+    return NextResponse.json({ error: 'client not found' }, { status: 404 });
+  }
+  const tier: SubscriptionTier | null = resolveTier(clientRow);
+  const cap = maxKeywordsPerLocation(tier);
+  const { count: existingCount } = await supabase
+    .from('tracked_keywords')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', parsed.client_id)
+    .eq('location_id', location.id);
+  if ((existingCount ?? 0) >= cap) {
+    return NextResponse.json(
+      {
+        error: `${tierLabel(tier)} allows ${cap} keyword${cap === 1 ? '' : 's'} per location. Upgrade to Pulse+ for 10.`,
+        kind: 'keyword_cap',
+        cap,
+      },
+      { status: 403 }
+    );
+  }
+
   // Ensure single-primary invariant — scoped to the LOCATION since each
   // location has its own primary keyword.
   if (parsed.is_primary) {
@@ -101,11 +139,14 @@ export async function POST(req: Request) {
     .single<TrackedKeywordRow>();
 
   if (error) {
-    // 23505 = unique_violation in Postgres
+    // 23505 = unique_violation in Postgres. Post-migration 0010 the
+    // unique is (client_id, location_id, keyword) — so the violation
+    // means this exact keyword is already tracked AT THIS LOCATION.
+    // The same keyword can be added to a sibling location.
     const code = (error as { code?: string }).code;
     if (code === '23505') {
       return NextResponse.json(
-        { error: 'this keyword is already tracked for this client' },
+        { error: 'this keyword is already tracked for this location' },
         { status: 409 }
       );
     }

@@ -47,7 +47,7 @@ export function StatCard({
     : 0;
   return (
     <div
-      className={`border rounded-lg relative overflow-hidden ${hero ? 'p-6' : 'p-5'}`}
+      className={`border rounded-lg relative ${hero ? 'p-6' : 'p-5'}`}
       style={{
         background: highlight
           ? 'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)'
@@ -63,19 +63,29 @@ export function StatCard({
         // so a low score reads as visually low rather than as a stalk
         // floating mid-card. Uses the brand lime + a soft glow rather
         // than a hard rectangle so it reads as an indicator, not chrome.
+        //
+        // The wrapper carries `overflow-hidden` + `rounded-lg` so the
+        // fill bar stays inside the card's rounded corners — but the
+        // OUTER card stays overflow-visible so InfoTooltip popovers
+        // (and any future overflowing UI like dropdowns) don't get
+        // clipped at the card edge.
         <div
-          className="absolute left-0 top-0 bottom-0 w-1 pointer-events-none"
+          className="absolute inset-0 overflow-hidden rounded-lg pointer-events-none"
           aria-hidden
         >
           <div
-            className="absolute left-0 right-0 bottom-0 transition-[height] duration-700 ease-out"
-            style={{
-              height: `${clampedFill}%`,
-              background:
-                'linear-gradient(to top, var(--color-lime) 0%, #c5ff3acc 100%)',
-              boxShadow: '0 0 12px #c5ff3a55',
-            }}
-          />
+            className="absolute left-0 right-auto top-0 bottom-0 w-1"
+          >
+            <div
+              className="absolute left-0 right-0 bottom-0 transition-[height] duration-700 ease-out"
+              style={{
+                height: `${clampedFill}%`,
+                background:
+                  'linear-gradient(to top, var(--color-lime) 0%, #c5ff3acc 100%)',
+                boxShadow: '0 0 12px #c5ff3a55',
+              }}
+            />
+          </div>
         </div>
       )}
       <div className="flex items-center justify-between mb-3">

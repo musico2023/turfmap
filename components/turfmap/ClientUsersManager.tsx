@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Plus, Trash2 } from 'lucide-react';
+import { Activity, Check, Copy, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 export type ClientUserRow = {
@@ -14,12 +14,22 @@ export type ClientUserRow = {
 };
 
 export type ClientUsersManagerProps = {
+  /** Canonical client UUID. Used as `client_id` in the agency API
+   *  (POST /api/client_users). The settings page passes `client.id`. */
   clientId: string;
+  /** Public-id slug used to construct the portal sign-in URL the
+   *  operator hands to the invitee. Exposed separately because the
+   *  agency API keys off UUID but the URL the user visits should be
+   *  the short slug. */
+  clientPublicId: string;
   users: ClientUserRow[];
 };
 
+const PORTAL_USERS_PER_CLIENT = 5;
+
 export function ClientUsersManager({
   clientId,
+  clientPublicId,
   users,
 }: ClientUsersManagerProps) {
   const router = useRouter();
@@ -27,13 +37,29 @@ export function ClientUsersManager({
 
   const [newEmail, setNewEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<'add' | string | null>(null);
+  const [copiedAt, setCopiedAt] = useState<string | null>(null);
 
   const refresh = () => startTransition(() => router.refresh());
+
+  const atCap = users.length >= PORTAL_USERS_PER_CLIENT;
+
+  const portalLoginUrl = (() => {
+    if (typeof window === 'undefined') {
+      // SSR pass — use a relative path so the URL is whatever the
+      // current origin is at click time. The actual click only fires
+      // client-side anyway; this branch is just to keep the component
+      // happy during the server render.
+      return `/portal/${clientPublicId}/login`;
+    }
+    return `${window.location.origin}/portal/${clientPublicId}/login`;
+  })();
 
   const onAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     if (!newEmail.trim()) return;
     setBusy('add');
     try {
@@ -45,12 +71,28 @@ export function ClientUsersManager({
           email: newEmail.trim(),
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        invite_sent?: boolean;
+        invite_error?: string | null;
+      };
       if (!res.ok) {
         setError(data.error ?? `request failed (HTTP ${res.status})`);
         return;
       }
+      const added = newEmail.trim().toLowerCase();
       setNewEmail('');
+      if (data.invite_sent === false) {
+        // Row created but the email failed. Surface clearly so the
+        // operator can fall back to the Copy-link button below.
+        setNotice(
+          `${added} added — but the invite email failed (${data.invite_error ?? 'unknown'}). Use the copy buttons to share the sign-in link manually.`
+        );
+      } else {
+        setNotice(
+          `Invite sent to ${added}. They'll get an email with a one-click sign-in link.`
+        );
+      }
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -59,8 +101,50 @@ export function ClientUsersManager({
     }
   };
 
+  const onCopyLink = async (rowId: string) => {
+    setError(null);
+    setNotice(null);
+    try {
+      await navigator.clipboard.writeText(portalLoginUrl);
+      setCopiedAt(rowId);
+      // Auto-clear the "copied" pill after a beat so the icon flips
+      // back. Two seconds is long enough to register, short enough to
+      // not feel sticky.
+      setTimeout(
+        () => setCopiedAt((curr) => (curr === rowId ? null : curr)),
+        2000
+      );
+    } catch (e) {
+      setError(
+        `clipboard write failed — copy this URL manually: ${portalLoginUrl}`
+      );
+      // Surface the underlying error too in case it's something other
+      // than a permissions denial.
+      console.warn('clipboard write failed:', e);
+    }
+  };
+
+  const onCopyShared = async () => {
+    setError(null);
+    setNotice(null);
+    try {
+      await navigator.clipboard.writeText(portalLoginUrl);
+      setCopiedAt('__shared__');
+      setTimeout(
+        () => setCopiedAt((curr) => (curr === '__shared__' ? null : curr)),
+        2000
+      );
+    } catch (e) {
+      setError(
+        `clipboard write failed — copy this URL manually: ${portalLoginUrl}`
+      );
+      console.warn('clipboard write failed:', e);
+    }
+  };
+
   const onDelete = async (id: string) => {
     setError(null);
+    setNotice(null);
     setBusy(id);
     try {
       const res = await fetch(`/api/client_users/${id}`, {
@@ -81,26 +165,76 @@ export function ClientUsersManager({
 
   return (
     <div
-      className="border rounded-lg p-5"
+      id="portal-users"
+      className="border rounded-lg p-5 scroll-mt-6"
       style={{
         background: 'var(--color-card)',
         borderColor: 'var(--color-border)',
       }}
     >
-      <div className="mb-4">
-        <h3 className="font-display text-lg font-bold">Portal users</h3>
-        <p className="text-xs text-zinc-500 mt-0.5">
-          {users.length} user{users.length === 1 ? '' : 's'} can sign in to{' '}
-          <span className="font-mono text-zinc-300">/portal/{clientId.slice(0, 8)}…</span>{' '}
-          via magic link. Add an email below to grant access.
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-bold">Portal users</h3>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Adding an email grants portal access AND emails the user a
+            one-click sign-in link. Use the copy buttons below to share
+            the sign-in URL manually if needed. Up to{' '}
+            {PORTAL_USERS_PER_CLIENT} users per client.
+          </p>
+        </div>
+        <span
+          className="text-[10px] uppercase tracking-[0.18em] font-semibold px-2 py-1 rounded font-mono whitespace-nowrap"
+          style={{
+            background: atCap ? '#1a1308' : 'var(--color-bg)',
+            color: atCap ? '#f5b651' : '#a1a1aa',
+            border: `1px solid ${atCap ? '#3a2a0a' : 'var(--color-border)'}`,
+          }}
+        >
+          {users.length} / {PORTAL_USERS_PER_CLIENT}
+        </span>
+      </div>
+
+      {/* Shared portal sign-in URL — same for every user on this client.
+          Big enough to read, with a one-click copy button so the
+          operator can paste it into Slack/email without selecting and
+          copying manually. */}
+      <div
+        className="mb-5 px-3 py-2.5 rounded-md border flex items-center gap-3"
+        style={{
+          background: 'var(--color-bg)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold whitespace-nowrap">
+          Sign-in link
+        </span>
+        <span className="font-mono text-xs text-zinc-300 truncate flex-1">
+          {portalLoginUrl}
+        </span>
+        <button
+          type="button"
+          onClick={onCopyShared}
+          className="text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1.5 text-xs font-mono whitespace-nowrap"
+          title="Copy portal sign-in link"
+        >
+          {copiedAt === '__shared__' ? (
+            <>
+              <Check size={12} style={{ color: 'var(--color-lime)' }} />
+              <span style={{ color: 'var(--color-lime)' }}>copied</span>
+            </>
+          ) : (
+            <>
+              <Copy size={12} /> copy
+            </>
+          )}
+        </button>
       </div>
 
       <div className="space-y-2 mb-5">
         {users.length === 0 ? (
           <div className="text-xs text-zinc-600 italic">
-            No portal users yet. Until you add one, the portal returns
-            &quot;no access&quot; to anyone who signs in.
+            No portal users yet. Add an email below to grant access,
+            then share the sign-in link with them.
           </div>
         ) : (
           users.map((u) => (
@@ -120,8 +254,20 @@ export function ClientUsersManager({
                   ? `last seen ${new Date(u.last_login_at).toISOString().slice(0, 10)}`
                   : u.invited_at
                     ? `invited ${new Date(u.invited_at).toISOString().slice(0, 10)}`
-                    : 'never invited'}
+                    : 'not signed in yet'}
               </span>
+              <button
+                type="button"
+                onClick={() => onCopyLink(u.id)}
+                title="Copy portal sign-in link to share with this user"
+                className="text-zinc-500 hover:text-zinc-200 transition-colors"
+              >
+                {copiedAt === u.id ? (
+                  <Check size={14} style={{ color: 'var(--color-lime)' }} />
+                ) : (
+                  <Copy size={14} />
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => onDelete(u.id)}
@@ -140,28 +286,41 @@ export function ClientUsersManager({
         )}
       </div>
 
-      <form onSubmit={onAdd} className="grid grid-cols-12 gap-2">
+      <form
+        onSubmit={onAdd}
+        className="grid grid-cols-1 sm:grid-cols-12 gap-2"
+      >
         <input
           type="email"
           value={newEmail}
           onChange={(e) => setNewEmail(e.target.value)}
-          placeholder="add a portal user (e.g. owner@client.com)"
-          className="col-span-10 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+          placeholder={
+            atCap
+              ? 'remove a user before adding another'
+              : 'add a portal user (e.g. owner@client.com)'
+          }
+          disabled={atCap}
+          className="sm:col-span-10 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-60"
         />
         <Button
           type="submit"
           variant="primary"
           size="md"
-          disabled={!newEmail.trim()}
+          disabled={!newEmail.trim() || atCap}
           loading={busy === 'add'}
           leftIcon={<Plus size={12} strokeWidth={2.75} />}
-          className="col-span-2"
+          className="sm:col-span-2"
         >
           Add
         </Button>
       </form>
       {error && (
         <div className="text-xs text-red-400 font-mono mt-3">{error}</div>
+      )}
+      {!error && notice && (
+        <div className="text-xs font-mono mt-3" style={{ color: 'var(--color-lime)' }}>
+          ✓ {notice}
+        </div>
       )}
     </div>
   );

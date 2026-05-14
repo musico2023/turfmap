@@ -5,31 +5,89 @@ import { useRouter } from 'next/navigation';
 import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
+import { InfoTooltip } from './InfoTooltip';
+import {
+  AddressAutocomplete,
+  type AddressFields,
+} from './AddressAutocomplete';
 
-// Common picks. The form accepts any free-text value — these are just
-// suggestions surfaced via <datalist>.
-const INDUSTRY_SUGGESTIONS = [
-  'plumbing',
-  'hvac',
-  'roofing',
-  'electrical',
-  'landscaping',
-  'pest control',
-  'cleaning',
-  'garage doors',
-  'locksmith',
-  'septic services',
-  'pool maintenance',
-  'tree care',
-  'appliance repair',
-  'concrete',
-  'fencing',
-  'pressure washing',
-  'window cleaning',
-  'painting',
-  'flooring',
-  'drywall',
-  'home healthcare',
+// Grouped industry options for the <select>. Each group corresponds
+// to a BrightLocal directory profile (lib/brightlocal/directories.ts):
+// home-services, medical-healthcare, legal, food-restaurant,
+// real-estate, automotive. Within a group, every option string
+// matches the BL inference regex and routes to the same profile —
+// so the granular value (e.g. "hvac" vs "plumbing") survives in
+// AI Coach prompts but the NAP audit fires the right directory set
+// regardless of pick.
+//
+// Closed set, no free-text. Operators previously typed unsupported
+// categories (e.g. "desserts") that silently fell back to home-
+// services. The <select> makes that impossible — every choice
+// produces a correct audit.
+type IndustryGroup = {
+  label: string;
+  options: string[];
+};
+
+const INDUSTRY_GROUPS: IndustryGroup[] = [
+  {
+    label: 'Home services',
+    options: [
+      'plumbing',
+      'hvac',
+      'roofing',
+      'electrical',
+      'landscaping',
+      'pest control',
+      'cleaning',
+      'garage doors',
+      'locksmith',
+      'septic services',
+      'pool maintenance',
+      'tree care',
+      'appliance repair',
+      'concrete',
+      'fencing',
+      'pressure washing',
+      'window cleaning',
+      'painting',
+      'flooring',
+      'drywall',
+    ],
+  },
+  {
+    label: 'Medical & healthcare',
+    options: [
+      'medical',
+      'dental',
+      'chiropractic',
+      'veterinary',
+      'pediatric',
+      'optometry',
+      'physical therapy',
+      'home healthcare',
+    ],
+  },
+  {
+    label: 'Legal',
+    options: ['law firm', 'attorney'],
+  },
+  {
+    label: 'Food & restaurant',
+    // Note: "dessert cafe" / "ice cream parlor" buyers should pick
+    // 'cafe' or 'bakery' — the BL regex matches those tokens and
+    // routes to the food-restaurant profile (TripAdvisor, OpenTable,
+    // Foursquare, Zomato, DoorDash, Grubhub).
+    options: ['restaurant', 'cafe', 'bakery', 'catering', 'pizza'],
+  },
+  {
+    label: 'Real estate',
+    options: ['real estate', 'realtor'],
+  },
+  {
+    label: 'Automotive',
+    options: ['auto repair', 'auto body', 'car wash', 'detailing'],
+  },
 ];
 
 type Form = {
@@ -48,12 +106,25 @@ type Form = {
   country_code: string;
   industry: string;
   service_radius_miles: string;
-  primary_color: string;
-  /** User-facing dollar amount (e.g. "3500" or "3500.00"). Converted to
-   *  integer cents on submit to match the DB column. */
-  monthly_price_dollars: string;
   keyword: string;
   scan_frequency: 'weekly' | 'biweekly' | 'monthly' | 'daily';
+  /** Plan selector at create time. 'agency_managed' = billed
+   *  outside Stripe (your custom contract). 'pulse' / 'pulse_plus' =
+   *  generates a Stripe Checkout link (with trial) the operator
+   *  forwards to the buyer; the row is parked as
+   *  self_serve_subscription with stripe_subscription_id null
+   *  until the buyer completes Checkout. */
+  plan: 'agency_managed' | 'pulse' | 'pulse_plus';
+  /** Tier visible only when plan=agency_managed. Determines feature
+   *  gates immediately on row create — no Stripe webhook to set it. */
+  tier_for_agency: 'pulse' | 'pulse_plus';
+  /** Trial length for the Stripe Checkout flow (Pulse / Pulse+
+   *  plans only). 0 = no trial. */
+  trial_days: '0' | '7' | '14' | '30';
+  /** Buyer email — separate from the operator's auth email. Used to
+   *  pre-fill Stripe Checkout's customer_email so the buyer doesn't
+   *  retype. Required for Stripe plans, ignored for agency-managed. */
+  buyer_email: string;
 };
 
 const initial: Form = {
@@ -69,10 +140,12 @@ const initial: Form = {
   country_code: 'USA',
   industry: '',
   service_radius_miles: '1.6',
-  primary_color: '#c5ff3a',
-  monthly_price_dollars: '',
   keyword: '',
   scan_frequency: 'weekly',
+  plan: 'agency_managed',
+  tier_for_agency: 'pulse_plus',
+  trial_days: '14',
+  buyer_email: '',
 };
 
 type GeocodeState =
@@ -92,6 +165,14 @@ export function ClientCreateForm() {
 
   const [geocode, setGeocode] = useState<GeocodeState>({ status: 'idle' });
   const [manualOverride, setManualOverride] = useState(false);
+
+  // Post-create state for the Stripe-plan path. When the API returns
+  // a checkout_url, we surface it in a dedicated success state so
+  // the operator can copy/forward it to the buyer instead of being
+  // redirected straight to the dashboard.
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [createdPublicId, setCreatedPublicId] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const update = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((s) => ({ ...s, [k]: v }));
@@ -197,6 +278,16 @@ export function ClientCreateForm() {
       return;
     }
 
+    // Validate buyer email when on a Stripe plan — server also
+    // validates, but cheap client-side sanity check first.
+    if (
+      (form.plan === 'pulse' || form.plan === 'pulse_plus') &&
+      !form.buyer_email.trim()
+    ) {
+      setError('Buyer email is required for Pulse / Pulse+ plans.');
+      return;
+    }
+
     const body: Record<string, unknown> = {
       business_name: form.business_name.trim(),
       address: form.address.trim(),
@@ -211,23 +302,28 @@ export function ClientCreateForm() {
       postcode: form.postcode.trim() || null,
       country_code: form.country_code.trim().toUpperCase() || 'USA',
       service_radius_miles: Number(form.service_radius_miles),
-      primary_color: form.primary_color.trim() || '#c5ff3a',
+      // primary_color intentionally omitted — the API defaults it to
+      // '#c5ff3a' server-side, matching the logo-only white-label
+      // policy. The picker was removed so operators can't override
+      // back to a clashing hex.
       keyword: {
         keyword: form.keyword.trim(),
         scan_frequency: form.scan_frequency,
         is_primary: true,
       },
+      // Plan + billing fields — drive billing_mode + tier on the
+      // new row, and (for Stripe plans) tell the API to generate a
+      // Checkout link.
+      plan: form.plan,
+      ...(form.plan === 'agency_managed'
+        ? { tier: form.tier_for_agency }
+        : {
+            tier: form.plan,
+            buyer_email: form.buyer_email.trim(),
+            trial_days: Number(form.trial_days),
+          }),
     };
     if (form.industry) body.industry = form.industry;
-    if (form.monthly_price_dollars) {
-      const dollars = Number(form.monthly_price_dollars);
-      if (Number.isNaN(dollars) || dollars < 0) {
-        setError('monthly price must be a non-negative number');
-        return;
-      }
-      // Round to integer cents to dodge float drift on values like 99.99 → 9999.
-      body.monthly_price_cents = Math.round(dollars * 100);
-    }
 
     setSubmitting(true);
     try {
@@ -240,22 +336,110 @@ export function ClientCreateForm() {
         id?: string;
         public_id?: string;
         error?: string;
+        /** Set when plan was 'pulse' or 'pulse_plus'. Operator
+         *  forwards this to the buyer to start the trial / charge. */
+        checkout_url?: string | null;
       };
       if (!res.ok || !data.id) {
         setError(data.error ?? `request failed (HTTP ${res.status})`);
         setSubmitting(false);
         return;
       }
-      // Redirect to the short public_id URL when present (post-migration
-      // 0007); fall back to UUID for the brief window where the column
-      // hasn't been backfilled yet.
       const slug = data.public_id ?? data.id;
+      // Stripe-plan path: surface the Checkout URL in a success
+      // state instead of redirecting. Operator copies + sends to
+      // the buyer; the buyer then completes Checkout, which fires
+      // the webhook and activates the row.
+      if (data.checkout_url) {
+        setCheckoutUrl(data.checkout_url);
+        setCreatedPublicId(slug);
+        setSubmitting(false);
+        return;
+      }
+      // Agency-managed path: redirect straight to the dashboard,
+      // since there's no buyer interaction needed before the row is
+      // fully usable.
       startTransition(() => router.push(`/clients/${slug}`));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setSubmitting(false);
     }
   };
+
+  // Post-Stripe-create success state. Renders instead of the form
+  // when the operator just created a Stripe-plan client and we
+  // got back a Checkout URL. Replaces the usual redirect-to-
+  // dashboard so the operator can grab the link.
+  if (checkoutUrl && createdPublicId) {
+    const onCopy = async () => {
+      try {
+        await navigator.clipboard.writeText(checkoutUrl);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2500);
+      } catch {
+        // Clipboard API can fail on http (non-localhost). Fall back
+        // to selecting the text — operator can copy manually.
+      }
+    };
+    return (
+      <div
+        className="border rounded-lg p-6 max-w-3xl space-y-4"
+        style={{
+          background: 'var(--color-card)',
+          borderColor: 'var(--color-border-bright)',
+        }}
+      >
+        <div>
+          <h3 className="font-display text-lg font-bold">
+            Client created — payment setup pending
+          </h3>
+          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+            The client row exists and is ready for scans. Forward the
+            Stripe Checkout link below to the buyer to start their
+            trial and capture payment.
+          </p>
+        </div>
+
+        <div
+          className="rounded-md border px-3 py-3 font-mono text-xs break-all"
+          style={{
+            background: 'var(--color-bg)',
+            borderColor: 'var(--color-border)',
+            color: '#e4e4e7',
+          }}
+        >
+          {checkoutUrl}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            onClick={onCopy}
+          >
+            {linkCopied ? '✓ Link copied' : 'Copy link'}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={() => router.push(`/clients/${createdPublicId}`)}
+          >
+            Go to dashboard
+          </Button>
+        </div>
+
+        <p className="text-[11px] text-zinc-600 leading-relaxed">
+          Once the buyer completes Checkout, the Stripe webhook
+          activates the row automatically — no further action
+          needed on your end. If the link expires (24h Stripe
+          default) or the buyer abandons, regenerate from the
+          client&rsquo;s settings page.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={onSubmit} className="space-y-6 max-w-3xl">
@@ -285,14 +469,45 @@ export function ClientCreateForm() {
             className={inputClass}
           />
         </Field>
-        <Field label="Address" required>
-          <input
-            type="text"
+        <Field
+          label="Address"
+          required
+          help="Start typing — pick from the dropdown to auto-fill the structured NAP fields below."
+        >
+          <AddressAutocomplete
             value={form.address}
-            onChange={(e) => update('address', e.target.value)}
-            placeholder="100 Queen St W, Toronto, ON M5H 2N2"
+            onChange={(next) => update('address', next)}
+            onSelect={(fields: AddressFields) => {
+              // Operator picked a Mapbox suggestion — populate the
+              // structured NAP fields + lat/lng directly. Skips the
+              // /api/geocode round-trip for selected results; the
+              // existing debounced geocode still runs as a fallback
+              // for typed-but-not-selected addresses.
+              update('address', fields.formatted);
+              update('street_address', fields.street_address);
+              update('city', fields.city);
+              update('region', fields.region);
+              update('postcode', fields.postcode);
+              update(
+                'country_code',
+                fields.country_code.toUpperCase() === 'CA'
+                  ? 'CAN'
+                  : fields.country_code.toUpperCase() === 'US'
+                    ? 'USA'
+                    : fields.country_code.toUpperCase()
+              );
+              update('latitude', String(fields.latitude));
+              update('longitude', String(fields.longitude));
+              setGeocode({
+                status: 'found',
+                lat: fields.latitude,
+                lng: fields.longitude,
+                formatted: fields.formatted,
+              });
+            }}
+            placeholder="100 Queen St W, Toronto"
             required
-            className={inputClass}
+            inputClassName={inputClass}
           />
         </Field>
 
@@ -345,21 +560,34 @@ export function ClientCreateForm() {
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Industry" help="Optional. Free-text — pick a suggestion or type your own.">
-            <input
-              type="text"
-              list="industry-suggestions"
+          <Field
+            label="Industry"
+            tooltip={
+              <>
+                Drives which directories the NAP audit checks
+                (Healthgrades for medical, OpenTable for restaurants,
+                Angi for home services, etc.) and tunes the AI Coach
+                recommendations to your category. Closed list — every
+                option routes cleanly to a known directory profile.
+              </>
+            }
+          >
+            <select
               value={form.industry}
               onChange={(e) => update('industry', e.target.value)}
-              placeholder="plumbing"
               className={inputClass}
-              autoComplete="off"
-            />
-            <datalist id="industry-suggestions">
-              {INDUSTRY_SUGGESTIONS.map((i) => (
-                <option key={i} value={i} />
+            >
+              <option value="">— Select an industry —</option>
+              {INDUSTRY_GROUPS.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
-            </datalist>
+            </select>
           </Field>
           <Field label="Service radius (mi)" help="Default 1.6 fits a 9×9 / 0.4mi grid">
             <input
@@ -404,44 +632,108 @@ export function ClientCreateForm() {
         </Field>
       </Section>
 
-      {/* White-label + billing */}
-      <Section title="White-label + billing">
-        <Field
-          label="Brand accent color"
-          help="Hex like #c5ff3a — used in their portal."
-        >
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={form.primary_color}
-              onChange={(e) => update('primary_color', e.target.value)}
-              className={`${inputClass} font-mono`}
-            />
+      {/* Plan — replaces the old Billing > Monthly Price section.
+       *  Decides whether the row is created as agency_managed (your
+       *  custom contract, billed outside Stripe) or routed through
+       *  Stripe with a trial-then-charge subscription. The
+       *  monthly_price_cents column still exists for record-
+       *  keeping and is editable from /clients/[id]/settings.
+       *
+       *  Logo upload is also handled in /clients/[id]/settings
+       *  (LogoUploader needs the client UUID for the storage path).
+       *  Brand-accent color was removed entirely: every portal
+       *  renders with the standard TurfMap lime + dark surfaces
+       *  with only the logo varying per client. */}
+      <Section
+        title="Plan"
+        subtitle="Drives feature gates immediately + decides whether to bill via Stripe or your agency contract."
+      >
+        <Field label="Plan type">
+          <select
+            value={form.plan}
+            onChange={(e) =>
+              update('plan', e.target.value as Form['plan'])
+            }
+            className={inputClass}
+          >
+            <option value="agency_managed">
+              Agency-managed — billed outside Stripe
+            </option>
+            <option value="pulse">Pulse — Stripe subscription</option>
+            <option value="pulse_plus">Pulse+ — Stripe subscription</option>
+          </select>
+        </Field>
+
+        {form.plan === 'agency_managed' && (
+          <Field
+            label="Tier under agency contract"
+            help="Drives feature gates (citations, exports, granular alerts, keyword caps). Most agency contracts bundle Pulse+."
+          >
+            <select
+              value={form.tier_for_agency}
+              onChange={(e) =>
+                update(
+                  'tier_for_agency',
+                  e.target.value as Form['tier_for_agency']
+                )
+              }
+              className={inputClass}
+            >
+              <option value="pulse_plus">Pulse+</option>
+              <option value="pulse">Pulse</option>
+            </select>
+          </Field>
+        )}
+
+        {(form.plan === 'pulse' || form.plan === 'pulse_plus') && (
+          <>
+            <Field
+              label="Buyer email"
+              required
+              help="Pre-fills Stripe Checkout. Separate from your operator email."
+            >
+              <input
+                type="email"
+                value={form.buyer_email}
+                onChange={(e) => update('buyer_email', e.target.value)}
+                placeholder="owner@business.com"
+                required
+                className={`${inputClass} font-mono`}
+              />
+            </Field>
+            <Field
+              label="Trial length"
+              help="Stripe charges the card on file when the trial ends. 0 = bill immediately."
+            >
+              <select
+                value={form.trial_days}
+                onChange={(e) =>
+                  update('trial_days', e.target.value as Form['trial_days'])
+                }
+                className={inputClass}
+              >
+                <option value="14">14 days (default)</option>
+                <option value="7">7 days</option>
+                <option value="30">30 days</option>
+                <option value="0">No trial — bill immediately</option>
+              </select>
+            </Field>
             <div
-              className="w-9 h-9 rounded border"
+              className="rounded-md border px-3 py-2 text-xs"
               style={{
-                background: form.primary_color,
-                borderColor: 'var(--color-border)',
+                background: 'rgba(255, 159, 58, 0.05)',
+                borderColor: 'rgba(255, 159, 58, 0.3)',
+                color: '#ffb86b',
               }}
-            />
-          </div>
-        </Field>
-        <Field label="Monthly price (USD)" help="Optional. Stored as integer cents internally.">
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">
-              $
-            </span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.monthly_price_dollars}
-              onChange={(e) => update('monthly_price_dollars', e.target.value)}
-              placeholder="3500"
-              className={`${inputClass} pl-7`}
-            />
-          </div>
-        </Field>
+            >
+              After save, you&rsquo;ll get a Stripe Checkout link to
+              forward to the buyer. The client row stays in
+              &ldquo;awaiting payment setup&rdquo; until they complete
+              checkout — at which point the trial begins and the row
+              activates automatically via webhook.
+            </div>
+          </>
+        )}
       </Section>
 
       {/* Actions */}
@@ -493,13 +785,20 @@ function GeocodeStatus({
           </span>
         )}
         {state.status === 'found' && (
-          <span className="inline-flex items-start gap-1.5 text-zinc-300">
+          // `flex` (not inline-flex) + `min-w-0` on the row so the
+          // truncate target inherits a real bounded width. Long
+          // Nominatim-normalized addresses (e.g. "1440 Bathurst Street,
+          // The Annex, Toronto, Old Toronto, Ontario, M5R 3J3, Canada")
+          // were overflowing past the parent into the override-coords
+          // toggle button on the right. Pre-fix the inline-flex didn't
+          // establish a width context for `truncate`.
+          <span className="flex items-start gap-1.5 text-zinc-300 min-w-0">
             <Check
               size={12}
               className="flex-shrink-0 mt-0.5"
               style={{ color: 'var(--color-lime)' }}
             />
-            <span className="truncate">
+            <span className="truncate min-w-0 flex-1">
               <span style={{ color: 'var(--color-lime)' }}>
                 {state.lat.toFixed(5)}, {state.lng.toFixed(5)}
               </span>
@@ -561,19 +860,30 @@ function Field({
   label,
   required,
   help,
+  tooltip,
   children,
 }: {
   label: string;
   required?: boolean;
+  /** Short inline note rendered to the right of the label. Use for
+   *  one-liner format hints ("E.164 preferred", "Skip the postal
+   *  code"). Anything longer than ~50 chars overflows the row —
+   *  use `tooltip` instead for longer explanations. */
   help?: React.ReactNode;
+  /** Longer explanation surfaced via an (i) icon next to the label.
+   *  Use for "what does this field do" copy that doesn't fit
+   *  inline. Renders the same InfoTooltip pattern used on the
+   *  dashboard score cards. */
+  tooltip?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div>
       <label className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 flex items-center justify-between">
-        <span>
+        <span className="inline-flex items-center gap-1.5">
           {label}
           {required && <span className="text-zinc-600 ml-1">*</span>}
+          {tooltip && <InfoTooltip>{tooltip}</InfoTooltip>}
         </span>
         {help && <span className="text-[10px] normal-case tracking-normal">{help}</span>}
       </label>

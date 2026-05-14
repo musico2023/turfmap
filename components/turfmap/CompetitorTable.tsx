@@ -158,8 +158,15 @@ function CompetitorList({
                 >
                   {absent ? '—' : c.amr.toFixed(1)}
                 </span>
+                {/* AMR + Share live in a right-aligned flex container at
+                 *  the row edge. Default-centered tooltips here would
+                 *  bleed past the right edge of the card on narrow
+                 *  viewports (and even on wider ones if the card is
+                 *  itself right-anchored). align="right" anchors the
+                 *  tooltip's right edge to the trigger so it always
+                 *  extends leftward into the card. */}
                 {i === 0 && showAmrTooltip && (
-                  <InfoTooltip side="top">
+                  <InfoTooltip side="top" align="right">
                     Average map rank across cells where this brand
                     appeared in the local 3-pack. Lower = better. Cells
                     where the brand is absent are <em>not</em> counted, so
@@ -175,7 +182,7 @@ function CompetitorList({
               >
                 Share {c.top3Pct}%
                 {i === 0 && showAmrTooltip && (
-                  <InfoTooltip side="top">
+                  <InfoTooltip side="top" align="right">
                     % of the 81 grid cells where this brand appears in
                     the local 3-pack. Measures territory presence — a
                     brand at 23% covers nearly a quarter of the

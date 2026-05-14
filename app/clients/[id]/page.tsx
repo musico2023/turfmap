@@ -7,9 +7,14 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 import { Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { listLocations, resolveLocation } from '@/lib/supabase/locations';
+import {
+  listLocations,
+  locationDisplayLabel,
+  resolveLocation,
+} from '@/lib/supabase/locations';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import type {
+  CitationOrderRow,
   ClientRow,
   ScanPointRow,
   ScanRow,
@@ -32,12 +37,16 @@ import { requireAgencyUserOrRedirect } from '@/lib/auth/agency';
 import { ScanButton } from '@/components/turfmap/ScanButton';
 import { ShareLinkButton } from '@/components/turfmap/ShareLinkButton';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
+import { KeywordSwitcher } from '@/components/turfmap/KeywordSwitcher';
+import { ClientBrandMark } from '@/components/turfmap/ClientBrandMark';
 import { InternalsFooter } from '@/components/turfmap/InternalsFooter';
 import { LinkButton } from '@/components/ui/Button';
 import { buttonStyles } from '@/components/ui/buttonStyles';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { CitationsPanel } from '@/components/turfmap/CitationsPanel';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
-import { getRescanCapStatus } from '@/lib/scans/rateLimit';
+import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
+import { canAccessCitations, resolveTier } from '@/lib/subscription/tier';
 
 // Default 9×9 grid is 4 rings out from the center cell, so spacing per ring
 // is `service_radius_miles / 4`. Falls back to the v1 default of 1.6mi /
@@ -49,10 +58,10 @@ export default async function ClientDashboardPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ location?: string }>;
+  searchParams: Promise<{ location?: string; keyword?: string }>;
 }) {
   const { id: clientParam } = await params;
-  const { location: locationParam } = await searchParams;
+  const { location: locationParam, keyword: keywordParam } = await searchParams;
   const me = await requireAgencyUserOrRedirect(`/clients/${clientParam}`);
   const supabase = getServerSupabase();
 
@@ -72,47 +81,83 @@ export default async function ClientDashboardPage({
     locations[0] ??
     null;
 
-  const { data: latestScan } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('client_id', id)
-    .eq('status', 'complete')
-    .eq('location_id', activeLocation?.id ?? '')
-    .order('completed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<ScanRow>();
-
-  // Show the keyword tied to the latest scan if there is one; otherwise fall
-  // back to a primary keyword for the active location (or any keyword on
-  // this client if the location has none yet).
-  const { data: keyword } = latestScan
+  // Per-location keyword list — drives the KeywordSwitcher and lets us
+  // resolve which keyword's scan to show. Each (location, keyword) pair
+  // has its own scan history; the dashboard only renders one at a time.
+  const { data: locationKeywords } = activeLocation
     ? await supabase
         .from('tracked_keywords')
+        .select('id, keyword, is_primary')
+        .eq('client_id', id)
+        .eq('location_id', activeLocation.id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+        .returns<
+          Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>[]
+        >()
+    : { data: null };
+  const keywordList = locationKeywords ?? [];
+
+  // Resolve the active keyword:
+  //   1. ?keyword=<id> if present and matches a keyword on this location
+  //   2. The location's primary keyword
+  //   3. The first keyword on the location
+  //   4. A LEGACY keyword (location_id IS NULL) — pre-multi-location
+  //      migration rows that haven't been re-scoped yet
+  //
+  // We deliberately do NOT fall back to a sibling location's keyword
+  // here. Pre-fix, a multi-location client with one location lacking
+  // a keyword would silently surface another location's keyword as
+  // the "active" one, and the ScanButton would happily fire a scan
+  // against the wrong (location, keyword) pair — yielding nonsense
+  // results (the Sugar Daddy Doughnuts Union Station bug). Now an
+  // unscoped location stays empty until the operator explicitly
+  // adds a keyword for it, and the ScanButton renders disabled with
+  // a clear "add a keyword" affordance.
+  let activeKeyword:
+    | Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>
+    | null = null;
+  if (keywordParam) {
+    activeKeyword =
+      keywordList.find((k) => k.id === keywordParam) ?? null;
+  }
+  if (!activeKeyword) {
+    activeKeyword =
+      keywordList.find((k) => k.is_primary) ?? keywordList[0] ?? null;
+  }
+  if (!activeKeyword) {
+    // Legacy fallback — only keywords with location_id IS NULL.
+    // Modern data has location_id stamped, so this only matches the
+    // brief migration window between client-create and the
+    // location_id stamp on the primary keyword.
+    const { data: anyKw } = await supabase
+      .from('tracked_keywords')
+      .select('id, keyword, is_primary')
+      .eq('client_id', id)
+      .is('location_id', null)
+      .order('is_primary', { ascending: false })
+      .limit(1)
+      .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword' | 'is_primary'>>();
+    activeKeyword = anyKw ?? null;
+  }
+
+  // Latest scan for this (location, keyword) pair specifically.
+  const { data: latestScan } = activeKeyword
+    ? await supabase
+        .from('scans')
         .select('*')
-        .eq('id', latestScan.keyword_id)
-        .maybeSingle<TrackedKeywordRow>()
-    : activeLocation
-      ? await (async () => {
-          const { data: locKw } = await supabase
-            .from('tracked_keywords')
-            .select('*')
-            .eq('client_id', id)
-            .eq('location_id', activeLocation.id)
-            .order('is_primary', { ascending: false })
-            .limit(1)
-            .maybeSingle<TrackedKeywordRow>();
-          if (locKw) return { data: locKw };
-          // Fallback: any keyword on this client (legacy rows without
-          // a location_id, or before this location had its own keywords).
-          return await supabase
-            .from('tracked_keywords')
-            .select('*')
-            .eq('client_id', id)
-            .order('is_primary', { ascending: false })
-            .limit(1)
-            .maybeSingle<TrackedKeywordRow>();
-        })()
-      : { data: null };
+        .eq('client_id', id)
+        .eq('status', 'complete')
+        .eq('location_id', activeLocation?.id ?? '')
+        .eq('keyword_id', activeKeyword.id)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<ScanRow>()
+    : { data: null };
+
+  // Full keyword row tied to the displayed scan — already resolved above
+  // since the latest scan was queried by activeKeyword.id.
+  const keyword = activeKeyword;
 
   const { data: rawPoints } = latestScan
     ? await supabase
@@ -183,9 +228,36 @@ export default async function ClientDashboardPage({
   // location has hit 3 on-demand scans in the last 24h. Server-fetched
   // here so the button can render its disabled state without a round-
   // trip; the trigger route also enforces the cap defensively.
-  const rescanCap = activeLocation
-    ? await getRescanCapStatus(supabase, activeLocation.id)
-    : null;
+  //
+  // Owner bypass: skip the prefetch entirely for staff in the bypass
+  // set so the button never reads as disabled. ScanButton treats null
+  // rescanCap as "no rate-limit display" (per its prop doc).
+  const rescanCap =
+    activeLocation && !shouldBypassRescanCap(me.email)
+      ? await getRescanCapStatus(supabase, activeLocation.id)
+      : null;
+
+  // Citations panel state. Fetch the open (non-paused, non-failed)
+  // citation order for this (client, location). Null when no order
+  // exists yet — panel renders the "Set up citations" CTA in that
+  // case. Pulse+ only — citations are part of the Pulse+ feature set
+  // (managed citation building is a premium-tier deliverable). Pulse
+  // and one_time clients don't see the panel.
+  const tierForGating = resolveTier(client);
+  const showCitationsPanel = canAccessCitations(tierForGating);
+  const { data: citationOrder } =
+    showCitationsPanel && activeLocation
+      ? await supabase
+          .from('citation_orders')
+          .select('*')
+          .eq('client_id', id)
+          .eq('location_id', activeLocation.id)
+          .eq('maintenance_paused', false)
+          .neq('status', 'failed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<CitationOrderRow>()
+      : { data: null };
 
   // Competitors: automatic discovery by default; per-location manual
   // override when the operator has explicitly added competitors via the
@@ -235,7 +307,7 @@ export default async function ClientDashboardPage({
 
       {latestScan && isFirstScan && (
         <div
-          className="px-8 py-3 border-b flex items-center gap-3 text-xs"
+          className="px-4 md:px-8 py-3 border-b flex items-center gap-3 text-xs"
           style={{
             background: '#0d130a',
             borderColor: 'var(--color-border)',
@@ -247,16 +319,22 @@ export default async function ClientDashboardPage({
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
             </span>{' '}
-            This is your starting point — re-scans every 90 days will show
-            your territory expanding.
+            This is the starting point — visibility expands as scans
+            re-run and the AI Coach playbook is acted on.
           </span>
         </div>
       )}
 
-      {/* Location switcher — only renders for multi-location clients */}
-      {locations.length > 1 && (
+      {/* Location + keyword switchers — share one strip. KeywordSwitcher
+          always renders (as a non-interactive pill when there's a
+          single keyword, as a dropdown when there are multiple) so the
+          active keyword is always visible at the top of the page.
+          LocationSwitcher self-hides when there's ≤ 1 location. The
+          strip mounts whenever there's at least one keyword to show
+          (i.e. always for any real client). */}
+      {keywordList.length > 0 && (
         <div
-          className="border-b px-8 py-3"
+          className="border-b px-4 md:px-8 py-3 flex items-center gap-3 md:gap-6 flex-wrap"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <LocationSwitcher
@@ -264,45 +342,57 @@ export default async function ClientDashboardPage({
             locations={locations}
             activeLocationId={activeLocation?.id ?? null}
           />
+          <KeywordSwitcher
+            clientId={client.public_id}
+            keywords={keywordList}
+            activeKeywordId={activeKeyword?.id ?? null}
+          />
         </div>
       )}
 
-      {/* Business setup bar */}
+      {/* Business setup bar — stacks on mobile, four columns at lg+ */}
       <div
-        className="border-b px-8 py-4 grid grid-cols-12 gap-4 items-center"
+        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 md:gap-4 items-start lg:items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="col-span-3">
+        <div className="lg:col-span-3 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
-          <div className="text-sm font-medium text-zinc-100">
-            {client.business_name}
-            {activeLocation && !activeLocation.is_primary && (
-              <span className="text-zinc-500 font-normal text-xs ml-1.5">
-                · {activeLocation.label || activeLocation.city || 'Location'}
+          <div className="flex items-center gap-2.5">
+            <ClientBrandMark
+              logoUrl={client.logo_url}
+              businessName={client.business_name}
+              size={28}
+            />
+            <div className="text-sm font-medium text-zinc-100 min-w-0">
+              <span className="truncate block">
+                {client.business_name}
+                {activeLocation && !activeLocation.is_primary && (
+                  <span className="text-zinc-500 font-normal text-xs ml-1.5">
+                    · {activeLocation.label || activeLocation.city || 'Location'}
+                  </span>
+                )}
               </span>
-            )}
+            </div>
           </div>
         </div>
-        <div className="col-span-3">
+        <div className="lg:col-span-4 min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Pin Location
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
-            <MapPin size={13} className="text-zinc-500" />
-            {activeLocation?.address ?? client.address}
+            <MapPin size={13} className="text-zinc-500 flex-shrink-0" />
+            <span className="truncate">
+              {activeLocation?.address ?? client.address}
+            </span>
           </div>
         </div>
-        <div className="col-span-2">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
-            Tracking Keyword
-          </div>
-          <div className="text-sm font-mono text-zinc-200 truncate">
-            {keyword?.keyword ?? '—'}
-          </div>
-        </div>
-        <div className="col-span-4 flex flex-col items-end gap-2">
+        {/* "Tracking Keyword" column removed — the active keyword is
+         *  now surfaced in the switcher strip above the business bar
+         *  (KeywordSwitcher renders a static pill for single-keyword
+         *  clients), so showing it again here was redundant. */}
+        <div className="lg:col-span-5 flex flex-col sm:items-start lg:items-end gap-2">
           <div className="text-xs text-zinc-500 font-mono">
             {latestScan ? (
               <>
@@ -349,24 +439,27 @@ export default async function ClientDashboardPage({
             )}
             <ScanButton
               clientId={client.public_id}
+              clientPublicId={client.public_id}
               locationId={activeLocation?.id ?? null}
-              keywordLabel={keyword?.keyword}
+              keywordId={activeKeyword?.id ?? null}
+              keywordLabel={latestScan ? keyword?.keyword : undefined}
               rescanCap={rescanCap}
+              hasKeyword={keywordList.length > 0}
             />
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 p-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         {/* Heatmap */}
         <div
-          className="col-span-8 border rounded-lg p-6 relative"
+          className="lg:col-span-8 border rounded-lg p-4 md:p-6 relative"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',
           }}
         >
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div>
               <h3 className="font-display text-xl font-bold">
                 Territory Heatmap
@@ -384,7 +477,7 @@ export default async function ClientDashboardPage({
                 </InfoTooltip>
               </p>
             </div>
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider flex-wrap">
               {[
                 { color: '#c5ff3a', label: '#1' },
                 { color: '#e8e54a', label: '#2' },
@@ -416,7 +509,19 @@ export default async function ClientDashboardPage({
               paired TurfReach + TurfRank (2-up grid)
               optional Momentum (full width, second+ scan only)
         */}
-        <div className="col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4">
+          {/* Attribution eyebrow — same as portal/share. Keeps the
+              score family tied to the account holder visually, even
+              when the heatmap above is toggled to a competitor view. */}
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5 flex-wrap"
+            aria-label="Score attribution"
+          >
+            <span>Visibility for</span>
+            <span className="text-zinc-200 normal-case tracking-normal font-bold">
+              {client.business_name}
+            </span>
+          </div>
           <StatCard
             variant="hero"
             label="TurfScore™"
@@ -477,17 +582,31 @@ export default async function ClientDashboardPage({
         </div>
 
         {/* AI Coach — full width below the heatmap + sidebar */}
-        <div className="col-span-12">
+        <div className="lg:col-span-12">
           <AICoach
             scanId={latestScan?.id ?? null}
             insight={insightRow ?? null}
             scanComplete={Boolean(latestScan)}
           />
         </div>
+
+        {/* Citations panel — Pulse+ / agency-managed clients only.
+         *  When no citation order exists yet, the panel surfaces a
+         *  "Set up citations" CTA pointing at the onboarding form. */}
+        {showCitationsPanel && (
+          <div className="lg:col-span-12">
+            <CitationsPanel
+              order={citationOrder ?? null}
+              clientPublicId={client.public_id}
+              locationId={activeLocation.id}
+              locationLabel={locationDisplayLabel(activeLocation)}
+            />
+          </div>
+        )}
       </div>
 
       <footer
-        className="border-t px-8 py-4 flex items-center justify-between text-xs text-zinc-600"
+        className="border-t px-4 md:px-8 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-zinc-600"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <span className="flex items-center gap-2.5">

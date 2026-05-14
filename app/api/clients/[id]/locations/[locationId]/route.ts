@@ -24,7 +24,9 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { resolveClientUuid } from '@/lib/supabase/client-lookup';
-import type { ClientLocationRow } from '@/lib/supabase/types';
+import { syncExtraLocationQuantity } from '@/lib/stripe/extraLocations';
+import { resolveTier } from '@/lib/subscription/tier';
+import type { ClientLocationRow, ClientRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
@@ -46,7 +48,6 @@ const PatchBody = z
     pin_lat: z.number().min(-90).max(90).nullable(),
     pin_lng: z.number().min(-180).max(180).nullable(),
     service_radius_miles: z.number().min(0.1).max(10),
-    gbp_url: z.string().url().max(2048).nullable(),
     is_primary: z.boolean(),
   })
   .partial()
@@ -177,5 +178,48 @@ export async function DELETE(
       { status: 500 }
     );
   }
-  return NextResponse.json({ ok: true, deleted: { id: locationId } });
+
+  // Per-location billing — drop the extra-location quantity by one
+  // (Stripe issues a prorated credit toward the next invoice). Best-
+  // effort: a Stripe failure here doesn't roll back the row delete,
+  // operator can reconcile manually if needed. No-op for non-Stripe
+  // (agency-managed / one_time) clients.
+  const { data: clientRow } = await supabase
+    .from('clients')
+    .select('id, billing_mode, tier, stripe_subscription_id')
+    .eq('id', clientId)
+    .maybeSingle<
+      Pick<
+        ClientRow,
+        'id' | 'billing_mode' | 'tier' | 'stripe_subscription_id'
+      >
+    >();
+  let billingNote: { ok: boolean; message?: string; quantity?: number } | null =
+    null;
+  if (
+    clientRow?.billing_mode === 'self_serve_subscription' &&
+    clientRow.stripe_subscription_id
+  ) {
+    const tier = resolveTier(clientRow);
+    if (tier) {
+      const { count: locationCount } = await supabase
+        .from('client_locations')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId);
+      const result = await syncExtraLocationQuantity({
+        subscriptionId: clientRow.stripe_subscription_id,
+        tier,
+        numLocations: locationCount ?? 0,
+      });
+      billingNote = result.ok
+        ? { ok: true, quantity: result.quantity }
+        : { ok: false, message: result.message };
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    deleted: { id: locationId },
+    billing: billingNote,
+  });
 }

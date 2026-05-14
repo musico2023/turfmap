@@ -48,6 +48,7 @@ import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import { ClientBrandMark } from '@/components/turfmap/ClientBrandMark';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 
 export const dynamic = 'force-dynamic';
@@ -173,14 +174,14 @@ export default async function PublicSharePage({
   );
   const sharedBy = share.agency_label?.trim() || 'Fourdots Digital';
   const ctaText = share.cta_text?.trim() || 'Want a TurfMap of your business?';
-  const ctaUrl = share.cta_url?.trim() || 'https://fourdots.io';
+  const ctaUrl = share.cta_url?.trim() || 'https://turfmap.ai';
 
   return (
     <div className="min-h-screen w-full text-white">
       {/* Branded header — not white-labeled because the audience hasn't
           signed up yet. TurfMap-branded so the tool gets the credit. */}
       <header
-        className="border-b px-8 py-5 flex items-center justify-between"
+        className="border-b px-4 md:px-8 py-5 flex items-center justify-between gap-3"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <div className="flex items-center gap-3">
@@ -211,7 +212,7 @@ export default async function PublicSharePage({
       {/* "Shared by" banner — gives the recipient a face/agency to
           attribute the report to. */}
       <div
-        className="px-8 py-3 border-b text-xs text-zinc-400"
+        className="px-4 md:px-8 py-3 border-b text-xs text-zinc-400"
         style={{
           background: '#0d130a',
           borderColor: 'var(--color-border)',
@@ -229,36 +230,47 @@ export default async function PublicSharePage({
 
       {/* Compact business meta */}
       <div
-        className="border-b px-8 py-4 grid grid-cols-12 gap-4 items-center"
+        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 items-start md:items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="col-span-4">
+        <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Business
           </div>
-          <div className="text-sm font-medium text-zinc-100">
-            {client.business_name}
-            {scanLocation && !scanLocation.is_primary && (
-              <span className="text-zinc-500 font-normal text-xs ml-1.5">
-                · {locationDisplayLabel(scanLocation)}
+          <div className="flex items-center gap-2.5">
+            <ClientBrandMark
+              logoUrl={client.logo_url}
+              businessName={client.business_name}
+              size={28}
+            />
+            <div className="text-sm font-medium text-zinc-100 min-w-0">
+              <span className="truncate block">
+                {client.business_name}
+                {scanLocation && !scanLocation.is_primary && (
+                  <span className="text-zinc-500 font-normal text-xs ml-1.5">
+                    · {locationDisplayLabel(scanLocation)}
+                  </span>
+                )}
               </span>
-            )}
+            </div>
           </div>
         </div>
-        <div className="col-span-4">
+        <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Pin Location
           </div>
           <div className="text-sm flex items-center gap-1.5 text-zinc-200">
-            <MapPin size={13} className="text-zinc-500" />
-            {scanLocation?.address ?? client.address}
+            <MapPin size={13} className="text-zinc-500 flex-shrink-0" />
+            <span className="truncate">
+              {scanLocation?.address ?? client.address}
+            </span>
           </div>
         </div>
-        <div className="col-span-4">
+        <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 font-semibold">
             Tracked Keyword
           </div>
-          <div className="text-sm font-mono text-zinc-200">
+          <div className="text-sm font-mono text-zinc-200 truncate">
             {keyword?.keyword ?? '—'}
           </div>
         </div>
@@ -266,15 +278,15 @@ export default async function PublicSharePage({
 
       {/* Heatmap + sidebar — same shape as portal/dashboard but
           internals stripped out. */}
-      <div className="grid grid-cols-12 gap-6 p-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         <div
-          className="col-span-8 border rounded-lg p-6 relative"
+          className="lg:col-span-8 border rounded-lg p-4 md:p-6 relative"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',
           }}
         >
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div>
               <h3 className="font-display text-xl font-bold">
                 Territory Heatmap
@@ -284,7 +296,7 @@ export default async function PublicSharePage({
                 {scanLocation?.service_radius_miles ?? client.service_radius_miles ?? 1.6}mi radius
               </p>
             </div>
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider flex-wrap">
               {[
                 { color: '#c5ff3a', label: '#1' },
                 { color: '#e8e54a', label: '#2' },
@@ -313,7 +325,22 @@ export default async function PublicSharePage({
           />
         </div>
 
-        <div className="col-span-4 space-y-4">
+        <div className="lg:col-span-4 space-y-4">
+          {/* Attribution eyebrow — same intent as on /portal: the
+              score family is the account holder's, not whoever the
+              heatmap is currently toggled to show. Especially
+              important on share links where the recipient may have
+              no prior context for whose territory they're looking
+              at. */}
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold flex items-center gap-1.5 flex-wrap"
+            aria-label="Score attribution"
+          >
+            <span>Visibility for</span>
+            <span className="text-zinc-200 normal-case tracking-normal font-bold">
+              {client.business_name}
+            </span>
+          </div>
           <StatCard
             variant="hero"
             label="TurfScore™"
@@ -341,7 +368,7 @@ export default async function PublicSharePage({
           <CompetitorTable competitors={competitors} />
         </div>
 
-        <div className="col-span-12">
+        <div className="lg:col-span-12">
           <AICoach
             scanId={null}
             insight={insightRow ?? null}
@@ -353,7 +380,7 @@ export default async function PublicSharePage({
       {/* CTA footer — the conversion lever. Points to the agency's
           chosen URL (Fourdots Digital by default). */}
       <footer
-        className="border-t px-8 py-6 flex items-center justify-between"
+        className="border-t px-4 md:px-8 py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         style={{
           background:
             'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)',
@@ -430,10 +457,10 @@ function ExpiredScreen({
         <h3 className="font-display text-lg font-bold mb-2">{headline}</h3>
         <p className="text-xs text-zinc-400 leading-relaxed mb-5">{body}</p>
         <Link
-          href="https://fourdots.io"
+          href="https://turfmap.ai"
           className="text-xs font-mono text-zinc-500 hover:text-zinc-300"
         >
-          fourdots.io →
+          turfmap.ai →
         </Link>
       </div>
     </div>

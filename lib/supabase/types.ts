@@ -24,6 +24,24 @@ export type BillingMode =
 /** Mirrored from Stripe's `Subscription.status` field. Null for any
  *  client that isn't on a recurring plan. See migration 0008 for the
  *  CHECK constraint covering this set. */
+/** Pulse / Pulse+ tier — the recurring-subscription level on this
+ *  client (added in migration 0014). Drives the agency dashboard's
+ *  tier toggle + the per-feature gating for Pulse+-only surfaces
+ *  (citations, exports, granular alerts, 10-keyword cap).
+ *
+ *  NULL when the client has no recurring tier (one_time clients).
+ *  Resolved from Stripe webhook events going forward, but operators
+ *  can override manually via /api/clients/[id]/tier. */
+export type SubscriptionTier = 'pulse' | 'pulse_plus';
+
+/** Post-checkout onboarding wizard state for self-serve subscription
+ *  buyers. See migration 0020. */
+export type OnboardingStep =
+  | 'gbp_match'
+  | 'portal_users'
+  | 'competitors'
+  | 'done';
+
 export type SubscriptionStatus =
   | 'trialing'
   | 'active'
@@ -85,8 +103,84 @@ export type ClientRow = {
   /** Mirrored from Stripe webhook events. Null for non-subscription
    *  billing modes. */
   subscription_status: SubscriptionStatus | null;
+  /** Pulse / Pulse+ recurring tier (added in migration 0014).
+   *  Drives feature gating + the agency tier toggle. NULL on
+   *  one_time clients. */
+  tier: SubscriptionTier | null;
+  /** Buyer email captured at agency-side create time when the
+   *  operator picked a Stripe plan (Pulse / Pulse+). Used to (a)
+   *  send the initial Stripe Checkout link via Resend, and (b)
+   *  regenerate the link later if the buyer abandons / the
+   *  Checkout session expires. Added in migration 0016. NULL for
+   *  agency_managed clients (no Stripe relationship) and for
+   *  marketing-tripwire buyers (Stripe customer.email is the
+   *  authoritative source post-Checkout). */
+  pending_buyer_email: string | null;
+  /** Post-checkout onboarding wizard state. Set by /api/orders/fulfill
+   *  for self-serve subscription buyers; advanced via the buyer-side
+   *  wizard surface (`/api/onboarding/[publicId]`). NULL for clients
+   *  not in a wizard flow. Added in migration 0020. */
+  onboarding_step: OnboardingStep | null;
+  /** TRUE for rows inserted by outreach enrichment (cold-lead
+   *  campaigns). Hides from agency listing + cron pipelines. Added
+   *  in migration 0021. */
+  is_outreach_lead: boolean;
+  /** Per-client alert preferences (added in migration 0013). JSONB
+   *  blob with the toggles + thresholds described in AlertPrefs. The
+   *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs
+   *  fills any missing keys for backward compat. */
+  alert_prefs: AlertPrefs | null;
+  /** Slack incoming-webhook URL. Set by the OAuth flow at
+   *  /api/integrations/slack/callback (post-migration 0015). Pre-OAuth
+   *  this column was operator-pasted; the new flow writes the
+   *  per-channel webhook Slack returns from the incoming-webhook
+   *  scope. Null means Slack delivery is disabled for this client. */
+  slack_webhook_url: string | null;
+  /** Slack workspace display name (e.g. "Acme Corp"). Captured at
+   *  OAuth time alongside slack_webhook_url for UI display only —
+   *  alert dispatch only cares about the webhook URL. Added in
+   *  migration 0015. */
+  slack_team_name: string | null;
+  /** Slack channel display name (e.g. "#alerts"). Captured at OAuth
+   *  time. UI display only. Added in migration 0015. */
+  slack_channel_name: string | null;
+  /** Looker Studio access token. Per-client random string the
+   *  operator generates from the Exports card; Looker authenticates
+   *  on token alone. Null means Looker export is disabled. */
+  looker_token: string | null;
+  /** Per-alert-type debounce map: alert_type → last-fired-iso.
+   *  Keeps a flapping score from re-firing the same alert on every
+   *  scan inside a short window. */
+  alerts_last_fired_at: Record<string, string> | null;
   onboarded_at: string | null;
   created_at: string | null;
+};
+
+/** Per-client alert preferences. Stored as JSONB on
+ *  clients.alert_prefs so adding new alert types doesn't require a
+ *  schema migration. */
+export type AlertPrefs = {
+  /** Email when |score - prior_score| ≥ score_movement_threshold. */
+  score_movement_email: boolean;
+  score_movement_threshold: number;
+  /** Email when a NEW competitor brand enters the 3-pack on this
+   *  scan (not seen in the prior scan's local pack). */
+  competitor_entries_email: boolean;
+  /** Email when momentum flips sign (positive → negative or vice
+   *  versa). */
+  momentum_reversal_email: boolean;
+  /** Email when individual grid cells change rank by >= 1 position.
+   *  OFF by default — extremely noisy. */
+  cell_changes_email: boolean;
+  /** Weekly digest email summarizing competitor movement (separate
+   *  from the per-scan competitor_entries alerts above). */
+  weekly_competitor_summary_email: boolean;
+  /** Monthly PDF report email — sent on the 1st of each month with
+   *  the latest scan rendered as a TurfReport PDF attached.
+   *  Defaults to true so existing buyers keep getting the report;
+   *  buyers who don't want a monthly inbox attachment can toggle
+   *  this off in AlertPrefsCard. */
+  monthly_pdf_email: boolean;
 };
 
 /** A physical location of a client (added in migration 0006). One client
@@ -110,8 +204,27 @@ export type ClientLocationRow = {
   pin_lat: number | null;
   pin_lng: number | null;
   service_radius_miles: number | null;
-  /** Optional Google Business Profile URL for this location. */
-  gbp_url: string | null;
+  /** Stable Google Places (New) place_id. Set at onboarding when the
+   *  strict-match guardrail passes; cleared if the operator rejects. */
+  google_place_id: string | null;
+  /** Operator-confirmation state. See migration 0019. */
+  google_place_match_status:
+    | 'auto'
+    | 'confirmed'
+    | 'manual'
+    | 'rejected'
+    | 'no_match'
+    | null;
+  google_place_match_distance_m: number | null;
+  google_place_match_name_similarity: number | null;
+  /** Per-location NAP re-sync counter (added in migration 0012). Resets
+   *  at the start of each quarter via cron. Used by the §6 re-sync
+   *  gate to enforce the 3-onboarding + 3-quarterly free cap before
+   *  the operator is charged for over-cap BL re-syncs. */
+  citation_resync_count: number | null;
+  /** ISO timestamp of the next quarterly counter reset. Null until the
+   *  first re-sync sets the quarterly window start. */
+  citation_resync_quota_resets_at: string | null;
   created_at: string | null;
 };
 
@@ -305,6 +418,227 @@ export type LeadOrderRow = {
    *  { stripe_customer_id, payment_status, amount_total, currency }. */
   stripe_metadata: unknown | null;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ─── Citations (BrightLocal Citation Builder, migration 0012) ─────────────
+
+/** Per-directory submission status as stored in
+ *  `citation_orders.per_directory[]`. The shape is vendor-agnostic so
+ *  we can swap BL → Yext / Synup later without re-shaping the column.
+ *
+ *  status:
+ *   - pending      — queued at vendor, not yet submitted
+ *   - submitted    — sent to the directory; awaiting acceptance
+ *   - live         — directory accepted + listing is publicly visible
+ *   - needs_review — directory requires extra action (owner-verification
+ *                    postcard, phone code, manual claim) — operator
+ *                    must intervene
+ *   - failed       — directory rejected the submission terminally
+ */
+export type CitationDirectoryStatus =
+  | 'pending'
+  | 'submitted'
+  | 'live'
+  | 'needs_review'
+  | 'failed';
+
+export type CitationDirectoryEntry = {
+  /** Vendor-canonical directory slug (e.g. 'bing', 'yelp', 'apple-maps'). */
+  directory: string;
+  status: CitationDirectoryStatus;
+  submitted_at: string | null;
+  live_at: string | null;
+  /** Public URL of the live listing. Null until status='live'. */
+  url: string | null;
+  /** Reason for needs_review or failed. Surfaced verbatim in the
+   *  operator-facing dashboard panel. */
+  message: string | null;
+};
+
+export type CitationOrderStatus =
+  | 'queued'
+  | 'in_progress'
+  | 'complete'
+  | 'partial'
+  | 'failed';
+
+/** Snapshot of the buyer's onboarding profile at submit time. Stored on
+ *  citation_orders.submitted_profile so a NAP edit on the client row
+ *  doesn't retroactively change what we sent to BL — and the §6
+ *  re-sync gate can compute exactly which fields changed since the
+ *  last submission. */
+export type CitationSubmittedProfile = {
+  business_name: string;
+  street_address: string | null;
+  city: string | null;
+  region: string | null;
+  postcode: string | null;
+  country_code: string | null;
+  phone: string | null;
+  website: string | null;
+  /** Primary GBP category. */
+  primary_category: string | null;
+  /** Up to ~9 additional GBP categories. */
+  additional_categories: string[] | null;
+  /** Plain-text description, ~500 chars. */
+  description: string | null;
+  /** Hours payload, BL-shaped — keyed by day, each value is "HH:MM-HH:MM"
+   *  or "closed" or "24h". */
+  hours: Record<string, string> | null;
+  /** Public URLs of photos hosted in the client-logos bucket (or
+   *  another asset bucket if we add one later). */
+  photo_urls: string[] | null;
+};
+
+// ─── Cold-email prospects (migration 0024) ────────────────────────────
+
+/** A single cold-email prospect. Written by the lead-gen pipeline,
+ *  read by /yourmap for personalization, stamped on conversion +
+ *  audit upgrade. ID is a short nanoid embedded in outreach URLs. */
+export type ProspectRow = {
+  id: string;
+  business_name: string;
+  city: string;
+  trade: string;
+  preview_score: number;
+  invisibility_count: number;
+  top_competitor_name: string | null;
+  top_competitor_share_pct: number | null;
+  email_sent_at: string | null;
+  email_campaign: string | null;
+  source_pipeline_run_id: string | null;
+  page_viewed_at: string | null;
+  view_count: number;
+  converted_at: string | null;
+  upgraded_to_audit_at: string | null;
+  created_at: string;
+};
+
+// ─── Visibility Audits (migration 0022) ───────────────────────────────
+
+/** Lifecycle states for a Visibility Audit purchase. Linear progression;
+ *  rows never go backwards. Status is what the cron sweeps + dashboards
+ *  filter on, so the values are exhaustive and constrained by a CHECK. */
+export type VisibilityAuditStatus =
+  | 'pending_call_schedule'
+  | 'call_scheduled'
+  | 'call_completed'
+  | 'post_call_sent'
+  | 'sixty_day_prompted'
+  | 'sixty_day_completed';
+
+/** Action category — drives the dashboard nudge text + LLM service
+ *  mapping. The 'other' bucket is the catchall for buyer-specific
+ *  actions the AI surfaces that don't fit a named category. Anything
+ *  in the named categories (review_velocity, gbp_*, etc.) is
+ *  considered LLM-covered by lib/audit/actionCategories.ts. */
+export type ActionCategory =
+  | 'review_velocity'
+  | 'directory_claiming'
+  | 'gbp_optimization'
+  | 'gbp_photos'
+  | 'schema_integration'
+  | 'nap_consistency'
+  | 'other';
+
+export type DifficultyRating = 'DIY-easy' | 'DIY-medium' | 'DIY-hard';
+export type ActionPriority = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** LLM Fit Score breakdown, stored on visibility_audits.llm_fit_breakdown.
+ *  Surfaced in the strategist prep notes so Anthony can see why the
+ *  score landed where it did. */
+export type LlmFitBreakdown = {
+  /** Final 1-5 score that was computed. */
+  score: number;
+  /** Inputs that fed the rules engine. NULL signals a missing input
+   *  (we couldn't determine the value, not "FALSE"). */
+  inputs: {
+    /** "low" (<$50K/mo), "mid" ($50-150K/mo), "high" ($150K+/mo). */
+    revenue_band: 'low' | 'mid' | 'high' | null;
+    /** TRUE for HVAC/Roofing/Plumbing/Electrical/Renovation/Restoration/
+     *  Landscaping/Windows-Doors. */
+    trade_fit: boolean | null;
+    /** TRUE for major metros (population ≥100K typically). */
+    metro_fit: boolean | null;
+    /** TRUE if Apify or Apollo data shows currently-active paid ads. */
+    ad_active: boolean | null;
+    /** Raw review count from GBP, fed through the revenue inference. */
+    review_count: number | null;
+  };
+  /** Rule hits — the named rules that fired. Useful for debugging
+   *  why a buyer landed at 4 vs. 5 without re-running the engine. */
+  rule_hits: string[];
+};
+
+export type VisibilityAuditRow = {
+  id: string;
+  lead_order_id: string;
+  scan_id: string;
+  client_id: string;
+  status: VisibilityAuditStatus;
+  strategist_call_scheduled_at: string | null;
+  strategist_call_completed_at: string | null;
+  post_call_email_sent_at: string | null;
+  sixty_day_prompted_at: string | null;
+  sixty_day_check_scheduled_at: string | null;
+  sixty_day_check_completed_at: string | null;
+  /** Phase 3 milestone-email gates. Set to NOW() when the
+   *  corresponding cron-driven email lands; subsequent sweeps skip
+   *  rows where the field IS NOT NULL so we never double-send. */
+  prep_email_sent_at: string | null;
+  day_25_reminder_sent_at: string | null;
+  day_67_followup_sent_at: string | null;
+  roadmap_pdf_url: string | null;
+  prep_notes_url: string | null;
+  starting_turfscore: number | null;
+  lift_promise_target_score: number | null;
+  actual_lift_score: number | null;
+  lift_promise_met: boolean | null;
+  llm_fit_score: number | null;
+  llm_fit_breakdown: LlmFitBreakdown | null;
+  snippet_used: 'llm_pitch' | 'audit_only' | null;
+  llm_application_sent_at: string | null;
+  llm_application_completed_at: string | null;
+  fathom_recording_url: string | null;
+  fathom_summary: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RoadmapActionRow = {
+  id: string;
+  audit_id: string;
+  week_number: number;
+  action_text: string;
+  action_category: ActionCategory;
+  projected_score_lift: number;
+  difficulty_rating: DifficultyRating;
+  priority: ActionPriority;
+  llm_covered: boolean;
+  completed: boolean;
+  completed_at: string | null;
+  created_at: string;
+};
+
+// ─── Citations (BrightLocal Citation Builder, migration 0012, cont.) ──
+
+/** A single citation-build order. One row per (location, vendor order).
+ *  Re-orders after churn create new rows; the partial unique constraint
+ *  in 0012 prevents duplicate live orders for the same location. */
+export type CitationOrderRow = {
+  id: string;
+  client_id: string;
+  location_id: string;
+  brightlocal_order_id: string | null;
+  status: CitationOrderStatus;
+  per_directory: CitationDirectoryEntry[];
+  wholesale_cents: number | null;
+  billed_cents: number | null;
+  maintenance_paused: boolean;
+  submitted_profile: CitationSubmittedProfile | null;
+  error: string | null;
   created_at: string;
   updated_at: string;
 };

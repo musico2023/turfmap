@@ -50,7 +50,7 @@ import { momentumCaption } from '@/lib/metrics/momentum';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import type { NapAuditFindings } from '@/lib/supabase/types';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v9';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v11';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -142,23 +142,32 @@ Don't speculate about WHY Momentum moved without supporting data; just read the 
 # Anti-confabulation rules — read carefully
 
 The user prompt provides EXACTLY the data you have. You do NOT have access to:
-- Review counts, ratings, or review recency for any business (yours or competitors')
-- GBP photo counts, post cadence, age of listing, category settings
+- Review counts, ratings, photo counts, primary category, or hours for COMPETITORS (you only ever see rank-pattern + brand-name data for them)
+- Review recency, listing age, or GBP post cadence for ANY business
 - Citation profiles or backlink data BEYOND what the optional NAP audit section provides
 - On-site content beyond what the NAP audit section provides
-- Anything beyond rank patterns, brand names, the metric values, and the NAP audit findings (when present) in the user prompt
+- Anything beyond rank patterns, brand names, the metric values, the NAP audit findings (when present), and the GBP signals (when present) in the user prompt
 
 When recommending actions, you MAY suggest them generically (e.g. "audit GBP categories", "push review velocity"). You MAY NOT cite specific quantitative claims that aren't in the user prompt. Examples of forbidden output:
-- "Competitor X has only 12 reviews" — you don't have review data
-- "Their listing is older / newer than yours" — you don't have age data
-- "Photos and posts are deciding the filter" — you can't see photos or post cadence
+- "Competitor X has only 12 reviews" — you don't have competitor review data
+- "Their listing is older / newer than yours" — you don't have listing-age data
+- "Photos and posts are deciding the filter" — you can't see post cadence
 - Any specific brand name not present in the competitor list provided
 
 If you find yourself wanting to cite a number or attribute that wasn't in the user prompt, REPHRASE without it.
 
+# GBP signals (when present)
+
+If the user prompt includes a "## GBP signals" section, those values are grounded — sourced from a recent Google Places lookup for THIS business's verified GBP listing. You MAY:
+- Cite the rating, review count, primary category, secondary categories, photo count, weekly hours summary, and business status verbatim when relevant.
+- Compare those values against the rank pattern to diagnose specific levers (e.g. "47 reviews + Patchy reach → review velocity is the clear lever; competitors winning the territory generally hit 100+ before reach stabilizes" — you may cite YOUR review count, not competitor review counts).
+- Flag concerning values (business_status not OPERATIONAL, very low photos_count, missing editorial summary) when other diagnoses are weak.
+
+These permissions extend ONLY to the audited business, never to competitors. Competitor reviews/categories/hours are still off-limits.
+
 # NAP audit findings (when present)
 
-If the user prompt includes a "## NAP audit" section, that data is grounded — sourced from a real BrightLocal Listings sweep. You SHOULD:
+If the user prompt includes a "## NAP audit" section, that data is grounded — sourced from a real citation/directory audit run via TurfMap. You SHOULD:
 - Cite specific directories by name when present (e.g. "Yelp shows the wrong phone, BBB has a stale street number").
 - Cite the specific inconsistency field (name / address / phone) and the canonical vs. found values when proposing a cleanup action.
 - Treat ≥ 3 inconsistencies or ≥ 5 missing high-priority directories as concrete evidence for an "NAP / citation chaos" diagnosis — say so in plain words.
@@ -171,9 +180,23 @@ If no "## NAP audit" section is in the user prompt, do not speculate about citat
 If the user prompt includes a "## Sibling locations" section, the audited business is one storefront of a multi-location brand. Reason accordingly:
 - The scan grid, score family, and NAP audit are ALL scoped to ONE specific location (the one named in the user prompt as "Location"). Recommendations should target that location, not the brand as a whole.
 - Sibling locations are listed for context only. Do NOT recommend changes to a sibling's listing unless explicitly relevant.
-- A NAP finding labeled "occupied by sibling: <label> at <address>" means the directory has a brand listing but for a DIFFERENT storefront. Treat this as the audited location being missing from that directory — but the recommendation should be "add this location's listing alongside the existing <sibling label> listing" (a multi-location claim flow), NOT "fix the sibling's address" (which is correct).
+- A NAP finding labeled "occupied by sibling: <label> at <address>" means the directory has a brand listing but for a DIFFERENT storefront. Treat this as the audited location being missing from that directory — but the recommendation should be "add a separate listing for this location alongside the existing <sibling label> listing", NOT "fix the sibling's address" (which is correct). Do NOT use the phrase "multi-location claim flow" — that's internal jargon and confuses operators. Phrase it as a concrete action ("submit a new listing for this storefront via your citation-building service / directly on the directory's add-a-business form").
 - If you would otherwise recommend "fix wrong address on directory X," but the user prompt's sibling list shows that "wrong" address belongs to a real sibling location, DO NOT recommend the fix. Recommend adding this location instead.
 - The brand-level Google Business Profile rule applies: each physical location needs its own GBP listing (Google's policy forbids two locations on one GBP). Sibling-occupied directories follow the same logic.
+
+# Operator workflow — where recommendations route to
+
+The reader is a TurfMap operator (or their client looking at a TurfMap dashboard). They do their citation work, NAP updates, and scan management INSIDE TurfMap. They do NOT have direct access to underlying audit/citation tools, review platforms, or any third-party SaaS.
+
+When recommending NAP, citation, or directory work, route the action through the TurfMap surface:
+- "Update the canonical NAP in client settings, then trigger a citations resync from the citations panel" — yes
+- "Push a new citation submission for <directory> via TurfMap's citations panel" — yes
+- "Fix the canonical NAP in BrightLocal" — NO, never. The operator can't see BrightLocal.
+- "Update your Yext profile" — NO, never reference any underlying provider by name.
+
+Same rule applies to scan management ("re-run a scan from the scans panel"), AI Coach itself ("regenerate the playbook"), competitor tracking ("add a competitor in the competitors panel"), etc. Never reference DataForSEO, BrightLocal, Yext, Anthropic, or any other vendor by name in recommendations — the operator's mental model is TurfMap.
+
+For GBP / Google Business Profile work, do reference Google directly (it's the operator's actual workflow surface — they log into Google Business Profile to update categories, hours, photos, post). That's not an underlying provider, it's where GBP edits happen.
 
 # Style requirements
 
@@ -199,6 +222,23 @@ export type ScoreHistoryEntry = {
   date: string;
   /** TurfScore 0-100 for that day. */
   score: number;
+};
+
+/** GBP signals from the most recent Google Places (New) Place Details
+ *  fetch for this location's verified listing. When present, the
+ *  AI Coach is permitted to cite these values verbatim — they're
+ *  grounded data, not training-data confabulation. */
+export type GbpSignalsContext = {
+  rating: number | null;
+  reviewCount: number | null;
+  primaryType: string | null;
+  types: string[] | null;
+  businessStatus: string | null;
+  photosCount: number | null;
+  hoursSummary: string[] | null;
+  editorialSummary: string | null;
+  /** ISO timestamp of the underlying Google fetch. */
+  fetchedAt: string;
 };
 
 export function buildTurfCoachUserPrompt(input: {
@@ -246,6 +286,12 @@ export function buildTurfCoachUserPrompt(input: {
    *  calendar day so same-day rescan noise doesn't pollute the history.
    *  Empty array hides the "## Score history" section. */
   scoreHistory?: ScoreHistoryEntry[];
+  /** Optional GBP signals from the latest Google Places (New) fetch.
+   *  When present, the prompt renders a "## GBP signals" section so
+   *  Claude can cite specific category / rating / review-count / hours
+   *  data instead of generic recommendations. Null when no place_id
+   *  was matched at onboarding or no signals row exists yet. */
+  gbpSignals?: GbpSignalsContext | null;
 }): string {
   const center = Math.floor(input.rankGrid.length / 2);
   const gridText = input.rankGrid
@@ -297,8 +343,8 @@ ${gridText}
 
 Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference:
 ${compRows}
-${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderNapAuditSection(input.napAudit)}
-Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}`;
+${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderGbpSignalsSection(input.gbpSignals)}${renderNapAuditSection(input.napAudit)}
+Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, primary category, secondary categories, photos count, hours, and business status verbatim from that section.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}`;
 }
 
 /** Score history block — last 7 distinct scan-day TurfScores. Renders
@@ -343,7 +389,62 @@ ${rows}
 Rules:
   - Recommendations should target the AUDITED location only, not siblings.
   - A directory listing whose address matches a sibling's address (above) is NOT an inconsistency — it's a legitimate sibling listing. Do not recommend fixing it.
-  - Such directories ARE counted as missing for the audited location; the right action is to add this location's listing alongside the existing sibling listing (multi-location claim flow), not edit the sibling's record.
+  - Such directories ARE counted as missing for the audited location; the right action is to add a separate listing for this location alongside the existing sibling listing, not edit the sibling's record. Phrase the recommendation in plain operator-facing language (e.g. "submit a new <directory> listing for this storefront") — never use the phrase "multi-location claim flow".
+`;
+}
+
+/** GBP signals block — most recent Google Places snapshot for the
+ *  audited location's verified listing. Empty when no signals row
+ *  exists (no place_id matched at onboarding, or refresh hasn't run). */
+function renderGbpSignalsSection(
+  signals: GbpSignalsContext | null | undefined
+): string {
+  if (!signals) return '';
+  const lines: string[] = [];
+  if (signals.rating !== null && signals.reviewCount !== null) {
+    lines.push(
+      `  - Rating: ${signals.rating.toFixed(1)} / 5 across ${signals.reviewCount} reviews`
+    );
+  } else if (signals.rating !== null) {
+    lines.push(`  - Rating: ${signals.rating.toFixed(1)} / 5`);
+  } else if (signals.reviewCount !== null) {
+    lines.push(`  - Reviews: ${signals.reviewCount}`);
+  }
+  if (signals.primaryType) {
+    const secondary = (signals.types ?? [])
+      .filter((t) => t !== signals.primaryType)
+      .slice(0, 6);
+    lines.push(
+      `  - Primary category: ${signals.primaryType}${
+        secondary.length > 0
+          ? ` (secondary: ${secondary.join(', ')})`
+          : ' (no secondary categories)'
+      }`
+    );
+  }
+  if (signals.photosCount !== null) {
+    lines.push(`  - Photos on listing: ${signals.photosCount}`);
+  }
+  if (signals.businessStatus && signals.businessStatus !== 'OPERATIONAL') {
+    lines.push(`  - Business status: ${signals.businessStatus} (concerning — not OPERATIONAL)`);
+  } else if (signals.businessStatus) {
+    lines.push(`  - Business status: ${signals.businessStatus}`);
+  }
+  if (signals.hoursSummary && signals.hoursSummary.length > 0) {
+    lines.push(
+      `  - Weekly hours:\n${signals.hoursSummary.map((h) => `    · ${h}`).join('\n')}`
+    );
+  }
+  if (signals.editorialSummary) {
+    lines.push(`  - Google's editorial summary: "${signals.editorialSummary}"`);
+  }
+  if (lines.length === 0) return '';
+  return `
+
+## GBP signals (Google Places — audited business only)
+
+Snapshot fetched ${signals.fetchedAt}. These values are grounded; you may cite them verbatim.
+${lines.join('\n')}
 `;
 }
 
@@ -412,7 +513,7 @@ function renderNapAuditSection(
 
   return `
 
-## NAP audit (BrightLocal Listings, completed ${ts})
+## NAP audit (TurfMap citation audit, completed ${ts})
 
 Citations found: ${citationCount} · Inconsistencies: ${incCount} · Missing: ${missCount}
 

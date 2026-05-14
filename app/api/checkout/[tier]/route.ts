@@ -73,15 +73,31 @@ import { NextRequest, NextResponse } from 'next/server';
 
 type Tier = 'scan' | 'audit' | 'strategy' | 'pulse' | 'pulse_plus';
 
-const TIER_TO_ENV: Record<Tier, string> = {
+type Cadence = 'monthly' | 'annual';
+
+/** One-time tiers map to a single env var (no cadence dimension).
+ *  Subscription tiers map to a (tier, cadence) pair. */
+const ONE_TIME_TIER_TO_ENV: Record<
+  'scan' | 'audit' | 'strategy',
+  string
+> = {
   scan: 'NEXT_PUBLIC_STRIPE_PRICE_SCAN',
   audit: 'NEXT_PUBLIC_STRIPE_PRICE_AUDIT',
   strategy: 'NEXT_PUBLIC_STRIPE_PRICE_STRATEGY',
-  pulse: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY',
-  // Renamed from PULSE_PLUS_MONTHLY to PULSEPLUS_MONTHLY so the env
-  // namespace cleanly separates from the (yet-to-exist) PULSEPLUS_ANNUAL
-  // price; matches the convention specified in the marketing-tier brief.
-  pulse_plus: 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY',
+};
+
+const SUBSCRIPTION_TIER_TO_ENV: Record<
+  'pulse' | 'pulse_plus',
+  Record<Cadence, string>
+> = {
+  pulse: {
+    monthly: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_MONTHLY',
+    annual: 'NEXT_PUBLIC_STRIPE_PRICE_PULSE_ANNUAL',
+  },
+  pulse_plus: {
+    monthly: 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY',
+    annual: 'NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_ANNUAL',
+  },
 };
 
 /** One-time tiers use Stripe `mode: 'payment'`; recurring tiers use
@@ -99,6 +115,25 @@ function isTier(s: string): s is Tier {
   );
 }
 
+function isCadence(s: string | null): s is Cadence {
+  return s === 'monthly' || s === 'annual';
+}
+
+/** Resolves the env var key + price for the (tier, cadence) tuple.
+ *  Returns null on a malformed combination (e.g. cadence on a
+ *  one-time tier — currently rejected; future could allow). */
+function resolvePriceEnv(
+  tier: Tier,
+  cadence: Cadence
+): { envKey: string; priceId: string | undefined } | null {
+  if (tier === 'scan' || tier === 'audit' || tier === 'strategy') {
+    const envKey = ONE_TIME_TIER_TO_ENV[tier];
+    return { envKey, priceId: process.env[envKey] };
+  }
+  const envKey = SUBSCRIPTION_TIER_TO_ENV[tier][cadence];
+  return { envKey, priceId: process.env[envKey] };
+}
+
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ tier: string }> }
@@ -111,9 +146,40 @@ export async function POST(
     );
   }
 
+  // Cadence is read from a query param (POST URL is short, no body
+  // needed for one-time tiers). Defaults to 'monthly' for
+  // subscription tiers when unspecified — preserves back-compat with
+  // marketing CTAs that haven't yet adopted the toggle. One-time
+  // tiers ignore the param.
+  const url = new URL(req.url);
+  const cadenceParam = url.searchParams.get('cadence');
+  const cadence: Cadence = isCadence(cadenceParam) ? cadenceParam : 'monthly';
+
+  // Coupon + attribution params. The /fourdots lander forwards these from
+  // the popup URL so the buyer never has to manually paste a code on
+  // the Stripe checkout page, and so we can attribute the conversion
+  // back to the source campaign in Stripe + GA4.
+  const couponParam = (url.searchParams.get('coupon') ?? '').trim();
+  const utmSource = url.searchParams.get('utm_source') ?? '';
+  const utmMedium = url.searchParams.get('utm_medium') ?? '';
+  const utmCampaign = url.searchParams.get('utm_campaign') ?? '';
+  const gclid = url.searchParams.get('gclid') ?? '';
+  const clientReferenceId = url.searchParams.get('client_reference_id') ?? '';
+  // Cold-email cohort attribution. /yourmap forwards this so the
+  // fulfill route can stamp prospects.converted_at when the buyer
+  // completes payment + the funnel dashboard can join conversions
+  // back to the originating outreach record.
+  const prospectId = url.searchParams.get('prospect_id') ?? '';
+
   const secretKey = process.env.STRIPE_SECRET_KEY;
-  const priceEnvKey = TIER_TO_ENV[tierParam];
-  const priceId = process.env[priceEnvKey];
+  const resolved = resolvePriceEnv(tierParam, cadence);
+  if (!resolved) {
+    return NextResponse.json(
+      { error: `unable to resolve price for "${tierParam}" / "${cadence}"` },
+      { status: 400 }
+    );
+  }
+  const { envKey: priceEnvKey, priceId } = resolved;
 
   if (!secretKey) {
     return NextResponse.json(
@@ -127,7 +193,7 @@ export async function POST(
   if (!priceId) {
     return NextResponse.json(
       {
-        error: `Checkout not yet configured for "${tierParam}". Set ${priceEnvKey}.`,
+        error: `Checkout not yet configured for "${tierParam}" (${cadence}). Set ${priceEnvKey}.`,
       },
       { status: 503 }
     );
@@ -159,25 +225,138 @@ export async function POST(
 
   const isSubscription = SUBSCRIPTION_TIERS.has(tierParam);
 
+  // Resolve the coupon code (if any) to a Stripe `discounts` array.
+  // Stripe accepts EITHER a Promotion Code id (`promo_xxx`) or a
+  // Coupon id — but the URL gives us the customer-facing string,
+  // which for Promotion Codes needs a server-side lookup to convert
+  // to the id. Strategy: try Promotion Code lookup first (the more
+  // common case for landing-page codes); fall back to treating the
+  // raw string as a Coupon id if no active Promotion Code matches.
+  // If neither resolves, drop the discount silently — checkout will
+  // proceed at full price + the buyer can still paste the code into
+  // Stripe's promo-code field (allow_promotion_codes stays on as a
+  // safety net).
+  let discounts: Array<
+    { promotion_code: string } | { coupon: string }
+  > | undefined = undefined;
+  if (couponParam) {
+    try {
+      const promos = await stripe.promotionCodes.list({
+        code: couponParam,
+        active: true,
+        limit: 1,
+      });
+      if (promos.data[0]?.id) {
+        discounts = [{ promotion_code: promos.data[0].id }];
+      } else {
+        // No active promotion code with this string — try as a raw
+        // Coupon id. Stripe will throw on session create if neither
+        // works; the catch below falls back to no-discount checkout.
+        discounts = [{ coupon: couponParam }];
+      }
+    } catch {
+      // Promotion-code lookup failed (network, rate limit, etc.);
+      // fall back to raw Coupon id below. We still want checkout to
+      // proceed even if the discount can't be auto-applied.
+      discounts = [{ coupon: couponParam }];
+    }
+  }
+
+  // Stripe metadata is a flat string-string map. We collapse the
+  // attribution params onto it so they're queryable from the
+  // dashboard + present on the checkout.session.completed webhook
+  // payload — that's where the real conversion-tracking lives. Empty
+  // values are dropped so the metadata stays lean.
+  const attribution: Record<string, string> = {};
+  if (utmSource) attribution.utm_source = utmSource;
+  if (utmMedium) attribution.utm_medium = utmMedium;
+  if (utmCampaign) attribution.utm_campaign = utmCampaign;
+  if (gclid) attribution.gclid = gclid;
+  if (couponParam) attribution.coupon = couponParam;
+  // Cold-email cohort marker — fulfill route reads this back from
+  // the session metadata + stamps prospects.converted_at.
+  if (prospectId) attribution.prospect_id = prospectId;
+
+  // Build the session params. We try with the resolved discount
+  // first; if Stripe rejects (invalid coupon, expired, tier-
+  // mismatched), retry without it so the buyer doesn't get stuck.
+  const baseParams: import('stripe').default.Checkout.SessionCreateParams = {
+    mode: isSubscription ? 'subscription' : 'payment',
+    payment_method_types: ['card'],
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${origin}/order/success?tier=${tierParam}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/#section-04`,
+    // Capture the buyer's email up-front so the post-purchase form
+    // can pre-fill it.
+    // customer_creation isn't valid in subscription mode (Stripe
+    // always creates a customer for subs), so only set it for
+    // one-time payments. We use 'always' (not the default
+    // 'if_required') so EVERY one-time buyer gets a Stripe
+    // customer record. This is what powers the audit-upgrade
+    // mechanic on /order/success: the upgrade endpoint needs a
+    // customer id to pre-bind the upgrade Checkout to the same
+    // payment method. 'if_required' would only create a customer
+    // when the buyer ticked "save payment method," which most
+    // one-time buyers don't — so without this, the upgrade path
+    // 400s for the majority of scan buyers.
+    ...(isSubscription ? {} : { customer_creation: 'always' as const }),
+    // For one-time tiers: attach the payment method to the customer
+    // record (setup_future_usage: 'off_session') so the audit-upgrade
+    // mechanic on /order/success can charge the saved card without
+    // requiring the buyer to re-enter card details. The upgrade
+    // Checkout (which already passes `customer: customerId`) will
+    // surface the saved payment method, turning the upgrade into
+    // effectively a 1-click confirm. Stripe handles the consent
+    // disclosure microcopy automatically.
+    ...(isSubscription
+      ? {}
+      : {
+          payment_intent_data: {
+            setup_future_usage: 'off_session' as const,
+          },
+        }),
+    metadata: {
+      tier: tierParam,
+      // Stamp cadence on subscription sessions so the
+      // order-fulfill pipeline + Stripe webhook can tell monthly
+      // from annual without re-querying the Price object.
+      ...(isSubscription ? { cadence } : {}),
+      ...attribution,
+    },
+    ...(clientReferenceId ? { client_reference_id: clientReferenceId } : {}),
+  };
+
   try {
-    const session = await stripe.checkout.sessions.create({
-      mode: isSubscription ? 'subscription' : 'payment',
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${origin}/order/success?tier=${tierParam}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/#section-04`,
-      // Capture the buyer's email up-front so the post-purchase form
-      // can pre-fill it. allow_promotion_codes lets us run launch
-      // discounts without rebuilding.
-      // customer_creation isn't valid in subscription mode (Stripe
-      // always creates a customer for subs), so only set it for
-      // one-time payments.
-      ...(isSubscription ? {} : { customer_creation: 'if_required' as const }),
-      allow_promotion_codes: true,
-      metadata: {
-        tier: tierParam,
-      },
-    });
+    let session: import('stripe').default.Checkout.Session;
+    try {
+      // First attempt: with the resolved discount. allow_promotion_codes
+      // is mutually exclusive with `discounts` on Stripe's side —
+      // omitting it when we pre-apply a discount avoids the API error
+      // "You may not specify both a coupon and the
+      // allow_promotion_codes option."
+      session = await stripe.checkout.sessions.create({
+        ...baseParams,
+        ...(discounts
+          ? { discounts }
+          : { allow_promotion_codes: true }),
+      });
+    } catch (e) {
+      // Discount rejected (invalid / expired / tier-mismatched code) —
+      // retry without it so the buyer reaches checkout. They can still
+      // hand-enter a valid code via Stripe's promo-code input.
+      if (discounts) {
+        console.warn(
+          '[checkout] discount rejected, retrying without:',
+          e instanceof Error ? e.message : e
+        );
+        session = await stripe.checkout.sessions.create({
+          ...baseParams,
+          allow_promotion_codes: true,
+        });
+      } else {
+        throw e;
+      }
+    }
 
     if (!session.url) {
       return NextResponse.json(

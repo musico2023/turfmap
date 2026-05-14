@@ -9,9 +9,9 @@ import { buildHeroCells, HERO_METRICS } from './heroSeed';
 /**
  * Rotating vertical labels for the hero eyebrow. Cycles every
  * ROTATE_MS ms with a CSS opacity fade so the swap doesn't yank the
- * reader's eye. Container width is fixed at 11ch so the longest
- * label ("LANDSCAPERS", 11 chars) doesn't shift the layout when
- * shorter labels render.
+ * reader's eye. Container width is fixed (see minWidth below) so
+ * the longest label doesn't shift the layout when shorter labels
+ * render.
  */
 const ROTATING_LABELS = [
   'BUSINESSES',
@@ -30,40 +30,81 @@ const FADE_MS = 350;
 
 function RotatingLabel() {
   const [idx, setIdx] = useState(0);
-  const [visible, setVisible] = useState(true);
   useEffect(() => {
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      setVisible(false);
-      window.setTimeout(() => {
-        if (cancelled) return;
-        setIdx((i) => (i + 1) % ROTATING_LABELS.length);
-        setVisible(true);
-      }, FADE_MS);
-    };
-    const t = window.setInterval(tick, ROTATE_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(t);
-    };
+    const t = window.setInterval(() => {
+      setIdx((i) => (i + 1) % ROTATING_LABELS.length);
+    }, ROTATE_MS);
+    return () => window.clearInterval(t);
   }, []);
+  // Cross-fade implementation. All labels are stacked absolutely
+  // inside an inline-block container; the active one is at opacity 1
+  // and the rest at 0, both transitioning over FADE_MS. At any moment
+  // during a swap, the outgoing label is fading 1→0 *while* the
+  // incoming is fading 0→1 — there is never a frame where no label
+  // is rendered. Replaces the prior single-span fade-out / swap /
+  // fade-in approach which had a ~FADE_MS window with the eyebrow
+  // reading "...local · from $99" with the vertical missing.
+  //
+  // Container needs explicit height + line-height:1 because absolute
+  // children don't contribute to the inline-block's layout box; the
+  // 1em / lh:1 keeps the eyebrow vertically aligned with the
+  // surrounding "Google Maps audit for local … · from $99" text.
+  // Layout strategy: an invisible "ghost" of the longest label sits
+  // in normal flow inside the container. The ghost gives the
+  // container its width AND its line-box — so the container inherits
+  // the same line-height + half-leading the surrounding eyebrow
+  // text uses. Without the ghost, an empty inline-block has no inline
+  // content, defaults to height:1em with no half-leading, and its
+  // baseline falls ~1px above the surrounding text's baseline (the
+  // bug the user reported: lime text rendered visibly higher than
+  // the gray text around it).
+  //
+  // The active label sits over the ghost as an absolute child with
+  // inset:0 — same width AND height as the ghost, so its line-box
+  // matches the ghost's line-box exactly. With identical font,
+  // font-size, and line-height, the glyphs land in the same vertical
+  // position as the ghost's would, keeping every label visually
+  // co-baselined with the surrounding "Google Maps audit for local
+  // … · from $99" text.
+  //
+  // Pick the widest label deterministically rather than hard-coding
+  // 'LANDSCAPERS' — protects against future label edits that swap
+  // the longest entry.
+  const widestLabel = ROTATING_LABELS.reduce(
+    (a, b) => (b.length > a.length ? b : a),
+    ROTATING_LABELS[0]
+  );
   return (
     <span
-      // Fixed width so layout doesn't shift across the 7-11 char label
-      // range. Inline-block + min-width so the surrounding eyebrow
-      // characters stay glued together.
       style={{
+        position: 'relative',
         display: 'inline-block',
-        minWidth: '11ch',
         textAlign: 'left',
-        color: 'var(--color-lime)',
-        opacity: visible ? 1 : 0,
-        transition: `opacity ${FADE_MS}ms ease-in-out`,
       }}
       aria-live="polite"
     >
-      {ROTATING_LABELS[idx]}
+      {/* Width + line-box anchor. Visibility:hidden keeps it taking
+       *  layout space without rendering, so the container size +
+       *  baseline track the surrounding text exactly. */}
+      <span style={{ visibility: 'hidden' }} aria-hidden>
+        {widestLabel}
+      </span>
+      {ROTATING_LABELS.map((label, i) => (
+        <span
+          key={label}
+          aria-hidden={i !== idx}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            color: 'var(--color-lime)',
+            opacity: i === idx ? 1 : 0,
+            transition: `opacity ${FADE_MS}ms ease-in-out`,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {label}
+        </span>
+      ))}
     </span>
   );
 }
@@ -125,8 +166,11 @@ export function MarketingHero() {
           <p className="text-zinc-300 text-lg md:text-xl leading-relaxed max-w-xl mb-8">
             TurfMap runs an 81-point geo-grid scan across your service area and
             shows you, cell by cell, where you appear in Google&rsquo;s local
-            3-pack. Most local businesses are invisible to two-thirds
-            of the people searching for them. Find out what your map looks
+            3-pack. Most local businesses are invisible to{' '}
+            <strong className="font-semibold text-zinc-100">
+              two-thirds of the people
+            </strong>
+            {' '}searching for them. Find out what your map looks
             like.
           </p>
           <div className="flex flex-wrap items-center gap-3">
@@ -168,7 +212,7 @@ export function MarketingHero() {
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ background: 'var(--color-lime)' }}
               />
-              Delivered in seconds
+              Delivered in under a minute
             </span>
             <span className="flex items-center gap-1.5">
               <span
@@ -251,7 +295,13 @@ function ScoreReadout({
           : 'var(--color-border)',
       }}
     >
-      <div className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">
+      {/* Score names render as written (PascalCase, no space) — no
+       *  CSS uppercase transform. Matches the dashboard StatCard
+       *  treatment so "TurfScore™" reads identically across the
+       *  marketing hero and the in-app score cards. Other in-page
+       *  labels (column headers, tier eyebrows) keep their uppercase
+       *  styling — this is specific to the proper-noun score family. */}
+      <div className="text-[10px] tracking-tight text-zinc-400 font-semibold">
         {label}
       </div>
       <div

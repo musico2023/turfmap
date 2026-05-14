@@ -43,9 +43,11 @@ export function DeleteClientCard({
         setSubmitting(false);
         return;
       }
-      // Success — back to the agency home.
+      // Success — back to the agency clients roster (was '/' which
+      // was the marketing landing page post-tripwire-launch — that's
+      // the wrong destination for a post-delete operator action).
       startTransition(() => {
-        router.push('/');
+        router.push('/clients');
         router.refresh();
       });
     } catch (e) {

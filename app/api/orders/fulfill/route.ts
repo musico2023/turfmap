@@ -34,7 +34,7 @@
  * degradation pattern as /api/checkout/[tier].
  */
 
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, after, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { geocodeAddress } from '@/lib/geocoding/nominatim';
@@ -49,8 +49,20 @@ import {
   keywordCountForTier,
   markLeadOrderFailed,
   markLeadOrderFulfilled,
+  patchLeadOrderMetadataByClientId,
 } from '@/lib/stripe/leadOrders';
 import { STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
+import {
+  sendOrderConfirmation,
+  sendScanReady,
+  sendPulsePlusWelcome,
+  sendAuditCallReminder,
+} from '@/lib/email/resend';
+import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
+import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
+import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
+import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import { notifyLlmFitAudit } from '@/lib/audit/operatorSlack';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -72,7 +84,12 @@ const FulfillBody = z.object({
   address: z.string().min(4).max(400),
   keywords: z.array(z.string().min(2).max(160)).min(1).max(3),
   email: z.string().email(),
-  phone: z.string().min(0).max(40).nullable().optional(),
+  // Phone is the P in NAP — required for the citation check across
+  // directories. locationToBusinessProfile() returns null without it
+  // and the BrightLocal NAP audit short-circuits. min(7) accepts the
+  // shortest plausible international form (e.g. "+1 416 5"); the
+  // form's tel input does the heavy lifting on local format.
+  phone: z.string().min(7).max(40),
 });
 
 export async function POST(req: NextRequest) {
@@ -125,19 +142,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Order session not found in our records. Email anthony@fourdots.io with your Stripe session id and we'll fire your scan manually.",
+          "Order session not found in our records. Email support@turfmap.ai with your Stripe session id and we'll fire your scan manually.",
       },
       { status: 404 }
     );
   }
 
   if (lead.status === 'fulfilled') {
+    // Buyer hit /order/success again — likely refresh, return-from-tab,
+    // or wizard resume. Look up the client so we can hand back the
+    // public_id + current onboarding_step; the frontend uses these to
+    // re-mount the success state (or resume the wizard at the right
+    // step) without forcing a re-fulfill.
+    let publicId: string | null = null;
+    let onboardingStep: string | null = null;
+    if (lead.client_id) {
+      const { data: c } = await supabase
+        .from('clients')
+        .select('public_id, onboarding_step')
+        .eq('id', lead.client_id)
+        .maybeSingle<Pick<ClientRow, 'public_id' | 'onboarding_step'>>();
+      publicId = c?.public_id ?? null;
+      onboardingStep = c?.onboarding_step ?? null;
+    }
     return NextResponse.json(
       {
         error:
           'This order has already been fulfilled. Check your email for the scan link.',
         already_fulfilled: true,
         client_id: lead.client_id,
+        public_id: publicId,
+        onboarding_step: onboardingStep,
       },
       { status: 409 }
     );
@@ -154,7 +189,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "We couldn't locate that address — please double-check the spelling. If it's correct, email anthony@fourdots.io and we'll fire your scan manually.",
+          "We couldn't locate that address — please double-check the spelling. If it's correct, email support@turfmap.ai and we'll fire your scan manually.",
       },
       { status: 422 }
     );
@@ -182,6 +217,12 @@ export async function POST(req: NextRequest) {
       stripe_subscription_id: session.subscriptionId,
       subscription_status:
         billingMode === 'self_serve_subscription' ? 'active' : null,
+      // Self-serve subscription buyers (Pulse / Pulse+) drop into the
+      // post-checkout onboarding wizard. One-time tiers (Audit /
+      // Strategy / Scan) skip it — they're served by the Cal.com
+      // embed on the success state instead.
+      onboarding_step:
+        billingMode === 'self_serve_subscription' ? 'gbp_match' : null,
     })
     .select('*')
     .single<ClientRow>();
@@ -237,6 +278,49 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  // Google Places enrichment — fire-and-forget. Looks up the GBP listing
+  // for the buyer's business, stores place_id + initial signals snapshot
+  // so the AI Coach can cite specific GBP signals. Soft-fails if the API
+  // key isn't configured or the strict-match guardrail rejects.
+  after(async () => {
+    await enrichLocationFromOnboarding(supabase, {
+      locationId: location.id,
+      businessName: body.businessName.trim(),
+      latitude: geocode.lat,
+      longitude: geocode.lng,
+    });
+  });
+
+  // Send the order-confirmation email NOW, before the scan fires.
+  // The buyer just paid and clicked "submit" on the form — they want
+  // immediate acknowledgement, not silence for 30+ seconds while DFS
+  // runs. The scan-ready email follows after step 8 with the actual
+  // dashboard link. Failures here are logged but don't block the
+  // pipeline (sendOrderConfirmation already swallows errors).
+  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  // /portal — buyer-facing dashboard. Self-serve buyers can sign in
+  // here via magic link; the agency-side /clients/<id> route would
+  // redirect them to /login (agency-staff-only). All emails sent
+  // out of this fulfill flow are to the BUYER, never the operator,
+  // so /portal is the right destination.
+  const dashboardUrl = `${origin}/portal/${client.public_id}`;
+  // Cal.com booking link for Audit + Strategy buyers — pre-filled
+  // with the buyer's email + business name. Returns null for tiers
+  // without a strategist call OR when CAL_COM_*_URL env isn't set
+  // yet; sendOrderConfirmation handles the null case gracefully.
+  const bookingUrl = calcomBookingUrlForTier({
+    tier: session.tier,
+    email: body.email,
+    businessName: body.businessName.trim(),
+  });
+  await sendOrderConfirmation({
+    to: body.email,
+    businessName: body.businessName.trim(),
+    tier: session.tier,
+    dashboardUrl,
+    bookingUrl,
+  });
 
   // ─── 6. Insert tracked keywords ────────────────────────────────────────
   // Self-serve subscriptions use weekly cadence (Pulse) or weekly with
@@ -300,7 +384,42 @@ export async function POST(req: NextRequest) {
     // succeeded) and return a degraded success.
     const errMsg = failedScans.map((r) => (r.ok ? '' : r.error)).join('; ');
     console.error('[orders/fulfill] partial scan failure', errMsg);
-    await markLeadOrderFulfilled(supabase, body.sessionId, client.id);
+    // Same metadata stamp as the success path so the audit-call
+    // reminder cron + Cal.com webhook still wire up correctly even
+    // when the scan itself partially failed.
+    const isAuditTierPartial =
+      session.tier === 'audit' || session.tier === 'strategy';
+    await markLeadOrderFulfilled(
+      supabase,
+      body.sessionId,
+      client.id,
+      isAuditTierPartial
+        ? {
+            audit_call_status: 'unbooked',
+            audit_call_initiated_at: new Date().toISOString(),
+          }
+        : undefined
+    );
+
+    // Pulse+ welcome still fires on partial failure — the citation-
+    // build onboarding form is independent of scan completion, and the
+    // buyer paid for Pulse+ either way. Scan-ready email is suppressed
+    // here; it'll fire when the retry pipeline (TODO) lands.
+    if (session.tier === 'pulse_plus') {
+      // Buyer-facing portal URL — the citation onboarding form
+      // currently lives at an agency-only route, so we send the
+      // buyer to their portal and the operator follows up by
+      // email/Slack to gather categories + hours. Will swap to a
+      // direct citation-onboarding URL once we ship buyer access
+      // to that form (planned follow-up).
+      const onboardingUrl = `${origin}/portal/${client.public_id}`;
+      await sendPulsePlusWelcome({
+        to: body.email,
+        businessName: body.businessName.trim(),
+        onboardingUrl,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       partial: true,
@@ -311,16 +430,29 @@ export async function POST(req: NextRequest) {
         .map((r) => (r.ok ? r.scanId : null))
         .filter(Boolean),
       failed_scan_count: failedScans.length,
+      booking_url: bookingUrl,
+      onboarding_step: client.onboarding_step,
       message:
         "Your account is set up but one or more scans hit a transient error. We'll retry automatically and email you when they're complete.",
     });
   }
 
   // ─── 8. Mark lead_order fulfilled ──────────────────────────────────────
+  // For Audit + Strategy tiers, also stamp the call-tracking
+  // metadata used by the Cal.com webhook. Initial state is
+  // 'unbooked' — the Cal.com BOOKING_CREATED webhook flips it to
+  // 'booked' (and cancels the queued reminder email below).
+  const isAuditTier = session.tier === 'audit' || session.tier === 'strategy';
   const fulfilled = await markLeadOrderFulfilled(
     supabase,
     body.sessionId,
-    client.id
+    client.id,
+    isAuditTier
+      ? {
+          audit_call_status: 'unbooked',
+          audit_call_initiated_at: new Date().toISOString(),
+        }
+      : undefined
   );
   if (!fulfilled.ok) {
     // Non-fatal — the data is all written, the lead_orders row just
@@ -332,11 +464,310 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ─── 9. (Future, §4) Queue scan-ready email via Resend ─────────────────
-  // TODO: integrate Resend once §4 of the prelaunch buildlist ships.
-  // Will look like: await sendScanReadyEmail({ to: body.email, scanIds, businessName, ... })
-  // For now, scan completion is visible via the success-state UI on
-  // /order/success and the scan link the buyer can bookmark.
+  // ─── 8a2. Stamp prospects.converted_at if this was a cold-email buyer
+  // The /yourmap lander forwards ?prospect_id=<nanoid> through the
+  // Stripe Checkout session metadata. When fulfillment lands, mark
+  // the prospect as converted so (a) the lander's 410-already-
+  // converted gate fires on subsequent visits, and (b) the
+  // cold-email funnel dashboard can join conversions back to the
+  // originating outreach record. Idempotent — second fulfillment
+  // hits the same row and overwrites with the same timestamp.
+  if (session.prospectId && fulfilled.ok) {
+    try {
+      const { error: prospectErr } = await supabase
+        .from('prospects')
+        .update({ converted_at: new Date().toISOString() })
+        .eq('id', session.prospectId)
+        .is('converted_at', null);
+      if (prospectErr) {
+        console.error(
+          '[orders/fulfill] prospects.converted_at stamp failed (non-fatal)',
+          prospectErr.message
+        );
+      }
+    } catch (e) {
+      console.error(
+        '[orders/fulfill] prospects stamp threw (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  // ─── 8b. Queue the audit-call reminder via Resend scheduled-send ──────
+  // For Audit + Strategy buyers: schedule a 20-min-delayed reminder
+  // email pointing at their Cal.com booking link. If they book inside
+  // the window, the Cal.com webhook handler cancels this scheduled
+  // email so they don't get a "you forgot to book" nudge after just
+  // confirming. We persist the returned email ID on
+  // lead_orders.stripe_metadata.audit_reminder_email_id so the webhook
+  // knows which Resend email to cancel.
+  //
+  // Why scheduled-send instead of a Vercel Cron sweep: Vercel Hobby
+  // tier caps cron frequency at daily. Resend's scheduled-send
+  // delivers the same UX (precise 20-min mark, cancellable) and works
+  // on any plan. The /api/cron/audit-call-reminders route is kept in
+  // the repo as a manual fallback but is no longer auto-fired.
+  if (isAuditTier && bookingUrl && fulfilled.ok) {
+    const scheduledAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    try {
+      const reminderResult = await sendAuditCallReminder({
+        to: body.email,
+        businessName: body.businessName.trim(),
+        bookingUrl,
+        scheduledAt,
+      });
+      if (reminderResult.ok && reminderResult.id) {
+        // Stamp the email ID + scheduled time onto the lead_orders
+        // row so the Cal.com webhook can cancel the queued send if
+        // a booking lands inside the 20-min window.
+        await patchLeadOrderMetadataByClientId(supabase, client.id, {
+          audit_reminder_email_id: reminderResult.id,
+          audit_reminder_scheduled_at: scheduledAt,
+        });
+      } else {
+        // Non-fatal — scan + onboarding already succeeded; the buyer
+        // has the success page + the dashboard email already. Worst
+        // case they don't get the 20-min nudge, the operator picks
+        // them up via the agency dashboard's pending-bookings view.
+        console.error(
+          '[orders/fulfill] sendAuditCallReminder schedule failed',
+          { ok: reminderResult.ok, hasId: !!reminderResult.id }
+        );
+      }
+    } catch (e) {
+      // Same rationale as above — log + continue, don't fail the
+      // order on a downstream email-scheduling hiccup.
+      console.error(
+        '[orders/fulfill] sendAuditCallReminder threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  // The primary scan result is referenced by both the
+  // visibility_audits stamp (Phase 1, below) and the scan-ready
+  // email (Section 9, further below). Pull it once here so both
+  // can read it without duplicating the index lookup.
+  const primaryScanResult = scanResults[0];
+
+  // ─── 8c. Stamp the visibility_audits row (Phase 1 foundation) ────────
+  // For Audit tier only: insert a visibility_audits row capturing
+  // the buyer's starting state + LLM Fit Score. Phase 2 will add
+  // Roadmap PDF generation; Phase 3 will populate the call-completion
+  // + 60-day-prompt fields. For Phase 1 we just want the row to exist
+  // + the Fit Score to be computed at purchase time so the
+  // strategist's prep notes (when generated 24h before the call)
+  // reference the score that informed the call, not whatever the
+  // data says tomorrow.
+  //
+  // Strategy tier ($1,497) is a different deliverable (3-keyword scan
+  // + 90-min session) and isn't routed through this pipeline.
+  if (
+    session.tier === 'audit' &&
+    primaryScanResult?.ok &&
+    fulfilled.ok
+  ) {
+    try {
+      // Trade fit: infer from the primary keyword. Conservative
+      // matcher — only TRUE when we can confidently classify into
+      // one of the LLM_TARGET_TRADES; otherwise NULL ("we don't
+      // know") rather than FALSE.
+      const tradeFit = inferTradeFitFromKeyword(body.keywords[0]);
+
+      const fitBreakdown = computeLlmFitScore({
+        // We don't yet have Apollo revenue data at fulfillment time
+        // — leave the band null so the score's confidence-penalty
+        // rule kicks in. Phase 4 (Apollo enrichment) will re-stamp
+        // the score with revenue + ad-active signals when those
+        // resolve asynchronously.
+        revenueBand: null,
+        tradeFit,
+        // Metro fit needs a population dataset we haven't wired
+        // yet. Pass null so the score doesn't disqualify based on
+        // an unknown.
+        metroFit: null,
+        adActive: null,
+        reviewCount: null,
+      });
+
+      const auditResult = await createVisibilityAudit(supabase, {
+        leadOrderId: lead.id,
+        scanId: primaryScanResult.scanId,
+        clientId: client.id,
+        startingTurfScore: primaryScanResult.turfScore,
+        liftPromiseTargetScore: null, // populated by the Roadmap pipeline (Phase 2)
+        llmFitScore: fitBreakdown.score,
+        llmFitBreakdown: fitBreakdown,
+      });
+      if (!auditResult.ok) {
+        console.error(
+          '[orders/fulfill] createVisibilityAudit failed (non-fatal)',
+          auditResult.error
+        );
+      } else if (shouldPitchLlm(fitBreakdown.score)) {
+        // Fire the operator Slack notification for fit-4-and-up
+        // audits. Fail-soft — if the webhook isn't configured or
+        // the call fails, we log + continue. The audit is still
+        // captured; this is just a manual-touch nudge for Anthony's
+        // pipeline awareness.
+        await notifyLlmFitAudit({
+          businessName: body.businessName.trim(),
+          trade: body.keywords[0] ?? 'unknown',
+          market: geocode.components?.city ?? body.address.trim(),
+          currentTurfScore: primaryScanResult.turfScore,
+          llmFitScore: fitBreakdown.score,
+          auditDashboardUrl: `${origin}/clients/${client.public_id}`,
+        }).catch((e) => {
+          console.error(
+            '[orders/fulfill] notifyLlmFitAudit failed (non-fatal)',
+            e instanceof Error ? e.message : String(e)
+          );
+        });
+      }
+    } catch (e) {
+      // Same fail-soft pattern as the rest of the post-fulfill block.
+      console.error(
+        '[orders/fulfill] visibility_audits stamp threw (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  // ─── 8.5 Pending audit-upgrade sweep (scan tier only) ─────────────────
+  // When the buyer purchased an audit upgrade BEFORE filling intake,
+  // the webhook stored a pending lead_orders row with client_id=null
+  // and stripe_metadata.pending_client_session_id=<this scan session>.
+  // Now that intake is complete and client_id + scan_id exist, link
+  // the upgrade row → create its visibility_audits row → stamp the
+  // prospect → send the audit-upgrade confirmation email.
+  //
+  // Fail-soft: any error here doesn't fail the scan fulfillment. The
+  // pending row remains in the DB for manual recovery if needed.
+  if (session.tier === 'scan' && primaryScanResult?.ok && client) {
+    try {
+      const { data: pendingUpgrades } = await supabase
+        .from('lead_orders')
+        .select('*')
+        .eq('tier', 'audit')
+        .eq('status', 'pending')
+        .is('client_id', null)
+        .filter(
+          'stripe_metadata->>pending_client_session_id',
+          'eq',
+          session.sessionId
+        );
+
+      for (const pending of pendingUpgrades ?? []) {
+        const pendingMeta =
+          (pending.stripe_metadata as Record<string, unknown> | null) ?? {};
+
+        // Link client_id + flip to fulfilled.
+        await supabase
+          .from('lead_orders')
+          .update({
+            client_id: client.id,
+            status: 'fulfilled',
+            stripe_metadata: {
+              ...pendingMeta,
+              original_scan_id: primaryScanResult.scanId,
+              fulfilled_via_intake_sweep_at: new Date().toISOString(),
+            },
+          })
+          .eq('id', pending.id);
+
+        // Compute LLM fit score same way the audit-tier path does.
+        const tradeFit = inferTradeFitFromKeyword(body.keywords[0]);
+        const fitBreakdown = computeLlmFitScore({
+          revenueBand: null,
+          tradeFit,
+          metroFit: null,
+          adActive: null,
+          reviewCount: null,
+        });
+
+        // Create the visibility_audits row now that scan_id +
+        // client_id exist.
+        const auditResult = await createVisibilityAudit(supabase, {
+          leadOrderId: pending.id,
+          scanId: primaryScanResult.scanId,
+          clientId: client.id,
+          startingTurfScore: primaryScanResult.turfScore,
+          liftPromiseTargetScore: null,
+          llmFitScore: fitBreakdown.score,
+          llmFitBreakdown: fitBreakdown,
+        });
+        if (!auditResult.ok) {
+          console.error(
+            '[orders/fulfill] pending-upgrade visibility_audits insert failed',
+            auditResult.error,
+            pending.id
+          );
+        }
+
+        // Stamp prospects.upgraded_to_audit_at if the original
+        // purchase was from a cold-email cohort.
+        const prospectId =
+          typeof pendingMeta.prospect_id === 'string'
+            ? pendingMeta.prospect_id
+            : null;
+        if (prospectId) {
+          await supabase
+            .from('prospects')
+            .update({ upgraded_to_audit_at: new Date().toISOString() })
+            .eq('id', prospectId)
+            .is('upgraded_to_audit_at', null);
+        }
+
+        console.log(
+          '[orders/fulfill] swept pending audit_upgrade',
+          pending.id,
+          '→ client',
+          client.id
+        );
+      }
+    } catch (e) {
+      console.error(
+        '[orders/fulfill] pending-upgrade sweep threw (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  // ─── 9. Send the scan-ready email + (Pulse+) welcome email ────────────
+  // Both are fire-and-await with errors swallowed inside the senders,
+  // so a transient Resend hiccup doesn't fail the order. The dashboard
+  // success state on /order/success is still the primary delivery path
+  // — email is the secondary "you can come back anytime" handoff.
+  // For multi-keyword tiers (Strategy / Pulse+), the email surfaces
+  // the primary keyword's metrics — clearest single-number summary.
+  const scanReadyMetrics =
+    primaryScanResult && primaryScanResult.ok
+      ? {
+          turfScore: primaryScanResult.turfScore,
+          turfReach: primaryScanResult.turfReach,
+          turfRank: primaryScanResult.turfRank,
+        }
+      : undefined;
+  await sendScanReady({
+    to: body.email,
+    businessName: body.businessName.trim(),
+    dashboardUrl,
+    metrics: scanReadyMetrics,
+  });
+  if (session.tier === 'pulse_plus') {
+    // Pulse+ needs a richer NAP/category profile before BL Citation
+    // Builder can submit. The onboarding-form route doesn't exist yet
+    // (lands with the citation-builder integration), so for now we
+    // route the buyer to the dashboard's settings page where they can
+    // fill in the missing fields manually. Update this URL once the
+    // dedicated onboarding flow ships.
+    const onboardingUrl = `${origin}/clients/${client.public_id}/settings`;
+    await sendPulsePlusWelcome({
+      to: body.email,
+      businessName: body.businessName.trim(),
+      onboardingUrl,
+    });
+  }
 
   const scanIds = scanResults
     .map((r) => (r.ok ? r.scanId : null))
@@ -348,6 +779,13 @@ export async function POST(req: NextRequest) {
     public_id: client.public_id,
     scan_ids: scanIds,
     primary_scan_id: scanIds[0] ?? null,
+    // For audit/strategy buyers, return the Cal.com URL so the
+    // success page can surface an inline "Book your call" CTA
+    // without refetching from /api/orders/booking-link or similar.
+    booking_url: bookingUrl,
+    // For self-serve subscription buyers, return the wizard step so
+    // the success page can render the OnboardingWizard inline.
+    onboarding_step: client.onboarding_step,
   });
 }
 
@@ -366,7 +804,7 @@ function errorForLoadSession(err: LoadSessionError): NextResponse {
     case 'invalid_tier':
       return NextResponse.json(
         {
-          error: `Stripe session is missing a recognized tier (got "${err.tierValue ?? 'null'}"). Email anthony@fourdots.io with your session id.`,
+          error: `Stripe session is missing a recognized tier (got "${err.tierValue ?? 'null'}"). Email support@turfmap.ai with your session id.`,
         },
         { status: 400 }
       );
@@ -383,4 +821,48 @@ function errorForLoadSession(err: LoadSessionError): NextResponse {
         { status: 502 }
       );
   }
+}
+
+/**
+ * Map a buyer's primary keyword to one of the LLM target trades.
+ * Returns the matched trade or null when no confident classification
+ * is possible. Used at audit fulfillment to compute the buyer's
+ * tradeFit signal for the LLM Fit Score; called once per order, so
+ * O(n*m) string matching against the keyword is fine.
+ *
+ * Intentionally narrow: we only flip tradeFit=TRUE when the keyword
+ * unambiguously names one of LLM_TARGET_TRADES. Any ambiguous keyword
+ * ("local services", "home services") returns null so the Fit
+ * Score treats it as unknown rather than falsely positive.
+ */
+function inferTradeFitFromKeyword(keyword: string | undefined): boolean | null {
+  if (!keyword) return null;
+  const k = keyword.toLowerCase();
+  // Each entry: array of canonical-trade keywords that, if present,
+  // resolve to that trade. Order matters only insofar as more-specific
+  // matches should appear before broader ones — none of these
+  // currently overlap, so order is alphabetical.
+  const TRADE_KEYWORDS: Array<{ trade: LlmTargetTrade; needles: string[] }> = [
+    { trade: 'electrical', needles: ['electrician', 'electrical'] },
+    { trade: 'hvac', needles: ['hvac', 'heating', 'air conditioning', 'a/c repair', 'furnace'] },
+    { trade: 'landscaping', needles: ['landscap', 'lawn care', 'lawn maintenance'] },
+    { trade: 'plumbing', needles: ['plumb', 'drain cleaning', 'water heater'] },
+    { trade: 'renovation', needles: ['renovat', 'remodel', 'kitchen remodel', 'bathroom remodel'] },
+    { trade: 'restoration', needles: ['restoration', 'water damage', 'fire damage', 'mold remediation'] },
+    { trade: 'roofing', needles: ['roof'] },
+    { trade: 'windows_doors', needles: ['windows', 'doors', 'window install', 'door install'] },
+  ];
+  for (const { trade, needles } of TRADE_KEYWORDS) {
+    for (const needle of needles) {
+      if (k.includes(needle)) {
+        // Sanity-check the matched trade is in the canonical list.
+        // (Belt-and-suspenders — if LLM_TARGET_TRADES drifts, we'd
+        // rather a typecheck error here than a runtime mis-classify.)
+        if ((LLM_TARGET_TRADES as readonly string[]).includes(trade)) {
+          return true;
+        }
+      }
+    }
+  }
+  return null; // unknown — not a confident TRUE or FALSE
 }

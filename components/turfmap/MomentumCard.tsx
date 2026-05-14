@@ -56,8 +56,8 @@ export function MomentumCard({
           <InfoTooltip>
             The change in your TurfScore vs. your previous scan.
             Positive numbers mean your visibility is expanding. Recalculated
-            on every re-scan; the standard cadence is quarterly (~90 days),
-            but on-demand scans update it immediately too.
+            on every re-scan — Pulse subscribers get one weekly, plus
+            on-demand scans update it immediately.
           </InfoTooltip>
         </div>
         <Arrow size={14} style={{ color }} />

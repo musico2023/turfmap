@@ -4,6 +4,34 @@
     {
       "path": "/api/cron/weekly-scans",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron/poll-citations",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/reset-citation-quotas",
+      "schedule": "5 0 1 1,4,7,10 *"
+    },
+    {
+      "path": "/api/cron/monthly-pdf",
+      "schedule": "0 9 1 * *"
+    },
+    {
+      "path": "/api/cron/weekly-competitor-summary",
+      "schedule": "0 13 * * 1"
+    },
+    {
+      "path": "/api/cron/check-scan-delivery",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-gbp-signals",
+      "schedule": "0 14 * * 1"
+    },
+    {
+      "path": "/api/cron/audit-milestones",
+      "schedule": "0 13 * * *"
     }
   ]
 }

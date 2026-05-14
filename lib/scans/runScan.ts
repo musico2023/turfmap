@@ -38,6 +38,7 @@ import { turfRank } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { momentum as computeMomentum } from '@/lib/metrics/momentum';
 import { maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
+import { dispatchScanAlerts } from '@/lib/alerts/postScan';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -195,8 +196,15 @@ export async function runScanForLocation(
   const found = scan.results.filter((r) => r.businessFound).length;
 
   // 5. Momentum: compare to most recent prior scan ≥ 12h older for THIS
-  //    location. Same-day rescans share a baseline; cross-location data
-  //    is excluded.
+  //    location AND THIS keyword. Score families are not comparable across
+  //    keywords — a "plumber emergency" scan rank pattern has nothing to
+  //    do with a "drain cleaning" scan, so cross-keyword momentum is just
+  //    noise. Same-day rescans of the same keyword share a baseline;
+  //    cross-keyword + cross-location data is excluded.
+  //
+  //    First-ever scan of a new keyword gets momentum=null (no baseline),
+  //    not a spurious negative number from whatever the location's prior
+  //    keyword happened to score.
   const baselineCutoff = new Date(
     Date.now() - MOMENTUM_BASELINE_WINDOW_HOURS * 60 * 60 * 1000
   ).toISOString();
@@ -205,6 +213,7 @@ export async function runScanForLocation(
     .select('turf_score')
     .eq('client_id', client.id)
     .eq('location_id', location.id)
+    .eq('keyword_id', keyword.id)
     .eq('status', 'complete')
     .neq('id', scanId)
     .lt('completed_at', baselineCutoff)
@@ -231,6 +240,26 @@ export async function runScanForLocation(
 
   // 7. Auto-fire NAP audit for THIS location (best-effort; absorbed errors).
   await maybeRunNapAudit(supabase, client.id, triggeredBy, location.id);
+
+  // 8. Dispatch alerts based on score / momentum / competitor / cell
+  //    diff against the prior scan. Best-effort — never fails the
+  //    scan return path. Lives behind a separate try so a Resend or
+  //    Slack hiccup doesn't poison cron's scan-status reporting.
+  try {
+    await dispatchScanAlerts(supabase, {
+      clientId: client.id,
+      locationId: location.id,
+      keywordId: keyword.id,
+      currentScanId: scanId,
+      currentScore: score,
+      currentMomentum: momentumValue,
+    });
+  } catch (e) {
+    console.error(
+      '[runScan] post-scan alert dispatch failed (non-fatal):',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
 
   return {
     ok: true,

@@ -27,12 +27,15 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
+import { MIN_SHARE_PCT } from '@/lib/metrics/competitors';
 import { maybeFinalizeNapAudit, maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
 import {
   listLocations,
   locationDisplayLabel,
   resolveLocation,
 } from '@/lib/supabase/locations';
+import { getLatestSignals } from '@/lib/google/enrich';
+import type { GbpSignalsContext } from '@/lib/anthropic/prompts/turfCoach';
 import type {
   ClientRow,
   ScanRow,
@@ -129,6 +132,22 @@ export async function POST(req: Request) {
   }
 
   // Top competitors by appearance count, excluding the client's own brand.
+  //
+  // Mirrors the dedupe + noise-filter logic in lib/metrics/competitors.ts so
+  // the Coach references the same competitive set the operator sees in the
+  // dashboard. Two important details:
+  //
+  //   - Per-cell dedupe: a single competitor only counts ONCE per grid
+  //     cell, even when DFS returns the same business across local_pack +
+  //     map item types. Without this, share-of-voice (and the prompt's
+  //     "appearances" count) can exceed the cell total.
+  //
+  //   - Noise floor (MIN_SHARE_PCT): brands appearing in < 2% of cells
+  //     (1 cell out of 81) are filtered out. A 1-cell hit is almost
+  //     always a Google-pin proximity artifact, not a real competitor —
+  //     and we already hide them from the dashboard CompetitorTable, so
+  //     leaving them in the prompt would have the Coach reference brands
+  //     the operator can't see.
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
     'i'
@@ -141,23 +160,33 @@ export async function POST(req: Request) {
       rank_group: number | null;
       rank_absolute: number | null;
     }>;
+    // Best rank per brand within this single cell — collapses duplicates
+    // before they inflate the appearance count.
+    const cellBest = new Map<string, number>();
     for (const c of list) {
       if (!c?.name) continue;
       if (ownNamePattern.test(c.name)) continue;
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
-      const s = compStats.get(c.name) ?? { ranks: [] };
+      const prev = cellBest.get(c.name);
+      if (prev === undefined || rank < prev) cellBest.set(c.name, rank);
+    }
+    for (const [name, rank] of cellBest.entries()) {
+      const s = compStats.get(name) ?? { ranks: [] };
       s.ranks.push(rank);
-      compStats.set(c.name, s);
+      compStats.set(name, s);
     }
   }
+  const totalPointsForShare = Math.max(points.length, 1);
   const competitorList = [...compStats.entries()]
     .map(([name, s]) => ({
       name,
       appearances: s.ranks.length,
       avgRank: s.ranks.reduce((a, b) => a + b, 0) / s.ranks.length,
       bestRank: Math.min(...s.ranks),
+      sharePct: Math.round((s.ranks.length / totalPointsForShare) * 100),
     }))
+    .filter((c) => c.sharePct >= MIN_SHARE_PCT)
     .sort((a, b) => b.appearances - a.appearances || a.avgRank - b.avgRank)
     .slice(0, 10);
 
@@ -231,12 +260,17 @@ export async function POST(req: Request) {
   // complete scans) and dedupe to one row per calendar day so same-day
   // rescan jitter doesn't crowd out real history. Newest last so the
   // prompt reads chronologically.
+  // Score history is keyword-scoped: a "plumber emergency" trend has
+  // nothing to do with a "drain cleaning" trend. Mixing them gives the
+  // Coach a false trajectory and produces misleading momentum/diagnosis
+  // language. Same fix as the runScan momentum baseline.
   const { data: historyRows } = scanLocation
     ? await supabase
         .from('scans')
         .select('completed_at, turf_score')
         .eq('client_id', client.id)
         .eq('location_id', scanLocation.id)
+        .eq('keyword_id', keyword.id)
         .eq('status', 'complete')
         .not('turf_score', 'is', null)
         .order('completed_at', { ascending: false })
@@ -257,6 +291,37 @@ export async function POST(req: Request) {
     .slice(-7) // last 7 distinct days
     .map(([date, score]) => ({ date, score }));
 
+  // GBP signals — latest Google Places snapshot for this location's
+  // verified listing. Suppressed when the operator has rejected the
+  // auto-match or the lookup found nothing — better no signals than
+  // wrong-business signals. Null also when no signals row exists yet
+  // (e.g. no API key configured, or refresh hasn't run). The Coach
+  // falls back to its prior generic recommendations when null.
+  const gbpSignals: GbpSignalsContext | null = scanLocation
+    ? await (async () => {
+        const matchStatus = scanLocation.google_place_match_status;
+        if (matchStatus === 'rejected' || matchStatus === 'no_match') {
+          return null;
+        }
+        const row = await getLatestSignals(supabase, scanLocation.id);
+        if (!row) return null;
+        const hours = row.regular_opening_hours as
+          | { weekdayDescriptions?: string[] }
+          | null;
+        return {
+          rating: row.rating,
+          reviewCount: row.user_ratings_total,
+          primaryType: row.primary_type,
+          types: row.types,
+          businessStatus: row.business_status,
+          photosCount: row.photos_count,
+          hoursSummary: hours?.weekdayDescriptions ?? null,
+          editorialSummary: row.editorial_summary,
+          fetchedAt: row.fetched_at,
+        };
+      })()
+    : null;
+
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: businessLabel,
     industry: client.industry,
@@ -274,6 +339,7 @@ export async function POST(req: Request) {
     rankGrid,
     competitors: competitorList,
     napAudit,
+    gbpSignals,
   });
 
   // 3. Call Sonnet 4.6 with structured output + prompt caching

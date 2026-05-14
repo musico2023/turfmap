@@ -29,6 +29,11 @@ import dns from 'node:dns';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { runScanForLocation } from '@/lib/scans/runScan';
+import {
+  maxKeywordsPerLocation,
+  resolveTier,
+} from '@/lib/subscription/tier';
+import { inCapKeywordIds } from '@/lib/subscription/keywordCap';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -55,7 +60,7 @@ type RunResult = {
   keywordId: string;
   scanId?: string;
   error?: string;
-  skipped?: 'already_ran_today' | 'location_missing_coords';
+  skipped?: 'already_ran_today' | 'location_missing_coords' | 'over_cap';
 };
 
 function isAuthorized(req: Request): boolean {
@@ -80,12 +85,22 @@ async function handle(req: Request) {
 
   const supabase = getServerSupabase();
 
-  // 1. Active clients only.
+  // 1. Active clients only. tier + billing_mode pulled so the cap
+  //    helper can resolve the effective tier per client. Outreach-
+  //    enrichment rows are excluded — those back cold-lead share
+  //    links and aren't billed, so we don't keep burning DFS credits
+  //    re-scanning them.
   const { data: clients, error: cErr } = await supabase
     .from('clients')
-    .select('id, business_name, status')
+    .select('id, business_name, status, tier, billing_mode')
     .eq('status', 'active')
-    .returns<Pick<ClientRow, 'id' | 'business_name' | 'status'>[]>();
+    .eq('is_outreach_lead', false)
+    .returns<
+      Pick<
+        ClientRow,
+        'id' | 'business_name' | 'status' | 'tier' | 'billing_mode'
+      >[]
+    >();
   if (cErr) {
     return NextResponse.json(
       { error: `client query failed: ${cErr.message}` },
@@ -133,27 +148,47 @@ async function handle(req: Request) {
     locationsByClient.set(loc.client_id, list);
   }
 
-  // 3. All weekly-frequency keywords for those clients.
+  // 3. All keywords for those clients. We pull ALL frequencies (not
+  //    just 'weekly') so the in-cap ordering — first `cap` keywords by
+  //    (is_primary DESC, created_at ASC) per location — is computed
+  //    over the complete set. Otherwise a Pulse client with a primary
+  //    monthly + 3 weekly keywords would compute a misleading cutoff.
   const { data: allKeywords } = await supabase
     .from('tracked_keywords')
-    .select('id, client_id, location_id, keyword')
+    .select(
+      'id, client_id, location_id, keyword, is_primary, created_at, scan_frequency'
+    )
     .in('client_id', clientIds)
-    .eq('scan_frequency', 'weekly')
+    .order('is_primary', { ascending: false })
+    .order('created_at', { ascending: true })
     .returns<
       Pick<
         TrackedKeywordRow,
-        'id' | 'client_id' | 'location_id' | 'keyword'
+        | 'id'
+        | 'client_id'
+        | 'location_id'
+        | 'keyword'
+        | 'is_primary'
+        | 'created_at'
+        | 'scan_frequency'
       >[]
     >();
 
-  // Index keywords by location_id (post-migration 0006). Keywords
-  // without location_id are legacy rows — apply them to the client's
-  // primary location as a fallback, since that's what the migration
-  // backfill assumed.
-  const keywordsByLocation = new Map<
-    string,
-    Pick<TrackedKeywordRow, 'id' | 'client_id' | 'location_id' | 'keyword'>[]
-  >();
+  // Index ALL keywords by location_id — preserves the (is_primary,
+  // created_at) ordering inside each bucket so the cap-cutoff is
+  // deterministic. Legacy rows without location_id are skipped (cron
+  // can't scan a keyword with no location anyway).
+  type CronKeyword = Pick<
+    TrackedKeywordRow,
+    | 'id'
+    | 'client_id'
+    | 'location_id'
+    | 'keyword'
+    | 'is_primary'
+    | 'created_at'
+    | 'scan_frequency'
+  >;
+  const keywordsByLocation = new Map<string, CronKeyword[]>();
   for (const kw of allKeywords ?? []) {
     if (kw.location_id) {
       const list = keywordsByLocation.get(kw.location_id) ?? [];
@@ -176,9 +211,29 @@ async function handle(req: Request) {
 
   for (const client of activeClients) {
     const locations = locationsByClient.get(client.id) ?? [];
+    // Tier-driven cap: precompute the in-cap keyword id set per
+    // location for this client. Over-cap rows fire neither scheduled
+    // nor on-demand scans — see lib/subscription/keywordCap.
+    const tier = resolveTier(client);
+    const cap = maxKeywordsPerLocation(tier);
     for (const location of locations) {
       const kws = keywordsByLocation.get(location.id) ?? [];
-      for (const kw of kws) {
+      const inCap = inCapKeywordIds(kws, cap);
+      // Filter to weekly here (we pulled all frequencies above for the
+      // ordering — see step 3). Other cadences are handled by their
+      // own crons.
+      const weeklyKws = kws.filter((k) => k.scan_frequency === 'weekly');
+      for (const kw of weeklyKws) {
+        if (!inCap.has(kw.id)) {
+          results.push({
+            clientId: client.id,
+            locationId: location.id,
+            keywordId: kw.id,
+            skipped: 'over_cap',
+          });
+          skipped++;
+          continue;
+        }
         const r = await scanOneTuple(
           supabase,
           { id: client.id, business_name: client.business_name },

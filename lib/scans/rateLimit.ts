@@ -18,12 +18,27 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseLike = SupabaseClient<any, any, any>;
 
 export const ON_DEMAND_SCANS_PER_24H = 3;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Agency-domain operators are exempt from the on-demand scan cap. The
+ * domain set lives in lib/auth/agencyDomains so the same check governs
+ * both rate-limit bypass and sign-in eligibility (a single change
+ * updates both surfaces). Costs are still tracked per-scan via
+ * dfs_cost_cents — exemption here is only about the rate limit, not
+ * about visibility into spend.
+ */
+export function shouldBypassRescanCap(
+  email: string | null | undefined
+): boolean {
+  return isAgencyDomainEmail(email);
+}
 
 export type RescanCapStatus = {
   count: number;

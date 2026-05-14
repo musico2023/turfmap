@@ -2,9 +2,14 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Plus, Trash2 } from 'lucide-react';
-import type { ScanFrequency, TrackedKeywordRow } from '@/lib/supabase/types';
+import { Activity, Lock, Plus, Trash2 } from 'lucide-react';
+import type {
+  ScanFrequency,
+  SubscriptionTier,
+  TrackedKeywordRow,
+} from '@/lib/supabase/types';
 import { Button } from '@/components/ui/Button';
+import { maxKeywordsPerLocation } from '@/lib/subscription/tier';
 
 export type KeywordsManagerProps = {
   clientId: string;
@@ -17,6 +22,11 @@ export type KeywordsManagerProps = {
    *  multi-location clients so the operator sees which location's
    *  keywords are listed). */
   locationLabel?: string | null;
+  /** Recurring tier — drives the per-location keyword cap (Pulse: 3,
+   *  Pulse+: 10, NULL: 1). The API enforces; this prop is for UX (the
+   *  counter and the disabled-at-cap state). Pass null for one_time
+   *  clients or when tier is unset. */
+  tier?: SubscriptionTier | null;
   /** Pre-computed industry+city-based keyword chips (e.g. ["pediatrician
    *  toronto", "pediatric clinic toronto", ...]). Click → fills the
    *  input. Empty array hides the suggestion row. Computed server-side
@@ -29,9 +39,31 @@ export function KeywordsManager({
   clientId,
   locationId = null,
   locationLabel = null,
+  tier = null,
   suggestions = [],
   keywords,
 }: KeywordsManagerProps) {
+  const cap = maxKeywordsPerLocation(tier);
+  const atCap = keywords.length >= cap;
+  const overage = Math.max(0, keywords.length - cap);
+  const isOverCap = overage > 0;
+  const upgradeHint =
+    tier === 'pulse' ? ' — upgrade to Pulse+ for 10' : '';
+
+  // Determine which keywords are inside vs outside the tier cap.
+  // Same ordering as the cron and /api/scans/trigger: primary first,
+  // then earliest-created. The first `cap` rows are scannable; the
+  // rest render with a "scans paused" badge. Backend enforces the
+  // same cutoff — this is purely UI affordance.
+  const orderedForCap = [...keywords].sort((a, b) => {
+    const ap = a.is_primary ? 1 : 0;
+    const bp = b.is_primary ? 1 : 0;
+    if (ap !== bp) return bp - ap; // primary first
+    const at = a.created_at ?? '';
+    const bt = b.created_at ?? '';
+    return at.localeCompare(bt);
+  });
+  const overCapIds = new Set(orderedForCap.slice(cap).map((k) => k.id));
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -102,19 +134,50 @@ export function KeywordsManager({
         borderColor: 'var(--color-border)',
       }}
     >
-      <div className="mb-4">
-        <h3 className="font-display text-lg font-bold">
-          Tracked keywords
-          {locationLabel && (
-            <span className="text-xs text-zinc-500 font-normal ml-2">
-              · {locationLabel}
-            </span>
-          )}
-        </h3>
-        <p className="text-xs text-zinc-500 mt-0.5">
-          {keywords.length} keyword{keywords.length === 1 ? '' : 's'} · scheduled
-          scans run on each keyword&apos;s frequency.
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-display text-lg font-bold">
+            Tracked keywords
+            {locationLabel && (
+              <span className="text-xs text-zinc-500 font-normal ml-2">
+                · {locationLabel}
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {isOverCap ? (
+              <>
+                <span style={{ color: '#ffb86b' }}>
+                  {keywords.length} keyword{keywords.length === 1 ? '' : 's'}
+                </span>{' '}
+                · {cap} included on plan, {overage} over · scheduled scans run on
+                each keyword&apos;s frequency.
+              </>
+            ) : (
+              <>
+                {keywords.length} of {cap} keyword{cap === 1 ? '' : 's'} ·
+                scheduled scans run on each keyword&apos;s frequency.
+              </>
+            )}
+          </p>
+        </div>
+        <span
+          className="px-2 py-1 rounded text-[10px] uppercase tracking-[0.18em] font-bold whitespace-nowrap"
+          style={{
+            background: atCap
+              ? 'rgba(255, 159, 58, 0.06)'
+              : 'rgba(255, 255, 255, 0.04)',
+            color: atCap ? '#ffb86b' : '#a1a1aa',
+            border: `1px solid ${atCap ? 'rgba(255, 159, 58, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+          }}
+          title={
+            atCap
+              ? `You've used all ${cap} keyword slots${upgradeHint}.`
+              : `${cap - keywords.length} of ${cap} slots remaining.`
+          }
+        >
+          {keywords.length} / {cap}
+        </span>
       </div>
 
       {/* List */}
@@ -125,55 +188,81 @@ export function KeywordsManager({
             this client.
           </div>
         ) : (
-          keywords.map((k) => (
-            <div
-              key={k.id}
-              className="flex items-center gap-3 px-3 py-2 rounded-md border"
-              style={{
-                background: 'var(--color-bg)',
-                borderColor: 'var(--color-border)',
-              }}
-            >
-              <span className="font-mono text-sm text-zinc-100 flex-1 truncate">
-                {k.keyword}
-              </span>
-              {k.is_primary && (
-                <span
-                  className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border"
-                  style={{
-                    background: '#1a2010',
-                    color: 'var(--color-lime)',
-                    borderColor: 'var(--color-border-bright)',
-                  }}
-                >
-                  PRIMARY
-                </span>
-              )}
-              <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
-                {k.scan_frequency ?? 'weekly'}
-              </span>
-              <button
-                type="button"
-                onClick={() => onDelete(k.id)}
-                disabled={busy === k.id}
-                title="Remove keyword"
-                className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-50"
+          keywords.map((k) => {
+            const overCap = overCapIds.has(k.id);
+            return (
+              <div
+                key={k.id}
+                className="flex items-center gap-3 px-3 py-2 rounded-md border transition-opacity"
+                style={{
+                  background: 'var(--color-bg)',
+                  borderColor: overCap
+                    ? 'rgba(255, 159, 58, 0.25)'
+                    : 'var(--color-border)',
+                  opacity: overCap ? 0.7 : 1,
+                }}
+                title={
+                  overCap
+                    ? `Over your ${cap}-keyword plan — scheduled and on-demand scans are paused for this keyword. Remove an earlier keyword or upgrade to resume scanning.`
+                    : undefined
+                }
               >
-                {busy === k.id ? (
-                  <Activity size={14} className="animate-pulse" />
-                ) : (
-                  <Trash2 size={14} />
+                <span
+                  className={`font-mono text-sm flex-1 truncate ${overCap ? 'text-zinc-400 line-through decoration-zinc-600' : 'text-zinc-100'}`}
+                >
+                  {k.keyword}
+                </span>
+                {k.is_primary && (
+                  <span
+                    className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border"
+                    style={{
+                      background: '#1a2010',
+                      color: 'var(--color-lime)',
+                      borderColor: 'var(--color-border-bright)',
+                    }}
+                  >
+                    PRIMARY
+                  </span>
                 )}
-              </button>
-            </div>
-          ))
+                {overCap && (
+                  <span
+                    className="text-[9px] font-mono uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border flex items-center gap-1"
+                    style={{
+                      background: 'rgba(255, 159, 58, 0.06)',
+                      color: '#ffb86b',
+                      borderColor: 'rgba(255, 159, 58, 0.3)',
+                    }}
+                  >
+                    <Lock size={9} />
+                    SCANS PAUSED
+                  </span>
+                )}
+                <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                  {k.scan_frequency ?? 'weekly'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onDelete(k.id)}
+                  disabled={busy === k.id}
+                  title="Remove keyword"
+                  className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                >
+                  {busy === k.id ? (
+                    <Activity size={14} className="animate-pulse" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
 
       {/* Suggestion chips — affordances are explicit: a + icon, hover
           glow, and a small label tell the operator they're clickable.
           Click fills the input below so they can edit before submitting. */}
-      {suggestions.length > 0 && (
+      {suggestions.length > 0 && !atCap && (
         <div className="mb-3">
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5 flex items-center gap-1.5">
             <span>Suggestions</span>
@@ -229,20 +318,26 @@ export function KeywordsManager({
 
       {/* Add form */}
       <form onSubmit={onAdd} className="space-y-3">
-        <div className="grid grid-cols-12 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
           <input
             type="text"
             value={newKeyword}
             onChange={(e) => setNewKeyword(e.target.value)}
-            placeholder="add another keyword (e.g. 'water heater repair')"
-            className="col-span-7 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+            disabled={atCap}
+            placeholder={
+              atCap
+                ? `Keyword cap reached${upgradeHint}`
+                : "add another keyword (e.g. 'water heater repair')"
+            }
+            className="sm:col-span-7 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <select
             value={newFrequency}
             onChange={(e) =>
               setNewFrequency(e.target.value as ScanFrequency)
             }
-            className="col-span-3 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-sm text-zinc-100 focus:outline-none focus:border-zinc-600 transition-colors"
+            disabled={atCap}
+            className="sm:col-span-3 px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm text-zinc-100 focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value="weekly">weekly</option>
             <option value="biweekly">biweekly</option>
@@ -253,23 +348,53 @@ export function KeywordsManager({
             type="submit"
             variant="primary"
             size="md"
-            disabled={!newKeyword.trim()}
+            disabled={!newKeyword.trim() || atCap}
             loading={busy === 'add'}
-            leftIcon={<Plus size={12} strokeWidth={2.75} />}
-            className="col-span-2"
+            leftIcon={
+              atCap ? (
+                <Lock size={12} strokeWidth={2.75} />
+              ) : (
+                <Plus size={12} strokeWidth={2.75} />
+              )
+            }
+            className="sm:col-span-2"
           >
-            Add
+            {atCap ? 'At cap' : 'Add'}
           </Button>
         </div>
-        <label className="flex items-center gap-2 text-xs text-zinc-500 select-none">
+        <label
+          className={`flex items-center gap-2 text-xs select-none ${atCap ? 'text-zinc-700' : 'text-zinc-500'}`}
+        >
           <input
             type="checkbox"
             checked={makePrimary}
             onChange={(e) => setMakePrimary(e.target.checked)}
-            className="accent-[var(--color-lime)]"
+            disabled={atCap}
+            className="accent-[var(--color-lime)] disabled:cursor-not-allowed"
           />
           Make this the primary keyword (replaces the current primary)
         </label>
+        {atCap && (
+          <p className="text-xs text-zinc-500">
+            <span
+              className="font-semibold"
+              style={{ color: isOverCap ? '#ffb86b' : '#e4e4e7' }}
+            >
+              {isOverCap
+                ? `${overage} over your ${cap}-keyword plan`
+                : `${cap}/${cap} keyword slots used`}
+            </span>
+            {isOverCap
+              ? tier === 'pulse'
+                ? ` — remove ${overage} to add new, or upgrade to Pulse+ for 10.`
+                : ` — remove ${overage} to add new, or contact support.`
+              : tier === 'pulse'
+                ? ' — Pulse+ unlocks 10 per location.'
+                : tier === 'pulse_plus'
+                  ? ' — contact support to add custom slots.'
+                  : ' — set a recurring tier to add more.'}
+          </p>
+        )}
         {error && (
           <div className="text-xs text-red-400 font-mono">{error}</div>
         )}

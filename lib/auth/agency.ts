@@ -61,6 +61,27 @@ export async function requireAgencyUserForApi(): Promise<
   return user;
 }
 
+/**
+ * Email domains belonging to the agency owner (Fourdots Digital).
+ * Restricted-affordance actions — self-serve → agency conversion,
+ * client deletion, future destructive ops — use this gate on top of
+ * the standard agency-staff check, since these actions are
+ * operationally significant and shouldn't be exposed to contractors
+ * or future hires added to the `users` table from non-fourdots
+ * emails. The base `users` table membership grants read + non-
+ * destructive write access; this domain restricts the heavy stuff.
+ */
+const AGENCY_OWNER_DOMAINS = ['fourdots.ca', 'fourdots.io'];
+
+/** True iff the email's domain is one of the agency-owner domains.
+ *  Comparison is case-insensitive. NULL / empty / domainless inputs
+ *  return false. */
+export function isAgencyOwnerEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const domain = email.split('@')[1]?.toLowerCase();
+  return domain ? AGENCY_OWNER_DOMAINS.includes(domain) : false;
+}
+
 async function fetchAgencyUser(): Promise<AgencyUser | null> {
   const auth = await getAuthSupabase();
   const { data } = await auth.auth.getUser();

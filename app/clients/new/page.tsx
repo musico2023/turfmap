@@ -26,9 +26,11 @@ export default async function NewClientPage() {
         <div className="mb-6">
           <h1 className="font-display text-2xl font-bold">Onboard a new client</h1>
           <p className="text-xs text-zinc-500 mt-1">
-            Creates the client + a primary tracking keyword. The first scheduled
-            scan runs on the next cron cycle (Mondays 06:00 UTC). To scan
-            immediately, use the dashboard&apos;s <span className="text-zinc-300">Re-scan turf</span> button.
+            Creates the client + a primary tracking keyword. Stripe-plan
+            buyers get an initial scan auto-fired on Checkout completion;
+            agency-managed clients can scan from the dashboard&apos;s{' '}
+            <span className="text-zinc-300">Re-scan turf</span> button or
+            wait for the weekly cron (Mondays 06:00 UTC).
           </p>
         </div>
         <ClientCreateForm />
