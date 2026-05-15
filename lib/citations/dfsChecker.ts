@@ -35,7 +35,7 @@
  */
 
 import type { NapAuditFindings, NapAuditCitation, NapAuditInconsistency, NapAuditMissing } from '@/lib/supabase/types';
-import { classifyCitation, nameMatches, type CitationStatus } from './napCompare';
+import { classifyCitation, nameMatches, addressMatches, phoneMatches, type CitationStatus } from './napCompare';
 import type { DfsDirectory } from './directories';
 
 const DFS_BASE_URL = 'https://api.dataforseo.com';
@@ -61,6 +61,31 @@ export type CitationBusinessProfile = {
   postcode: string;
   country: string;
   telephone?: string | null;
+};
+
+/** A sibling location of the same brand — used by sibling-aware
+ *  classification (see runDfsCitationAudit). Same shape as the BL
+ *  client's SiblingLocation type so callers can pass the same data
+ *  to either provider.
+ *
+ *  Why this matters: a multi-location brand (Kidcrew with Wychwood +
+ *  Don Mills, a contractor with 3 city offices, etc.) gets ONE audit
+ *  per location. Without sibling awareness, the Don Mills audit
+ *  flags BBB as "wrong address" when BBB's listing is actually
+ *  Wychwood's correct address. False positive that erodes operator
+ *  trust the moment they recognize their own sibling's data.
+ *
+ *  With sibling awareness: BBB's listing matches Wychwood's NAP
+ *  → classify as `sibling_match` (NOT mismatch), add to the
+ *  Don Mills audit's `missing` list with `occupied_by_sibling`
+ *  populated so the AI Coach can recommend "add Don Mills alongside
+ *  the existing Wychwood listing" instead of "fix Don Mills's wrong
+ *  NAP." */
+export type SiblingLocation = CitationBusinessProfile & {
+  /** Optional human-readable label like "Wychwood" or "Don Mills"
+   *  for surfacing in the Fix List. NULL when the sibling has no
+   *  meaningful label (rare). */
+  label?: string | null;
 };
 
 /** What we extract from one DFS SERP query for one directory. */
@@ -308,18 +333,46 @@ export type DfsCitationAuditResult = {
   }>;
 };
 
+/** Decide whether a found listing's NAP fragments match one of the
+ *  given sibling locations. Returns the matched sibling or null.
+ *
+ *  Match rule: same as classifyCitation's 'matched' path — name OR
+ *  (phone OR address) must align. Since callers already passed the
+ *  name-gate before this function fires, name match here is
+ *  redundant; we just need a NAP signal. */
+function findMatchingSibling(
+  siblings: readonly SiblingLocation[],
+  foundName: string | null,
+  foundPhone: string | null,
+  foundAddress: string | null
+): SiblingLocation | null {
+  for (const s of siblings) {
+    if (!nameMatches(s.name, foundName)) continue;
+    if (phoneMatches(s.telephone ?? null, foundPhone)) return s;
+    if (addressMatches(s.street_address, foundAddress)) return s;
+  }
+  return null;
+}
+
 /**
  * Run a DFS-backed citation audit against the given directory set.
  *
  * Returns NapAuditFindings shaped for storage in nap_audits.findings
  * and downstream consumption by the dashboard + AI Coach.
  *
+ * Sibling-aware: when `siblings` is non-empty, any listing whose NAP
+ * matches a sibling (but not the canonical) is classified as
+ * `sibling_match` instead of `mismatch`, and added to `missing` with
+ * `occupied_by_sibling` populated. Pass an empty array (or omit) for
+ * single-location buyers.
+ *
  * Never throws — individual directory failures classify as
- * 'unverified' so a partial audit is more useful than no audit.
+ * `missing` so a partial audit is more useful than no audit.
  */
 export async function runDfsCitationAudit(
   business: CitationBusinessProfile,
-  directories: readonly DfsDirectory[]
+  directories: readonly DfsDirectory[],
+  siblings: readonly SiblingLocation[] = []
 ): Promise<DfsCitationAuditResult> {
   if (directories.length === 0) {
     return {
@@ -388,7 +441,7 @@ export async function runDfsCitationAudit(
     // Name matched — extract NAP fragments and classify.
     const foundPhone = extractPhoneFromSnippet(probe.found_snippet);
     const foundAddress = extractAddressFromSnippet(probe.found_snippet);
-    const status: CitationStatus = classifyCitation(
+    const canonicalStatus: CitationStatus = classifyCitation(
       {
         name: business.name,
         phone: business.telephone ?? null,
@@ -401,24 +454,65 @@ export async function runDfsCitationAudit(
       }
     );
 
+    // Sibling-aware override: if classifyCitation would have flagged
+    // a mismatch BUT the found NAP actually matches a sibling
+    // location's NAP, reclassify as sibling_match. The audited
+    // storefront is still missing FROM THIS DIRECTORY (the listing
+    // points at the sibling, not at us), so we ALSO add it to the
+    // `missing` list with `occupied_by_sibling` populated.
+    if (canonicalStatus !== 'matched' && siblings.length > 0) {
+      const sibling = findMatchingSibling(
+        siblings,
+        probe.found_name,
+        foundPhone,
+        foundAddress
+      );
+      if (sibling) {
+        citations.push({
+          directory: probe.directory.id,
+          url: probe.url,
+          name: probe.found_name,
+          address: foundAddress,
+          phone: foundPhone,
+          status: 'sibling_match',
+        });
+        missing.push({
+          directory: probe.directory.id,
+          priority: probe.directory.priority,
+          occupied_by_sibling: {
+            sibling_label: sibling.label ?? null,
+            sibling_address: sibling.street_address || null,
+          },
+        });
+        summary.push({
+          directory_id: probe.directory.id,
+          label: probe.directory.label,
+          status: 'unverified', // surface as 'unverified' in the operator-facing summary; the structured `citations` row carries the real sibling_match status
+          url: probe.url,
+          error: `listing belongs to sibling location${sibling.label ? ` "${sibling.label}"` : ''}`,
+        });
+        continue;
+      }
+    }
+
     citations.push({
       directory: probe.directory.id,
       url: probe.url,
       name: probe.found_name,
       address: foundAddress,
       phone: foundPhone,
-      status,
+      status: canonicalStatus,
     });
 
     summary.push({
       directory_id: probe.directory.id,
       label: probe.directory.label,
-      status,
+      status: canonicalStatus,
       url: probe.url,
       error: null,
     });
 
-    if (status === 'mismatch') {
+    if (canonicalStatus === 'mismatch') {
       // For v1, flag the field generically. A future refinement
       // would inspect which sub-field (name/phone/address) drove
       // the mismatch and surface that specifically.
