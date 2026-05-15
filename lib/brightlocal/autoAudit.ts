@@ -26,6 +26,15 @@ import {
   inferProfileForIndustry,
 } from '@/lib/brightlocal/directories';
 import {
+  runDfsCitationAudit,
+  type CitationBusinessProfile,
+  type SiblingLocation as DfsSiblingLocation,
+} from '@/lib/citations/dfsChecker';
+import {
+  directoriesForProfile as dfsDirectoriesForProfile,
+  inferDfsProfile,
+} from '@/lib/citations/directories';
+import {
   listLocations,
   locationDisplayLabel,
   resolveLocation,
@@ -37,6 +46,23 @@ import type {
   NapAuditRequest,
   NapAuditRow,
 } from '@/lib/supabase/types';
+
+/**
+ * Which backend to use for NAP audits. Selected via env so we can
+ * switch back to BrightLocal Data API when commercial access is in
+ * place (10k req/mo @ $500/mo — see notes in lib/brightlocal/client.ts).
+ *
+ *   NAP_AUDIT_PROVIDER=brightlocal — use BL Data API (requires
+ *                                     250-req trial OR commercial key)
+ *   NAP_AUDIT_PROVIDER=dfs        — use DataForSEO SERP scrape
+ *                                     (~$0.09/audit; default)
+ *   (anything else / unset)        — defaults to dfs
+ */
+type AuditProvider = 'brightlocal' | 'dfs';
+function pickProvider(): AuditProvider {
+  const v = (process.env.NAP_AUDIT_PROVIDER ?? '').toLowerCase();
+  return v === 'brightlocal' ? 'brightlocal' : 'dfs';
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseLike = SupabaseClient<any, any, any>;
@@ -101,22 +127,12 @@ export async function maybeRunNapAudit(
   triggeredBy: string | null,
   locationId: string | null = null
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
-  // 1. Pull client (for billing_mode tier gate + business_name + industry).
-  //
-  // TIER GATE: NAP audits hit BrightLocal's Data API (/data/v1/listings/*).
-  // Trial cap is 250 requests, hard stop — BL doesn't auto-bill after the
-  // cap, the endpoint just stops working until a commercial-key agreement
-  // is in place (confirmed by Rhea, BL Customer Support, on 2026-05-12).
-  // Each audit = ~3-10 requests, so the trial buys us ~25-80 audits total.
-  //
-  // To preserve the trial allowance for paying customers — Pulse / Pulse+
-  // / agency-managed — skip the audit entirely for one-time tiers (free
-  // and paid TurfScans, standalone Visibility Audits, Strategy Sessions).
-  // The AI Coach falls back to general best-practices recommendations
-  // without NAP-specific findings, which is acceptable for free / one-time
-  // buyers. Pulse / Pulse+ buyers get the full NAP-driven coaching.
-  //
-  // Re-enable for all tiers once we're on a commercial BL Data API key.
+  // 1. Pull client metadata. The historical billing_mode='one_time' tier
+  // gate is GONE — DFS-based audits (default provider) cost ~$0.09 per
+  // audit, sustainable across every buyer tier including $0 free scans.
+  // Reverts commit 850a51b's tier gate at the autoAudit level (the gate
+  // was specifically a BL trial preservation measure that no longer
+  // applies under DFS).
   const { data: client } = await supabase
     .from('clients')
     .select('business_name, industry, billing_mode')
@@ -127,22 +143,14 @@ export async function maybeRunNapAudit(
   if (!client) {
     return { ran: false, reason: 'client not found' };
   }
-  if (client.billing_mode === 'one_time') {
-    return {
-      ran: false,
-      reason:
-        'tier gate: NAP audit reserved for Pulse / Pulse+ / agency-managed clients (BL Data API trial preservation, see autoAudit.ts header)',
-    };
-  }
 
-  // 2. Resolve the target location (the explicit one, or the client's
-  //    primary). No location → can't audit.
+  // 2. Resolve the target location.
   const location = await resolveLocation(supabase, clientId, locationId);
   if (!location) {
     return { ran: false, reason: 'no location resolved for this client' };
   }
 
-  // 3. Already a recent audit for this exact location?
+  // 3. Recent audit on this exact location?
   const since = new Date(
     Date.now() - AUDIT_REFRESH_WINDOW_MS
   ).toISOString();
@@ -169,20 +177,41 @@ export async function maybeRunNapAudit(
     };
   }
 
-  // 5. Industry-aware directory selection (a pediatric clinic shouldn't
-  //    be audited against Angi/Houzz/etc).
-  const directories = getDirectoriesForIndustry(client.industry);
-  const profile = inferProfileForIndustry(client.industry);
+  // 5. Provider dispatch. Default = DFS (cheap, covers every tier).
+  //    Opt in to BrightLocal via env when commercial Data API access is
+  //    in place.
+  const provider = pickProvider();
+  if (provider === 'dfs') {
+    return runDfsAudit(supabase, clientId, location.id, triggeredBy, business, client.industry);
+  }
+  return runBrightlocalAudit(supabase, clientId, location.id, triggeredBy, business, client.industry);
+}
 
-  // 6. Insert a pending audit row first so we have a stable id even if
-  //    BL's initiate fan-out throws.
+/** DFS-backed audit path. Runs synchronously (~5-9s for ~9 directories),
+ *  inserts a single nap_audits row stamped as 'complete' on success or
+ *  'failed' on exception. Never throws to the caller.
+ *
+ *  Sibling-aware: pulls every other location of the same client and
+ *  passes them to the checker so listings whose NAP matches a sibling
+ *  get classified as `sibling_match` instead of false-flagged. */
+async function runDfsAudit(
+  supabase: SupabaseLike,
+  clientId: string,
+  locationId: string,
+  triggeredBy: string | null,
+  business: BusinessProfile,
+  industry: string | null
+): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
+  // Insert pending row first so the row id is stable even if the audit
+  // itself throws.
   const { data: row, error: insErr } = await supabase
     .from('nap_audits')
     .insert({
       client_id: clientId,
-      location_id: location.id,
+      location_id: locationId,
       triggered_by: triggeredBy,
       status: 'pending',
+      provider: 'dfs',
     })
     .select('id')
     .single<{ id: string }>();
@@ -193,8 +222,116 @@ export async function maybeRunNapAudit(
     };
   }
 
-  // 7. Fan out across the industry-tuned directory set. Catch all errors
-  //    so the caller (scan trigger or AI Coach) never sees them.
+  try {
+    const profile = inferDfsProfile(industry);
+    const directories = dfsDirectoriesForProfile(profile, business.country);
+
+    // Sibling locations: every other location of the same brand, in the
+    // SiblingLocation shape DFS expects. BL's BusinessProfile has
+    // country?: string (optional); DFS's CitationBusinessProfile
+    // requires it — default to 'USA' for safety since most clients are
+    // US-based, but the helper that built siblingBp would have set it
+    // explicitly when the location has a country_code populated.
+    const allLocations = await listLocations(supabase, clientId);
+    const siblings: DfsSiblingLocation[] = [];
+    for (const l of allLocations) {
+      if (l.id === locationId) continue;
+      const siblingBp = locationToBusinessProfile(business.name, l);
+      if (!siblingBp) continue;
+      siblings.push({
+        ...siblingBp,
+        country: siblingBp.country ?? 'USA',
+        label: locationDisplayLabel(l),
+      });
+    }
+
+    const canonical: CitationBusinessProfile = {
+      name: business.name,
+      street_address: business.street_address,
+      city: business.city,
+      region: business.region,
+      postcode: business.postcode,
+      country: business.country ?? 'USA',
+      telephone: business.telephone,
+    };
+
+    const result = await runDfsCitationAudit(canonical, directories, siblings);
+
+    const findings = result.findings;
+    const totalCitations = findings.citations.length;
+    const inconsistenciesCount = findings.inconsistencies.length;
+    const missingHigh = findings.missing.filter((m) => m.priority === 'high').length;
+    const completedAt = new Date().toISOString();
+
+    await supabase
+      .from('nap_audits')
+      .update({
+        status: 'complete',
+        findings,
+        raw_response: result.per_directory_summary,
+        total_citations: totalCitations,
+        inconsistencies_count: inconsistenciesCount,
+        missing_high_priority_count: missingHigh,
+        completed_at: completedAt,
+      })
+      .eq('id', row.id);
+
+    return {
+      ran: true,
+      auditId: row.id,
+      reason: `dfs provider, profile=${profile}, dirs=${directories.length}, cost=$${result.total_cost_dollars.toFixed(4)}`,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await supabase
+      .from('nap_audits')
+      .update({
+        status: 'failed',
+        error_message: msg,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', row.id);
+    return {
+      ran: false,
+      auditId: row.id,
+      reason: `DFS audit failed: ${msg}`,
+    };
+  }
+}
+
+/** BrightLocal-backed audit path. Existing behavior preserved verbatim;
+ *  only invoked when NAP_AUDIT_PROVIDER=brightlocal is set (default is
+ *  DFS). Async — initiate fan-out is sync (~1-2s), then `pollAuditResults`
+ *  finalizes asynchronously via maybeFinalizeNapAudit. */
+async function runBrightlocalAudit(
+  supabase: SupabaseLike,
+  clientId: string,
+  locationId: string,
+  triggeredBy: string | null,
+  business: BusinessProfile,
+  industry: string | null
+): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
+  const directories = getDirectoriesForIndustry(industry);
+  const profile = inferProfileForIndustry(industry);
+
+  const { data: row, error: insErr } = await supabase
+    .from('nap_audits')
+    .insert({
+      client_id: clientId,
+      location_id: locationId,
+      triggered_by: triggeredBy,
+      status: 'pending',
+      provider: 'brightlocal',
+    })
+    .select('id')
+    .single<{ id: string }>();
+  if (insErr || !row) {
+    return {
+      ran: false,
+      reason: `audit row insert failed: ${insErr?.message ?? 'no row'}`,
+    };
+  }
+
   try {
     const result = await initiateCitationAudit(business, directories);
     await supabase
@@ -205,7 +342,7 @@ export async function maybeRunNapAudit(
         brightlocal_rejected: result.rejected,
       })
       .eq('id', row.id);
-    return { ran: true, auditId: row.id, reason: `profile: ${profile}` };
+    return { ran: true, auditId: row.id, reason: `brightlocal provider, profile: ${profile}` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await supabase
