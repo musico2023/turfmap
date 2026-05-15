@@ -1,180 +1,207 @@
-# Session Handoff — VIP Campaign + Citation Builder (Pulse+)
+# Session Handoff — DFS Citation Checker + VIP Campaign
 
-Last updated: 2026-05-12 ~1:30am EDT
+Last updated: 2026-05-15 ~6pm EDT
 
-## Goal
+## TL;DR
 
-Two parallel workstreams:
+DFS-based NAP audit checker is live in production, replacing the BrightLocal Data API path for all buyer tiers. BL Data API is structurally out of reach for TurfMap (10k req/mo qualification gate, confirmed by Emily Hamblyn / BL Sales on May 14). One-time tier gate (commit `850a51b`) is effectively lifted by the new autoAudit dispatcher — free TurfScans and Visibility Audits now get real NAP findings via DFS at ~$0.09/audit. Sibling-location awareness validated in production on D Spot Brampton Wexford's audit. VIP campaign Stage 1 sends went out; 4 recovery drafts queued for 8:14am May 15 covering prospects who hit the `/freescan` 404 window. Stripe webhook URL fixed (apex→www).
 
-1. **VIP Campaign (Q2 CRM warm reactivation)** — hand-send Stage 1 free-TurfScan
-   emails to 29 prior Fourdots booking-form leads. Auto-fire Stage 2 audit-upgrade
-   email 30 min – 24 hr after they engage with their scan dashboard. Goal: convert
-   warm cohort into $197 Visibility Audit upgrades.
-
-2. **Citation Builder on Pulse+** — bundle BrightLocal Citation Builder into the
-   Pulse+ subscription so Pulse+ buyers can fire a one-click citation-submission
-   campaign for their NAP.
+---
 
 ## Current state — what's live in production
 
-### VIP Campaign — fully wired end-to-end, validated via smoke test
+### NAP audit pipeline (rewritten today)
 
-- `/freescan` lander (warm-cohort copy, $0 Stripe Checkout w/ VIP coupon, no card form)
-- $0 Stripe Checkout edge handled (`setup_future_usage` skipped for 100%-off coupons)
-- `/order/success` and `/portal/[slug]` dashboard suppress AuditUpgradePanel + PulseAttachPanel for `cohort='crm_reactivation_q2'`
-- VIP-specific copy on `/order/success`: "Your free TurfScan order is confirmed" + Anthony followup line
-- "Baseline scan complete" banner hidden for one-time buyers (only renders for Pulse subs)
-- Engagement endpoint `POST /api/prospect/[id]/engaged` fires on dashboard load, stamps `scan_engaged_at`
-- Stage 2 cron `/api/cron/crmvip-stage2` runs every 15 min, sends audit-upgrade email
-- `/audit-upgrade` page handles Stage 2 click → redirects to `/api/upgrade/audit/create-session?source=stage_2_email` → Stripe upgrade Checkout (`$197` via UPGRADE_302_CREDIT)
-- Intake form keyword pre-fill from `prospects.trade`
-- FAQ rewrites for both `/yourmap` and `/freescan` (geo-grid mechanic clarification)
-- Score-readout labels render PascalCase (TurfReach not TURFREACH)
-- 28 prospects retagged to `cohort='crm_reactivation_q2'` via SQL
-- 29th prospect (Justina W / Signature Landscape Construction / `ay62UUG9SE`) added via one-off Python script
-- VIP Stripe coupon created in live mode (100% off, scan tier only, max 30 redemptions, 60-day expiry)
-- Migration 0026_prospects_cohort.sql applied to production Supabase
-- Migration 0025_prospects_business_name_check.sql applied (SMOKE TEST prefix CHECK constraint)
+- **Provider dispatcher** at `lib/brightlocal/autoAudit.ts` chooses `dfs` (default) or `brightlocal` (env-flagged opt-in). Migration `0028_nap_audits_provider.sql` adds `nap_audits.provider` with a CHECK constraint; existing rows backfilled to `brightlocal`.
+- **DFS checker** at `lib/citations/` runs Google SERP `site:{domain}` queries for ~9 directories at $0.01/req = ~$0.09 per audit. Synchronous (5-9s elapsed), writes findings + `status='complete'` in one shot. No polling loop needed.
+- **Sibling-aware**: listings whose NAP matches another location of the same client get classified as `sibling_match` and added to `missing` with `occupied_by_sibling` populated. Validated live in D Spot Brampton Wexford's AI Coach output ("Nextdoor carries a sibling listing — submit a new separate listing for this location alongside it rather than editing the sibling's record").
+- **Tier gate lifted**: free `/freescan` (VIP) + paid `/yourmap` (cold-email) + standalone Audit / Strategy + Pulse / Pulse+ ALL now get NAP audits via DFS. The old `billing_mode='one_time'` short-circuit from commit `850a51b` is removed by the autoAudit refactor (`ce40398`).
+- **Directories covered** (home-services profile + country filter): Yelp, Facebook, BBB, Apple Maps, Bing Places, Foursquare, YellowPages US/CA, Nextdoor, Angi (US), HomeAdvisor (US), Thumbtack (US), HomeStars (CAN). Medical profile swaps in Healthgrades, WebMD Care, RateMDs.
+- **GBP gap**: Google Business Profile intentionally NOT in the SERP-scrape path — `site:google.com/maps` is invalid Google syntax. Slated for v1.2 via dedicated DFS Business Data API probe (`/v3/business_data/google/my_business_info/live`). Until then, GBP audits are operator's job via BL dashboard.
 
-### Citation Builder on Pulse+ — code ready, $0 cost
+### VIP Campaign
 
-- Code path migrated to BL Management APIs (`/manage/v1/citation-builder`)
-- Confirm-and-pay migrated from deprecated `/v2/cb/confirm-and-pay` POST to **`/manage/v1/citation-builder/{id}/confirm` PUT** (commit `d1daa97`)
-- New `confirmCampaignManageV1()` helper with `publishersForCountry()` (USA: 5 publishers, Canada: 3, Australia: 3, other: 2)
-- Tier-gated to `pulse_plus` via `canAccessCitations()`
-- Env vars set on production Vercel (`BRIGHTLOCAL_API_KEY`, `CITATION_BUILDER_ENABLED=true`)
-- Cost: $0 — BrightLocal Management APIs unlimited per Rhea's May 11 reply
+- 28 of 29 prospects retagged to `cohort='crm_reactivation_q2'`; Justina's 29th prospect (`ay62UUG9SE`) added via one-off Python script.
+- Stage 1 hand-sent via Superhuman May 12. 4 recovery drafts queued for **8:14am May 15** (James / Evelyn / Michael / Mike) covering prospects whose page_viewed_at is NULL — they may have clicked during the `/freescan` 404 window (May 13 22:10 EDT → May 14 ~21:00 EDT).
+- Stage 2 cron `/api/cron/crmvip-stage2` runs every 15 min. AI Coach nudge cron `/api/cron/ai-coach-nudge` runs every 15 min for prospects who engaged but didn't click Generate.
+- First real conversion: Ryan / BVM Contracting (`hVxWpmt1fD`), May 12 17:45 UTC. Engaged in 1s, never clicked Generate, Stage 2 fired at 18:30 UTC, AI Coach nudge fired May 13 00:30 UTC. No upgrade yet.
+- Coupon (live mode): 100% off, scan tier only, max 30 redemptions, 60-day expiry.
 
-### NAP audit — gated to recurring tiers to preserve BL Data API trial
+### Citation Builder (Pulse+)
 
-- `maybeRunNapAudit()` at `lib/brightlocal/autoAudit.ts` now bails early when `client.billing_mode === 'one_time'`
-- Effect: free `/freescan` (VIP) + paid `/yourmap` (cold-email) + standalone Audit / Strategy purchases NO LONGER fire NAP audits
-- Pulse / Pulse+ / agency-managed clients still get full NAP-driven AI Coach output
-- Rationale: Rhea (BL Support) confirmed May 12 that the 250-request trial cap is a HARD STOP, not an auto-billed threshold. Per-request commercial pricing requires a new commercial-key arrangement (Sales conversation in flight). One NAP audit ≈ 3-10 BL Data API requests; trial buys us ~25-80 audits total. Without this gate, the VIP campaign alone could exhaust the trial mid-launch.
-- Revert path: once commercial Data API key is in place, revert commit `850a51b` to re-enable for one-time tiers.
+- Migrated from `/v2/cb/confirm-and-pay` (silently 4xx'd) to `/manage/v1/citation-builder/{id}/confirm` PUT (commit `d1daa97`).
+- Country-aware publishers: USA=[dataaxle, neustar, foursquare, gpsnetwork, ypnetwork], CAN=[dataaxle, foursquare, gpsnetwork], AUS=[foursquare, gpsnetwork, locafynetwork], other=[foursquare, gpsnetwork].
+- Cost: $0 — BrightLocal Management APIs unlimited.
+- Sugar Daddy campaign 965489 still parked in "Saved" state in BL dashboard. Now safe to start since the broader BL Data API budget question is resolved (it's gone, not constrained).
 
-### Commits shipped to main today (in order)
+### Marketing landers
 
-| Hash | What |
+- `/fourdots`: two-line H1 ("See exactly where you win — and where you don't." / *"Then go fix it."*) at `text-3xl/4xl/5xl`; body adds "Then you get three specific actions — the ones with the highest impact, in priority order."
+- `/yourmap` + `/freescan`: same closing sentence appended to body; personalized H1 ("We already mapped [Business Name]") preserved.
+- All hero copy on `feat/marketing-tripwire` branch, merged to main, deployed to www.turfmap.ai.
+
+### Scan UX
+
+- New `components/turfmap/ScanProgress.tsx` overlay with 8 rotating phrases + lime pulse + 1Hz elapsed counter. Modal backdrop blocks panic-refresh double-fires during the 30-90s scan + 5-9s NAP audit + 10-20s AI Coach window.
+- Wired into `components/turfmap/ScanButton.tsx`. Will also be drop-in for `/order/success` form submit + AI Coach Generate button in follow-ups.
+
+### Stripe webhook
+
+- URL fixed from `https://turfmap.ai/api/stripe/webhook` (apex, 308-redirected to www) to `https://www.turfmap.ai/api/stripe/webhook`. Failed deliveries from the broken window resent from Stripe Dashboard. No real-customer fulfillment was affected (the `/order/success` page calls `/api/orders/fulfill` directly; the webhook handles downstream events like invoice.paid).
+
+### Production deploy mechanics
+
+- Pushes to `main` do NOT auto-trigger production deploys. Manual `vercel --prod` required.
+- Worktree previously had its own `.vercel/project.json` pointing at a throwaway project (`prj_Uo2mT...`, named `kind-albattani-957f10`). Replaced with the real turfmap project (`prj_mvgLx...`) so deploys from the worktree go to www.turfmap.ai. Backup at `.vercel/project.json.worktree-backup`.
+
+---
+
+## What shipped today (May 13-15)
+
+| Commit | What |
 |---|---|
-| `9341f0f` | Cowork patch + engagement hook + stage_2_email upgrade source + /audit-upgrade page + migration 0026 |
-| `317e318` | $0 Stripe gate (skip `setup_future_usage` for 100%-off coupons) |
-| `050eb41` | /freescan closing CTA copy unified with /yourmap |
-| `ee88695` | Warm-cohort suppression on /order/success + dashboard + FAQ swap |
-| `b0086cf` | Persist cohort + prospect_id into `lead_orders.stripe_metadata` |
-| `4edd0fc` | Hide one-time-buyer baseline banner + drop "buyer list" eyebrow |
-| `140ce57` | Score labels PascalCase |
-| `38addb3` | Intake keyword pre-fill + FAQ rewrite |
-| `d1daa97` | **P0**: confirm-and-pay migrated to `/manage/v1/citation-builder/{id}/confirm` PUT |
-| `850a51b` | NAP audit tier gate (Pulse / Pulse+ / agency-managed only) to preserve BL Data API trial |
-| `ab8d8be` | HANDOFF.md initial commit (this doc) |
+| `6c515d5` | feat(engagement): AI Coach nudge cron — 1hr post-engagement, no Generate click |
+| `e061319` | feat(landers): hero copy update — two-line H1 on /fourdots + outcome line on all three |
+| `d9eabc1` | fix(fourdots): drop H1 size one tier so line 1 fits without secondary wrap |
+| `efd1e0e` | fix(emails): force JSX whitespace boundaries with `{' '}` after interps + inline tags |
+| `f94113a` | fix(email): sentence-case all sentence starts in AICoachNudge |
+| `cdf1375` | feat(citations): DFS-backed NAP audit checker (v1, not yet wired) |
+| `9407bea` | fix(citations): tune accuracy — drop GBP, search-URL filter, name containment |
+| `7f96e3a` | feat(citations): sibling-location awareness in DFS checker |
+| `ce40398` | feat(citations): wire DFS provider into autoAudit, lift one-time tier gate + migration 0028 |
+| `3eb0583` | feat(scan-ux): progress overlay + country-filter Nominatim fallback |
 
-## Files I'm actively editing
+---
 
-This worktree: `/Users/anthonyalfonsi/Claude/turfmap/.claude/worktrees/kind-albattani-957f10`
-- Branch: `claude/kind-albattani-957f10` (tracks `origin/main`)
-- Main repo at `/Users/anthonyalfonsi/Claude/turfmap` (push from worktree → main, then `vercel deploy` from main repo)
+## BrightLocal — final state
 
-Key files touched across the session:
-- `app/freescan/page.tsx` — VIP cohort lander
-- `app/audit-upgrade/page.tsx` — Stage 2 click landing page (NEW this session)
-- `app/order/success/page.tsx` — server-side cohort + saved-card + prefillKeyword lookup
-- `app/order/success/OrderSuccessForm.tsx` — engagement hook + suppression gating
-- `app/portal/[slug]/page.tsx` — dashboard suppression of AuditUpgradePanel for VIP cohort
-- `app/api/checkout/[tier]/route.ts` — cohort discriminator from coupon, $0 gate on `setup_future_usage`
-- `app/api/upgrade/audit/create-session/route.ts` — `source=stage_2_email` branch
-- `app/api/cron/crmvip-stage2/route.ts` — Stage 2 email cron (every 15 min)
-- `app/api/prospect/[id]/engaged/route.ts` — engagement stamp endpoint
-- `components/email/CrmStage2AuditUpgradeEmail.tsx` — Stage 2 React Email template
-- `components/marketing/AuditUpgradePanel.tsx` — onSkip, savedCard, inline 1-click
-- `lib/brightlocal/citationBuilder.ts` — Management API migration (create + confirm + poll)
-- `lib/stripe/leadOrders.ts` — persist cohort/prospect_id in stripe_metadata (merge on conflict)
-- `lib/stripe/session.ts` — `LoadedSession.cohort` field
-- `supabase/migrations/0026_prospects_cohort.sql` — cohort + Stage 2 trigger columns (NEW)
-- `supabase/migrations/0025_prospects_business_name_check.sql` — SMOKE TEST prefix CHECK
-- `scripts/add_one_prospect.py` — one-off prospect-add tool (NEW) at `~/Claude/Projects/Lead Generation/scripts/`
+- **Account:** trial API key, 250 Data API requests, hard-stopped.
+- **Management API (Citation Builder, LSG):** unlimited on current plan, $0 marginal cost. Stays.
+- **Data API (NAP audit):** **NOT AVAILABLE** to TurfMap. Confirmed by Emily Hamblyn (BL Sales) on May 14:
+  - Commercial plan starts at 10,000 req/mo at $0.05/req = $500/mo minimum
+  - You have to BE USING 10k req/mo to qualify — they don't sell to lower-volume customers
+  - At TurfMap's projected ~700-900 req/mo, qualification is ~12+ months away (~1,500 buyers)
+  - Path: ping Emily when at-volume; she'll route to API team
+- **Synup eval:** also out of range. Account UI shows API access requires Scale tier ($799/mo annual / $999/mo monthly). Per-location Listings Pro add-on at $35/loc/mo makes the structure a poor fit for read-only NAP audits regardless.
+- **Outcome:** built the DFS-based replacement instead. Same NapAuditFindings output shape. 30x cheaper. Lower NAP-extraction accuracy than BL Data API but operationally good enough — see today's D Spot Brampton Wexford audit (3 real citations found, 1 NAP inconsistency, 6 actionable missing, sibling detection working).
 
-## Failed experiments / dead ends I burned time on
+---
 
-These are the rabbit holes that didn't pan out, so the next session doesn't repeat them:
+## D Spot data hygiene fix (May 15)
 
-- **BL Stoplight docs via WebFetch** — SPA-rendered, doesn't return content. Use Chrome MCP to navigate `developer.brightlocal.com/docs/management-apis/...` instead.
-- **Reading the Superhuman shared-conversation link** — Superhuman's `mail.superhuman.com/teams/.../l/<id>` URLs deeplink to the Mac app or Chrome extension. Neither readable from MCP. Workaround: search the same thread via Gmail MCP (the user's Superhuman is on top of Gmail), then read the underlying email thread.
-- **Filling Stripe Checkout via Claude-in-Chrome** — Stripe Checkout pages are hard-blocked. Always need the user to type card details themselves (test card `4242 4242 4242 4242` works in test mode).
-- **Filling the post-Stripe business intake form via batched form_input** — Runtime sometimes misclassifies it as Stripe payment entry and rejects the batch. Workaround: smaller batches OR have the user fill it.
-- **Resize browser to 375px for mobile QA** — Chrome MCP's `resize_window` has an effective floor of ~606px logical CSS pixels. All Tailwind responsive breakpoints from `sm:640` are still inactive so layouts are equivalent, but iPhone-tight text-wrap testing requires real device or DevTools Protocol.
-- **Mapbox autofill on Vercel preview URLs** — token has URL restrictions blocking `*.vercel.app`. Type a literal address; the form accepts it. Not a code bug.
-- **Initial /v4/cb/create + /v2/cb/confirm-and-pay flow** — both endpoints partially deprecated post May 10. Sugar Daddy campaign 965489 got stuck in BL "Saved" state because confirm-and-pay silently 4xx'd. Now fixed in commit `d1daa97`; old campaign still stuck pending user clicking "Start Campaign" in BL dashboard.
-- **Cohort persistence in `lead_orders.stripe_metadata`** — `ensureLeadOrder()` only wrote 5 fixed fields, dropped the `cohort` from session metadata. First smoke test showed dashboard still rendered audit upsell for VIP cohort because of this. Fixed by adding `cohort` + `prospect_id` to the persisted metadata + adding a merge-on-conflict path for existing rows (commit `b0086cf`).
-- **`preview_score` as float in `add_one_prospect.py`** — Supabase rejected with `invalid input syntax for type integer: "0.0"`. The column is INTEGER, not numeric. Cast to `int(round(score))`.
-- **Lib imports in `add_one_prospect.py`** — Lead Generation project uses unqualified imports (`import config` not `import lib.config`). Put `lib/` itself on `sys.path`, not the project root.
-- **First run of `add_one_prospect.py` keyword `landscaper`** — Mississauga landscaping local pack returned only sponsored entries (Google paid block). Re-ran with `landscaping company` keyword override — same result. Two real businesses surfaced (Mississauga Lawn Services, MVR Landscaping and Interlocking) but both at <1% share. Diagnostic verdict: no entrenched organic competitor in this niche → opportunity pitch for Justina.
+Two `client_locations` rows had bad data:
 
-## Outstanding work (pending operator action — NOT code)
+- **Brampton Wexford**: street_address was correct but city/region/country flipped to "Auckland / Auckland / NZL" during a Nominatim fallback geocode. The autocomplete fallback path (`/api/geocode` → Nominatim) had no country filter, so "1 Wexford Road" resolved to Auckland NZ instead of failing to match.
+- **Barrie**: city listed as "Toronto" but actual storefront is in Barrie.
 
-1. **Send Stage 1 to 29 VIP prospects** via Superhuman snippets. CSV at `~/Claude/Projects/Lead Generation/vip_stage1_email_list.csv`. Justina's row is the 29th (last). Recommended snippet template + variable list provided in the prior message. Justina specifically needs a custom snippet (no `top_competitor_name`) — opportunity-framing pitch drafted.
-2. **Send the Gmail draft to Connie Higgins (BL Sales)** sitting in your Drafts folder. Subject: `Re: [BrightLocal] Re: API Access`. The body answers her 3 discovery questions and asks for Data API per-request pricing + volume-tier options. Pricing details about the Pulse+ rate are deliberately scrubbed.
-3. **Start Sugar Daddy campaign 965489 in BL dashboard** — currently parked in "Saved" state. User explicitly chose to defer until cold-email automation winds down + BL credit visibility improves. Now safer to defer because the NAP audit gate (commit `850a51b`) means free TurfScans no longer burn BL trial credits.
-4. **Stripe VIP coupon in test mode** — only live mode confirmed. Optional, not blocking.
+Both corrected via direct SQL. Lat/lng set to approximate values (within ~500m of actual storefronts). Recent audits (one DFS + one older BL) deleted so fresh runs trigger against correct canonical NAP. Root cause patched in `lib/geocoding/nominatim.ts` with `countrycodes=ca,us` filter mirroring AddressAutocomplete's Mapbox default.
 
-## BrightLocal account state
+---
 
-- **Account:** trial API key (`BRIGHTLOCAL_API_KEY` in Vercel prod env, set 9 days ago)
-- **Management APIs (Citation Builder):** unlimited on trial per Rhea — Citation Builder feature on Pulse+ has $0 marginal cost
-- **Data API (NAP audit):** 250-request trial cap; HARD STOP, no auto-bill. Each NAP audit = ~3-10 requests. Now gated to recurring tiers only.
-- **Sales contact:** Connie Higgins (currently asking discovery questions before quoting per-request Data API pricing). Awaiting reply once user sends the prepared Gmail draft.
-- **Citation Builder credit balance:** unknown — separate pool from Data API trial. Sugar Daddy campaign 965489 sits in "Saved" state; clicking "Start Campaign" would bill against this balance.
-- **Open campaigns in BL dashboard:** Sugar Daddy Doughnuts (965489, Saved, never started). Plus several smoke-test locations from May 10-11 (location IDs 4061311, 4061331, 4061328, 4061327, 4061326, 4062832) worth cleaning up.
+## Outstanding work
 
-## Open code todos (low priority, post-launch)
+### Pending operator action
 
-- **GA4 cohort events** (P2 deferred) — `crm_reactivation_lander_view`, `crm_reactivation_purchase`, `crm_reactivation_audit_upgrade` events. Funnel reporting currently works via SQL queries against `prospects` + Stripe metadata.
-- **First Pulse+ buyer = first real E2E test of Citation Builder** — smoke-test endpoint passed but the production path (`/manage/v1/citation-builder`) wasn't probed yet. Watch first real Pulse+ buyer's campaign closely.
-- **Sample heatmap on cold-email-converted `/yourmap` "already done" state** — works correctly but no end-to-end re-test after the score-card casing fix.
+1. **Send the 4 recovery drafts** at 8:14am May 15 (already scheduled in Gmail).
+2. **Yelp listing for D Spot** at `m.yelp.com/biz/d-spot-dessert-cafe-toronto` shows the wrong address (1060 The Queensway, not the Brampton Wexford address). Claim and redirect, OR investigate whether it's a closed prior D Spot location.
+3. **Start Sugar Daddy campaign 965489** in BL dashboard — still parked in "Saved" state. Safe to start now; BL Management API is unlimited and unaffected by Data API decisions.
+4. **Vercel auto-deploy from main** — still requires manual `vercel --prod`. The toggle for this lives under Settings → Build and Deployment, not Settings → Git. Find and flip.
 
-## Next step I'd take
+### Code backlog
 
-The campaign is ready for Stage 1 send. The code path was end-to-end smoke-tested on production with `vipsmoke02` (test prospect now cleaned up) — every step worked including post-suppression cohort detection, $0 checkout, engagement endpoint, Stage 2 cron fire, audit_upgrade URL redirect to Stripe.
+1. **GBP citation probe via DFS Business Data API** (`/v3/business_data/google/my_business_info/live`). v1.2 of the citation checker. Adds structured NAP for the single most important directory.
+2. **Re-geocode D Spot Brampton Wexford + Barrie** for precision lat/lng. Approximate values work for scans but tightening to exact storefront coords improves heatmap centering.
+3. **GA4 cohort events** — `crm_reactivation_lander_view`, `crm_reactivation_purchase`, `crm_reactivation_audit_upgrade`. P2 deferred. Funnel reporting currently via SQL.
+4. **Sample heatmap on cold-email-converted `/yourmap` "already done" state** — works correctly but no end-to-end re-test after the recent score-card casing fix.
+5. **Vercel webhook smoke test in CI** — 3-line script that hits each lander + the Stripe webhook after each deploy. Would have caught both the `/freescan` 404 (May 13) and the Stripe redirect issue (May 14) within minutes instead of hours.
 
-**Recommended next-session pickup order:**
+---
 
-1. **Visual-verify `/freescan?prospect_id=ay62UUG9SE&coupon=VIP&utm_*=...`** (Justina's URL) handles `top_competitor_name=null` cleanly. Should skip "The Competition" card or render the soft "no entrenched competitor — opportunity" framing. Quick screenshot check is enough.
-2. **Once Connie replies with Data API pricing**, evaluate whether to take a commercial key OR keep the NAP audit gate permanently. If pricing is reasonable (<$0.10/audit), re-enable for one-time tiers by reverting `850a51b`. If expensive, keep the gate and consider it a permanent feature differentiator.
-3. **First Pulse+ buyer = first real E2E test of Citation Builder.** Smoke-test endpoint passed (`{ok:true, ...}` on May 12 ~12am) but the production path (`/manage/v1/citation-builder`) wasn't probed yet. Watch the first real Pulse+ buyer's campaign closely: confirm campaign creates, photo uploads work, confirm-and-pay returns 200 from the new PUT endpoint, polling cron updates per-directory state.
-4. **Stage 2 conversion validation.** Once a real VIP buyer engages, watch them flow through the auto-fired Stage 2 email → audit upgrade Checkout → $197 redirect. This is the campaign's revenue moment — the only point we haven't validated against a real user.
+## Failed experiments / lessons learned (sticky)
 
-Nothing technical blocking Stage 1 send right now.
+- **BL Stoplight docs via WebFetch** — SPA-rendered, doesn't return content. Use Chrome MCP instead.
+- **Reading Superhuman shared-conversation links** — deeplink to the Mac app or Chrome extension. Neither readable from MCP. Workaround: Gmail MCP for the same thread.
+- **Filling Stripe Checkout via Claude-in-Chrome** — hard-blocked. User types card details (test card `4242 4242 4242 4242` for test mode).
+- **Mapbox autofill on Vercel preview URLs** — token has URL restrictions blocking `*.vercel.app`. Type literal address; form accepts it.
+- **Push-to-main ≠ production deploy on this Vercel project.** Every push since e061319 only created preview builds. Production stays at the last manual `vercel --prod`. The `/freescan` 404 incident (May 13-14) traced to a stale parent worktree deploy because of this.
+- **Worktree `.vercel/project.json` had a different projectId than parent.** First `vercel --prod` from the worktree deployed to a throwaway project at `kind-albattani-957f10.vercel.app`, not turfmap.ai. Replaced the file with parent's contents to deploy correctly. Backup saved.
+- **Vercel access logs strip query strings.** Can't identify prospect_ids from 404 logs. Use GA4 or email-tool click data instead.
+- **Nominatim fallback had no country filter.** Caused D Spot Brampton Wexford's data to flip to Auckland NZ when the freeform-geocode path ran. Patched in `lib/geocoding/nominatim.ts`.
+- **Synup pricing rabbit hole.** Per-location add-on ($35/loc/mo for Listings Pro) makes the cost structure misaligned with TurfMap's read-only NAP check use case — even if the dashboard UI changes its mind about Scale-tier-required, Listings Pro at scale would still be cost-prohibitive.
 
-## Useful one-liners for the next session
+---
 
-```bash
-# Funnel state for VIP cohort
+## DFS Citation Checker — operating notes
+
+- **Default provider** for new audits. Env-toggleable via `NAP_AUDIT_PROVIDER=brightlocal` (rare — only when commercial BL access lands).
+- **Cost**: ~$0.09 per audit (9 directories × $0.01 DFS Live Advanced).
+- **Elapsed**: 5-9s synchronous. Adds to the scan-trigger latency; ScanProgress overlay reassures during the wait.
+- **Accuracy edge cases:**
+  - Facebook brand pages often return as `unverified` (snippet too sparse to extract phone/address)
+  - Apple Maps short snippets also commonly `unverified`
+  - Nextdoor + Yelp false positives historically — solved by hard name-gate + search-URL filter
+  - GBP entirely skipped — needs v1.2 dedicated probe
+- **Sibling logic** only fires when (a) `siblings` array is non-empty AND (b) found listing's NAP fragments include enough address detail to compare. Most siblings only trigger when sibling phone or street number is in the snippet.
+- **Refresh window**: 30 days per location. Delete the `nap_audits` row to force a fresh audit on next scan trigger.
+
+---
+
+## Useful one-liners
+
+```sql
+-- VIP funnel state
 SELECT cohort,
   COUNT(*) AS prospects,
   COUNT(*) FILTER (WHERE converted_at IS NOT NULL) AS converted,
   COUNT(*) FILTER (WHERE scan_engaged_at IS NOT NULL) AS engaged,
   COUNT(*) FILTER (WHERE stage_2_sent_at IS NOT NULL) AS stage_2_sent,
-  COUNT(*) FILTER (WHERE upgraded_to_audit_at IS NOT NULL) AS upgraded
-FROM prospects
-WHERE cohort = 'crm_reactivation_q2' GROUP BY cohort;
+  COUNT(*) FILTER (WHERE ai_coach_nudge_sent_at IS NOT NULL) AS nudge_sent
+FROM prospects WHERE cohort = 'crm_reactivation_q2' GROUP BY cohort;
 
-# Manually fire Stage 2 cron (after the 30-min engagement window)
+-- All DFS audits run today
+SELECT id, provider, status, total_citations, inconsistencies_count,
+       missing_high_priority_count, created_at, completed_at
+FROM nap_audits
+WHERE provider = 'dfs' AND created_at >= NOW() - INTERVAL '24 hours'
+ORDER BY created_at DESC;
+
+-- Manually trigger Stage 2 cron
 cd ~/Claude/turfmap && \
   export CRON_SECRET=$(grep -E "^CRON_SECRET=" .env.production.local | cut -d= -f2- | tr -d '"') && \
   curl -X POST https://www.turfmap.ai/api/cron/crmvip-stage2 \
     -H "Authorization: Bearer $CRON_SECRET" -i
 
-# Add another one-off prospect (edit args at top of main(), then run)
-cd ~/Claude/Projects/Lead\ Generation && \
-  .venv/bin/python3 scripts/add_one_prospect.py
+# Smoke test DFS citation checker against any business
+npx tsx scripts/test-dfs-citation-check.ts        # Ryan / BVM Contracting
+npx tsx scripts/test-dfs-citation-check-kidcrew.ts  # Kidcrew (sibling-aware)
 ```
 
-## Environment notes
+---
+
+## Environment
 
 - Worktree: `~/Claude/turfmap/.claude/worktrees/kind-albattani-957f10/`
-- Push to main from worktree: `git push origin HEAD:main`
-- Deploy preview from main repo: `cd ~/Claude/turfmap && git pull && vercel deploy --yes`
+  - Branch: `mktg-tripwire-staging` (at current `origin/main` HEAD)
+  - `.vercel/project.json` now points at the real turfmap project (was throwaway). Backup at `.vercel/project.json.worktree-backup`.
+- Parent worktree: `~/Claude/turfmap/`
+  - Branch: `feat/marketing-tripwire` at `c4f038f` — STALE. Don't deploy from here without `git checkout main && git pull` first.
+- Push to main: `git push origin HEAD:main` (from worktree)
+- Production deploy: `vercel --prod --yes` from this worktree (only place currently safe to deploy from)
 - Production: `https://www.turfmap.ai`
-- Supabase project: `nwzgbpoaufzznemrqecz`
+- Supabase project: `nwzgbpoaufzznemrqecz` ("TurfMap" org)
 - Lead-gen scripts: `~/Claude/Projects/Lead Generation/` (Python; venv at `.venv/`)
-- BrightLocal trial API key (in `BRIGHTLOCAL_API_KEY` env): also used for Citation Builder, which is unlimited per Rhea
+- Env files:
+  - `.env.local` — populated via `vercel env pull .env.local --environment=production`
+  - `BRIGHTLOCAL_API_KEY` shipped in production env; same key handles Management API. **No commercial Data API key.**
+
+---
+
+## Next step
+
+The DFS citation checker is fully wired and validated in production. Nothing critical pending code-side. Operator actions queued: send recovery drafts at 8:14am, claim/fix Yelp listing for D Spot, start Sugar Daddy 965489 in BL dashboard.
+
+**If next session picks up:**
+1. Monitor first 24h of organic DFS audits — accuracy vs operator expectations
+2. v1.2 GBP probe via DFS Business Data API (single new probe path; ~1-2h work)
+3. Wire ScanProgress overlay into `/order/success` form submit + AI Coach Generate button
+4. Find + flip the Vercel "auto-deploy from main" toggle so push-to-main stops being a footgun
