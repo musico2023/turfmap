@@ -65,18 +65,34 @@ function tokenSetSimilarity(a: string, b: string): number {
   return inter / union;
 }
 
-/** Two names match if their normalized token-sets have ≥0.6 Jaccard
- *  similarity. Threshold chosen empirically: catches "Sugar Daddy
- *  Doughnuts" vs "Sugar Daddy Doughnuts Inc." (sim ~0.75) while
- *  rejecting "Sugar Daddy" vs "Honey Daddy" (sim ~0.33). */
+/** Name match uses CONTAINMENT, not Jaccard. The canonical name's
+ *  token set must be ≥75% present in the found name's token set.
+ *
+ *  Why containment beat Jaccard here: Jaccard penalizes "extra" tokens
+ *  in either string equally. But directory listings routinely include
+ *  qualifiers in their titles ("BVM Contracting | Toronto ON",
+ *  "Profile of Bvm Contracting in Scarborough"). With Jaccard, those
+ *  legit matches scored 0.5 vs canonical "BVM Contracting" and got
+ *  rejected. With containment, all-of-canonical-in-found suffices.
+ *
+ *  Threshold 0.75 chosen so:
+ *    - 2-token canonicals require both tokens present (2/2 = 100%)
+ *    - 3-token canonicals tolerate one missing token (2/3 = 67% fails,
+ *      3/3 = 100% passes)
+ *    - 4+ token canonicals tolerate light pluralization variance
+ *      (4/5 = 80% passes; "Honest Plumber & Drain Co" matches "Honest
+ *       Plumbers Drain"). */
 export function nameMatches(
   canonical: string | null | undefined,
   found: string | null | undefined
 ): boolean {
-  const a = normalizeName(canonical);
-  const b = normalizeName(found);
-  if (!a || !b) return false;
-  return tokenSetSimilarity(a, b) >= 0.6;
+  const a = normalizeName(canonical).split(/\s+/).filter(Boolean);
+  const b = new Set(
+    normalizeName(found).split(/\s+/).filter(Boolean)
+  );
+  if (a.length === 0 || b.size === 0) return false;
+  const matched = a.filter((t) => b.has(t)).length;
+  return matched / a.length >= 0.75;
 }
 
 /** Phones match iff last-10-digits are identical AND non-empty. */

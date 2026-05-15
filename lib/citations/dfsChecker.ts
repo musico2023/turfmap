@@ -35,7 +35,7 @@
  */
 
 import type { NapAuditFindings, NapAuditCitation, NapAuditInconsistency, NapAuditMissing } from '@/lib/supabase/types';
-import { classifyCitation, type CitationStatus } from './napCompare';
+import { classifyCitation, nameMatches, type CitationStatus } from './napCompare';
 import type { DfsDirectory } from './directories';
 
 const DFS_BASE_URL = 'https://api.dataforseo.com';
@@ -240,13 +240,23 @@ async function probeDirectory(
     description?: string;
     domain?: string;
   }>;
+  // Filter to organic results on the directory's domain, EXCLUDING
+  // search-results / index-page URLs. Search pages like
+  // `yelp.com/search?find_desc=...` aren't real listings — they're
+  // Yelp's own search interface, which Google sometimes ranks above
+  // actual profile pages when no exact match exists. Counting them as
+  // citations is a false positive (smoke test surfaced this for Yelp).
+  const SEARCH_URL_PATTERNS = /\/(search|find|finder|browse|sitemap)|[?&](q|query|find_desc|find_near|find_loc|location|search)=/i;
   const match = items.find((it) => {
     if (it.type !== 'organic') return false;
     if (!it.url) return false;
     // Compare against the directory's root domain; tolerate www. and
     // path variants. e.g., "https://www.yelp.com/biz/..." matches "yelp.com".
     const dirRoot = directory.domain.replace(/^www\./, '').split('/')[0];
-    return it.url.toLowerCase().includes(dirRoot);
+    if (!it.url.toLowerCase().includes(dirRoot)) return false;
+    // Reject directory-search-page URLs.
+    if (SEARCH_URL_PATTERNS.test(it.url)) return false;
+    return true;
   });
 
   return {
@@ -352,7 +362,30 @@ export async function runDfsCitationAudit(
       continue;
     }
 
-    // Listing exists — classify NAP match status.
+    // Listing exists — but first hard-gate on name match. If the
+    // SERP returned a result whose title is clearly a different
+    // business (smoke test surfaced this for Nextdoor — matched
+    // "Ryan Meagher Mortgages" against "BVM Contracting" because
+    // both share "Ryan" + "Toronto" tokens), reclassify as missing
+    // rather than counting it as an unverified citation. Otherwise
+    // the dashboard surfaces fake "listings on Nextdoor!" findings
+    // that erode operator trust.
+    if (!nameMatches(business.name, probe.found_name)) {
+      missing.push({
+        directory: probe.directory.id,
+        priority: probe.directory.priority,
+      });
+      summary.push({
+        directory_id: probe.directory.id,
+        label: probe.directory.label,
+        status: 'missing',
+        url: null,
+        error: `result name "${(probe.found_name ?? '').slice(0, 40)}" doesn't match canonical`,
+      });
+      continue;
+    }
+
+    // Name matched — extract NAP fragments and classify.
     const foundPhone = extractPhoneFromSnippet(probe.found_snippet);
     const foundAddress = extractAddressFromSnippet(probe.found_snippet);
     const status: CitationStatus = classifyCitation(

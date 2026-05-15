@@ -33,9 +33,16 @@ export type DfsDirectory = {
 
 /** Big-12: the universal directory set audited for every buyer
  *  regardless of vertical. Order matters — higher-priority entries
- *  surface first in the dashboard's NAP findings table. */
+ *  surface first in the dashboard's NAP findings table.
+ *
+ *  GOOGLE BUSINESS PROFILE intentionally omitted: Google's site:
+ *  filter doesn't accept paths (`site:google.com/maps` is invalid
+ *  syntax), and bare `site:google.com` returns the whole index.
+ *  GBP needs a dedicated probe via DFS Business Data API
+ *  (`/v3/business_data/google/my_business_info/live`) — slated for
+ *  v1.2. Until then, GBP coverage is "operator's job" — Anthony
+ *  audits GBP manually via the BL dashboard for high-value buyers. */
 const UNIVERSAL: DfsDirectory[] = [
-  { id: 'google_business', label: 'Google Business Profile', domain: 'google.com/maps', priority: 'high', countries: 'all' },
   { id: 'yelp',            label: 'Yelp',                   domain: 'yelp.com',           priority: 'high', countries: 'all' },
   { id: 'facebook',        label: 'Facebook',               domain: 'facebook.com',       priority: 'high', countries: 'all' },
   { id: 'bbb',             label: 'BBB',                    domain: 'bbb.org',            priority: 'high', countries: 'all' },
