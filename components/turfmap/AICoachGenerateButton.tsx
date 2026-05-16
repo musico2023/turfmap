@@ -4,6 +4,21 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ScanProgress } from './ScanProgress';
+
+/** Phrase list calibrated to the AI Coach generation flow (vs the
+ *  longer geo-grid scan flow that ScanButton owns). The hot path is
+ *  ~10-15s; the cold path (NAP audit still running) can extend to
+ *  ~4 minutes. Phrases hold on the last entry rather than looping so
+ *  the operator never sees "Reading your scan data…" twice. */
+const AI_COACH_PHRASES = [
+  'Reading your scan data…',
+  'Cross-referencing competitor patterns…',
+  'Checking citation findings against the directory roster…',
+  'Drafting your prioritized Fix List…',
+  'Computing per-action TurfScore impact…',
+  'Finalizing your AI Coach playbook…',
+];
 
 export type AICoachGenerateButtonProps = {
   scanId: string;
@@ -92,6 +107,28 @@ export function AICoachGenerateButton({ scanId }: AICoachGenerateButtonProps) {
         <span className="text-[11px] text-red-400 font-mono max-w-xs text-right">
           {error}
         </span>
+      )}
+      {/* Full-screen progress overlay during the AI Coach generation
+       *  wait. Hot path ~10-15s; cold path (NAP audit still running)
+       *  up to ~4 minutes. Without this overlay, the operator sees
+       *  only the button's loading spinner — easy to assume the page
+       *  is frozen, especially on the cold path. The button-local
+       *  elapsed/timer chip is preserved underneath as a fallback
+       *  for screen readers + when the operator dismisses the
+       *  overlay (future). */}
+      {busy && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(10, 10, 10, 0.92)', backdropFilter: 'blur(4px)' }}
+          aria-modal="true"
+          role="dialog"
+        >
+          <ScanProgress
+            phrases={AI_COACH_PHRASES}
+            rotateMs={5000}
+            className="max-w-md"
+          />
+        </div>
       )}
     </div>
   );
