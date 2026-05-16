@@ -429,7 +429,10 @@ async function handle(req: Request): Promise<Response> {
     stats.errors++;
   } else if (dueProspects && dueProspects.length > 0) {
     stats.pass2_due_scanned = dueProspects.length;
-    for (const p of dueProspects as ProspectRow[]) {
+    // Supabase's typed builder infers a GenericStringError union for
+    // multi-field selects it can't statically narrow. The double-cast
+    // through unknown is the documented escape hatch.
+    for (const p of dueProspects as unknown as ProspectRow[]) {
       try {
         if (
           !p.email ||

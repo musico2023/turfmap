@@ -1,10 +1,16 @@
 /**
  * Vercel Cron — Visibility Audit milestone sweep.
  *
- * Schedule (vercel.json): daily at 13:00 UTC (~08:00 Eastern). Runs
- * AFTER the existing scan-delivery cron (12:00 UTC) so the day's
- * scan pipeline has settled before this fires off the 30-day
- * re-scan reminder.
+ * Schedule (vercel.json): every 2 hours (0 *​/2 * * *).
+ *
+ * Why every-2h, not daily: Sweep 1's window is a 2-hour band centered
+ * on T-24h (now+23h..now+25h). At a daily cron, only calls scheduled
+ * in a single UTC 2-hour band (12:00-14:00 UTC) ever match the window,
+ * so any call outside that band would miss the prep email entirely.
+ * Tiling 2h-wide windows with a 2h cron means every scheduled call
+ * gets exactly one match within ±1h of T-24h, regardless of time of
+ * day. The other sweeps (day 25, 53, 67) re-fire harmlessly each
+ * pass thanks to their _sent_at idempotency gates.
  *
  * Four milestone gates, scanned in one pass:
  *

@@ -107,6 +107,7 @@ type ProspectRow = {
   top_competitor_name: string | null;
   first_name: string | null;
   email: string | null;
+  trade: string | null;
 };
 
 async function handle(req: Request): Promise<Response> {
@@ -139,7 +140,7 @@ async function handle(req: Request): Promise<Response> {
   const { data: candidates, error } = await supabase
     .from('prospects')
     .select(
-      'id, business_name, preview_score, top_competitor_name, first_name, email'
+      'id, business_name, preview_score, top_competitor_name, first_name, email, trade'
     )
     .eq('cohort', 'cold_email_q2_2026')
     .not('converted_at', 'is', null)
@@ -190,6 +191,10 @@ async function handle(req: Request): Promise<Response> {
         ColdStage3AuditOfferEmail({
           firstName: p.first_name,
           businessName: p.business_name,
+          // Fallback "service contractor" so the trade-vertical line
+          // still reads sensibly if phase2_push didn't classify the
+          // prospect (older rows pre-derive_trade(), edge cases).
+          trade: p.trade ?? 'service contractor',
           turfScoreBand: band,
           topCompetitorName: p.top_competitor_name,
           calBookingUrl: CAL_BOOKING_URL,

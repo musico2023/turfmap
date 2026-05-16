@@ -31,7 +31,7 @@
     },
     {
       "path": "/api/cron/audit-milestones",
-      "schedule": "0 13 * * *"
+      "schedule": "0 */2 * * *"
     },
     {
       "path": "/api/cron/crmvip-stage2",
