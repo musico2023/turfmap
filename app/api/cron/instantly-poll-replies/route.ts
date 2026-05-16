@@ -2,7 +2,7 @@
  * Vercel Cron — Poll Instantly for cold-cohort replies, classify
  * intent with Claude Haiku, and act.
  *
- * Schedule (vercel.json):  every 2 minutes  ("*/2 * * * *")
+ * Schedule (vercel.json):  every 2 minutes  (cron "* /2 * * * *" — no spaces in actual cron)
  *
  * Why polling instead of Instantly webhooks: Instantly's webhook
  * feature is gated behind their Hyper Growth plan tier. Anthony's
