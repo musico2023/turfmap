@@ -55,8 +55,18 @@ const ALPHA2_TO_ALPHA3: Record<string, string> = {
   ie: 'IRL',
 };
 
+/** ISO 3166-1 alpha-2 codes Nominatim accepts in its `countrycodes`
+ *  filter. Mirrors AddressAutocomplete's Mapbox `countries` default of
+ *  US + CA so the freeform-fallback path doesn't produce surprises
+ *  like "1 Wexford Road" resolving to Auckland, NZ (which happened to
+ *  D Spot Brampton Wexford on 2026-05-15 — the operator picked from
+ *  Mapbox but then edited the input, falling back to this geocoder,
+ *  which had no country filter at the time). */
+const DEFAULT_COUNTRIES = 'ca,us';
+
 export async function geocodeAddress(
-  address: string
+  address: string,
+  options: { countries?: string } = {}
 ): Promise<GeocodeResult | null> {
   const trimmed = address.trim();
   if (trimmed.length < 4) return null;
@@ -68,6 +78,10 @@ export async function geocodeAddress(
     // postcode, country, country_code). Used to pre-fill the NAP fields.
     addressdetails: '1',
     limit: '1',
+    // Country restriction — Nominatim accepts comma-separated alpha-2
+    // codes. Defaults to US+CA (TurfMap's primary book) but callers
+    // can override via the options arg for niche cases.
+    countrycodes: (options.countries ?? DEFAULT_COUNTRIES).toLowerCase(),
   });
   const url = `${NOMINATIM_BASE}/search?${params.toString()}`;
 

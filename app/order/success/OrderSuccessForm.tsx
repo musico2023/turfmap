@@ -11,6 +11,7 @@ import { OnboardingWizard } from '@/components/turfmap/OnboardingWizard';
 import { PulseAttachPanel } from '@/components/turfmap/PulseAttachPanel';
 import { AuditUpgradePanel } from '@/components/marketing/AuditUpgradePanel';
 import { SuccessBurst } from '@/components/animations/SuccessBurst';
+import { ScanProgress } from '@/components/turfmap/ScanProgress';
 import type { OnboardingStep } from '@/lib/supabase/types';
 
 /**
@@ -893,6 +894,24 @@ export function OrderSuccessForm({
           }}
         >
           {error}
+        </div>
+      )}
+      {/* Full-screen progress overlay during the post-submit scan +
+       *  fulfillment wait. The button-only "Firing your scan…"
+       *  spinner is too quiet for the 30-90s grid scan + 5-9s NAP
+       *  audit + 10-20s email-render time the buyer is staring at
+       *  immediately after paying. Overlay reassures them the
+       *  pipeline is moving through each stage. Backdrop blocks
+       *  back-button / refresh during the fulfillment transaction
+       *  (a refresh mid-fulfill would lose the success URL params). */}
+      {busy && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(10, 10, 10, 0.92)', backdropFilter: 'blur(4px)' }}
+          aria-modal="true"
+          role="dialog"
+        >
+          <ScanProgress className="max-w-md" />
         </div>
       )}
     </form>

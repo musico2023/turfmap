@@ -329,6 +329,11 @@ export type NapAuditRow = {
   raw_response: unknown;
   completed_at: string | null;
   error_message: string | null;
+  /** Added in migration 0028: which backend generated the audit.
+   *  'brightlocal' = BL Data API; 'dfs' = DataForSEO SERP scrape
+   *  (default). Existing rows backfilled to 'brightlocal' since they
+   *  pre-date the DFS checker. */
+  provider: 'brightlocal' | 'dfs' | null;
 };
 
 /** Public share link for a scan — see /share/<id>. */

@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, Radio, Search, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ScanProgress } from './ScanProgress';
 
 export type RescanCap = {
   count: number;
@@ -234,6 +235,25 @@ export function ScanButton({
         <span className="text-[11px] text-red-400 font-mono max-w-xs text-right">
           {error}
         </span>
+      )}
+      {/* Full-screen progress overlay during the 30-90s scan +
+       *  5-9s NAP audit window. The button's "Scanning territory…"
+       *  micro-spinner alone is too quiet — operators see a frozen
+       *  page for a minute and start refreshing. The overlay's
+       *  rotating phrases reassure them the system is actively
+       *  working through each phase (grid → competitor aggregation
+       *  → NAP audit → AI Coach). Click-through is blocked while
+       *  scanning by the backdrop so a panicked refresh during the
+       *  router.refresh() transition can't double-fire. */}
+      {isScanning && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(10, 10, 10, 0.92)', backdropFilter: 'blur(4px)' }}
+          aria-modal="true"
+          role="dialog"
+        >
+          <ScanProgress className="max-w-md" />
+        </div>
       )}
     </div>
   );
