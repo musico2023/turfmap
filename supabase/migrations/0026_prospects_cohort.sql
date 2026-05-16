@@ -1,73 +1,87 @@
 -- 0026_prospects_cohort.sql
 --
--- Adds cohort isolation for the CRM warm-reactivation campaign
--- (VIP / /freescan) alongside the existing cold-email cohort
--- (MAPCHECK50 / /yourmap).
+-- Cohort discriminator + warm-reactivation Stage 2 trigger columns on
+-- prospects. Powers the CRM warm-reactivation Q2 2026 campaign
+-- (`crm_reactivation_q2` cohort) per VIP_HANDOFF.md / MARKETING_BRIEF.
 --
--- A single prospects table serves both campaigns; the `cohort` column
--- is the discriminator. Reporting queries group/filter on it; the
--- /freescan lander and Stage 2 trigger select rows by cohort.
+-- The cohort column splits prospects.business_name's audience by source:
+--   - 'cold_email'           — original Apify-scraped cold-email cohort
+--   - 'crm_reactivation_q2'  — 28 Fourdots HighLevel warm leads (Q2 '26)
+-- More cohorts can be added later by extending the CHECK constraint.
 --
--- New columns:
---   cohort               — 'cold_email' (default) | 'crm_reactivation_q2' | future
---   scan_engaged_at      — first dashboard view after VIP TurfScan purchase;
---                          gates Stage 2 email
---   stage_2_sent_at      — set once Stage 2 (audit-upgrade) email has been sent
---   audit_upgrade_url    — personalized URL embedded in Stage 2 email; routes the
---                          recipient to /api/upgrade/audit/create-session with
---                          the UPGRADE_302_CREDIT coupon pre-applied
---   first_name           — recipient's first name (CRM cohort only — used in
---                          Stage 2 email salutation). Backfilled by the CRM
---                          import script for the 27-row reactivation campaign.
---   email                — recipient's email (CRM cohort only — Stage 2 cron
---                          uses this directly; cold-email cohort sends through
---                          Instantly/external infra so this stays null there).
+-- Stage 2 trigger columns (`scan_engaged_at`, `stage_2_sent_at`,
+-- `audit_upgrade_url`) are populated by:
+--   - POST /api/prospect/[id]/engaged    → scan_engaged_at on first
+--                                          dashboard view (warm cohort)
+--   - /api/cron/crmvip-stage2 every 15m → stage_2_sent_at + URL
 --
--- Safe to re-run. Backfills cohort='cold_email' on all existing rows
--- (which were all created via the cold-email pipeline before this
--- migration). The /freescan retag of the 28 HighLevel-import rows is
--- a separate data migration (see retag_highlevel_import_to_crmvip in
--- the lead-gen project) so the schema change can ship independently.
+-- `first_name` + `email` are denormalized from the HighLevel import
+-- (mailbox + personalization fields for Stage 1 hand-sending and Stage 2
+-- cron). Cold-email cohort rows leave these null; the Stage 2 cron only
+-- considers crm_reactivation_q2 rows, so the asymmetry is fine.
+--
+-- All ALTER TABLE statements use `IF NOT EXISTS` guards so this migration
+-- is safe to re-run.
 
+-- ─── 1. Columns ─────────────────────────────────────────────────────
 alter table public.prospects
-  add column if not exists cohort text not null default 'cold_email',
+  add column if not exists cohort text,
   add column if not exists scan_engaged_at timestamptz,
   add column if not exists stage_2_sent_at timestamptz,
   add column if not exists audit_upgrade_url text,
   add column if not exists first_name text,
   add column if not exists email text;
 
--- Constrain cohort to a known set. Update this list as new campaigns
--- launch. Drop+recreate so re-runs don't error on the existing
--- constraint.
-alter table public.prospects
-  drop constraint if exists prospects_cohort_check;
-alter table public.prospects
-  add constraint prospects_cohort_check
-  check (cohort in ('cold_email', 'crm_reactivation_q2'));
+-- ─── 2. Backfill cohort on pre-existing rows ────────────────────────
+-- Pre-existing rows are all from the cold-email cohort. Set the default
+-- here so the CHECK constraint below doesn't reject them when added.
+update public.prospects
+  set cohort = 'cold_email'
+  where cohort is null;
 
--- Composite index supports the Stage 2 trigger loop, which scans for
--- (cohort='crm_reactivation_q2', converted_at not null,
---  scan_engaged_at not null, stage_2_sent_at is null) every minute or
--- two via the cron route. Partial index keeps it small as the table
--- grows past the campaign.
-create index if not exists prospects_stage2_pending_idx
+-- ─── 3. CHECK constraint on cohort ──────────────────────────────────
+-- Validates against the known cohort list. Drop + re-add so a re-run
+-- with extended values doesn't bail on the constraint-already-exists
+-- error. Idempotent via DO block.
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'prospects_cohort_check'
+  ) then
+    alter table public.prospects drop constraint prospects_cohort_check;
+  end if;
+  alter table public.prospects
+    add constraint prospects_cohort_check
+    check (cohort in ('cold_email', 'crm_reactivation_q2'));
+end$$;
+
+-- ─── 4. Indexes ─────────────────────────────────────────────────────
+-- Partial index on the Stage 2 cron's hot path: scan candidates are
+-- cohort='crm_reactivation_q2' + stage_2_sent_at IS NULL. The partial
+-- predicate keeps the index small (only ~28 rows in this campaign +
+-- future cohort batches).
+create index if not exists prospects_crmvip_stage2_pending_idx
   on public.prospects (scan_engaged_at)
-  where cohort = 'crm_reactivation_q2'
-    and stage_2_sent_at is null;
+  where cohort = 'crm_reactivation_q2' and stage_2_sent_at is null;
 
--- Cohort-filtered reporting queries become a single index seek.
+-- General-purpose index on cohort for reporting / funnel queries that
+-- group by cohort. Small table, low write rate — cheap to maintain.
 create index if not exists prospects_cohort_idx
   on public.prospects (cohort);
 
+-- ─── 5. Document ────────────────────────────────────────────────────
 comment on column public.prospects.cohort is
-  'Campaign cohort. cold_email = original cold-outbound pipeline (MAPCHECK50, /yourmap). crm_reactivation_q2 = CRM warm-reactivation campaign (VIP, /freescan). Drives reporting cuts + per-cohort UX on the lander.';
-
+  'Source cohort. cold_email = original Apify scrape; '
+  'crm_reactivation_q2 = HighLevel warm reactivation (Q2 2026). '
+  'Drives the Stage 2 audit-upgrade email cron.';
 comment on column public.prospects.scan_engaged_at is
-  'First dashboard view after the prospect purchases TurfScan. Stamped by /api/prospect/[id]/engaged. Used as the Stage 2 trigger gate: Stage 2 fires 30 min to 24 hr after this timestamp.';
-
+  'First dashboard view timestamp after the buyer purchased their '
+  'free TurfScan (warm cohort only). Triggers the 30-min/24-hr '
+  'Stage 2 email window.';
 comment on column public.prospects.stage_2_sent_at is
-  'Set when the Stage 2 (audit-upgrade) email is delivered. Idempotency guard — the cron skips rows where this is non-null.';
-
+  'When the Stage 2 audit-upgrade email was sent. NULL = not yet sent.';
 comment on column public.prospects.audit_upgrade_url is
-  'Personalized URL embedded in Stage 2 email. Routes the recipient to /api/upgrade/audit/create-session with the UPGRADE_302_CREDIT coupon pre-applied for $499 - $302 = $197 audit pricing.';
+  'The exact /audit-upgrade?source=stage_2_email&prospect_id=... URL '
+  'embedded in the Stage 2 email. Stamped at send time so operators '
+  'can re-resolve from Resend delivery logs.';

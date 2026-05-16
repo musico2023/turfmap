@@ -61,6 +61,27 @@ const COUPONS: Record<string, CouponDescriptor> = {
     stripeKind: 'promotion_code',
     label: '$50 off',
   },
+  // VIP — warm-reactivation cohort coupon for /freescan traffic.
+  // 100% off TurfScan ($99 → $0). Used for the 27-prospect CRM
+  // reactivation campaign (Q2 2026) where Anthony hand-sends Stage 1
+  // emails to prior Fourdots booking-form fillers who didn't close.
+  // Hard upsell is the $197 Visibility Audit (Stage 2 email).
+  //
+  // Stripe-side promotion code MUST exist before traffic arrives —
+  // 100% off, scan tier only, max 30 redemptions, 60-day expiry,
+  // 1 per customer. See Fix 1.1 in MARKETING_BRIEF.
+  //
+  // The 100%-off path means Stripe Checkout won't ask for a card.
+  // The webhook + fulfillment pipeline must tolerate $0 charges
+  // (verify charge.succeeded fires with amount_total=0).
+  VIP: {
+    code: 'VIP',
+    validForTier: 'scan',
+    listPriceCents: 9900,
+    discountCents: 9900,
+    stripeKind: 'promotion_code',
+    label: 'Free for buyer list',
+  },
   // COLDSCAN — reply-driven cold-email cohort coupon. 100% off TurfScan
   // ($99 → $0). The buyer never sees this coupon on a public lander;
   // the URL with `coupon=COLDSCAN` is only sent in the Stage 2 reply-

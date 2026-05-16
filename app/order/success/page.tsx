@@ -94,13 +94,23 @@ export default async function OrderSuccessPage({
   // would otherwise see "$99" in the header.
   const paidAmountCents =
     sessionState?.kind === 'ok' ? sessionState.amountTotalCents : null;
+  // Warm-cohort detection drives both label override and the
+  // suppression rules forwarded to OrderSuccessForm.
+  const cohortFromSession =
+    sessionState?.kind === 'ok' ? sessionState.cohort : null;
+  const isWarmCohort = cohortFromSession === 'crm_reactivation_q2';
   const tierLabel = isAuditUpgrade
     ? 'Visibility Audit upgrade ($197)'
-    : tier
-      ? paidAmountCents != null
-        ? formatTierLabelWithPaidAmount(tier, paidAmountCents)
-        : formatTierLabel(tier)
-      : 'TurfMap';
+    : isWarmCohort && tier === 'scan'
+      ? // VIP warm cohort received the scan as a gift — frame it as
+        // "free TurfScan", not "TurfScan ($0)" which is awkward and
+        // commercial-sounding for the relational handoff.
+        'free TurfScan'
+      : tier
+        ? paidAmountCents != null
+          ? formatTierLabelWithPaidAmount(tier, paidAmountCents)
+          : formatTierLabel(tier)
+        : 'TurfMap';
   const keywordCount = tier ? keywordCountForTier(tier) : 1;
   const prefillEmail =
     sessionState?.kind === 'ok' ? sessionState.email : null;
@@ -108,6 +118,37 @@ export default async function OrderSuccessPage({
     sessionState?.kind === 'warning' ? sessionState.message : null;
   const stripeCustomerId =
     sessionState?.kind === 'ok' ? sessionState.customerId : null;
+
+  // ─── Keyword pre-fill from prospect lookup ──────────────────────────
+  // The lander preview was run with a pipeline-derived keyword based
+  // on the prospect's trade. Pre-fill the intake form's "Keyword to
+  // scan" field with the prospect's trade so the buyer's full scan
+  // matches the preview-data narrative. They can edit if they want a
+  // different keyword (the form still accepts whatever they type).
+  // Only runs for scan-tier orders that came from a cohort lander
+  // (prospect_id present in session metadata). Failure is non-fatal
+  // — the field renders blank with its placeholder.
+  const prospectIdFromSession =
+    sessionState?.kind === 'ok' ? sessionState.prospectId : null;
+  let prefillKeyword: string | null = null;
+  if (tier === 'scan' && prospectIdFromSession) {
+    try {
+      const supabase = getServerSupabase();
+      const { data: prospect } = await supabase
+        .from('prospects')
+        .select('trade')
+        .eq('id', prospectIdFromSession)
+        .maybeSingle<{ trade: string | null }>();
+      if (prospect?.trade) {
+        prefillKeyword = prospect.trade;
+      }
+    } catch (e) {
+      console.error(
+        '[order/success] prospect-keyword lookup failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
 
   // ─── Saved-card lookup for 1-click audit upgrade ────────────────────
   // When the buyer has a Stripe Customer with a saved card (enabled
@@ -261,27 +302,30 @@ export default async function OrderSuccessPage({
                 <p className="text-zinc-300 leading-relaxed">
                   {isAuditUpgrade
                     ? // Audit upgrade return path: scan is paid, audit is
-                      // paid, intake still needed. Keep the framing
-                      // forward-looking rather than dwelling on the
-                      // payment-confirmation moment.
+                      // paid, intake still needed.
                       "Both the scan and the 90-day Roadmap audit are locked in. Fill out your business details below to kick everything off — we'll email your TurfMap as soon as your scan completes."
-                    : tier === 'scan'
-                      ? // Scan tier: the AuditUpgradePanel may render below
-                        // BEFORE the intake form, so don't promise "fill the
-                        // form to fire your scan" until the buyer has gotten
-                        // past the upgrade decision. Neutral phrasing works
-                        // for both upgrade-panel-visible AND intake-visible
-                        // states. The body content (panel or form) provides
-                        // its own specific instructions.
-                        "Your TurfScan is locked in. There's one quick decision below before we kick off your scan."
-                      : // Audit / Strategy / other tiers that go straight to
-                        // intake (no upgrade panel above): existing copy.
-                        <>
-                          One more step. Tell us about your business — your
-                          scan kicks off the moment you submit, and we&rsquo;ll
-                          email your TurfMap as soon as it&rsquo;s ready
-                          (typically under a minute).
-                        </>}
+                    : isWarmCohort && tier === 'scan'
+                      ? // VIP warm cohort: gift-delivery framing. No
+                        // commercial follow-up here (no upsell panel —
+                        // suppressed in OrderSuccessForm). Anthony-as-
+                        // human framing positions the next conversation
+                        // as relational, not transactional.
+                        "We're running your 81-point geo-grid scan. Check your inbox in under a minute. Anthony will follow up after you've had a chance to look at your map."
+                      : tier === 'scan'
+                        ? // Cold-email / paid scan tier: the body
+                          // component decides whether to render the
+                          // AuditUpgradePanel (pre-Skip) or the intake
+                          // form (post-Skip / post-upgrade). Header copy
+                          // stays neutral so it works in both states.
+                          "Your TurfScan is locked in. Complete the next steps below to fire your scan."
+                        : // Audit / Strategy / other tiers that go
+                          // straight to intake (no upgrade panel above).
+                          <>
+                            One more step. Tell us about your business —
+                            your scan kicks off the moment you submit,
+                            and we&rsquo;ll email your TurfMap as soon as
+                            it&rsquo;s ready (typically under a minute).
+                          </>}
                 </p>
               </div>
             </div>
@@ -319,6 +363,13 @@ export default async function OrderSuccessPage({
               attachOnboardingStep={attachOnboardingStep}
               isAuditUpgrade={isAuditUpgrade}
               savedCard={savedCard}
+              prospectId={
+                sessionState?.kind === 'ok' ? sessionState.prospectId : null
+              }
+              cohort={
+                sessionState?.kind === 'ok' ? sessionState.cohort : null
+              }
+              prefillKeyword={prefillKeyword}
             />
           </Suspense>
         </div>
@@ -390,6 +441,18 @@ type SessionState =
        *  paid, e.g. \$49 with MAPCHECK50 vs. the \$99 list price.
        *  Null when Stripe didn't surface amount_total. */
       amountTotalCents: number | null;
+      /** Warm-cohort prospect id captured at /yourmap or /freescan
+       *  checkout time. Forwarded to the OrderSuccessForm so it can
+       *  POST /api/prospect/[id]/engaged on the post-fulfillment view
+       *  — the trigger for the Stage 2 audit-upgrade email cron. NULL
+       *  when the buyer didn't come from a cohort lander. */
+      prospectId: string | null;
+      /** Cohort discriminator. 'crm_reactivation_q2' = warm cohort
+       *  (VIP coupon, /freescan) — suppresses the audit upsell + Pulse
+       *  attach panels per campaign brief's MUST-NOT-render rules.
+       *  'cold_email' = paid cold-email cohort (MAPCHECK50, /yourmap)
+       *  — standard upsell flow. NULL = organic / popup buyer. */
+      cohort: string | null;
     }
   | { kind: 'warning'; message: string };
 
@@ -455,5 +518,7 @@ async function validateAndRecordSession(
     email: result.customerEmail,
     customerId: result.customerId,
     amountTotalCents: result.amountTotal,
+    prospectId: result.prospectId,
+    cohort: result.cohort,
   };
 }

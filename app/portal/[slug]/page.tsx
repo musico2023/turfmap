@@ -289,15 +289,31 @@ export default async function ClientPortalPage({
           .maybeSingle<{ id: string }>(),
         supabase
           .from('lead_orders')
-          .select('created_at')
+          .select('created_at, stripe_metadata')
           .eq('client_id', clientUuid)
           .eq('tier', 'scan')
           .eq('status', 'fulfilled')
           .order('created_at', { ascending: false })
           .limit(1)
-          .maybeSingle<{ created_at: string }>(),
+          .maybeSingle<{
+            created_at: string;
+            stripe_metadata: Record<string, unknown> | null;
+          }>(),
       ]);
-    if (!existingAudit && scanLeadOrder) {
+    // WARM-COHORT SUPPRESSION: crm_reactivation_q2 buyers MUST NOT
+    // see the dashboard AuditUpgradePanel per campaign brief. They
+    // received their scan as a gift; Stage 2 email is the sole
+    // entry point to the audit pitch. Read cohort off the
+    // lead_orders row's stripe_metadata (stamped from session metadata
+    // at checkout time).
+    const cohortFromOrder =
+      scanLeadOrder?.stripe_metadata &&
+      typeof scanLeadOrder.stripe_metadata === 'object' &&
+      'cohort' in scanLeadOrder.stripe_metadata
+        ? String(scanLeadOrder.stripe_metadata.cohort)
+        : null;
+    const isWarmCohort = cohortFromOrder === 'crm_reactivation_q2';
+    if (!existingAudit && scanLeadOrder && !isWarmCohort) {
       const orderAgeMs =
         Date.now() - new Date(scanLeadOrder.created_at).getTime();
       const remainingMs = 24 * 60 * 60 * 1000 - orderAgeMs;
@@ -350,7 +366,14 @@ export default async function ClientPortalPage({
         </div>
       )}
 
-      {latestScan && isFirstScan && (
+      {/* Baseline-scan-complete banner — ONLY for subscription
+       *  (Pulse / Pulse+) buyers who can actually re-scan weekly.
+       *  One-time TurfScan / Audit buyers can't trigger re-scans
+       *  from the dashboard, so the "your territory expands with
+       *  weekly re-scans" framing doesn't apply to them and was
+       *  misleading (the prior one_time copy claimed "re-scan from
+       *  the dashboard any time" which isn't a feature they have). */}
+      {latestScan && isFirstScan && client.billing_mode !== 'one_time' && (
         <div
           className="px-4 md:px-8 py-3 border-b flex items-center gap-3 text-xs"
           style={{
@@ -364,9 +387,8 @@ export default async function ClientPortalPage({
             <span className="text-zinc-200 font-semibold">
               Baseline scan complete.
             </span>{' '}
-            {client.billing_mode === 'one_time'
-              ? 'This is your map — re-scan from the dashboard any time to track changes.'
-              : 'This is your starting point — your territory expands with weekly re-scans and the AI Coach playbook.'}
+            This is your starting point — your territory expands with
+            weekly re-scans and the AI Coach playbook.
           </span>
         </div>
       )}

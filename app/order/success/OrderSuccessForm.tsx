@@ -42,6 +42,9 @@ export function OrderSuccessForm({
   attachOnboardingStep,
   isAuditUpgrade,
   savedCard,
+  prospectId,
+  cohort,
+  prefillKeyword,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -94,12 +97,42 @@ export function OrderSuccessForm({
    *  When null, panel falls back to the Stripe Checkout redirect via
    *  /api/upgrade/audit/create-session. */
   savedCard: { brand: string; last4: string } | null;
+  /** Warm-cohort prospect_id captured at /yourmap or /freescan
+   *  checkout time, sourced from the Stripe session's metadata.
+   *  When set + the buyer reaches the post-fulfillment view ("Your
+   *  TurfMap is ready"), we POST /api/prospect/[id]/engaged to stamp
+   *  prospects.scan_engaged_at — the trigger gate for the Stage 2
+   *  audit-upgrade email cron. NULL when the buyer didn't come from
+   *  a cohort lander. The endpoint is cohort-scoped, so firing it
+   *  for non-warm-cohort prospect_ids is a safe no-op. */
+  prospectId: string | null;
+  /** Cohort discriminator from session.metadata.cohort. When
+   *  'crm_reactivation_q2' (VIP warm cohort), we MUST NOT render the
+   *  AuditUpgradePanel or PulseAttachPanel on /order/success — the
+   *  campaign brief explicitly suppresses commercial follow-ups at the
+   *  gift-delivery moment. Stage 2 email (auto-fired 30 min — 24 hr
+   *  after dashboard engagement) is the SOLE entry point to the audit
+   *  upgrade for this cohort. */
+  cohort: string | null;
+  /** Pre-fill value for the "Keyword to scan" field, sourced from
+   *  the cohort prospect's trade (e.g. "hvac", "roofer", "plumber").
+   *  When the buyer reached /order/success from a cohort lander, this
+   *  pre-fills the intake so their full scan matches the preview-data
+   *  narrative. Buyer can still edit if they want a different keyword.
+   *  NULL for organic buyers or when the prospect lookup failed. */
+  prefillKeyword: string | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
-  const [keywords, setKeywords] = useState<string[]>(
-    Array(keywordCount).fill('')
-  );
+  const [keywords, setKeywords] = useState<string[]>(() => {
+    // Pre-fill the first keyword slot with the prospect's trade when
+    // available (e.g. "hvac", "roofer"). Subsequent slots (Strategy +
+    // Pulse+ buyers get 3) stay blank so the buyer fills them with
+    // their additional keyword targets.
+    const seeded = Array(keywordCount).fill('');
+    if (prefillKeyword) seeded[0] = prefillKeyword;
+    return seeded;
+  });
   const [email, setEmail] = useState(prefillEmail ?? '');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
@@ -153,6 +186,40 @@ export function OrderSuccessForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── Warm-cohort engagement stamp ────────────────────────────────
+  // When the post-fulfillment success state renders ("Your TurfMap is
+  // ready"), fire POST /api/prospect/[id]/engaged. This stamps
+  // prospects.scan_engaged_at — the trigger that gates the Stage 2
+  // audit-upgrade email cron (every 15 min, sends 30 min after engagement
+  // and within the 24h upgrade window).
+  //
+  // The endpoint is cohort-scoped to crm_reactivation_q2 server-side, so
+  // firing for cold-email cohort prospect_ids is a clean no-op. Idempotent
+  // too: subsequent calls return { status: 'noop' } once the column is
+  // already set.
+  //
+  // Gated on `done && publicId && prospectId` so we only fire once the
+  // scan has actually fulfilled — not while the form is still loading.
+  // Tracked in engagedPosted state to prevent re-fires on re-renders.
+  const [engagedPosted, setEngagedPosted] = useState(false);
+  useEffect(() => {
+    if (engagedPosted) return;
+    if (!done || !publicId || !prospectId) return;
+    setEngagedPosted(true);
+    fetch(`/api/prospect/${encodeURIComponent(prospectId)}/engaged`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+    }).catch((e) => {
+      // Non-fatal: a missed engagement stamp just means the Stage 2
+      // cron won't fire for this buyer. The buyer's experience isn't
+      // affected. Log for ops visibility.
+      console.warn(
+        '[order/success] engaged POST failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    });
+  }, [done, publicId, prospectId, engagedPosted]);
 
   const setKeywordAt = (idx: number, value: string) => {
     setKeywords((prev) => {
@@ -285,6 +352,15 @@ export function OrderSuccessForm({
     // the buyer hasn't already opted in or cancelled mid-flow, and
     // only when we have the data needed to bind the trial to the
     // existing Stripe customer + client row.
+    //
+    // WARM-COHORT SUPPRESSION: per campaign brief, the Pulse-attach
+    // panel MUST NOT render for crm_reactivation_q2 buyers on
+    // /order/success. They received the scan as a gift; surfacing a
+    // commercial subscription pitch at the gift-delivery moment
+    // damages the warm relationship. Only Stage 2 email (auto-fired
+    // 30 min — 24 hr post-engagement) carries any pitch for this
+    // cohort.
+    const isWarmCohort = cohort === 'crm_reactivation_q2';
     const isOneTimeTier =
       tier === 'scan' || tier === 'audit' || tier === 'strategy';
     const showAttachPanel =
@@ -292,7 +368,8 @@ export function OrderSuccessForm({
       attachState !== 'success' &&
       publicId &&
       sessionId &&
-      stripeCustomerId;
+      stripeCustomerId &&
+      !isWarmCohort;
 
     // Compact celebration vs full success card. When the attach panel
     // is the focal point of the page (most one-time-tier success
@@ -590,13 +667,21 @@ export function OrderSuccessForm({
   // highest. isAuditUpgrade=true means they came back from a
   // successful upgrade Checkout; skip the pitch and go straight to
   // intake (with a confirmation banner).
+  //
+  // WARM-COHORT SUPPRESSION: crm_reactivation_q2 buyers MUST NOT
+  // see the AuditUpgradePanel anywhere on /order/success per campaign
+  // brief. Stage 2 email is the only entry point to the audit upgrade
+  // for this cohort. cohort === 'crm_reactivation_q2' short-circuits
+  // straight to the intake form path below.
+  const isWarmCohortForUpgradeGate = cohort === 'crm_reactivation_q2';
   if (
     !done &&
     tier === 'scan' &&
     sessionId &&
     upgradeChoice === 'pending' &&
     !isAuditUpgrade &&
-    !inlineUpgradeAccepted
+    !inlineUpgradeAccepted &&
+    !isWarmCohortForUpgradeGate
   ) {
     return (
       <AuditUpgradePanel

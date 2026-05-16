@@ -31,7 +31,14 @@ export type AICoachProps = {
 export function AICoach({ scanId, insight, scanComplete }: AICoachProps) {
   return (
     <div
-      className="rounded-lg p-6 relative overflow-hidden border"
+      // `id="ai-coach"` is the scroll/focus target for the
+      // AI Coach engagement-nudge email (sent ~1 hour after a
+      // prospect engages with their dashboard without clicking
+      // Generate). The cron at /api/cron/ai-coach-nudge embeds
+      // /portal/{public_id}#ai-coach so the browser scrolls here
+      // on arrival.
+      id="ai-coach"
+      className="rounded-lg p-6 relative overflow-hidden border scroll-mt-20"
       style={{
         background:
           'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)',

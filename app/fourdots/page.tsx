@@ -159,9 +159,22 @@ export default async function ScanLandingPage({
           <div className="lg:col-span-7">
             <OfferEyebrow showDiscount={showDiscount} couponLabel={coupon?.label} />
 
+            {/* H1 — two-line punch. Line 1 names the discovery ("where
+             *  you win — and where you don't"); line 2 closes the loop
+             *  with the action verb ("Then go fix it"). The forced
+             *  line break is structural (not natural wrap) so the
+             *  rhetorical beat is preserved at every viewport.
+             *
+             *  Italics: "win" / "and where you don't" on line 1 mirror
+             *  the original treatment; "Then go fix it" on line 2 is
+             *  italicized in full to match the rhythm of line 1's
+             *  italic closers. Brand voice = directional, not
+             *  cheerleader. */}
             <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.04] tracking-tight mb-4">
               See exactly where you <em>win</em> — and where you{' '}
               <em>don&rsquo;t.</em>
+              <br />
+              <em>Then go fix it.</em>
             </h1>
 
             <p className="font-display text-lg md:text-xl text-zinc-300 italic leading-snug mb-5 max-w-xl">
@@ -176,7 +189,9 @@ export default async function ScanLandingPage({
               <strong className="font-semibold text-zinc-100">
                 Most local businesses are invisible to two-thirds of
                 the people searching for them.
-              </strong>
+              </strong>{' '}
+              Then you get three specific actions &mdash; the ones with
+              the highest impact, in priority order.
             </p>
 
             <PricePanel
@@ -863,7 +878,7 @@ function ScoreReadout({
         border: highlight ? '1px solid var(--color-border-bright)' : 'none',
       }}
     >
-      <div className="text-[9px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-1">
+      <div className="text-[10px] tracking-[0.04em] text-zinc-500 font-mono font-semibold mb-1">
         {label}
       </div>
       <div

@@ -21,10 +21,8 @@ import {
   lookupCoupon,
   type CouponDescriptor,
 } from '@/lib/coupons/knownCoupons';
-import { headers } from 'next/headers';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
-import { logLanderVisit } from '@/lib/analytics/landerVisits';
 import type { ProspectRow } from '@/lib/supabase/types';
 
 /**
@@ -176,21 +174,6 @@ export default async function YourMapLandingPage({
   const utmCampaign = pickFirst(params.utm_campaign);
   const gclid = pickFirst(params.gclid);
 
-  // Fire-and-forget visit log for the LLM Ops Dashboard's funnel "Clicks" step.
-  // Replaces Instantly URL-rewrite click tracking (intentionally disabled for
-  // deliverability). See lib/analytics/landerVisits.ts.
-  const reqHeaders = await headers();
-  logLanderVisit({
-    path:         '/yourmap',
-    utm_source:   utmSource,
-    utm_medium:   utmMedium,
-    utm_campaign: utmCampaign,
-    coupon:       couponCode,
-    prospect_id:  prospectId,
-    user_agent:   reqHeaders.get('user-agent'),
-    referer:      reqHeaders.get('referer'),
-  });
-
   const prospectLookup = await loadProspect(prospectId);
   const personalization =
     prospectLookup.kind === 'found' ? prospectLookup.data : null;
@@ -329,12 +312,16 @@ export default async function YourMapLandingPage({
                   {personalization.business_name}&rsquo;s{' '}
                   {personalization.city} service area. The cards below
                   show what we found — and what the full scan unlocks.
+                  Then you get three specific actions &mdash; the ones
+                  with the highest impact, in priority order.
                 </>
               ) : (
                 <>
                   Our outreach team ran a preview of your service area
                   on TurfMap. The cards below show what we found — and
-                  what the full scan unlocks.
+                  what the full scan unlocks. Then you get three
+                  specific actions &mdash; the ones with the highest
+                  impact, in priority order.
                 </>
               )}
             </p>
@@ -829,12 +816,18 @@ export default async function YourMapLandingPage({
                 q: 'What keyword should I pick?',
                 a: (
                   <>
-                    Pick the most-searched term someone in your service
-                    area would type to find a business like yours. For a
-                    plumber, that&rsquo;s usually <code>plumber [city]</code>{' '}
-                    — not your business name, not a niche service. Unsure?
-                    Pick what you&rsquo;d type if you needed your own
-                    service in a city you don&rsquo;t live in.
+                    We pre-fill the keyword with your trade
+                    (e.g. <code>plumber</code>) — the same short term
+                    we used for the preview scan. Trade-only keywords
+                    give the cleanest geo-grid: each of the 81 points
+                    is anchored to a real lat/lon around your service
+                    area, and the trade keyword stays the same across
+                    all of them so the result is &ldquo;where do I
+                    show up for this trade as customers move around
+                    the map?&rdquo; You can override the pre-fill if
+                    you want a more specific term — just don&rsquo;t
+                    include your city in the keyword (the grid points
+                    already cover your service area).
                   </>
                 ),
               },
@@ -1165,7 +1158,7 @@ function ScoreReadout({
         }`,
       }}
     >
-      <div className="text-[9px] uppercase tracking-[0.16em] text-zinc-500 font-mono font-semibold mb-1.5">
+      <div className="text-[10px] tracking-[0.04em] text-zinc-500 font-mono font-semibold mb-1.5">
         {label}
       </div>
       <div

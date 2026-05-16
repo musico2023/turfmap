@@ -19,19 +19,25 @@
  *     body: form-encoded (application/x-www-form-urlencoded);
  *           image upload uses multipart/form-data
  *
- * Endpoints (verified against BrightLocal/apiclient-php Examples):
- *   POST  /v4/cb/create                       — create campaign,
- *                                               returns campaign_id
- *   POST  /v2/cb/upload/{campaignId}/image    — upload one photo
- *                                               (multipart)
- *   POST  /v2/cb/confirm-and-pay              — actually queue
- *                                               submissions
- *                                               (autoselect=Y lets BL
- *                                               pick directories from
- *                                               the package)
- *   GET   /v4/cb/get?campaign-id=             — campaign metadata +
- *                                               status
- *   GET   /v2/cb/citations?campaign-id=       — per-directory status
+ * Endpoints (current — Management APIs v1, May 2026):
+ *   POST  /manage/v1/citation-builder              — create campaign
+ *                                                    from a location id;
+ *                                                    returns campaign_id
+ *   POST  /v2/cb/upload/{campaignId}/image         — upload one photo
+ *                                                    (multipart; still
+ *                                                    on /v2 path)
+ *   PUT   /manage/v1/citation-builder/
+ *           {campaignId}/confirm                   — confirm + pay
+ *                                                    (replaces deprecated
+ *                                                    POST /v2/cb/confirm-and-pay
+ *                                                    which silently 4xx'd
+ *                                                    after May 10 migration)
+ *   GET   /manage/v1/citation-builder/{campaignId} — campaign metadata,
+ *                                                    status, per-citation
+ *                                                    submission state
+ *                                                    (single endpoint —
+ *                                                    no more /v4/cb/get +
+ *                                                    /v2/cb/citations dance)
  *
  * Pause: BL doesn't expose a documented "pause syncing" endpoint in
  * the public examples. We mark maintenance_paused locally and stop
@@ -144,9 +150,10 @@ export type PauseMaintenanceResult =
 
 /**
  * Submit a new citation-build campaign to BrightLocal. Three-step:
- *   1. POST /v4/cb/create       → campaign_id
+ *   1. POST /manage/v1/citation-builder                  → campaign_id
  *   2. for each photo URL → POST /v2/cb/upload/{id}/image (best-effort)
- *   3. POST /v2/cb/confirm-and-pay  → actually queues submissions
+ *   3. PUT  /manage/v1/citation-builder/{id}/confirm     → confirms + pays
+ *                                                          (queues submissions)
  *
  * Idempotency is the caller's responsibility — pair with a
  * citation_orders insert in the same transaction so a retry doesn't
@@ -228,22 +235,21 @@ export async function submitCitationOrder(
   }
 
   // Step 3 — confirm and pay. This is the moment BL is actually
-  // billed. Pre-step gating by tier already happened in the calling
-  // route (Pulse+ only).
-  const confirmPayload: Record<string, string> = {
-    campaign_id: campaignId,
-    package_id: config.packageId,
-    autoselect: input.directories ? 'N' : 'Y',
-    'remove-duplicates': 'Y',
-  };
-  if (input.directories && input.directories.length > 0) {
-    confirmPayload['citations'] = JSON.stringify(input.directories);
-  }
-  const confirm = await postForm(
-    config.apiKey,
-    '/v2/cb/confirm-and-pay',
-    confirmPayload
-  );
+  // billed (against the account's credit balance). Pre-step gating
+  // by tier already happened in the calling route (Pulse+ only).
+  //
+  // Uses the NEW Management API path
+  //   PUT /manage/v1/citation-builder/{campaign_id}/confirm
+  // (was POST /v2/cb/confirm-and-pay before the May 10 migration; the
+  // old endpoint was silently 4xx'ing, leaving campaigns in "Saved"
+  // state and never queuing submissions — see confirmCampaignManageV1
+  // header for the full incident note).
+  const confirm = await confirmCampaignManageV1(config.apiKey, campaignId, {
+    packageId: config.packageId,
+    countryCode3: input.profile.country_code ?? 'USA',
+    directories: input.directories,
+    notes: null,
+  });
   if (!confirm.ok) return confirm.error;
 
   // BL doesn't return a wholesale price on confirm-and-pay — it bills
@@ -687,6 +693,135 @@ type CreateCampaignResult =
         message: string;
       };
     };
+
+/**
+ * BL Confirm Campaign — Management APIs equivalent of the deprecated
+ * /v2/cb/confirm-and-pay endpoint. Confirms and pays for a campaign
+ * with the configured package; BL bills against the account's credit
+ * balance.
+ *
+ *   PUT https://api.brightlocal.com/manage/v1/citation-builder/{campaign_id}/confirm
+ *   Header  x-api-key
+ *   Header  Content-Type: application/json
+ *   Body    {
+ *     package_id: 'cb0'|'cb10'|'cb15'|'cb25'|'cb30'|'cb50'|'cb75'|'cb100',
+ *     auto_select: boolean,           // false → citations[] required
+ *     citations?: string[],            // domains, optional if auto_select
+ *     publishers: string[],            // REQUIRED — country-specific
+ *     remove_duplicates?: boolean,
+ *     notes?: string,
+ *     express?: boolean,
+ *   }
+ *   Resp    200 { message: 'Request successful.' }
+ *
+ * Docs: developer.brightlocal.com/docs/management-apis/l0fgjkxy8zp82-confirm-campaign
+ *
+ * The old /v2/cb/* path is deprecated — calling it silently 4xx'd
+ * during the May 10 migration, leaving Sugar Daddy's campaign 965489
+ * stuck in "Saved" state with no submissions queued. This is the
+ * P0 fix.
+ */
+async function confirmCampaignManageV1(
+  apiKey: string,
+  campaignId: string,
+  args: {
+    packageId: string;
+    countryCode3: string;
+    directories?: string[] | null;
+    notes?: string | null;
+  }
+): Promise<
+  | { ok: true }
+  | { ok: false; error: { ok: false; kind: 'remote_error' | 'rate_limited'; message: string } }
+> {
+  const publishers = publishersForCountry(args.countryCode3);
+  const explicitDirs =
+    args.directories && args.directories.length > 0 ? args.directories : null;
+  const body: Record<string, unknown> = {
+    package_id: args.packageId,
+    auto_select: explicitDirs ? false : true,
+    publishers,
+    remove_duplicates: true,
+  };
+  if (explicitDirs) body.citations = explicitDirs;
+  if (args.notes) body.notes = args.notes;
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `${MANAGE_V1_BASE}/citation-builder/${encodeURIComponent(campaignId)}/confirm`,
+      {
+        method: 'PUT',
+        headers: {
+          'x-api-key': apiKey,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(body),
+      }
+    );
+  } catch (e) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: e instanceof Error ? e.message : String(e),
+      },
+    };
+  }
+  if (res.status === 429) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'rate_limited',
+        message: 'BL rate limit reached on confirm — retry in 60s',
+      },
+    };
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        kind: 'remote_error',
+        message: `BL PUT /manage/v1/citation-builder/${campaignId}/confirm ${res.status}: ${truncate(text, 240)}`,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Country-specific publisher whitelist. BL's confirm-campaign endpoint
+ * requires the `publishers` array and rejects publishers that aren't
+ * supported in the campaign's country. Mapping pulled verbatim from
+ * the Stoplight docs (May 2026):
+ *   USA: dataaxle, neustar, foursquare, gpsnetwork, ypnetwork
+ *   Canada: dataaxle, foursquare, gpsnetwork
+ *   Australia: foursquare, gpsnetwork, locafynetwork
+ *   Other: foursquare, gpsnetwork
+ *
+ * Defaults to the USA list when country is unrecognized — at worst BL
+ * rejects a publisher we shouldn't have included, which surfaces as a
+ * loud 4xx the operator can investigate, rather than silently submitting
+ * to too few sources.
+ */
+function publishersForCountry(country: string): string[] {
+  const c = country.toUpperCase();
+  if (c === 'USA' || c === 'US') {
+    return ['dataaxle', 'neustar', 'foursquare', 'gpsnetwork', 'ypnetwork'];
+  }
+  if (c === 'CAN' || c === 'CA') {
+    return ['dataaxle', 'foursquare', 'gpsnetwork'];
+  }
+  if (c === 'AUS' || c === 'AU') {
+    return ['foursquare', 'gpsnetwork', 'locafynetwork'];
+  }
+  return ['foursquare', 'gpsnetwork'];
+}
 
 async function createCampaignManageV1(
   apiKey: string,

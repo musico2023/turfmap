@@ -119,6 +119,18 @@ function isCadence(s: string | null): s is Cadence {
   return s === 'monthly' || s === 'annual';
 }
 
+/** True when the coupon code is one we know zeroes the line item out
+ *  (100% off). Used to gate setup_future_usage off — at $0 Stripe
+ *  Checkout would otherwise force card collection to register the
+ *  payment method, defeating the frictionless-free goal. List is
+ *  intentionally explicit (not a generic discount lookup) so a
+ *  legitimate near-100%-off coupon can't accidentally trigger the
+ *  free-checkout path. */
+function isHundredPercentOffCoupon(couponCode: string): boolean {
+  const HUNDRED_PERCENT_OFF = new Set(['VIP']);
+  return HUNDRED_PERCENT_OFF.has(couponCode.toUpperCase());
+}
+
 /** Resolves the env var key + price for the (tier, cadence) tuple.
  *  Returns null on a malformed combination (e.g. cadence on a
  *  one-time tier — currently rejected; future could allow). */
@@ -276,6 +288,20 @@ export async function POST(
   // Cold-email cohort marker — fulfill route reads this back from
   // the session metadata + stamps prospects.converted_at.
   if (prospectId) attribution.prospect_id = prospectId;
+  // Cohort discriminator for cohort-level reporting (cold_email vs
+  // crm_reactivation_q2). Derive from coupon code so the lander
+  // doesn't need to pass it explicitly: VIP → crm_reactivation_q2,
+  // otherwise default to cold_email (the original cohort). When new
+  // cohorts launch, extend the map below or pass an explicit
+  // ?cohort= URL param.
+  const cohortFromCoupon: Record<string, string> = {
+    VIP: 'crm_reactivation_q2',
+  };
+  const cohort =
+    url.searchParams.get('cohort') ??
+    cohortFromCoupon[couponParam.toUpperCase()] ??
+    (prospectId ? 'cold_email' : undefined);
+  if (cohort) attribution.cohort = cohort;
 
   // Build the session params. We try with the resolved discount
   // first; if Stripe rejects (invalid coupon, expired, tier-
@@ -300,15 +326,25 @@ export async function POST(
     // one-time buyers don't — so without this, the upgrade path
     // 400s for the majority of scan buyers.
     ...(isSubscription ? {} : { customer_creation: 'always' as const }),
-    // For one-time tiers: attach the payment method to the customer
-    // record (setup_future_usage: 'off_session') so the audit-upgrade
+    // For one-time tiers (excluding 100%-off / $0 checkouts):
+    // attach the payment method to the customer record
+    // (setup_future_usage: 'off_session') so the audit-upgrade
     // mechanic on /order/success can charge the saved card without
     // requiring the buyer to re-enter card details. The upgrade
     // Checkout (which already passes `customer: customerId`) will
     // surface the saved payment method, turning the upgrade into
     // effectively a 1-click confirm. Stripe handles the consent
     // disclosure microcopy automatically.
-    ...(isSubscription
+    //
+    // SKIP setup_future_usage when the coupon is 100%-off (e.g.
+    // VIP). Stripe Checkout would otherwise force card collection
+    // on a $0 charge to register the payment method for future
+    // off-session use — defeats the "frictionless free scan" goal
+    // for the warm-cohort campaign. These buyers don't get the
+    // 1-click upgrade path; they fall back to the redirect-style
+    // upgrade Checkout (Stripe collects card fresh on the $197
+    // upgrade), which already works correctly.
+    ...(isSubscription || isHundredPercentOffCoupon(couponParam)
       ? {}
       : {
           payment_intent_data: {
