@@ -406,22 +406,40 @@ async function probeDirectoryViaLocalPack(
     };
   }
 
-  // Find a local_pack item whose title matches canonical. Local pack
-  // items have a 'type' field; filter to those, then run the same
-  // containment-based nameMatches that gates citations on other
-  // directories. First match wins (local pack returns ≤3 items
-  // ordered by Google's ranking; the buyer's own GBP should be at
-  // rank 1-2 when probed from their own coords).
+  // Find a GBP item. Google returns different SERP elements for
+  // different query types:
+  //   - Category searches ("home builder Toronto") → `local_pack`
+  //     items at the top of the SERP, ≤3 ranked GBP listings
+  //   - Business-name searches ("BVM Contracting Toronto") → a
+  //     `knowledge_graph` panel (right-side business card) with the
+  //     buyer's GBP info, no local_pack at all
+  //   - Sometimes both, sometimes neither
+  // Check BOTH locations so business-name probes catch the
+  // knowledge-panel path that proximity-search probes might miss.
+  // First match wins; nameMatches gates either path.
   const items = (task.result?.[0]?.items ?? []) as Array<{
     type?: string;
     title?: string;
     phone?: string;
+    phone_number?: string;
     url?: string;
+    website?: string;
     description?: string;
+    snippet?: string;
+    address?: string;
     cid?: string;
+    place_id?: string;
   }>;
-  const localPackItems = items.filter((it) => it.type === 'local_pack');
-  const match = localPackItems.find((it) => nameMatches(business.name, it.title ?? null));
+  // Both local_pack and knowledge_graph carry GBP info. Walk in
+  // order: local_pack first (more reliable when present), fall
+  // through to knowledge_graph when not.
+  let match: (typeof items)[number] | undefined;
+  for (const it of items) {
+    if (it.type !== 'local_pack' && it.type !== 'knowledge_graph') continue;
+    if (!nameMatches(business.name, it.title ?? null)) continue;
+    match = it;
+    break;
+  }
 
   if (!match) {
     return {
@@ -434,28 +452,29 @@ async function probeDirectoryViaLocalPack(
     };
   }
 
-  // Local pack items often expose phone + description fields
-  // directly — we synthesize a "snippet" by concatenating them so
-  // the downstream extractPhoneFromSnippet / extractAddressFromSnippet
-  // helpers can run unchanged. GBP listings nearly always include
-  // phone in the structured field, so we pre-seed the synthetic
-  // snippet with it.
-  const syntheticSnippet = [
-    match.phone ? match.phone : '',
-    match.description ?? '',
-  ]
+  // Synthesize a "snippet" from whichever fields the matched element
+  // exposed. local_pack items typically have phone + description;
+  // knowledge_graph items typically have phone_number + address +
+  // snippet. Cover both so the downstream extract* helpers + NAP
+  // comparison have something to work with.
+  const phone = match.phone ?? match.phone_number ?? '';
+  const description = match.description ?? match.snippet ?? '';
+  const addr = match.address ?? '';
+  const syntheticSnippet = [phone, addr, description]
     .filter(Boolean)
     .join(' • ');
 
   return {
     directory,
-    // GBP "url" in DFS local pack is usually the business's website,
-    // not a maps.google.com link. For audit-row consumption we want
-    // a stable identifier — prefer the cid-based maps URL when cid
-    // is present, falling back to whatever url DFS returned.
+    // Prefer a cid-based maps URL when DFS exposes one (stable
+    // place identifier). Knowledge_graph items often expose
+    // place_id instead — synthesize a maps URL from that. Fall back
+    // to whatever url/website DFS returned.
     url: match.cid
       ? `https://maps.google.com/?cid=${match.cid}`
-      : match.url ?? null,
+      : match.place_id
+        ? `https://maps.google.com/?q=place_id:${match.place_id}`
+        : match.url ?? match.website ?? null,
     found_name: match.title ?? null,
     found_snippet: syntheticSnippet || null,
     cost_dollars: task.cost ?? 0,
