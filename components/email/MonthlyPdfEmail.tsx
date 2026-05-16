@@ -31,7 +31,7 @@ export function MonthlyPdfEmail({
     >
       <H1>Your monthly TurfMap is ready.</H1>
       <P>
-        <strong>{businessName}</strong> — {scanDate}. The full PDF
+        <strong>{businessName}</strong>{' '}— {scanDate}. The full PDF
         report is attached, with the heatmap, score family, and AI
         Coach playbook on its own page.
       </P>

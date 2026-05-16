@@ -25,7 +25,7 @@ export function Day67FollowupEmail(props: Day67FollowupEmailProps) {
 
       <P>
         Haven&rsquo;t heard back on the 60-day check-in for{' '}
-        <strong>{props.businessName}</strong> — wanted to make sure
+        <strong>{props.businessName}</strong>{' '}— wanted to make sure
         the email didn&rsquo;t get buried.
       </P>
 
