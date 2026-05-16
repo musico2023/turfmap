@@ -32,6 +32,22 @@
     {
       "path": "/api/cron/audit-milestones",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/crmvip-stage2",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/ai-coach-nudge",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/cold-stage3",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/instantly-poll-replies",
+      "schedule": "*/2 * * * *"
     }
   ]
 }
