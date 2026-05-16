@@ -48,11 +48,11 @@ const COUPONS: Record<string, CouponDescriptor> = {
     stripeKind: 'promotion_code',
     label: '$50 off',
   },
-  // MAPCHECK50 — cold-email cohort coupon for /yourmap traffic.
-  // Same discount math as FOURDOTS50 ($99 → $49) but a different
-  // code so we can attribute conversions per acquisition channel.
-  // Stripe-side promotion code MUST exist before traffic arrives;
-  // operator creates it in the Stripe dashboard.
+  // MAPCHECK50 — legacy cold-email cohort coupon for /yourmap traffic.
+  // Same discount math as FOURDOTS50 ($99 → $49). Kept active for any
+  // in-flight prospects from the Phase 1/2 transactional flow + for
+  // future channels that want a $49 transactional entry point. NEW
+  // cold-email pushes use the COLDSCAN coupon (reply-driven flow).
   MAPCHECK50: {
     code: 'MAPCHECK50',
     validForTier: 'scan',
@@ -81,6 +81,30 @@ const COUPONS: Record<string, CouponDescriptor> = {
     discountCents: 9900,
     stripeKind: 'promotion_code',
     label: 'Free for buyer list',
+  },
+  // COLDSCAN — reply-driven cold-email cohort coupon. 100% off TurfScan
+  // ($99 → $0). The buyer never sees this coupon on a public lander;
+  // the URL with `coupon=COLDSCAN` is only sent in the Stage 2 reply-
+  // response email AFTER a cold prospect replies positively to the
+  // initial cold sequence.
+  //
+  // Stripe-side promotion code MUST exist before traffic arrives:
+  //   - 100% off, scan tier only
+  //   - max 500 total redemptions (campaign-scale cap)
+  //   - 90-day expiry from creation
+  //   - 1 per customer
+  //   - Description: "Cold email reply-driven scan"
+  //
+  // The 100%-off path means Stripe Checkout won't ask for a card.
+  // Reuses the $0-charge tolerance the VIP cohort already proved
+  // out (charge.succeeded with amount_total=0).
+  COLDSCAN: {
+    code: 'COLDSCAN',
+    validForTier: 'scan',
+    listPriceCents: 9900,
+    discountCents: 9900,
+    stripeKind: 'promotion_code',
+    label: 'Free with reply',
   },
 };
 

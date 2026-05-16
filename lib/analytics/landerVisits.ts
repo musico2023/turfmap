@@ -1,16 +1,16 @@
 /**
  * Server-side lander-visit logger for the LLM Ops Dashboard
- * (llm.fourdots.io). Used by /yourmap to record clicks from cold-email
- * prospects so the dashboard's funnel "Clicks" step is accurate without
- * Instantly URL-rewrite click tracking (which is intentionally disabled
- * for deliverability).
+ * (llm.fourdots.io). Used by /yourmap, /fourdots, /freescan to record
+ * acquisition-lander loads — the dashboard counts "clicks" per channel
+ * from this table without relying on Instantly's URL-rewrite click
+ * tracker (intentionally disabled for deliverability).
  *
+ * The dashboard reads this table directly. We write via service-role.
  * Fire-and-forget — must NEVER block the page render. Failures are
  * logged to stderr only.
  *
- * Caller is expected to only invoke this for actual prospect clicks
- * (e.g. only when prospect_id is present). The table itself doesn't
- * enforce that.
+ * For prospect-keyed channels (/yourmap), caller is expected to only
+ * invoke when prospect_id is present. The table itself doesn't enforce.
  */
 
 import { getServerSupabase } from '@/lib/supabase/server';
@@ -27,6 +27,8 @@ export type LanderVisitInput = {
 };
 
 export function logLanderVisit(input: LanderVisitInput): void {
+  // Don't block page render. The promise is intentionally not awaited;
+  // we attach a catch so unhandled-rejection doesn't surface.
   try {
     const supabase = getServerSupabase();
     void supabase
@@ -42,7 +44,10 @@ export function logLanderVisit(input: LanderVisitInput): void {
         referer:      input.referer ?? null,
       })
       .then(({ error }) => {
-        if (error) console.warn('[landerVisits] insert failed:', error.message);
+        if (error) {
+          // Log to stderr; lander render is unaffected.
+          console.warn('[landerVisits] insert failed:', error.message);
+        }
       });
   } catch (err) {
     console.warn('[landerVisits] unexpected error (swallowed):', err);
