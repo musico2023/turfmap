@@ -21,8 +21,10 @@ import {
   lookupCoupon,
   type CouponDescriptor,
 } from '@/lib/coupons/knownCoupons';
+import { headers } from 'next/headers';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
+import { logLanderVisit } from '@/lib/analytics/landerVisits';
 import type { ProspectRow } from '@/lib/supabase/types';
 
 /**
@@ -173,6 +175,23 @@ export default async function YourMapLandingPage({
   const utmMedium = pickFirst(params.utm_medium) ?? DEFAULT_UTM_MEDIUM;
   const utmCampaign = pickFirst(params.utm_campaign);
   const gclid = pickFirst(params.gclid);
+
+  // Fire-and-forget click log for the LLM Ops Dashboard funnel "Clicks" step.
+  // Only logs when prospect_id is present, so testing / direct visits don't
+  // pollute the prospect-click count. See lib/analytics/landerVisits.ts.
+  if (prospectId) {
+    const reqHeaders = await headers();
+    logLanderVisit({
+      path:         '/yourmap',
+      utm_source:   utmSource,
+      utm_medium:   utmMedium,
+      utm_campaign: utmCampaign,
+      coupon:       couponCode,
+      prospect_id:  prospectId,
+      user_agent:   reqHeaders.get('user-agent'),
+      referer:      reqHeaders.get('referer'),
+    });
+  }
 
   const prospectLookup = await loadProspect(prospectId);
   const personalization =
