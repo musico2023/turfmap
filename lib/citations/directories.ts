@@ -21,28 +21,40 @@ export type DfsDirectory = {
   id: string;
   /** Display name for the dashboard + AI Coach. */
   label: string;
-  /** Google site: filter target. */
-  domain: string;
+  /** Google site: filter target. Required when probe='site_serp'.
+   *  Unused when probe='local_pack' (GBP). */
+  domain?: string;
   /** Authority weight for missing-listing priority. */
   priority: 'high' | 'medium' | 'low';
   /** Country availability — CAN-restricted directories don't get
    *  audited for US buyers and vice versa. 'all' means audit
    *  everywhere. */
   countries: 'all' | 'CAN' | 'USA';
+  /** Which probe strategy to use:
+   *    site_serp  — default; Google organic SERP with `site:{domain}`
+   *                 filter. Works for any directory Google indexes
+   *                 (Yelp, BBB, Facebook, Apple Maps, etc.).
+   *    local_pack — query Google plainly (no site: filter), parse
+   *                 the local_pack items in the SERP response. Used
+   *                 for Google Business Profile, which can't be
+   *                 site:-filtered because google.com/maps URLs
+   *                 reject path-based site: syntax. */
+  probe?: 'site_serp' | 'local_pack';
 };
 
 /** Big-12: the universal directory set audited for every buyer
  *  regardless of vertical. Order matters — higher-priority entries
  *  surface first in the dashboard's NAP findings table.
  *
- *  GOOGLE BUSINESS PROFILE intentionally omitted: Google's site:
- *  filter doesn't accept paths (`site:google.com/maps` is invalid
- *  syntax), and bare `site:google.com` returns the whole index.
- *  GBP needs a dedicated probe via DFS Business Data API
- *  (`/v3/business_data/google/my_business_info/live`) — slated for
- *  v1.2. Until then, GBP coverage is "operator's job" — Anthony
- *  audits GBP manually via the BL dashboard for high-value buyers. */
+ *  Google Business Profile uses a different probe strategy
+ *  (probe='local_pack') because Google's site: filter rejects path-
+ *  based queries (`site:google.com/maps` is invalid syntax). Instead
+ *  we issue a plain organic SERP query for the business name + city
+ *  and parse the local_pack items — those ARE GBP listings. Same
+ *  DFS endpoint, same per-call cost; different parse path handled
+ *  in dfsChecker.probeDirectory. */
 const UNIVERSAL: DfsDirectory[] = [
+  { id: 'google_business', label: 'Google Business Profile',                              priority: 'high', countries: 'all', probe: 'local_pack' },
   { id: 'yelp',            label: 'Yelp',                   domain: 'yelp.com',           priority: 'high', countries: 'all' },
   { id: 'facebook',        label: 'Facebook',               domain: 'facebook.com',       priority: 'high', countries: 'all' },
   { id: 'bbb',             label: 'BBB',                    domain: 'bbb.org',            priority: 'high', countries: 'all' },

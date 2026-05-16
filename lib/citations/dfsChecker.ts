@@ -52,7 +52,12 @@ const DFS_MAX_ATTEMPTS = 2;
 
 /** Canonical business profile we audit against. Subset of the
  *  BL BusinessProfile shape — phone is optional because some buyers
- *  haven't filled it in, in which case we just skip phone matching. */
+ *  haven't filled it in, in which case we just skip phone matching.
+ *  Lat/lng are optional; when present they enable the more accurate
+ *  GBP local_pack probe (search centered on the business's coords
+ *  with a 1km radius virtually guarantees their GBP ranks at the
+ *  top of the local pack if one exists). When absent the GBP probe
+ *  falls back to location_name string. */
 export type CitationBusinessProfile = {
   name: string;
   street_address: string;
@@ -61,6 +66,8 @@ export type CitationBusinessProfile = {
   postcode: string;
   country: string;
   telephone?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 /** A sibling location of the same brand — used by sibling-aware
@@ -212,9 +219,27 @@ function dfsLocationFromBusiness(business: CitationBusinessProfile): string {
   return `${business.city},${business.region},${countryName}`;
 }
 
-/** Probe one directory via a single Google SERP query. Captures any
- *  error inline — never throws to the caller. */
+/** Probe one directory. Dispatches to the right strategy based on
+ *  directory.probe — `site_serp` (default, site:filter SERP scrape)
+ *  or `local_pack` (Google organic query, parse local_pack items;
+ *  used for Google Business Profile). Captures any error inline —
+ *  never throws to the caller. */
 async function probeDirectory(
+  business: CitationBusinessProfile,
+  directory: DfsDirectory
+): Promise<DirectoryProbeResult> {
+  if (directory.probe === 'local_pack') {
+    return probeDirectoryViaLocalPack(business, directory);
+  }
+  return probeDirectoryViaSiteSerp(business, directory);
+}
+
+/** Site-filter SERP probe — the default path for non-Google
+ *  directories (Yelp, BBB, Facebook, Apple Maps, etc.). Sends one
+ *  Google query of the form `site:{domain} "{name}" {city}` and
+ *  parses the top organic result that matches the directory's
+ *  domain (and isn't a search-results URL). */
+async function probeDirectoryViaSiteSerp(
   business: CitationBusinessProfile,
   directory: DfsDirectory
 ): Promise<DirectoryProbeResult> {
@@ -272,12 +297,28 @@ async function probeDirectory(
   // actual profile pages when no exact match exists. Counting them as
   // citations is a false positive (smoke test surfaced this for Yelp).
   const SEARCH_URL_PATTERNS = /\/(search|find|finder|browse|sitemap)|[?&](q|query|find_desc|find_near|find_loc|location|search)=/i;
+  // probe='site_serp' directories ALWAYS have a domain set — types
+  // make it optional only because probe='local_pack' (GBP) omits it.
+  // The dispatcher upstream guarantees we never reach this branch
+  // without a domain; assert here so the compiler narrows the type
+  // for the rest of the function.
+  if (!directory.domain) {
+    return {
+      directory,
+      url: null,
+      found_name: null,
+      found_snippet: null,
+      cost_dollars: task.cost ?? 0,
+      error: 'site_serp probe invoked without a domain',
+    };
+  }
+  const dirRoot = directory.domain.replace(/^www\./, '').split('/')[0];
+
   const match = items.find((it) => {
     if (it.type !== 'organic') return false;
     if (!it.url) return false;
     // Compare against the directory's root domain; tolerate www. and
     // path variants. e.g., "https://www.yelp.com/biz/..." matches "yelp.com".
-    const dirRoot = directory.domain.replace(/^www\./, '').split('/')[0];
     if (!it.url.toLowerCase().includes(dirRoot)) return false;
     // Reject directory-search-page URLs.
     if (SEARCH_URL_PATTERNS.test(it.url)) return false;
@@ -289,6 +330,134 @@ async function probeDirectory(
     url: match?.url ?? null,
     found_name: match?.title ?? null,
     found_snippet: match?.description ?? null,
+    cost_dollars: task.cost ?? 0,
+    error: null,
+  };
+}
+
+/** Local-pack probe — for Google Business Profile. Sends a plain
+ *  organic SERP query (no site: filter) for the business name +
+ *  city, then parses the `local_pack` items in the response. Local
+ *  pack items ARE GBP listings — each one represents a Google
+ *  Business Profile, with structured title + phone + url + cid
+ *  (Google's stable place id).
+ *
+ *  Centering: when business has lat/lng we pass them via
+ *  location_coordinate with a 1km radius. That virtually guarantees
+ *  the buyer's own GBP ranks at the top of the local pack if one
+ *  exists, since proximity is the dominant local-pack ranking
+ *  factor at 1km. Without lat/lng we fall back to location_name
+ *  (city/region/country) which still works but with slightly looser
+ *  proximity targeting.
+ *
+ *  Why this couldn't be done as a site_serp probe: Google's site:
+ *  filter rejects path-based queries (`site:google.com/maps` is
+ *  invalid syntax). And bare `site:google.com` returns the whole
+ *  Google index. Local pack parsing is the canonical way to
+ *  surface GBP listings programmatically. */
+async function probeDirectoryViaLocalPack(
+  business: CitationBusinessProfile,
+  directory: DfsDirectory
+): Promise<DirectoryProbeResult> {
+  // Centerable when lat/lng are present (typical for clients via
+  // /api/clients/[id]/locations); fall back to location_name string
+  // when they aren't.
+  const hasCoords =
+    typeof business.latitude === 'number' &&
+    typeof business.longitude === 'number';
+  const body: Record<string, unknown> = {
+    keyword: `${business.name} ${business.city}`,
+    language_code: 'en',
+    device: 'desktop',
+    depth: 10,
+    tag: `citation:${directory.id}`,
+  };
+  if (hasCoords) {
+    // "lat,lng,radius_km" — same shape lib/dataforseo/client.ts uses.
+    // 1km radius centers tightly on the storefront.
+    body.location_coordinate = `${business.latitude},${business.longitude},1`;
+  } else {
+    body.location_name = dfsLocationFromBusiness(business);
+  }
+
+  let task: DfsTask | null = null;
+  let lastError: string | null = null;
+  for (let attempt = 1; attempt <= DFS_MAX_ATTEMPTS; attempt++) {
+    try {
+      task = await postSerpTask(body);
+      if (task.status_code === 20000) break;
+      if (!DFS_RETRYABLE_TASK_CODES.has(task.status_code)) break;
+      if (attempt < DFS_MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+      }
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  if (!task || task.status_code !== 20000) {
+    return {
+      directory,
+      url: null,
+      found_name: null,
+      found_snippet: null,
+      cost_dollars: task?.cost ?? 0,
+      error: lastError ?? `DFS task ${task?.status_code}: ${task?.status_message ?? 'unknown'}`,
+    };
+  }
+
+  // Find a local_pack item whose title matches canonical. Local pack
+  // items have a 'type' field; filter to those, then run the same
+  // containment-based nameMatches that gates citations on other
+  // directories. First match wins (local pack returns ≤3 items
+  // ordered by Google's ranking; the buyer's own GBP should be at
+  // rank 1-2 when probed from their own coords).
+  const items = (task.result?.[0]?.items ?? []) as Array<{
+    type?: string;
+    title?: string;
+    phone?: string;
+    url?: string;
+    description?: string;
+    cid?: string;
+  }>;
+  const localPackItems = items.filter((it) => it.type === 'local_pack');
+  const match = localPackItems.find((it) => nameMatches(business.name, it.title ?? null));
+
+  if (!match) {
+    return {
+      directory,
+      url: null,
+      found_name: null,
+      found_snippet: null,
+      cost_dollars: task.cost ?? 0,
+      error: null,
+    };
+  }
+
+  // Local pack items often expose phone + description fields
+  // directly — we synthesize a "snippet" by concatenating them so
+  // the downstream extractPhoneFromSnippet / extractAddressFromSnippet
+  // helpers can run unchanged. GBP listings nearly always include
+  // phone in the structured field, so we pre-seed the synthetic
+  // snippet with it.
+  const syntheticSnippet = [
+    match.phone ? match.phone : '',
+    match.description ?? '',
+  ]
+    .filter(Boolean)
+    .join(' • ');
+
+  return {
+    directory,
+    // GBP "url" in DFS local pack is usually the business's website,
+    // not a maps.google.com link. For audit-row consumption we want
+    // a stable identifier — prefer the cid-based maps URL when cid
+    // is present, falling back to whatever url DFS returned.
+    url: match.cid
+      ? `https://maps.google.com/?cid=${match.cid}`
+      : match.url ?? null,
+    found_name: match.title ?? null,
+    found_snippet: syntheticSnippet || null,
     cost_dollars: task.cost ?? 0,
     error: null,
   };

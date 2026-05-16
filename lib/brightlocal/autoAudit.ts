@@ -182,7 +182,22 @@ export async function maybeRunNapAudit(
   //    in place.
   const provider = pickProvider();
   if (provider === 'dfs') {
-    return runDfsAudit(supabase, clientId, location.id, triggeredBy, business, client.industry);
+    // Pass the resolved location's lat/lng through to the DFS path —
+    // the new local_pack GBP probe (added in v1.2) centers on
+    // (lat,lng,1km) when available, virtually guaranteeing the
+    // buyer's own GBP ranks at the top of the local pack if one
+    // exists. Without coords the probe falls back to location_name
+    // string, which is fine but less precise.
+    return runDfsAudit(
+      supabase,
+      clientId,
+      location.id,
+      triggeredBy,
+      business,
+      client.industry,
+      location.latitude,
+      location.longitude
+    );
   }
   return runBrightlocalAudit(supabase, clientId, location.id, triggeredBy, business, client.industry);
 }
@@ -200,7 +215,9 @@ async function runDfsAudit(
   locationId: string,
   triggeredBy: string | null,
   business: BusinessProfile,
-  industry: string | null
+  industry: string | null,
+  latitude: number | null,
+  longitude: number | null
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
   // Insert pending row first so the row id is stable even if the audit
   // itself throws.
@@ -253,6 +270,8 @@ async function runDfsAudit(
       postcode: business.postcode,
       country: business.country ?? 'USA',
       telephone: business.telephone,
+      latitude,
+      longitude,
     };
 
     const result = await runDfsCitationAudit(canonical, directories, siblings);

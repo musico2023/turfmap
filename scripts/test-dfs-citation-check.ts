@@ -30,6 +30,7 @@ import { runDfsCitationAudit, type CitationBusinessProfile } from '../lib/citati
 import { directoriesForProfile, inferDfsProfile } from '../lib/citations/directories';
 
 // Ryan's NAP — same values as scripts/generate-ryan-audit-pdf.ts.
+// Lat/lng included so the v1.2 GBP probe can center on the storefront.
 const RYAN: CitationBusinessProfile = {
   name: 'BVM Contracting',
   street_address: '80 Barbados Boulevard',
@@ -38,6 +39,8 @@ const RYAN: CitationBusinessProfile = {
   postcode: 'M1J 0A2',
   country: 'CAN',
   telephone: '6474489603',
+  latitude: 43.7392,
+  longitude: -79.2384,
 };
 const RYAN_INDUSTRY = 'General contractor (custom homes / renovations)';
 
