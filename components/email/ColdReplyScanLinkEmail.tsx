@@ -4,24 +4,34 @@
  * "sure", etc.) on the cold-email sequence. Delivers the prospect's
  * personalized free-TurfScan URL with the COLDSCAN coupon pre-applied.
  *
- * Trigger:
- *   - Manual (Option B, current default): Anthony reviews the Instantly
- *     Unibox for replies and POSTs to /api/admin/send-cold-stage2 with
- *     the prospect_id once he's verified positive intent.
- *   - Auto (Option C, future): an NLP classifier on Instantly's reply
- *     stream auto-triggers for high-confidence positives; ambiguous
- *     ones still surface to Anthony.
+ * Send path: IN-THREAD reply via Instantly's POST /api/v2/emails/reply.
+ * The email ships from the SAME mailbox (eaccount) that sent the
+ * original cold message — preserving thread continuity and the BDR
+ * persona on that mailbox (philip@breakthroughactivate.com,
+ * howard@..., stephanie@..., etc.). The prospect's mail client
+ * groups it under the existing conversation.
  *
- * COPY STATUS: PLACEHOLDER. Replace the body text below with the
- * final Stage 2 reply-response copy from the marketing brief before
- * going live.
+ * Persona note: NO signature block in this email. The mailboxes
+ * rotate across personas; injecting an "Anthony" sig here would
+ * break that persona's voice. The Stage 3 audit-offer email is
+ * where the relational handoff happens (Anthony, founder of
+ * Fourdots Digital + TurfMap.ai) — Stage 3 is sent from
+ * hi@turfmap.ai as a NEW thread, intentionally.
+ *
+ * Trigger:
+ *   - Auto (default): /api/cron/instantly-poll-replies polls Instantly
+ *     every 2 min, classifies positive replies via Claude Haiku, then
+ *     schedules this email for NOW + 11 min by writing
+ *     stage_2_scheduled_at on the prospect row. The same cron's
+ *     second pass picks up due rows and posts to Instantly's reply API.
+ *   - Manual fallback: Anthony POSTs to /api/admin/send-cold-stage2
+ *     with the prospect_id (operator path, useful for ambiguous
+ *     replies the classifier routes to him).
  */
 
 import {
-  Button,
   Container,
-  Hr,
-  Section,
+  Link,
   Text,
 } from '@react-email/components';
 import { EmailLayout } from './EmailLayout';
@@ -35,7 +45,6 @@ export type ColdReplyScanLinkEmailProps = {
   scanUrl: string;
 };
 
-// PLACEHOLDER subject. Replace with brief copy when it lands.
 export const COLD_STAGE2_SUBJECT =
   "Here's your TurfScan — {{business_name}}";
 
@@ -45,60 +54,58 @@ export default function ColdReplyScanLinkEmail({
   trade,
   scanUrl,
 }: ColdReplyScanLinkEmailProps) {
+  // Shared inline-link style — matches the lime accent used everywhere
+  // else (CTA buttons in other emails, lander hero accents).
+  const linkStyle: React.CSSProperties = {
+    color: '#c5ff3a',
+    textDecoration: 'underline',
+    fontWeight: 600,
+  };
+
   return (
     <EmailLayout
       preview={`${firstName}, your TurfScan link for ${businessName}`}
     >
       <Container className="px-6 py-6">
-        {/*
-          PLACEHOLDER COPY — replace with final Stage 2 reply-response
-          text from the marketing brief.
-        */}
         <Text className="text-zinc-200 text-base leading-relaxed mb-4">
           {firstName},
         </Text>
 
         <Text className="text-zinc-200 text-base leading-relaxed mb-4">
-          [PLACEHOLDER — thank for reply, deliver link] Here&apos;s the
-          scan I mentioned for {businessName}. It&apos;s a 9×9 grid
-          across your service area showing where you appear in
-          Google&apos;s map pack for {trade} searches, and which
-          competitors are taking the cells you&apos;re missing.
+          Np, here&apos;s{' '}
+          <Link href={scanUrl} style={linkStyle}>
+            the link
+          </Link>
+          .
         </Text>
 
         <Text className="text-zinc-200 text-base leading-relaxed mb-4">
-          [PLACEHOLDER — set expectation: ~1 min to run, free with
-          this link, view your dashboard, reply if anything looks
-          off]
+          It&apos;s a 9×9 grid across your service area showing where
+          you appear in Google&apos;s map pack for {trade} searches,
+          and which competitors are taking the cells you&apos;re
+          missing.
         </Text>
 
-        <Section className="text-center my-6">
-          <Button
-            href={scanUrl}
-            className="inline-block bg-lime-400 text-zinc-950 px-6 py-3 rounded-md font-semibold text-sm"
-            style={{
-              backgroundColor: '#c5ff3a',
-              color: '#0a0a0a',
-              padding: '14px 24px',
-              borderRadius: 6,
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            Run your free TurfScan
-          </Button>
-        </Section>
-
-        <Text className="text-zinc-400 text-sm leading-relaxed mb-2">
-          Link is keyed to {businessName} — coupon is pre-applied so
-          it&apos;s a $0 checkout (no card needed).
+        <Text className="text-zinc-200 text-base leading-relaxed mb-4">
+          Will take less than a minute to run, free only with that
+          link. Once you run your scan click the AI coach section at
+          the bottom to generate the fix list — 3 priority actions to
+          make fast improvement on your score.
         </Text>
 
-        <Hr style={{ borderColor: '#27272a', margin: '24px 0' }} />
-
-        <Text className="text-zinc-500 text-xs leading-relaxed">
-          Anthony, TurfMap.ai · Four Dots Digital
+        <Text className="text-zinc-200 text-base leading-relaxed mb-4">
+          Reply if anything looks off, let me know if it&apos;s of
+          use.
         </Text>
+        {/*
+          No signature block — this email sends in-thread from one of
+          the rotating cold-email mailbox personas (philip@..., howard@...,
+          stephanie@..., etc.). The mailbox's existing sender persona is
+          preserved; injecting an "Anthony" sig here would break the
+          persona continuity. The Stage 3 audit-offer email switches to
+          Anthony's founder voice — that's where the persona handoff
+          happens, not here.
+        */}
       </Container>
     </EmailLayout>
   );

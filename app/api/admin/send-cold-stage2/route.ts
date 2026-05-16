@@ -2,52 +2,53 @@
  * POST /api/admin/send-cold-stage2
  *
  * Operator endpoint to manually trigger Stage 2 (reply-response scan
- * link delivery) for a cold-email-cohort prospect. This is the
- * Option B (manual review) implementation: Anthony reviews the
- * Instantly Unibox for positive replies, confirms intent, then POSTs
- * here with the prospect_id to send the personalized scan link.
+ * link delivery) for a cold-email-cohort prospect. Used when:
+ *   - The Haiku classifier routed a reply to 'ambiguous' and Anthony
+ *     reviews the inbox and decides it IS a positive intent.
+ *   - The prospect is from the legacy 'cold_email' cohort (pre-pivot
+ *     leads); the polling cron only watches 'cold_email_q2_2026', so
+ *     those replies require operator review.
+ *   - Anything weird happens with the auto-flow and Anthony wants
+ *     to force a send manually.
  *
- * Volume guidance: this is fine while reply volume stays <10/day.
- * Above that, replace with an Instantly-webhook-driven NLP classifier
- * that auto-fires for high-confidence positives and queues ambiguous
- * ones to a small Slack approval thread.
+ * Send path matches the cron's: in-thread via Instantly's
+ * POST /api/v2/emails/reply, using the prospect's most recent inbound
+ * reply UUID + eaccount. No 11-min delay here — operator triggers run
+ * immediately on the assumption that the operator has just decided to
+ * send.
  *
- * Auth: bearer token from OPS_ADMIN_SECRET (same pattern other admin
- * endpoints use). The endpoint is intentionally NOT cron-callable —
- * each invocation must be triggered by an operator with the token.
+ * Auth: bearer token from OPS_ADMIN_SECRET.
  *
  * Request body:
- *   { "prospect_id": "<uuid>" }
+ *   { "prospect_id": "<id>" }
  *
  * Behavior:
- *   1. Look up prospect by ID, verify cohort='cold_email_q2_2026'.
- *   2. Verify prospect has email + first_name (denormalized from
- *      the cold-email push pipeline).
- *   3. Verify stage_2_sent_at IS NULL (don't double-send).
- *   4. Build the personalized scan URL with COLDSCAN coupon.
- *   5. Render + send ColdReplyScanLinkEmail via Resend.
- *   6. UPDATE prospects SET stage_2_sent_at = NOW(),
- *        audit_upgrade_url = <url> (we reuse audit_upgrade_url for
- *        the cold cohort's scan-link URL — same operator-recovery
- *        semantics: the URL the email contained at send time).
+ *   1. Look up prospect. Accept BOTH 'cold_email_q2_2026' (new) and
+ *      'cold_email' (legacy) cohorts — operator overrides are valid
+ *      across either bucket.
+ *   2. Verify prospect has email + first_name. Verify stage_2_sent_at
+ *      is NULL (don't double-send).
+ *   3. Fetch the prospect's latest inbound Instantly reply (need
+ *      reply_to_uuid + eaccount + subject for threading).
+ *   4. Render the ColdReplyScanLinkEmail HTML.
+ *   5. POST /api/v2/emails/reply — send in-thread from the original
+ *      cold-email mailbox.
+ *   6. Stamp stage_2_sent_at + audit_upgrade_url for operator recovery.
  *
- * Idempotency: the stage_2_sent_at IS NULL guard on UPDATE prevents
- * a second send if the operator clicks twice. Returns 409 on a
- * duplicate request.
+ * Idempotent on stage_2_sent_at IS NULL guard.
  */
 
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { Resend } from 'resend';
 import { render } from '@react-email/components';
-import ColdReplyScanLinkEmail, {
-  COLD_STAGE2_SUBJECT,
-} from '@/components/email/ColdReplyScanLinkEmail';
+import ColdReplyScanLinkEmail from '@/components/email/ColdReplyScanLinkEmail';
 
 export const runtime = 'nodejs';
 
-const FROM_ADDRESS =
-  process.env.RESEND_FROM_ADDRESS ?? 'Anthony at TurfMap <hi@turfmap.ai>';
+const INSTANTLY_BASE = 'https://api.instantly.ai/api/v2';
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 function isAuthorized(req: Request): boolean {
   const secret = process.env.OPS_ADMIN_SECRET;
@@ -66,11 +67,10 @@ function buildScanUrl(origin: string, prospectId: string): string {
   return `${origin}/yourmap?${params.toString()}`;
 }
 
-// Resolve {{business_name}} in the placeholder subject. Once the brief
-// copy lands, the subject template can stop being a merge-field string
-// and just be plain text — until then we substitute here.
-function resolveSubject(template: string, businessName: string): string {
-  return template.replace('{{business_name}}', businessName);
+function reSubject(original: string): string {
+  let cleaned = (original ?? '').trim();
+  cleaned = cleaned.replace(/^(\s*(re|fwd|fw)\s*:\s*)+/i, '');
+  return cleaned ? `Re: ${cleaned}` : 'Re: TurfScan';
 }
 
 type ProspectRow = {
@@ -81,16 +81,47 @@ type ProspectRow = {
   email: string | null;
   trade: string | null;
   stage_2_sent_at: string | null;
+  instantly_reply_uuid: string | null;
+  instantly_eaccount: string | null;
+  instantly_reply_subject: string | null;
 };
+
+type InstantlyEmail = {
+  id: string;
+  ue_type: number;
+  eaccount?: string;
+  subject: string;
+  body?: { text?: string; html?: string };
+  timestamp_email: string;
+};
+
+async function fetchLatestInbound(
+  apiKey: string,
+  leadEmail: string
+): Promise<InstantlyEmail | null> {
+  const search = encodeURIComponent(leadEmail);
+  const r = await fetch(`${INSTANTLY_BASE}/emails?search=${search}&limit=20`, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'User-Agent': USER_AGENT,
+    },
+  });
+  if (!r.ok) return null;
+  const data = (await r.json()) as { items?: InstantlyEmail[] };
+  const inbound = (data.items || [])
+    .filter((e) => e.ue_type === 2)
+    .sort((a, b) => (b.timestamp_email > a.timestamp_email ? 1 : -1));
+  return inbound[0] ?? null;
+}
 
 export async function POST(req: Request) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  const resendKey = process.env.RESEND_API_KEY;
-  if (!resendKey) {
+  const instantlyKey = process.env.INSTANTLY_API_KEY;
+  if (!instantlyKey) {
     return NextResponse.json(
-      { error: 'RESEND_API_KEY not configured' },
+      { error: 'INSTANTLY_API_KEY not configured' },
       { status: 503 }
     );
   }
@@ -113,7 +144,8 @@ export async function POST(req: Request) {
   const { data: prospect, error } = await supabase
     .from('prospects')
     .select(
-      'id, cohort, business_name, first_name, email, trade, stage_2_sent_at'
+      'id, cohort, business_name, first_name, email, trade, ' +
+        'stage_2_sent_at, instantly_reply_uuid, instantly_eaccount, instantly_reply_subject'
     )
     .eq('id', prospectId)
     .maybeSingle<ProspectRow>();
@@ -127,7 +159,11 @@ export async function POST(req: Request) {
   if (!prospect) {
     return NextResponse.json({ error: 'prospect not found' }, { status: 404 });
   }
-  if (prospect.cohort !== 'cold_email_q2_2026') {
+  // Accept either cohort — admin override is valid across both.
+  if (
+    prospect.cohort !== 'cold_email_q2_2026' &&
+    prospect.cohort !== 'cold_email'
+  ) {
     return NextResponse.json(
       { error: `wrong cohort: ${prospect.cohort}` },
       { status: 400 }
@@ -141,17 +177,37 @@ export async function POST(req: Request) {
   }
   if (prospect.stage_2_sent_at) {
     return NextResponse.json(
-      {
-        error: 'already_sent',
-        stage_2_sent_at: prospect.stage_2_sent_at,
-      },
+      { error: 'already_sent', stage_2_sent_at: prospect.stage_2_sent_at },
       { status: 409 }
     );
   }
 
-  const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
-  const scanUrl = buildScanUrl(origin, prospect.id);
+  // Reply context: prefer values the cron already stashed; otherwise
+  // fetch the latest inbound from Instantly right now.
+  let replyUuid = prospect.instantly_reply_uuid;
+  let eaccount = prospect.instantly_eaccount;
+  let inboundSubject = prospect.instantly_reply_subject;
+  if (!replyUuid || !eaccount) {
+    const inbound = await fetchLatestInbound(instantlyKey, prospect.email);
+    if (!inbound) {
+      return NextResponse.json(
+        { error: 'no inbound Instantly reply found for prospect — cannot thread' },
+        { status: 400 }
+      );
+    }
+    replyUuid = inbound.id;
+    eaccount = inbound.eaccount ?? '';
+    inboundSubject = inbound.subject ?? '';
+    if (!eaccount) {
+      return NextResponse.json(
+        { error: 'inbound reply missing eaccount; cannot determine sender mailbox' },
+        { status: 400 }
+      );
+    }
+  }
 
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.turfmap.ai';
+  const scanUrl = buildScanUrl(origin, prospect.id);
   const html = await render(
     ColdReplyScanLinkEmail({
       firstName: prospect.first_name,
@@ -161,28 +217,31 @@ export async function POST(req: Request) {
     })
   );
 
-  const resend = new Resend(resendKey);
-  try {
-    await resend.emails.send({
-      from: FROM_ADDRESS,
-      to: prospect.email,
-      subject: resolveSubject(COLD_STAGE2_SUBJECT, prospect.business_name),
-      html,
-      // Replies route to Anthony — keeps the relational thread on
-      // his inbox, not a no-reply.
-      replyTo: 'anthony@fourdots.io',
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'unknown error';
+  const replyResp = await fetch(`${INSTANTLY_BASE}/emails/reply`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${instantlyKey}`,
+      'Content-Type': 'application/json',
+      'User-Agent': USER_AGENT,
+    },
+    body: JSON.stringify({
+      reply_to_uuid: replyUuid,
+      eaccount,
+      subject: reSubject(inboundSubject ?? ''),
+      body: { html },
+    }),
+  });
+  if (!replyResp.ok) {
     return NextResponse.json(
-      { error: 'resend_send_failed', message },
+      {
+        error: 'instantly_reply_failed',
+        http: replyResp.status,
+        body: (await replyResp.text()).slice(0, 500),
+      },
       { status: 502 }
     );
   }
 
-  // Idempotency stamp. Reuses `audit_upgrade_url` column for operator-
-  // recovery (it holds the URL we sent at the time of send, regardless
-  // of cohort) — cleaner than adding a parallel cold-only column.
   const { error: updateErr } = await supabase
     .from('prospects')
     .update({
@@ -191,27 +250,18 @@ export async function POST(req: Request) {
     })
     .eq('id', prospect.id)
     .is('stage_2_sent_at', null);
-
   if (updateErr) {
-    // Email already sent but stamp failed — log loudly. Re-POSTing
-    // returns 409 not_sent because the row's stage_2_sent_at is now
-    // either NULL (cleanup needed) or stamped. Worst case operator
-    // re-POSTs and gets a duplicate send — accept this rare case
-    // over hard-failing the operator at this point.
     console.error('[send-cold-stage2] stamp failed for', prospect.id, updateErr);
     return NextResponse.json(
-      {
-        ok: true,
-        warning: 'email sent but stamp failed',
-        stamp_error: updateErr.message,
-      },
+      { ok: true, warning: 'email sent but stamp failed', stamp_error: updateErr.message },
       { status: 200 }
     );
   }
-
   return NextResponse.json({
     ok: true,
     prospect_id: prospect.id,
     scan_url: scanUrl,
+    sent_from: eaccount,
+    threaded_under_reply: replyUuid,
   });
 }
