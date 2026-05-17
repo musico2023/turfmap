@@ -11,6 +11,17 @@
  *
  * For prospect-keyed channels (/yourmap), caller is expected to only
  * invoke when prospect_id is present. The table itself doesn't enforce.
+ *
+ * Scanner-UA filter (looksLikeScanner) drops requests from email-
+ * security gateways (Microsoft SafeLinks, Proofpoint, Mimecast,
+ * Barracuda, etc.) and social-card unfurlers (Slack / Twitter /
+ * LinkedIn / WhatsApp / Facebook). These pre-fetch links inside
+ * incoming emails to check for malicious URLs but are not real
+ * human visits and don't execute JavaScript. We observed this
+ * pollute the count on 2026-05-14 — one cold-email recipient (Air
+ * Point Heating, behind enterprise email security) showed up as
+ * 22 visits in 12 hours, when realistically it was 1 human +
+ * 21 scanner pre-fetches.
  */
 
 import { getServerSupabase } from '@/lib/supabase/server';
@@ -26,7 +37,60 @@ export type LanderVisitInput = {
   referer?: string | null;
 };
 
+/**
+ * Email-security scanner + social-unfurler UA patterns we drop
+ * before inserting. Calibrated against major enterprise email
+ * security vendors + common link-preview bots.
+ *
+ * Conservative — when in doubt we log (false negatives in the
+ * filter just inflate the count slightly, which is fine; false
+ * positives would silently drop real clicks). The list is
+ * intentionally regex'd to be tolerant of vendor sub-products and
+ * version strings.
+ */
+const SCANNER_UA_PATTERNS: readonly RegExp[] = [
+  /microsoft.*safelink/i,
+  /atp(?:safelinks)?/i,
+  /proofpoint/i,
+  /mimecast/i,
+  /symantec/i,
+  /forcepoint/i,
+  /barracuda/i,
+  /trendmicro/i,
+  /ironport/i,
+  /spamtitan/i,
+  /appriver/i,
+  /retarus/i,
+  /clearswift/i,
+  /sophos.*sandstorm/i,
+  /\bbot\b/i,
+  /crawler/i,
+  /spider/i,
+  /headlesschrome/i,
+  /phantomjs/i,
+  /slackbot/i,
+  /facebookexternalhit/i,
+  /twitterbot/i,
+  /linkedinbot/i,
+  /whatsapp/i,
+  /telegrambot/i,
+];
+
+function looksLikeScanner(ua: string | null | undefined): boolean {
+  if (!ua) return false;
+  return SCANNER_UA_PATTERNS.some((re) => re.test(ua));
+}
+
 export function logLanderVisit(input: LanderVisitInput): void {
+  // Drop scanner / preview-bot pre-fetches BEFORE the insert so the
+  // dashboard's "Clicks" number reflects real-human clicks instead
+  // of inflating on enterprise email security pre-fetches. See the
+  // module header for the Air Point Heating incident (May 14)
+  // that motivated this filter.
+  if (looksLikeScanner(input.user_agent)) {
+    return;
+  }
+
   // Don't block page render. The promise is intentionally not awaited;
   // we attach a catch so unhandled-rejection doesn't surface.
   try {
