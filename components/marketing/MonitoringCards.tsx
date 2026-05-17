@@ -156,9 +156,17 @@ const TIERS: MonitoringSpec[] = [
         group: 'Citations + maintenance',
         items: [
           'Initial citation building across ~25 industry directories',
-          'Active maintenance and sync on 12 directories',
+          // "Active maintenance and sync" was misleading — implied
+          // automatic NAP-drift correction, which we don't do. We
+          // surface per-directory status in real time and let the
+          // operator trigger resyncs on demand (3 free per quarter,
+          // then $8/directory over-cap). Updated 2026-05-17.
+          'Real-time directory status tracking + on-demand resync',
           'Per-directory live status in your dashboard',
-          'Aggregator push (Data Axle, Foursquare, Localeze) for downstream propagation',
+          // Localeze is now branded as Neustar Localeze after the 2015
+          // Neustar acquisition. We use the BrightLocal `neustar`
+          // publisher which IS that platform; renaming for accuracy.
+          'Aggregator push (Data Axle, Foursquare, Neustar) for downstream propagation',
         ],
       },
     ],
