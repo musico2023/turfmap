@@ -303,13 +303,59 @@ export async function POST(
     (prospectId ? 'cold_email' : undefined);
   if (cohort) attribution.cohort = cohort;
 
+  // Mandatory $99 TurfScan setup fee on MONTHLY Pulse / Pulse+
+  // signups (NOT annual).
+  //
+  // Rationale (2026-05-17 pricing decision): before this change, a
+  // buyer could go directly from the marketing page → Stripe Checkout
+  // for $39/mo (Pulse) or $99/mo (Pulse+) and receive the equivalent
+  // of a $99 TurfScan as their first weekly scan — effectively
+  // skipping the diagnostic charge entirely. Adding it as a required
+  // one-time line item on monthly signups:
+  //   - lifts year-1 revenue ~$99/buyer on Pulse monthly
+  //   - lifts 3-month-commit net ~$99/buyer on Pulse+ monthly
+  //     (40% → 54% margin)
+  //   - keeps annual buyers exempt — they're effectively pre-paying
+  //     the equivalent via the annual discount, framed on the
+  //     homepage as "TurfScan ($99 value) included"
+  //
+  // Stripe natively supports mixed one-time + recurring line items
+  // in a single `mode: 'subscription'` session: the first invoice
+  // bills both, every subsequent invoice bills only the recurring
+  // price. No special webhook plumbing required.
+  //
+  // The scan Price ID is the same one used for standalone TurfScan
+  // checkouts (NEXT_PUBLIC_STRIPE_PRICE_SCAN). Reusing it keeps the
+  // line-item description ("TurfScan") consistent across products
+  // and lets the existing fulfillment pipeline run unchanged.
+  const lineItems: Array<{ price: string; quantity: number }> = [
+    { price: priceId, quantity: 1 },
+  ];
+  const requiresScanSetup =
+    isSubscription &&
+    (tierParam === 'pulse' || tierParam === 'pulse_plus') &&
+    cadence === 'monthly';
+  if (requiresScanSetup) {
+    const scanPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_SCAN;
+    if (!scanPriceId) {
+      return NextResponse.json(
+        {
+          error:
+            'Checkout misconfigured: NEXT_PUBLIC_STRIPE_PRICE_SCAN is required for monthly Pulse/Pulse+ checkouts (mandatory $99 setup line item).',
+        },
+        { status: 503 }
+      );
+    }
+    lineItems.push({ price: scanPriceId, quantity: 1 });
+  }
+
   // Build the session params. We try with the resolved discount
   // first; if Stripe rejects (invalid coupon, expired, tier-
   // mismatched), retry without it so the buyer doesn't get stuck.
   const baseParams: import('stripe').default.Checkout.SessionCreateParams = {
     mode: isSubscription ? 'subscription' : 'payment',
     payment_method_types: ['card'],
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: lineItems,
     success_url: `${origin}/order/success?tier=${tierParam}&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/#section-04`,
     // Capture the buyer's email up-front so the post-purchase form

@@ -379,6 +379,27 @@ function Card({
           {tier.monthlySubNote}
         </div>
       )}
+      {/* TurfScan baseline disclosure (added 2026-05-17 pricing
+          decision). Monthly buyers pay a $99 one-time setup line
+          item — surfaced here adjacent to the price so it's clear
+          before they reach Stripe Checkout. Annual buyers get the
+          TurfScan included; framed as a value-add to keep the
+          annual upgrade compelling. */}
+      {!isAnnual ? (
+        <div
+          className="text-[11px] font-mono mb-1"
+          style={{ color: '#c89545' }}
+        >
+          + $99 TurfScan setup (one-time)
+        </div>
+      ) : (
+        <div
+          className="text-[11px] font-mono mb-1"
+          style={{ color: 'var(--color-lime)' }}
+        >
+          Includes $99 TurfScan
+        </div>
+      )}
       <div className="text-[11px] text-zinc-600 font-mono mb-1">
         {isAnnual
           ? `${tier.annualTotal}/year billed today · save ${tier.annualSavingsDollars}`
