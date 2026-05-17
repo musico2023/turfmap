@@ -76,8 +76,28 @@ const BL_BASE = 'https://tools.brightlocal.com/seo-tools/api';
  *  lookup once the BL BusinessCategories endpoint is wired up. */
 const FALLBACK_CATEGORY_ID = 605;
 
-/** Default Citation Builder package SKU. Override via env. */
-const DEFAULT_PACKAGE_ID = 'cb15';
+/** Default Citation Builder package SKU. Override via env
+ *  (`BRIGHTLOCAL_CB_PACKAGE_ID`).
+ *
+ *  Calibration (2026-05-17): the homepage Pulse+ tier claims "Initial
+ *  citation building across ~25 industry directories". The previous
+ *  default `cb15` (15 manual citations) under-shot that claim by
+ *  ~10 directories. BL's `Add Campaign` dashboard pre-selects more
+ *  citations than the package SKU requests when location metadata
+ *  is rich (we saw 35 pre-selected for Sugar Daddy Doughnuts), but
+ *  the SKU we send still determines the BASE price.
+ *
+ *  Switching to `cb25` matches the marketed promise on the homepage:
+ *  25 direct manual submissions + 3 aggregator pushes that propagate
+ *  to ~30 downstream destinations = the "~25 directories" envelope.
+ *  Unit economics at this SKU + aggregators stay healthy for the
+ *  $99/mo Pulse+ monthly tier (~45% margin at 3-month commitment).
+ *
+ *  Operators can still customize per-campaign in the BL dashboard
+ *  before "Continue to Payment" — deselect aggregators or trim
+ *  manual count when a specific buyer's vertical doesn't warrant
+ *  the full set. */
+const DEFAULT_PACKAGE_ID = 'cb25';
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
@@ -1307,18 +1327,31 @@ function truncate(s: string, n: number): string {
 }
 
 function estimatePackageCostCents(packageId: string): number {
-  // Rough lookup of BL's published Citation Builder package pricing.
-  // Real wholesale comes from BL invoicing; this is a placeholder so
-  // dashboard cost rollups have a non-zero value to sort by.
+  // Calibrated against the BL `Add Campaign` step-2 invoice for Sugar
+  // Daddy Doughnuts on 2026-05-17:
+  //   - Manual submission unit price: $3.20 ($112 / 35 submissions)
+  //   - Aggregator submission unit price: $28.50 (Data Axle, Foursquare,
+  //     GPS Network — each)
+  //   - 3-aggregator bundle discount: 5% (=> $85.50 instead of $90)
+  //   - Optional add-on "Remove Harmful Duplicate Listings": $22.40
+  //     (NOT included in these estimates — operator deselects in BL UI)
+  //
+  // Estimates here assume the buyer takes the package SKU's manual
+  // count + 3 aggregators (default propagation set). Real wholesale
+  // comes from BL invoicing; these are stored on citation_orders.
+  // wholesale_cents so the operator dashboard's cost rollup has a
+  // non-zero value to sort by.
+  const aggregatorBundleCents = 8550; // $85.50 (3 aggregators, 5% bundle)
+  const perManualCents = 320; // $3.20 per manual submission
   switch (packageId) {
     case 'cb15':
-      return 8000;
+      return 15 * perManualCents + aggregatorBundleCents; // $48 + $85.50 = $133.50
     case 'cb25':
-      return 12000;
+      return 25 * perManualCents + aggregatorBundleCents; // $80 + $85.50 = $165.50
     case 'cb50':
-      return 22000;
+      return 50 * perManualCents + aggregatorBundleCents; // $160 + $85.50 = $245.50
     default:
-      return 8000;
+      return 25 * perManualCents + aggregatorBundleCents; // match new default cb25
   }
 }
 
