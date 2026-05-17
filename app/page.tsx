@@ -732,9 +732,17 @@ export default function MarketingLanding() {
                     your citations automatically — we do that part for you.
                     If you want full done-for-you local SEO and ad
                     management, our parent company Fourdots Digital offers
-                    that under Local Lead Machine. We&rsquo;ll discuss your
-                    options on the strategist call if you book one of the
-                    audit tiers.
+                    that under{' '}
+                    <a
+                      href="https://fourdots.io/home-services"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:text-zinc-100 transition-colors"
+                    >
+                      Local Lead Machine
+                    </a>
+                    . We&rsquo;ll discuss your options on the strategist
+                    call if you book one of the audit tiers.
                   </>
                 ),
               },
