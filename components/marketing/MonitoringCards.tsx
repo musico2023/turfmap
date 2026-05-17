@@ -397,7 +397,19 @@ function Card({
           className="text-[11px] font-mono mb-1"
           style={{ color: 'var(--color-lime)' }}
         >
-          Includes $99 TurfScan
+          {/* Strikethrough + "FREE" framing — the previous
+              "Includes $99 TurfScan" read as "you're still paying
+              $99" rather than as a value-add. Crossing out the
+              dollar amount + adding "FREE" makes the bundle
+              obvious at a glance. */}
+          Includes TurfScan{' '}
+          <span
+            className="line-through"
+            style={{ color: '#71717a' }}
+          >
+            $99
+          </span>{' '}
+          <strong className="font-bold">FREE</strong>
         </div>
       )}
       <div className="text-[11px] text-zinc-600 font-mono mb-1">
