@@ -64,15 +64,50 @@ const ALPHA2_TO_ALPHA3: Record<string, string> = {
  *  which had no country filter at the time). */
 const DEFAULT_COUNTRIES = 'ca,us';
 
+/** Structured-search hints the caller can supply alongside (or
+ *  instead of) the freeform address string. When ANY of these are
+ *  provided we issue a STRUCTURED Nominatim query instead of a
+ *  free-text `q=` search — much more accurate disambiguation.
+ *
+ *  Background: with free-text search, Nominatim ranks results by an
+ *  internal "importance" score that's biased toward larger /
+ *  better-known places. "1051 Southfield Drive, Plainfield IN 46168"
+ *  free-text-resolved to a same-named street in Auburn, IN
+ *  (2026-05-19 Hendricks Behavioral Hospital incident) because the
+ *  importance score favored that match. With structured params
+ *  (`street=1051 Southfield Drive&city=Plainfield&state=Indiana&
+ *  postalcode=46168`) Nominatim respects the supplied
+ *  disambiguators and returns the operator's actual address.
+ *
+ *  All fields optional individually. Caller decides which to send
+ *  based on what data they have (e.g., Mapbox autocomplete gives all
+ *  four cleanly; a freeform paste might only have city + region). */
+export type GeocodeHints = {
+  street?: string | null;
+  city?: string | null;
+  /** State / province. Accepts full name ("Indiana") or 2-letter
+   *  abbreviation ("IN") — Nominatim is forgiving on both. */
+  state?: string | null;
+  postalcode?: string | null;
+};
+
 export async function geocodeAddress(
   address: string,
-  options: { countries?: string } = {}
+  options: { countries?: string; hints?: GeocodeHints } = {}
 ): Promise<GeocodeResult | null> {
   const trimmed = address.trim();
   if (trimmed.length < 4) return null;
 
+  // Decide search strategy: structured (when any hint provided) vs
+  // free-text (back-compat default). Structured search dramatically
+  // improves accuracy for ambiguous street names — see GeocodeHints
+  // docstring for the Hendricks incident rationale.
+  const hints = options.hints ?? {};
+  const hasHints = Boolean(
+    hints.street || hints.city || hints.state || hints.postalcode
+  );
+
   const params = new URLSearchParams({
-    q: trimmed,
     format: 'jsonv2',
     // 1 = include the structured `address` object (street, city, state,
     // postcode, country, country_code). Used to pre-fill the NAP fields.
@@ -83,6 +118,20 @@ export async function geocodeAddress(
     // can override via the options arg for niche cases.
     countrycodes: (options.countries ?? DEFAULT_COUNTRIES).toLowerCase(),
   });
+
+  if (hasHints) {
+    // Structured search — Nominatim merges these into a high-precision
+    // lookup. Empty fields are dropped to keep the query lean.
+    if (hints.street) params.set('street', hints.street);
+    if (hints.city) params.set('city', hints.city);
+    if (hints.state) params.set('state', hints.state);
+    if (hints.postalcode) params.set('postalcode', hints.postalcode);
+  } else {
+    // Back-compat: free-text query when no hints. Used by callers
+    // that only have a single-line address string.
+    params.set('q', trimmed);
+  }
+
   const url = `${NOMINATIM_BASE}/search?${params.toString()}`;
 
   const res = await fetch(url, {

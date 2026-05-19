@@ -5,7 +5,14 @@
  * proxy to Nominatim could get our IP banned). Returns the first hit, or
  * a friendly error if Nominatim doesn't recognize the address.
  *
- * Body:    { address: string }
+ * Body:    { address: string, components?: { street?, city?, state?, postalcode? } }
+ *   components: optional structured hints. When provided (e.g., from a
+ *   Mapbox autocomplete selection), we forward to Nominatim as a
+ *   STRUCTURED search instead of free-text. This prevents the
+ *   "1051 Southfield Drive resolves to wrong city" class of bugs where
+ *   Nominatim's importance score outranks the operator's intended match
+ *   (see lib/geocoding/nominatim.ts GeocodeHints docstring — 2026-05-19
+ *   Hendricks Behavioral Hospital incident).
  * Returns: { lat, lng, formatted, components } | { error }
  *   components: structured fields parsed from Nominatim — used to
  *   pre-fill the BrightLocal NAP section on the create form so
@@ -21,6 +28,17 @@ export const runtime = 'nodejs';
 
 const Body = z.object({
   address: z.string().min(4).max(400),
+  // Optional structured hints. Each field is independently optional;
+  // any combination is forwarded to Nominatim's structured-search
+  // endpoint. Empty strings are treated as absent.
+  components: z
+    .object({
+      street: z.string().max(200).nullish(),
+      city: z.string().max(120).nullish(),
+      state: z.string().max(120).nullish(),
+      postalcode: z.string().max(20).nullish(),
+    })
+    .optional(),
 });
 
 export async function POST(req: Request) {
@@ -37,16 +55,32 @@ export async function POST(req: Request) {
     );
   }
 
+  // Normalize hints: drop empty strings and null/undefined so the
+  // structured-search branch in geocodeAddress only fires for fields
+  // the caller actually provided.
+  const c = parsed.components;
+  const hints = c
+    ? {
+        street: c.street?.trim() || null,
+        city: c.city?.trim() || null,
+        state: c.state?.trim() || null,
+        postalcode: c.postalcode?.trim() || null,
+      }
+    : undefined;
+
   let result;
   try {
-    result = await geocodeAddress(parsed.address);
+    result = await geocodeAddress(parsed.address, { hints });
     // Nominatim is finicky about postal codes — if the operator typed
     // a "1440 Bathurst, Toronto, ON M5R 3J3" style address and Nominatim
     // returns nothing, retry with the postal code stripped. Most
     // operators don't realize their postcode is what broke the lookup,
     // so falling back silently is much better UX than surfacing a
     // "couldn't find" error and forcing them to retry by hand.
-    if (!result) {
+    //
+    // Stripped-postcode retry is free-text only — if the operator
+    // supplied structured hints we trust them and don't second-guess.
+    if (!result && !hints) {
       const stripped = stripPostalCode(parsed.address);
       if (stripped !== parsed.address) {
         result = await geocodeAddress(stripped);

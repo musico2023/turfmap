@@ -294,10 +294,28 @@ function AddLocationForm({
             : null,
         };
       } else {
+        // Forward Mapbox's structured fields as Nominatim hints when
+        // the operator picked from the dropdown but then edited the
+        // freeform text (e.g., added a unit number, fixed a typo).
+        // Without these hints Nominatim falls back to free-text search
+        // which can resolve to a wrong-city same-named street — see
+        // 2026-05-19 Hendricks Behavioral Hospital incident
+        // (lib/geocoding/nominatim.ts GeocodeHints docstring).
+        const hintComponents = selected
+          ? {
+              street: selected.street_address || undefined,
+              city: selected.city || undefined,
+              state: selected.region || undefined,
+              postalcode: selected.postcode || undefined,
+            }
+          : undefined;
         const geo = await fetch('/api/geocode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address: address.trim() }),
+          body: JSON.stringify({
+            address: address.trim(),
+            ...(hintComponents ? { components: hintComponents } : {}),
+          }),
         });
         const geoData = (await geo.json()) as {
           lat?: number;
