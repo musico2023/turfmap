@@ -38,6 +38,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  // Canonical host for the whole app — every relative URL in page
+  // metadata (canonical links, OG images) resolves against this.
+  // www is canonical: production aliases to www.turfmap.ai and the
+  // apex 308-redirects there.
+  metadataBase: new URL('https://www.turfmap.ai'),
   title: 'TurfMap.ai — Geo-grid intelligence',
   description:
     'Geo-grid rank tracking + AI-driven local SEO playbooks for local-service and healthcare businesses. Built by Fourdots Digital.',

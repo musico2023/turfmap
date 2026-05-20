@@ -25,11 +25,14 @@ export const metadata: Metadata = {
   title: 'TurfMap™ — See exactly where you rank across your territory',
   description:
     "TurfMap runs an 81-point geo-grid scan across your service area and shows you, cell by cell, where you appear in Google's local 3-pack. Local SEO diagnostic for service businesses. Delivered in under a minute. From $99.",
+  // Canonical self-reference — tells Google the www homepage is the
+  // one true URL, consolidating any apex / utm-tagged variants.
+  alternates: { canonical: '/' },
   openGraph: {
     title: 'TurfMap™ — See exactly where you rank across your territory',
     description:
       "An 81-point geo-grid SEO diagnostic for local businesses — clinics, plumbers, dentists, restaurants, retail, anything that depends on Google's local 3-pack. Find out where you're invisible in your own service area, and what to fix first. From $99.",
-    url: 'https://turfmap.ai/',
+    url: 'https://www.turfmap.ai/',
     siteName: 'TurfMap.ai',
     type: 'website',
   },
