@@ -314,19 +314,24 @@ export default async function FreeScanLandingPage({
                 <>
                   We ran an 81-point geo-grid preview of{' '}
                   {personalization.business_name}&rsquo;s{' '}
-                  {personalization.city} service area. Then you get
-                  three specific actions &mdash; the ones with the
-                  highest impact, in priority order. The full scan is
-                  yours — no charge, no card. Your VIP coupon is
-                  pre-applied at checkout.
+                  {personalization.city} service area. Then you get{' '}
+                  <strong className="font-semibold text-zinc-100 underline underline-offset-4 decoration-2">
+                    three specific actions
+                  </strong>{' '}
+                  &mdash; the ones with the highest impact, in priority
+                  order. The full scan is yours — no charge, no card.
+                  Your VIP coupon is pre-applied at checkout.
                 </>
               ) : (
                 <>
                   We ran a preview of your service area on TurfMap.
-                  Then you get three specific actions &mdash; the ones
-                  with the highest impact, in priority order. The full
-                  scan is yours — no charge, no card. Your VIP coupon
-                  is pre-applied at checkout.
+                  Then you get{' '}
+                  <strong className="font-semibold text-zinc-100 underline underline-offset-4 decoration-2">
+                    three specific actions
+                  </strong>{' '}
+                  &mdash; the ones with the highest impact, in priority
+                  order. The full scan is yours — no charge, no card.
+                  Your VIP coupon is pre-applied at checkout.
                 </>
               )}
             </p>

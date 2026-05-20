@@ -196,8 +196,12 @@ export default async function ScanLandingPage({
                 Most local businesses are invisible to two-thirds of
                 the people searching for them.
               </strong>{' '}
-              Then you get three specific actions &mdash; the ones with
-              the highest impact, in priority order.
+              Then you get{' '}
+              <strong className="font-semibold text-zinc-100 underline underline-offset-4 decoration-2">
+                three specific actions
+              </strong>{' '}
+              &mdash; the ones with the highest impact, in priority
+              order.
             </p>
 
             <PricePanel
