@@ -23,6 +23,7 @@
 import { Crosshair, Crown, MapPin, Target, Compass, ChevronRight, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { isAgencyOwnerEmail } from '@/lib/auth/agency';
 import {
   locationDisplayLabel,
   resolveLocation,
@@ -172,7 +173,25 @@ export default async function PublicSharePage({
     'en-US',
     { month: 'long', day: 'numeric', year: 'numeric' }
   );
-  const sharedBy = share.agency_label?.trim() || 'Fourdots Digital';
+  // "Shared by" attribution. agency_label is the operator-supplied
+  // free-text "Customize branding" field. When it's blank we only
+  // fall back to the "Fourdots Digital" house label if the link was
+  // actually created by a Fourdots-owner account. A non-owner account
+  // (contractor, partner staff) that didn't set a custom label gets
+  // NO attribution rather than being falsely credited to Fourdots —
+  // `sharedBy` stays null and both the banner + footer drop the line.
+  const customLabel = share.agency_label?.trim();
+  let creatorIsAgencyOwner = false;
+  if (!customLabel && share.created_by) {
+    const { data: creator } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', share.created_by)
+      .maybeSingle<{ email: string }>();
+    creatorIsAgencyOwner = isAgencyOwnerEmail(creator?.email);
+  }
+  const sharedBy =
+    customLabel || (creatorIsAgencyOwner ? 'Fourdots Digital' : null);
   const ctaText = share.cta_text?.trim() || 'Want a TurfMap of your business?';
   const ctaUrl = share.cta_url?.trim() || 'https://turfmap.ai';
 
@@ -210,7 +229,9 @@ export default async function PublicSharePage({
       </header>
 
       {/* "Shared by" banner — gives the recipient a face/agency to
-          attribute the report to. */}
+          attribute the report to. The "Shared by …" prefix only
+          renders when we have a label; non-owner links with no custom
+          branding show just the read-only-snapshot context. */}
       <div
         className="px-4 md:px-8 py-3 border-b text-xs text-zinc-400"
         style={{
@@ -218,10 +239,14 @@ export default async function PublicSharePage({
           borderColor: 'var(--color-border)',
         }}
       >
-        Shared by{' '}
-        <span className="text-zinc-200 font-semibold">{sharedBy}</span> · this
-        is a read-only snapshot of {client.business_name}&rsquo;s territory
-        for the keyword{' '}
+        {sharedBy && (
+          <>
+            Shared by{' '}
+            <span className="text-zinc-200 font-semibold">{sharedBy}</span> ·{' '}
+          </>
+        )}
+        {sharedBy ? 'this' : 'This'} is a read-only snapshot of{' '}
+        {client.business_name}&rsquo;s territory for the keyword{' '}
         <span className="font-mono text-zinc-300">
           &ldquo;{keyword?.keyword ?? '—'}&rdquo;
         </span>
@@ -392,9 +417,13 @@ export default async function PublicSharePage({
             {ctaText}
           </div>
           <div className="text-xs text-zinc-500">
-            This snapshot was prepared by{' '}
-            <span className="text-zinc-300">{sharedBy}</span>. TurfMap is
-            proprietary technology of Fourdots Digital.
+            {sharedBy && (
+              <>
+                This snapshot was prepared by{' '}
+                <span className="text-zinc-300">{sharedBy}</span>.{' '}
+              </>
+            )}
+            TurfMap is proprietary technology of Fourdots Digital.
           </div>
         </div>
         <a
