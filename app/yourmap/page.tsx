@@ -32,7 +32,7 @@ import type { ProspectRow } from '@/lib/supabase/types';
  *
  * Personalized variant of /fourdots for the outbound acquisition
  * channel. Operators send links of the form
- *   /yourmap?prospect_id=abc123xyz&coupon=MAPCHECK50&utm_*=...
+ *   /yourmap?prospect_id=abc123xyz&coupon=COLDSCAN&utm_*=...
  * which we look up against the prospects table to render hero copy
  * tailored to that buyer (their business name, city, preview score,
  * count of dark cells, top competitor).
@@ -54,7 +54,7 @@ import type { ProspectRow } from '@/lib/supabase/types';
  *
  * URL contract:
  *   ?prospect_id=<10-char nanoid>     — lookup key for prospects
- *   ?coupon=MAPCHECK50                — auto-applied at checkout
+ *   ?coupon=COLDSCAN                  — auto-applied at checkout
  *   ?utm_source=cold_email            — default if absent
  *   ?utm_medium=outbound              — default if absent
  *   ?utm_campaign=hvac_vancouver_q2   — populated by lead-gen pipeline
@@ -65,7 +65,12 @@ import type { ProspectRow } from '@/lib/supabase/types';
 // attribution on the conversion.
 const DEFAULT_UTM_SOURCE = 'cold_email';
 const DEFAULT_UTM_MEDIUM = 'outbound';
-const DEFAULT_COUPON = 'MAPCHECK50';
+// Current cold-cohort coupon: COLDSCAN — 100% off, free TurfScan for
+// reply-driven prospects. Real send URLs always carry ?coupon=COLDSCAN
+// explicitly; this default only covers bare operator-pasted URLs.
+// (Legacy MAPCHECK50 — the old $49 cold coupon — stays valid in the
+// coupon registry for any in-flight links but is no longer the default.)
+const DEFAULT_COUPON = 'COLDSCAN';
 
 type ProspectPersonalization = {
   id: string;
@@ -156,7 +161,7 @@ export async function generateMetadata({
   return {
     title: 'Your TurfMap preview · TurfMap',
     description:
-      'Run your full TurfMap scan. 81 grid points, real Google searches, AI Coach Fix List delivered in under a minute. $50 off with code MAPCHECK50.',
+      'Run your full TurfMap scan. 81 grid points, real Google searches, AI Coach Fix List delivered in under a minute.',
     robots,
   };
 }

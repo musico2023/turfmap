@@ -1,19 +1,24 @@
 /**
  * POST /api/prospect/[id]/engaged
  *
- * Stamps prospects.scan_engaged_at when a warm-cohort prospect
- * first views their TurfMap dashboard after purchasing the free
- * TurfScan via /freescan. This timestamp is the trigger gate for
- * the Stage 2 audit-upgrade email (Fix 3.1 in MARKETING_BRIEF).
+ * Stamps prospects.scan_engaged_at when an outreach-cohort prospect
+ * first sees their fulfilled scan after purchasing the TurfScan via
+ * /freescan (warm) or /yourmap (cold). This timestamp is the trigger
+ * gate for the post-purchase email sequences:
+ *   - warm cohort  → Stage 2 audit-upgrade  (crmvip-stage2 cron)
+ *   - cold cohort  → Stage 3 audit offer    (cold-stage3 cron)
+ *   - both cohorts → AI Coach nudge         (ai-coach-nudge cron)
  *
  * Idempotent: if scan_engaged_at is already set, no-op. This lets
  * the dashboard fire-and-forget on every page load without races
- * or duplicate Stage 2 sends.
+ * or duplicate sends.
  *
- * Cohort-scoped: only fires for prospects with
- * cohort='crm_reactivation_q2'. Cold-email cohort dashboard views
- * don't have a Stage 2 sequence wired to engagement, so we skip the
- * write to keep the column meaningful for the warm cohort.
+ * Cohort-scoped: only stamps for the two outreach cohorts listed in
+ * ENGAGEMENT_COHORTS. Organically-acquired prospects (or any other
+ * cohort) have no engagement-gated sequence, so we skip the write to
+ * keep the column meaningful. Previously this was warm-only, which
+ * silently starved the entire cold funnel — cold-stage3 + cold-side
+ * ai-coach-nudge can only fire once scan_engaged_at is set.
  *
  * No rate limit — this is fired by the buyer's own browser on a
  * page they own access to. Rate-limiting it would do nothing
@@ -30,6 +35,13 @@ import { getServerSupabase } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
+/**
+ * Cohorts whose post-purchase email sequence is gated on
+ * scan_engaged_at. Keep in sync with the cohort filters in the
+ * crmvip-stage2 (warm) and cold-stage3 (cold) crons.
+ */
+const ENGAGEMENT_COHORTS = ['crm_reactivation_q2', 'cold_email_q2_2026'];
+
 export async function POST(
   _req: Request,
   ctx: { params: Promise<{ id: string }> }
@@ -45,14 +57,14 @@ export async function POST(
   const supabase = getServerSupabase();
 
   // Fetch + filter in a single round-trip: only stamp when
-  // (cohort = 'crm_reactivation_q2', scan_engaged_at IS NULL).
+  // (cohort IN ENGAGEMENT_COHORTS, scan_engaged_at IS NULL).
   // We use a conditional update via .is('scan_engaged_at', null)
   // so a second hit returns 0 rows and we no-op cleanly.
   const { data, error } = await supabase
     .from('prospects')
     .update({ scan_engaged_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('cohort', 'crm_reactivation_q2')
+    .in('cohort', ENGAGEMENT_COHORTS)
     .is('scan_engaged_at', null)
     .select('id, scan_engaged_at')
     .maybeSingle();
@@ -67,7 +79,7 @@ export async function POST(
   }
 
   // data is null when the conditional matched 0 rows (already set,
-  // or not in warm cohort). Both are no-op cases.
+  // or not in an engagement-gated cohort). Both are no-op cases.
   if (!data) {
     return NextResponse.json({ status: 'noop' }, { status: 200 });
   }
