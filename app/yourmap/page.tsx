@@ -885,7 +885,8 @@ export default async function YourMapLandingPage({
               <strong className="font-semibold text-zinc-100">
                 Worst case:
               </strong>{' '}
-              {formatUsd(finalCents)} confirms what you suspect.
+              {finalCents === 0 ? 'this scan' : formatUsd(finalCents)} confirms
+              what you suspect.
             </p>
             <p className="text-sm md:text-base text-zinc-300 mb-3 max-w-md mx-auto leading-relaxed">
               <strong className="font-semibold text-zinc-100">
@@ -894,7 +895,15 @@ export default async function YourMapLandingPage({
               one fix pays for the scan ten times over.
             </p>
             <p className="text-xs md:text-sm text-zinc-500 mb-6 max-w-md mx-auto leading-relaxed">
-              {showDiscount && coupon ? (
+              {showDiscount && coupon && finalCents === 0 ? (
+                <>
+                  Free TurfScan with{' '}
+                  <span className="font-mono text-zinc-300">
+                    {coupon.code}
+                  </span>{' '}
+                  applied at checkout. No card required, no subscription.
+                </>
+              ) : showDiscount && coupon ? (
                 <>
                   {formatUsd(finalCents)} TurfScan with{' '}
                   <span className="font-mono text-zinc-300">
@@ -915,7 +924,11 @@ export default async function YourMapLandingPage({
               utmCampaign={utmCampaign}
               gclid={gclid}
               prospectId={prospectId}
-              label={`Get my ${formatUsd(finalCents)} TurfScan`}
+              label={
+                finalCents === 0
+                  ? 'Run my free TurfScan'
+                  : `Get my ${formatUsd(finalCents)} TurfScan`
+              }
               centered
             />
           </div>
@@ -1095,15 +1108,15 @@ function PricePanel({
        *  TOP of the price card so it bridges from the body
        *  paragraph (above the card) into the CTA flow (below this
        *  line). Three middle-dot-separated phrases re-state the
-       *  body para's promises in compact form. Leading "$49"
-       *  creates immediate price-value continuity at the moment
-       *  of click; the price is parameterized via formatUsd so a
-       *  no-coupon visitor sees "$99" instead. */}
+       *  body para's promises in compact form. The leading price
+       *  creates immediate price-value continuity at the moment of
+       *  click; parameterized via finalCents so a COLDSCAN visitor
+       *  sees "Free", a no-coupon visitor sees "$99". */}
       <p className="mb-4 pb-4 border-b text-xs md:text-sm text-zinc-300 leading-relaxed"
          style={{ borderColor: 'var(--color-border)' }}
       >
         <strong className="text-zinc-100">
-          {formatUsd(finalCents)} unlocks:
+          {finalCents === 0 ? 'Free' : formatUsd(finalCents)} unlocks:
         </strong>{' '}
         full 81-cell heatmap{' '}
         <span className="text-zinc-600">·</span>{' '}
@@ -1132,14 +1145,15 @@ function PricePanel({
                 color: showDiscount ? 'var(--color-lime)' : '#ffffff',
               }}
             >
-              {formatUsd(finalCents)}
+              {finalCents === 0 ? 'FREE' : formatUsd(finalCents)}
             </span>
             <span className="text-xs text-zinc-500 font-mono">one-time</span>
           </div>
           {showDiscount && coupon && (
             <p className="text-xs text-zinc-400 mt-2">
               <span className="font-mono text-zinc-200">{coupon.code}</span>{' '}
-              applied at checkout — no manual code needed.
+              applied at checkout —{' '}
+              {finalCents === 0 ? 'no card required' : 'no manual code needed'}.
             </p>
           )}
         </div>
@@ -1150,7 +1164,11 @@ function PricePanel({
           utmCampaign={utmCampaign}
           gclid={gclid}
           prospectId={prospectId}
-          label={`Get my ${formatUsd(finalCents)} TurfScan`}
+          label={
+            finalCents === 0
+              ? 'Run my free TurfScan'
+              : `Get my ${formatUsd(finalCents)} TurfScan`
+          }
         />
       </div>
     </div>
