@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
 import { ScanCheckoutButton } from '@/components/marketing/ScanCheckoutButton';
+import { ColdscanRunButton } from '@/components/marketing/ColdscanRunButton';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { buildHeroCells, HERO_METRICS } from '@/components/marketing/heroSeed';
 import {
@@ -82,6 +83,11 @@ type ProspectPersonalization = {
   invisibility_count: number;
   top_competitor_name: string | null;
   top_competitor_share_pct: number | null;
+  /** True iff the lead-gen pipeline has backfilled address + lat + lng
+   *  onto this prospect row. Gates the COLDSCAN one-click bypass —
+   *  when false we fall back to the Stripe checkout flow because the
+   *  coldscan-fulfill route can't seed the 9x9 grid without geo. */
+  hasGeo: boolean;
 };
 
 /** Look up the prospect server-side (direct DB query, not an HTTP
@@ -136,6 +142,10 @@ async function loadProspect(
       invisibility_count: prospect.invisibility_count,
       top_competitor_name: prospect.top_competitor_name,
       top_competitor_share_pct: prospect.top_competitor_share_pct,
+      hasGeo:
+        prospect.latitude != null &&
+        prospect.longitude != null &&
+        Boolean(prospect.address),
     },
   };
 }
@@ -215,6 +225,19 @@ export default async function YourMapLandingPage({
   const listCents = 9900;
   const showDiscount = coupon !== null;
   const finalCents = coupon ? finalPriceCents(coupon) : listCents;
+
+  // COLDSCAN bypass: when a cold-cohort prospect arrives with the
+  // COLDSCAN coupon AND their row has geo backfilled by the lead-gen
+  // pipeline, swap the Stripe-checkout CTAs for a one-click "Run my
+  // free TurfScan" button that POSTs to /api/yourmap/coldscan-fulfill
+  // and skips Stripe entirely. Falls back to the Stripe flow on legacy
+  // prospects without geo so nothing breaks during the lead-gen
+  // pipeline's geo-backfill rollout. See migration 0031.
+  const useColdscanBypass =
+    couponCode.toUpperCase() === 'COLDSCAN' &&
+    personalization !== null &&
+    personalization.hasGeo &&
+    Boolean(prospectId);
 
   // Hero heatmap is shared sample data — same as /fourdots.
   const cells = buildHeroCells();
@@ -394,6 +417,7 @@ export default async function YourMapLandingPage({
               utmCampaign={utmCampaign}
               gclid={gclid}
               prospectId={prospectId}
+              useColdscanBypass={useColdscanBypass}
             />
 
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-zinc-500 font-mono">
@@ -917,20 +941,31 @@ export default async function YourMapLandingPage({
                 </>
               )}
             </p>
-            <ScanCheckoutButton
-              coupon={couponCode}
-              utmSource={utmSource}
-              utmMedium={utmMedium}
-              utmCampaign={utmCampaign}
-              gclid={gclid}
-              prospectId={prospectId}
-              label={
-                finalCents === 0
-                  ? 'Run my free TurfScan'
-                  : `Get my ${formatUsd(finalCents)} TurfScan`
-              }
-              centered
-            />
+            {useColdscanBypass && prospectId ? (
+              <ColdscanRunButton
+                prospectId={prospectId}
+                utmSource={utmSource}
+                utmMedium={utmMedium}
+                utmCampaign={utmCampaign}
+                label="Run my free TurfScan"
+                centered
+              />
+            ) : (
+              <ScanCheckoutButton
+                coupon={couponCode}
+                utmSource={utmSource}
+                utmMedium={utmMedium}
+                utmCampaign={utmCampaign}
+                gclid={gclid}
+                prospectId={prospectId}
+                label={
+                  finalCents === 0
+                    ? 'Run my free TurfScan'
+                    : `Get my ${formatUsd(finalCents)} TurfScan`
+                }
+                centered
+              />
+            )}
           </div>
 
           <p className="mt-6 text-xs text-zinc-600 text-center leading-relaxed">
@@ -1079,6 +1114,7 @@ function PricePanel({
   utmCampaign,
   gclid,
   prospectId,
+  useColdscanBypass = false,
 }: {
   listCents: number;
   finalCents: number;
@@ -1089,6 +1125,10 @@ function PricePanel({
   utmCampaign: string | null;
   gclid: string | null;
   prospectId: string | null;
+  /** When true, swap the Stripe checkout CTA for the one-click
+   *  COLDSCAN free-scan button (skips Stripe entirely). Set by the
+   *  parent when coupon=COLDSCAN + prospect has geo backfilled. */
+  useColdscanBypass?: boolean;
 }) {
   const showDiscount = coupon !== null;
   return (
@@ -1157,19 +1197,29 @@ function PricePanel({
             </p>
           )}
         </div>
-        <ScanCheckoutButton
-          coupon={couponCode}
-          utmSource={utmSource}
-          utmMedium={utmMedium}
-          utmCampaign={utmCampaign}
-          gclid={gclid}
-          prospectId={prospectId}
-          label={
-            finalCents === 0
-              ? 'Run my free TurfScan'
-              : `Get my ${formatUsd(finalCents)} TurfScan`
-          }
-        />
+        {useColdscanBypass && prospectId ? (
+          <ColdscanRunButton
+            prospectId={prospectId}
+            utmSource={utmSource}
+            utmMedium={utmMedium}
+            utmCampaign={utmCampaign}
+            label="Run my free TurfScan"
+          />
+        ) : (
+          <ScanCheckoutButton
+            coupon={couponCode}
+            utmSource={utmSource}
+            utmMedium={utmMedium}
+            utmCampaign={utmCampaign}
+            gclid={gclid}
+            prospectId={prospectId}
+            label={
+              finalCents === 0
+                ? 'Run my free TurfScan'
+                : `Get my ${formatUsd(finalCents)} TurfScan`
+            }
+          />
+        )}
       </div>
     </div>
   );

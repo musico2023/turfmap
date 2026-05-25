@@ -519,6 +519,23 @@ export type ProspectRow = {
   converted_at: string | null;
   upgraded_to_audit_at: string | null;
   created_at: string;
+  // ─── Cohort + engagement (migration 0026) ─────────────────────────
+  cohort: string | null;
+  scan_engaged_at: string | null;
+  stage_2_sent_at: string | null;
+  audit_upgrade_url: string | null;
+  first_name: string | null;
+  email: string | null;
+  // ─── Cold cohort q2 (migration 0028) ──────────────────────────────
+  stage_3_sent_at: string | null;
+  unsubscribed_at: string | null;
+  // ─── Geo for coldscan bypass (migration 0031) ─────────────────────
+  // Populated by the lead-gen pipeline at row-build time. NULL on
+  // legacy rows pre-2026-05-25 — /yourmap falls back to the Stripe
+  // checkout path when these are missing.
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 // ─── Visibility Audits (migration 0022) ───────────────────────────────
