@@ -74,11 +74,27 @@ const SCANNER_UA_PATTERNS: readonly RegExp[] = [
   /linkedinbot/i,
   /whatsapp/i,
   /telegrambot/i,
+  // Generic HTTP clients — observed in cold-email lander logs as
+  // pre-fetches from email-security gateways (2026-05-25 audit).
+  /go-http-client/i,
+  /python-requests/i,
+  /\bcurl\//i,
+  /\bwget\//i,
+  /\bjava\//i,
+  /okhttp/i,
 ];
 
 function looksLikeScanner(ua: string | null | undefined): boolean {
   if (!ua) return false;
-  return SCANNER_UA_PATTERNS.some((re) => re.test(ua));
+  if (SCANNER_UA_PATTERNS.some((re) => re.test(ua))) return true;
+  // Bare Linux WebKit fingerprint with no Chrome/Firefox/Edge version
+  // suffix — characteristic of headless scanners (Microsoft SafeLinks
+  // proxy variants, generic Puppeteer/Playwright). Real Linux browsers
+  // always include a Chrome/, Firefox/, or Edge/ token.
+  if (/X11; Linux x86_64/.test(ua) && !/(Chrome|Firefox|Edge)\//.test(ua)) {
+    return true;
+  }
+  return false;
 }
 
 export function logLanderVisit(input: LanderVisitInput): void {
