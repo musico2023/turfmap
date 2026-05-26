@@ -99,7 +99,11 @@ export default function MarketingLanding() {
             <strong className="font-semibold text-zinc-200">
               almost nothing
             </strong>{' '}
-            about whether your service-area neighbors can find you.
+            about whether your service-area neighbors can find you. TurfMap
+            runs <strong className="font-semibold text-zinc-200">81 real
+            searches</strong> — one from each cell of a 9×9 grid laid across
+            your service area — and reports, cell by cell, where you appear
+            in Google&rsquo;s local 3-pack.
           </>
         }
       >
