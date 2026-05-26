@@ -116,12 +116,18 @@ export default function MarketingLanding() {
             boxShadow: '0 0 40px #c5ff3a0a',
           }}
         >
-          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex items-center gap-2">
-            <span style={{ color: 'var(--color-lime)' }}>·</span>
-            <span style={{ color: 'var(--color-lime)' }}>How TurfMap works</span>{' '}
-            · the 81-cell scan
+          <div className="mb-4">
+            <div
+              className="text-[11px] uppercase tracking-[0.22em] font-mono font-semibold mb-2"
+              style={{ color: 'var(--color-lime)' }}
+            >
+              How TurfMap works
+            </div>
+            <div className="font-display text-2xl md:text-3xl font-bold text-zinc-50 leading-tight tracking-tight">
+              The 81-cell scan
+            </div>
           </div>
-          <p className="font-display text-lg md:text-xl text-zinc-200 leading-snug">
+          <p className="font-display text-lg md:text-xl text-zinc-300 leading-snug">
             We lay a{' '}
             <strong className="font-semibold text-zinc-50">9×9 grid</strong>{' '}
             across your service area — <strong className="font-semibold text-zinc-50">
