@@ -159,19 +159,13 @@ export function MarketingHero() {
            *  subhead. Italic to flag it as the strategic frame ("what is
            *  this product, in one line?") rather than a continuation of
            *  the description. */}
-          <p className="font-display text-xl md:text-2xl text-zinc-300 italic leading-snug mb-6 max-w-xl">
+          <p className="font-display text-xl md:text-2xl text-zinc-300 italic leading-snug mb-8 max-w-xl">
             The Google Maps audit you should run before spending another
-            dollar on local SEO.
-          </p>
-          <p className="text-zinc-300 text-lg md:text-xl leading-relaxed max-w-xl mb-8">
-            TurfMap runs an 81-point geo-grid scan across your service area and
-            shows you, cell by cell, where you appear in Google&rsquo;s local
-            3-pack. Most local businesses are invisible to{' '}
+            dollar on local SEO. Most local businesses are invisible to{' '}
             <strong className="font-semibold text-zinc-100">
               two-thirds of the people
             </strong>
-            {' '}searching for them. Find out what your map looks
-            like.
+            {' '}searching for them.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <LinkButton

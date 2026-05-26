@@ -103,6 +103,43 @@ export default function MarketingLanding() {
           </>
         }
       >
+        {/* Mechanism callout — spells out the 81-cell scan in plain
+         *  terms before the compare cards. Bordered + tinted so it
+         *  carries more weight than the intro paragraph above it
+         *  without competing with the H2. Lime label echoes the
+         *  section eyebrows used elsewhere on the page. */}
+        <div
+          className="border rounded-lg p-6 md:p-8 mt-2 mb-8 max-w-3xl"
+          style={{
+            background: 'var(--color-card)',
+            borderColor: 'var(--color-border-bright)',
+            boxShadow: '0 0 40px #c5ff3a0a',
+          }}
+        >
+          <div className="mb-4">
+            <div
+              className="text-[11px] uppercase tracking-[0.22em] font-mono font-semibold mb-2"
+              style={{ color: 'var(--color-lime)' }}
+            >
+              How TurfMap works
+            </div>
+            <div className="font-display text-2xl md:text-3xl font-bold text-zinc-50 leading-tight tracking-tight">
+              The 81-cell scan
+            </div>
+          </div>
+          <p className="font-display text-lg md:text-xl text-zinc-300 leading-snug">
+            We lay a{' '}
+            <strong className="font-semibold text-zinc-50">9×9 grid</strong>{' '}
+            across your service area — <strong className="font-semibold text-zinc-50">
+            81 points</strong> in total — and run a{' '}
+            <strong className="font-semibold text-zinc-50">real Google search</strong>{' '}
+            from each one. Every cell returns the local 3-pack as it
+            appears to a searcher standing on that spot. You see, cell
+            by cell, where you rank #1, where you slip, and where you
+            don&rsquo;t appear at all.
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8">
           <CompareCard
             title="What most rank trackers tell you"
