@@ -195,6 +195,24 @@ export default async function PublicSharePage({
   const ctaText = share.cta_text?.trim() || 'Want a TurfMap of your business?';
   const ctaUrl = share.cta_url?.trim() || 'https://turfmap.ai';
 
+  // COLDSCAN cohort: detect free-scan outreach orders so we can
+  // suppress the conversion CTA in the footer. Cold buyers received
+  // the scan FREE via /yourmap?coupon=COLDSCAN — pitching them a
+  // paid TurfScan upgrade or the Visibility Audit walkthrough on
+  // this page would conflict with the post-scan funnel design,
+  // which routes the audit-walkthrough offer through the
+  // cold-stage3 founder email and nothing else. Detected by
+  // joining the scan's client back to lead_orders and looking for
+  // stripe_metadata.source = 'coldscan_free'.
+  const { data: coldscanOrder } = await supabase
+    .from('lead_orders')
+    .select('id')
+    .eq('client_id', client.id)
+    .filter('stripe_metadata->>source', 'eq', 'coldscan_free')
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  const isColdscanShare = Boolean(coldscanOrder);
+
   return (
     <div className="min-h-screen w-full text-white">
       {/* Branded header — not white-labeled because the audience hasn't
@@ -403,7 +421,15 @@ export default async function PublicSharePage({
       </div>
 
       {/* CTA footer — the conversion lever. Points to the agency's
-          chosen URL (Fourdots Digital by default). */}
+          chosen URL (Fourdots Digital by default).
+
+          COLDSCAN cohort: the entire CTA block (headline + "Get in
+          touch" button) is suppressed. Cold buyers received their
+          scan FREE and the next-step offer (free Visibility Audit
+          walkthrough call) reaches them exclusively via the
+          cold-stage3 founder email — never on the page itself.
+          We keep the footer container + attribution line so the
+          TurfMap proprietary tech credit still shows. */}
       <footer
         className="border-t px-4 md:px-8 py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         style={{
@@ -413,9 +439,11 @@ export default async function PublicSharePage({
         }}
       >
         <div>
-          <div className="font-display text-lg font-bold mb-1 text-zinc-100">
-            {ctaText}
-          </div>
+          {!isColdscanShare && (
+            <div className="font-display text-lg font-bold mb-1 text-zinc-100">
+              {ctaText}
+            </div>
+          )}
           <div className="text-xs text-zinc-500">
             {sharedBy && (
               <>
@@ -426,20 +454,22 @@ export default async function PublicSharePage({
             TurfMap is proprietary technology of Fourdots Digital.
           </div>
         </div>
-        <a
-          href={ctaUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110"
-          style={{
-            background: 'var(--color-lime)',
-            color: 'black',
-            boxShadow: '0 4px 16px #c5ff3a30',
-          }}
-        >
-          Get in touch
-          <ChevronRight size={14} strokeWidth={2.75} />
-        </a>
+        {!isColdscanShare && (
+          <a
+            href={ctaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-5 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition-all hover:brightness-110"
+            style={{
+              background: 'var(--color-lime)',
+              color: 'black',
+              boxShadow: '0 4px 16px #c5ff3a30',
+            }}
+          >
+            Get in touch
+            <ChevronRight size={14} strokeWidth={2.75} />
+          </a>
+        )}
       </footer>
     </div>
   );
