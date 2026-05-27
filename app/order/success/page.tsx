@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowLeft, AlertCircle, Check } from 'lucide-react';
 import { OrderSuccessForm } from './OrderSuccessForm';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
+import { MetaPixelTrack } from '@/components/marketing/scan/MetaPixel';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { loadCheckoutSession } from '@/lib/stripe/session';
 import { getStripe } from '@/lib/stripe/client';
@@ -253,8 +254,44 @@ export default async function OrderSuccessPage({
     }
   }
 
+  // Meta Pixel Purchase event — fires once per successful render via
+  // MetaPixelTrack's mount-effect. Gates on paid scans (amount > 0) so
+  // VIP / coldscan_free $0 conversions don't get counted as purchases
+  // in Meta. Audit-upgrade returns fire a separate Purchase with the
+  // Visibility Audit content_name + $197 value so cold-Meta and
+  // cold-email Purchase events are distinguishable in Events Manager.
+  const metaPixelPurchaseEvent: {
+    enabled: boolean;
+    params?: Record<string, unknown>;
+  } = isAuditUpgrade
+    ? {
+        enabled: true,
+        params: {
+          currency: 'USD',
+          value: 197,
+          content_name: 'Visibility Audit',
+          content_category: 'upgrade',
+        },
+      }
+    : tier === 'scan' && paidAmountCents != null && paidAmountCents > 0
+      ? {
+          enabled: true,
+          params: {
+            currency: 'USD',
+            value: paidAmountCents / 100,
+            content_name: 'TurfScan',
+            content_category: 'lander_checkout',
+          },
+        }
+      : { enabled: false };
+
   return (
     <div className="min-h-screen w-full text-white flex flex-col">
+      <MetaPixelTrack
+        event="Purchase"
+        enabled={metaPixelPurchaseEvent.enabled}
+        params={metaPixelPurchaseEvent.params}
+      />
       <header
         className="border-b px-6 md:px-12 py-5"
         style={{ borderColor: 'var(--color-border)' }}

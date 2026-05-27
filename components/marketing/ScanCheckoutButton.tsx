@@ -106,6 +106,33 @@ export function ScanCheckoutButton({
       });
     }
 
+    // Fire Meta pixel InitiateCheckout in parallel — same payload
+    // shape, gated on NEXT_PUBLIC_META_PIXEL_ID via the helper. No-op
+    // when the pixel id is unset (local dev, non-Meta-driven envs).
+    // Imported lazily from a relative path so the GA-only landers
+    // (/fourdots, /yourmap, /freescan) don't pull pixel code if they
+    // never reach this branch.
+    try {
+      // Inline dynamic import — keep the GA path unchanged for any
+      // non-Meta page that uses this button.
+      const { trackMetaEvent } = await import(
+        '@/components/marketing/scan/MetaPixel'
+      );
+      trackMetaEvent('InitiateCheckout', {
+        currency: 'USD',
+        value: 49,
+        content_name: 'TurfScan',
+        content_category: 'lander_checkout',
+        // Coupon / UTM attribution mirrors the GA payload.
+        coupon: coupon ?? undefined,
+        utm_source: utmSource ?? undefined,
+        utm_medium: utmMedium ?? undefined,
+        utm_campaign: utmCampaign ?? undefined,
+      });
+    } catch {
+      // Pixel helper import failed — swallow. Checkout proceeds.
+    }
+
     // Build the API URL with all the attribution params. The server
     // forwards them onto Stripe `metadata` + uses `coupon` to apply
     // a discount via the Promotion Code / Coupon API.

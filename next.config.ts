@@ -5,29 +5,11 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
-  async redirects() {
-    return [
-      // Legacy paid-traffic LP path. The Fourdots-branded coupon
-      // lander used to live at /scan; we moved it to /fourdots so
-      // the offer URL is harder to discover via guessing (someone
-      // typing turfmap.ai/scan should not bypass the homepage funnel
-      // into a discounted checkout). Anyone with a stale popup URL
-      // or bookmark gets silently bounced to / where the regular
-      // funnel starts. 308 permanent — search engines + clients
-      // cache the redirect.
-      //
-      // Query params drop on this redirect (the homepage doesn't
-      // honor coupon=FOURDOTS50 in any way), which is the desired
-      // behavior — a stale /scan?coupon=FOURDOTS50 bookmark must
-      // NOT reach a discounted page; the user has to click through
-      // the popup again to get back into the offer flow.
-      {
-        source: '/scan',
-        destination: '/',
-        permanent: true,
-      },
-    ];
-  },
+  // /scan was previously redirected to / to keep the FOURDOTS50 popup
+  // offer URL undiscoverable. As of 2026-05-26, /scan is the cold-Meta
+  // paid-traffic lander (MAPCHECK50 + $49 entry point + 1-click audit
+  // upsell) — its own page now serves the route. Anyone landing on
+  // /scan directly sees the new lander.
 };
 
 export default nextConfig;

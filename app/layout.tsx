@@ -4,6 +4,7 @@ import Script from 'next/script';
 import { GoogleAnalytics } from '@next/third-parties/google';
 import { Analytics as VercelAnalytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import { MetaPixelBase } from '@/components/marketing/scan/MetaPixel';
 import './globals.css';
 
 // Analytics IDs — public identifiers (they end up in the loaded
@@ -70,6 +71,12 @@ export default function RootLayout({
          *  Web Vitals → Google ranking signal we care about for a
          *  local-SEO product. */}
         <SpeedInsights />
+        {/* Meta (Facebook) pixel — gated on NEXT_PUBLIC_META_PIXEL_ID
+         *  env var. No-op until the pixel id is provisioned. Fires
+         *  PageView automatically; specific events (ViewContent,
+         *  InitiateCheckout, Purchase) are wired at the relevant
+         *  surfaces — /scan + /order/success. */}
+        <MetaPixelBase />
       </body>
       {/* Google Analytics 4. The component handles App Router
        *  client-side route changes automatically — pageviews fire on
