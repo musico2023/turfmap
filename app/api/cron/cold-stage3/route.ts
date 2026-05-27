@@ -20,7 +20,15 @@
  *   - stage_3_sent_at IS NULL               (not sent before)
  *   - unsubscribed_at IS NULL               (didn't opt out via reply)
  *   - NOW() - scan_engaged_at >= 30 min     (let results sink in)
- *   - NOW() - scan_engaged_at <= 24 hr      (respect engagement window)
+ *   - NOW() - scan_engaged_at <= 72 hr      (covers off-hours engagement)
+ *
+ * Why 72hr upper bound (not 24hr): the cron is gated to Mon-Fri 10am-5pm
+ * America/Toronto so the founder-tone send doesn't read as a bot. With a
+ * 24hr ceiling, a buyer who engaged Friday 6pm would be 64+ hours past
+ * scan_engaged_at by Monday 10am and silently skipped. 72hr ensures any
+ * weekend-or-evening engagement still catches Monday morning's first
+ * fire. The 30min lower bound and idempotency (stage_3_sent_at) are
+ * unchanged.
  *
  * Per qualifying prospect:
  *   1. Render the Stage 3 email (free Visibility Audit + calendar).
@@ -135,7 +143,10 @@ async function handle(req: Request): Promise<Response> {
   // Find qualifying prospects.
   const nowMs = Date.now();
   const min30AgoIso = new Date(nowMs - 30 * 60 * 1000).toISOString();
-  const hr24AgoIso = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+  // Upper bound: 72hr (3 days). Wider than the 24hr default because the
+  // cron is business-hours-gated — see header note for the weekend-engage
+  // case.
+  const hr72AgoIso = new Date(nowMs - 72 * 60 * 60 * 1000).toISOString();
 
   const { data: candidates, error } = await supabase
     .from('prospects')
@@ -148,7 +159,7 @@ async function handle(req: Request): Promise<Response> {
     .is('stage_3_sent_at', null)
     .is('unsubscribed_at', null)
     .lte('scan_engaged_at', min30AgoIso)
-    .gte('scan_engaged_at', hr24AgoIso);
+    .gte('scan_engaged_at', hr72AgoIso);
 
   if (error) {
     console.error('[cold-stage3] supabase query failed:', error);
