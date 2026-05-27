@@ -104,6 +104,25 @@ export function AuditUpgradePanel({
       });
     }
 
+    // Meta Pixel AddToCart — fires on the upgrade-attempt click (not
+    // success). Mirrors the GA `audit_upgrade_clicked` payload so the
+    // two analytics stacks track in parallel. Gated on
+    // NEXT_PUBLIC_META_PIXEL_ID via the helper — no-op when unset.
+    try {
+      const { trackMetaEvent } = await import(
+        '@/components/marketing/scan/MetaPixel'
+      );
+      trackMetaEvent('AddToCart', {
+        currency: 'USD',
+        value: 197,
+        content_name: 'Visibility Audit',
+        content_category: 'upgrade',
+        upgrade_placement: source,
+      });
+    } catch {
+      // Pixel import failed — swallow. Upgrade proceeds.
+    }
+
     try {
       // 1-click path: when the buyer has a saved card from the
       // scan purchase, fire the inline PaymentIntent confirm. No

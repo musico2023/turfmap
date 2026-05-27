@@ -40,11 +40,19 @@ declare global {
   }
 }
 
-/** True iff the pixel ID env var is set + non-empty. Falsy in local
- *  dev and on preview deployments unless explicitly configured. */
+/** Default pixel id — Anthony's production Meta pixel for TurfMap.
+ *  Hardcoded fallback (NEXT_PUBLIC_ values ship in the client bundle
+ *  anyway, no secret exposure) mirrors the GA / Clarity convention in
+ *  app/layout.tsx. Override via NEXT_PUBLIC_META_PIXEL_ID env var
+ *  for staging / per-env pixels (set to empty string to disable). */
+const DEFAULT_PIXEL_ID = '1634879350063388';
+
 function pixelId(): string | null {
   const v = process.env.NEXT_PUBLIC_META_PIXEL_ID;
-  return v && v.trim() ? v.trim() : null;
+  // Empty-string override explicitly disables the pixel (e.g. local
+  // dev with `NEXT_PUBLIC_META_PIXEL_ID=""` in .env.local).
+  if (v !== undefined) return v.trim() ? v.trim() : null;
+  return DEFAULT_PIXEL_ID;
 }
 
 /**

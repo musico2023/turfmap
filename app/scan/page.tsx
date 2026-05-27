@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Check,
   Compass,
@@ -570,10 +571,31 @@ export default async function ScanLandingPage({
           >
             About TurfMap
           </div>
-          <h2 className="font-display text-2xl md:text-3xl font-black leading-tight tracking-tight mb-6 text-zinc-50">
-            We built TurfMap because the tools we were using weren&rsquo;t
-            telling us enough.
-          </h2>
+
+          {/* Photo + heading row.
+           *  Mobile: photo stacked above the heading (per brief).
+           *  Desktop (md+): photo on the left, heading + body on the
+           *  right, vertically aligned with the heading. Photo sized
+           *  ~80px on mobile and ~112px on desktop. */}
+          <div className="flex flex-col md:flex-row md:items-start md:gap-6 mb-6">
+            <div className="mb-4 md:mb-0 flex-shrink-0">
+              <Image
+                src="https://fourdots.io/assets/proof/anthony-headshot.png"
+                alt="Anthony Alfonsi, Founder & Director, Fourdots Digital"
+                width={112}
+                height={112}
+                className="rounded-full w-20 h-20 md:w-28 md:h-28 object-cover border"
+                style={{
+                  borderColor: 'var(--color-border-bright)',
+                }}
+              />
+            </div>
+            <h2 className="font-display text-2xl md:text-3xl font-black leading-tight tracking-tight text-zinc-50">
+              We built TurfMap because the tools we were using weren&rsquo;t
+              telling us enough.
+            </h2>
+          </div>
+
           <div className="space-y-4 text-base text-zinc-300 leading-relaxed">
             <p>
               TurfMap is proprietary technology of Fourdots Digital, a
@@ -591,6 +613,11 @@ export default async function ScanLandingPage({
               how they could see what we see. Now you can.
             </p>
           </div>
+
+          {/* Founder attribution line — pairs the photo with a name */}
+          <p className="mt-5 text-xs font-mono text-zinc-500">
+            — Anthony Alfonsi, Founder &amp; Director, Fourdots Digital
+          </p>
         </div>
       </section>
 

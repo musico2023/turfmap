@@ -714,6 +714,22 @@ export function OrderSuccessForm({
           // visual state as the Stripe-Checkout-redirect return
           // path with ?upgrade=audit).
           setInlineUpgradeAccepted(true);
+          // Fire Meta Pixel Purchase for the inline 1-click upgrade.
+          // The Stripe-Checkout-redirect path fires Purchase server-
+          // rendered on /order/success when ?upgrade=audit lands; this
+          // off-session path never redirects, so we fire from the
+          // client when the confirm succeeds. Same payload either way
+          // so events are interchangeable in Meta Events Manager.
+          void import('@/components/marketing/scan/MetaPixel').then(
+            ({ trackMetaEvent }) => {
+              trackMetaEvent('Purchase', {
+                currency: 'USD',
+                value: 197,
+                content_name: 'Visibility Audit',
+                content_category: 'upgrade',
+              });
+            }
+          );
         }}
       />
     );
