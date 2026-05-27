@@ -56,6 +56,7 @@ import type { ProspectRow } from '@/lib/supabase/types';
  * URL contract:
  *   ?prospect_id=<10-char nanoid>     — lookup key for prospects
  *   ?coupon=COLDSCAN                  — auto-applied at checkout
+ *                                       (omit for regular $99 price — no default)
  *   ?utm_source=cold_email            — default if absent
  *   ?utm_medium=outbound              — default if absent
  *   ?utm_campaign=hvac_vancouver_q2   — populated by lead-gen pipeline
@@ -66,12 +67,11 @@ import type { ProspectRow } from '@/lib/supabase/types';
 // attribution on the conversion.
 const DEFAULT_UTM_SOURCE = 'cold_email';
 const DEFAULT_UTM_MEDIUM = 'outbound';
-// Current cold-cohort coupon: COLDSCAN — 100% off, free TurfScan for
-// reply-driven prospects. Real send URLs always carry ?coupon=COLDSCAN
-// explicitly; this default only covers bare operator-pasted URLs.
-// (Legacy MAPCHECK50 — the old $49 cold coupon — stays valid in the
-// coupon registry for any in-flight links but is no longer the default.)
-const DEFAULT_COUPON = 'COLDSCAN';
+// NO default coupon. A bare /yourmap visit (no ?coupon=...) renders at
+// regular price ($99) — we don't want random URL guessers landing on a
+// free or discounted offer. Real cold-email sends always carry the
+// coupon param explicitly (COLDSCAN for the current campaign,
+// MAPCHECK50 for legacy). The coupon registry stays unchanged.
 
 type ProspectPersonalization = {
   id: string;
@@ -185,7 +185,8 @@ export default async function YourMapLandingPage({
 }) {
   const params = await searchParams;
   const prospectId = pickFirst(params.prospect_id);
-  const couponCode = pickFirst(params.coupon) ?? DEFAULT_COUPON;
+  // No default — a bare /yourmap visit renders at regular $99.
+  const couponCode = pickFirst(params.coupon) ?? null;
   const utmSource = pickFirst(params.utm_source) ?? DEFAULT_UTM_SOURCE;
   const utmMedium = pickFirst(params.utm_medium) ?? DEFAULT_UTM_MEDIUM;
   const utmCampaign = pickFirst(params.utm_campaign);
@@ -234,7 +235,7 @@ export default async function YourMapLandingPage({
   // prospects without geo so nothing breaks during the lead-gen
   // pipeline's geo-backfill rollout. See migration 0031.
   const useColdscanBypass =
-    couponCode.toUpperCase() === 'COLDSCAN' &&
+    couponCode?.toUpperCase() === 'COLDSCAN' &&
     personalization !== null &&
     personalization.hasGeo &&
     Boolean(prospectId);
