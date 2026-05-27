@@ -13,6 +13,8 @@
  *   - stage_2_sent_at IS NULL               (not sent before)
  *   - NOW() - scan_engaged_at >= 30 min     (let results sink in)
  *   - NOW() - scan_engaged_at <= 24 hr      (respect upgrade window)
+ *   - original scan amount paid > 0         (per-candidate gate below;
+ *                                            see /api/upgrade/audit step 1.5)
  *
  * Per qualifying prospect:
  *   1. Build the audit upgrade URL (auto-applies UPGRADE_302_CREDIT)
@@ -34,6 +36,8 @@
 
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { loadCheckoutSession } from '@/lib/stripe/session';
+import type { LeadOrderRow } from '@/lib/supabase/types';
 import { Resend } from 'resend';
 import { render } from '@react-email/components';
 import CrmStage2AuditUpgradeEmail, {
@@ -159,6 +163,53 @@ async function handle(req: Request): Promise<Response> {
       });
       continue;
     }
+
+    // ─── Free-scan gate ───────────────────────────────────────────
+    // The Stage 2 email pitches the $197 audit upgrade, which the
+    // create-session route now refuses for buyers whose original
+    // scan was $0 (see /api/upgrade/audit/create-session step 1.5).
+    // Sending the email anyway would deliver a "click → 403 error"
+    // experience. Gate at send-time instead: look up the prospect's
+    // TurfScan lead_order, check the Stripe session amount (or the
+    // coldscan_free flag), skip if free.
+    //
+    // The entire crm_reactivation_q2 cohort uses VIP (100% off), so
+    // in practice this skips everything today — but coupling to
+    // amount (not cohort label) keeps the gate correct if a paid
+    // warm-cohort variant ever lands.
+    const { data: leadOrder } = await supabase
+      .from('lead_orders')
+      .select('stripe_session_id, stripe_metadata')
+      .eq('tier', 'scan')
+      .filter('stripe_metadata->>prospect_id', 'eq', p.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<Pick<LeadOrderRow, 'stripe_session_id' | 'stripe_metadata'>>();
+    if (leadOrder) {
+      const isColdscanFree =
+        leadOrder.stripe_metadata &&
+        typeof leadOrder.stripe_metadata === 'object' &&
+        (leadOrder.stripe_metadata as Record<string, unknown>).source ===
+          'coldscan_free';
+      let originalAmountCents: number | null = null;
+      if (leadOrder.stripe_session_id) {
+        const sessionResult = await loadCheckoutSession(
+          leadOrder.stripe_session_id
+        );
+        if (!('kind' in sessionResult)) {
+          originalAmountCents = sessionResult.amountTotal;
+        }
+      }
+      if (isColdscanFree || originalAmountCents === 0) {
+        errors.push({
+          prospect_id: p.id,
+          message:
+            'free scan ($0 paid) — discounted upgrade ineligible, Stage 2 skipped',
+        });
+        continue;
+      }
+    }
+
     try {
       const auditUpgradeUrl = buildAuditUpgradeUrl(origin, p.id);
       const band = getTurfScoreBand(p.preview_score).label;

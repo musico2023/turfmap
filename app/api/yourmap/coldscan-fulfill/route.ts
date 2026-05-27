@@ -54,6 +54,21 @@ export const maxDuration = 300;
 const COLDSCAN_COHORT = 'cold_email_q2_2026';
 const SHARE_LINK_DAYS = 90;
 
+// Share-link CTA for COLDSCAN buyers. Points to the same Cal.com
+// walkthrough URL the cold-stage3 email uses so the share page and
+// the founder-pitch email send the buyer to the SAME next step (a
+// free 30-min Visibility Audit walkthrough call). Critically, this
+// is NOT the paid $197 audit upgrade — cold buyers paid $0 and are
+// ineligible for the discounted upgrade per the free-scan gate in
+// /api/upgrade/audit. Pointing the share CTA at turfmap.ai (the
+// default) would surface paid pricing tiers, which is the wrong
+// next step for this cohort.
+const COLDSCAN_SHARE_CTA_TEXT =
+  'Your free Visibility Audit walkthrough — 30-min call with the founder';
+const COLDSCAN_SHARE_CTA_URL =
+  process.env.COLD_STAGE3_CAL_URL ??
+  'https://cal.com/turfmap.ai/visibility-audit-walkthrough';
+
 const Body = z.object({
   prospect_id: z.string().min(4).max(64),
   utm_source: z.string().max(120).nullish(),
@@ -281,6 +296,12 @@ export async function POST(req: NextRequest) {
     .insert({
       scan_id: scanResult.scanId,
       expires_at: expiresAt,
+      // Override the default "Get in touch → turfmap.ai" CTA so cold
+      // buyers see the free Visibility Audit walkthrough booking
+      // instead of the homepage pricing surface. Same Cal.com URL the
+      // cold-stage3 email points to.
+      cta_text: COLDSCAN_SHARE_CTA_TEXT,
+      cta_url: COLDSCAN_SHARE_CTA_URL,
     })
     .select('id')
     .single<ExistingShareLookup>();
