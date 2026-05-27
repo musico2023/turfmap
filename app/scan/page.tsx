@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import Image from 'next/image';
 import {
   Check,
@@ -118,9 +117,12 @@ export default async function ScanLandingPage({
       {/* Meta pixel engagement signal — fires at 50% scroll depth. */}
       <MetaPixelScrollDepth percent={50} event="ViewContent" />
 
-      {/* ─── Top nav strip ─────────────────────────────────────────── */}
+      {/* ─── Top nav strip ───────────────────────────────────────────
+       *  Brand mark only. No sign-in link — /scan is a cold-Meta paid
+       *  lander; existing customers don't arrive here, and an exit
+       *  affordance pulls focus away from the single buy decision. */}
       <nav
-        className="border-b px-4 md:px-6 py-3 flex items-center justify-between"
+        className="border-b px-4 md:px-6 py-3 flex items-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <div className="flex items-center gap-2.5">
@@ -135,12 +137,6 @@ export default async function ScanLandingPage({
           </div>
           <span className="font-display text-base font-bold">TurfMap.ai</span>
         </div>
-        <Link
-          href="/login"
-          className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-        >
-          Sign in
-        </Link>
       </nav>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
@@ -716,12 +712,6 @@ export default async function ScanLandingPage({
           />
           <div className="mt-4 flex flex-col items-center md:items-start gap-2">
             <ExpiryCountdown className="text-xs font-mono text-zinc-500" />
-            <Link
-              href="/login"
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors mt-3"
-            >
-              Already a customer? Sign in →
-            </Link>
           </div>
         </div>
       </section>
