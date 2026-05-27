@@ -87,6 +87,22 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  // Free-scan gate (mirrors create-session step 1.5). The $302
+  // UPGRADE_302_CREDIT exists to count the original scan price toward
+  // the $499 audit. Buyers who paid $0 (VIP /freescan, future 100%-off
+  // codes) have no scan price to credit — refuse the discounted upgrade.
+  // (COLDSCAN /yourmap orders can't reach this route at all — they
+  // have no Stripe session, and this route loads by session_id.)
+  if (sessionResult.amountTotal === 0) {
+    return NextResponse.json(
+      {
+        error:
+          'The discounted audit upgrade is only available for buyers who paid for their original TurfScan. The $302 credit applies your scan price toward the audit — this order was $0.',
+        original_amount_cents: sessionResult.amountTotal,
+      },
+      { status: 403 }
+    );
+  }
   const customerId = sessionResult.customerId;
   const prospectIdFromMetadata = sessionResult.prospectId;
 

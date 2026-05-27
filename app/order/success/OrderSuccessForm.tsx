@@ -45,6 +45,7 @@ export function OrderSuccessForm({
   savedCard,
   prospectId,
   cohort,
+  amountTotalCents,
   prefillKeyword,
 }: {
   tier: string | null;
@@ -115,6 +116,14 @@ export function OrderSuccessForm({
    *  after dashboard engagement) is the SOLE entry point to the audit
    *  upgrade for this cohort. */
   cohort: string | null;
+  /** Amount in cents the buyer actually paid for the original
+   *  TurfScan (Stripe session.amount_total). Belt-and-braces
+   *  suppression for the AuditUpgradePanel: any $0 scan (VIP, future
+   *  100%-off codes) hides the panel because the $302 UPGRADE_302_CREDIT
+   *  has no scan price to "count" toward the $499 audit. NULL when
+   *  Stripe didn't surface amount_total — defaults to showing the
+   *  panel (existing behavior). */
+  amountTotalCents: number | null;
   /** Pre-fill value for the "Keyword to scan" field, sourced from
    *  the cohort prospect's trade (e.g. "hvac", "roofer", "plumber").
    *  When the buyer reached /order/success from a cohort lander, this
@@ -675,6 +684,13 @@ export function OrderSuccessForm({
   // for this cohort. cohort === 'crm_reactivation_q2' short-circuits
   // straight to the intake form path below.
   const isWarmCohortForUpgradeGate = cohort === 'crm_reactivation_q2';
+  // Free-scan suppression — belt-and-braces with the API's step-1.5
+  // free-scan gate. If the original scan was $0 (VIP, future 100%-off
+  // codes), the $302 UPGRADE_302_CREDIT has no scan price to count
+  // toward the audit, so we don't pitch the upgrade. Stripe didn't
+  // resolve amount_total (=== null) → fall through to existing
+  // behavior, since we can't prove the scan was free.
+  const isFreeScanForUpgradeGate = amountTotalCents === 0;
   if (
     !done &&
     tier === 'scan' &&
@@ -682,7 +698,8 @@ export function OrderSuccessForm({
     upgradeChoice === 'pending' &&
     !isAuditUpgrade &&
     !inlineUpgradeAccepted &&
-    !isWarmCohortForUpgradeGate
+    !isWarmCohortForUpgradeGate &&
+    !isFreeScanForUpgradeGate
   ) {
     return (
       <AuditUpgradePanel

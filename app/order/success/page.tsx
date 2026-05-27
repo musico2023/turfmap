@@ -369,6 +369,11 @@ export default async function OrderSuccessPage({
               cohort={
                 sessionState?.kind === 'ok' ? sessionState.cohort : null
               }
+              amountTotalCents={
+                sessionState?.kind === 'ok'
+                  ? sessionState.amountTotalCents
+                  : null
+              }
               prefillKeyword={prefillKeyword}
             />
           </Suspense>

@@ -95,6 +95,12 @@ export async function POST(req: Request) {
   let leadOrder: LeadOrderRow | null = null;
   let client: ClientRow | null = null;
   let originalScan: ScanRow | null = null;
+  // Captured per-branch from loadCheckoutSession when a Stripe session
+  // exists for the original scan order. Drives the free-scan gate at
+  // step 1.5 below — buyers who paid $0 don't get the $302 credit.
+  // Null for orders that bypassed Stripe entirely (COLDSCAN /yourmap
+  // path: stripe_session_id IS NULL; flagged by stripe_metadata.source).
+  let originalAmountCents: number | null = null;
   let prospectIdFromMetadata: string | null = null;
 
   if (body.source === 'order_success') {
@@ -121,6 +127,7 @@ export async function POST(req: Request) {
     }
     customerId = sessionResult.customerId;
     prospectIdFromMetadata = sessionResult.prospectId;
+    originalAmountCents = sessionResult.amountTotal;
 
     const { data: lo } = await supabase
       .from('lead_orders')
@@ -186,6 +193,18 @@ export async function POST(req: Request) {
       const m = leadOrder.stripe_metadata as Record<string, unknown>;
       prospectIdFromMetadata =
         typeof m.prospect_id === 'string' ? m.prospect_id : null;
+    }
+    // Capture amount_total for the free-scan gate at step 1.5 below.
+    // Operator-initiated upgrades from /clients/<id> get the same gate
+    // as buyer-initiated ones — no $302 credit on $0 scans regardless
+    // of who clicks Upgrade.
+    if (leadOrder.stripe_session_id) {
+      const sessionResult = await loadCheckoutSession(
+        leadOrder.stripe_session_id
+      );
+      if (!('kind' in sessionResult)) {
+        originalAmountCents = sessionResult.amountTotal;
+      }
     }
   } else {
     // source: 'stage_2_email' — warm-cohort buyer clicking through
@@ -254,15 +273,18 @@ export async function POST(req: Request) {
       customerId = c?.stripe_customer_id ?? null;
     }
 
-    // If we still don't have a customerId, try the stripe_session_id
-    // route — the original scan session's customer is the same
-    // record we'd pre-bind on the upgrade Checkout.
-    if (!customerId && leadOrder.stripe_session_id) {
+    // Load the Stripe session for two reasons: (1) best-effort
+    // customerId pre-bind if we don't already have one, (2) capture
+    // amount_total for the free-scan gate at step 1.5 below. For
+    // COLDSCAN bypass orders (stripe_session_id IS NULL) we skip the
+    // load — the source flag on stripe_metadata covers them.
+    if (leadOrder.stripe_session_id) {
       const sessionResult = await loadCheckoutSession(
         leadOrder.stripe_session_id
       );
       if (!('kind' in sessionResult)) {
-        customerId = sessionResult.customerId;
+        if (!customerId) customerId = sessionResult.customerId;
+        originalAmountCents = sessionResult.amountTotal;
       }
     }
   }
@@ -290,6 +312,35 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: 'no lead_orders row for this session' },
       { status: 400 }
+    );
+  }
+
+  // ─── 1.5. Free-scan gate ───────────────────────────────────────────
+  // The $302 UPGRADE_302_CREDIT exists to "count" the original $49 scan
+  // price toward the $499 audit. Buyers who paid $0 (VIP /freescan,
+  // COLDSCAN /yourmap, future 100%-off codes) have no scan price to
+  // credit — refuse the discounted upgrade. They can still buy the
+  // audit at full $499 by going through the standard pricing flow.
+  //
+  // Two signals:
+  //   (a) Stripe session amount_total === 0 (VIP and any other
+  //       100%-off coupon path).
+  //   (b) leadOrder.stripe_metadata.source === 'coldscan_free'
+  //       (COLDSCAN bypass — no Stripe session exists at all).
+  const isColdscanFreeOrder =
+    leadOrder.stripe_metadata &&
+    typeof leadOrder.stripe_metadata === 'object' &&
+    (leadOrder.stripe_metadata as Record<string, unknown>).source ===
+      'coldscan_free';
+  if (isColdscanFreeOrder || originalAmountCents === 0) {
+    return NextResponse.json(
+      {
+        error:
+          'The discounted audit upgrade is only available for buyers who paid for their original TurfScan. The $302 credit applies your scan price toward the audit — this order was $0.',
+        original_amount_cents: originalAmountCents,
+        free_scan_path: isColdscanFreeOrder ? 'coldscan' : 'stripe_zero',
+      },
+      { status: 403 }
     );
   }
 
