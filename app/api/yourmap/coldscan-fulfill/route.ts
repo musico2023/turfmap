@@ -40,6 +40,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { runScanForLocation } from '@/lib/scans/runScan';
+import { generateInsight } from '@/lib/ai-coach/generateInsight';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -292,7 +293,57 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ─── 9. Stamp prospect attribution ───────────────────────────────────
+  // ─── 9. Pre-generate the AI Coach Fix List ───────────────────────────
+  // The share page (/share/[id]) is the buyer's destination and the
+  // only surface they'll ever see for this scan. Unlike the agency
+  // console, it has no Generate button — exposing one publicly would
+  // let any visitor trigger a paid Claude call. So we pre-generate
+  // here, while we still own the request, before redirecting.
+  //
+  // Tighter NAP-audit wait budget than the operator route (90s vs
+  // 240s default) because runScanForLocation above has already burned
+  // ~30-60s of the route's 300s maxDuration. Worst-case timing:
+  //   scan       (~60s)
+  //   NAP poll   (~90s, capped)
+  //   Claude     (~60s)
+  //   ──────────────────
+  //   total      ~210s, well inside 300s.
+  //
+  // Best-effort: if generation fails (timeout, model refusal, API key
+  // missing), we log + still return the share URL. The share page
+  // tolerates a missing insight (renders the "81 data points captured"
+  // placeholder). Operator can backfill from the agency console's
+  // AICoachGenerateButton if needed. Query for orphans:
+  //   select c.id, c.business_name, s.id as scan_id
+  //   from clients c
+  //   join scans s on s.client_id = c.id
+  //   join lead_orders lo on lo.client_id = c.id
+  //   left join ai_insights ai on ai.scan_id = s.id
+  //   where lo.stripe_metadata->>'source' = 'coldscan_free'
+  //     and ai.id is null;
+  try {
+    const insightResult = await generateInsight(
+      supabase,
+      scanResult.scanId,
+      null,
+      { napAuditWaitMs: 90_000 }
+    );
+    if (!insightResult.ok) {
+      console.warn(
+        '[coldscan-fulfill] AI Coach generation failed for scan',
+        scanResult.scanId,
+        insightResult.error
+      );
+    }
+  } catch (e) {
+    console.warn(
+      '[coldscan-fulfill] AI Coach generation threw for scan',
+      scanResult.scanId,
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  // ─── 10. Stamp prospect attribution ──────────────────────────────────
   // converted_at + scan_engaged_at fire at the same moment because the
   // free-scan path has no /order/success intermediate — the buyer
   // clicked through and saw results immediately. scan_engaged_at gates

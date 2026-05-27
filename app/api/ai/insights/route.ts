@@ -1,53 +1,30 @@
 /**
  * POST /api/ai/insights
  *
- * Generates a TurfMap AI Coach playbook for a scan, persists it to
- * ai_insights, and returns the structured insight.
+ * Operator-triggered AI Coach playbook generation. Agency staff click the
+ * AICoachGenerateButton on a completed scan in the agency console; that
+ * button POSTs here.
  *
  * Body:    { scanId: string }
- * Returns: { id, scan_id, diagnosis, actions, projected_impact, model, prompt_version }
+ * Returns: { id, scanId, diagnosis, actions, projectedImpact, model, promptVersion }
  *
- * Uses Anthropic Sonnet 4.6 with adaptive thinking, structured Zod output,
- * and prompt caching on the (long, stable) system prompt.
+ * The heavy lifting (prompt build, NAP audit wait, Claude call, persist)
+ * lives in lib/ai-coach/generateInsight so the same orchestration can
+ * also run from contexts without an agency session — notably the COLDSCAN
+ * fulfill route, which pre-generates the Fix List for cold-cohort buyers
+ * who never see an agency-side Generate button (public /share/[id] only).
  *
- * Cost target: <$0.05 per call.
+ * Cost target: <$0.05 per call. NAP audit wait budget is the route's
+ * full ~240s (300s maxDuration minus ~50s headroom for Claude).
  */
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { COACH_MODEL, getAnthropic } from '@/lib/anthropic/client';
-import {
-  TURF_COACH_PROMPT_VERSION,
-  TURF_COACH_SYSTEM_PROMPT,
-  TurfCoachInsight,
-  buildTurfCoachUserPrompt,
-} from '@/lib/anthropic/prompts/turfCoach';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
-import { turfReach } from '@/lib/metrics/turfReach';
-import { turfRank } from '@/lib/metrics/turfRank';
-import { MIN_SHARE_PCT } from '@/lib/metrics/competitors';
-import { maybeFinalizeNapAudit, maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
-import {
-  listLocations,
-  locationDisplayLabel,
-  resolveLocation,
-} from '@/lib/supabase/locations';
-import { getLatestSignals } from '@/lib/google/enrich';
-import type { GbpSignalsContext } from '@/lib/anthropic/prompts/turfCoach';
-import type {
-  ClientRow,
-  ScanRow,
-  TrackedKeywordRow,
-} from '@/lib/supabase/types';
+import { generateInsight } from '@/lib/ai-coach/generateInsight';
 
 export const runtime = 'nodejs';
-// Bumped from 60s to 300s (Vercel default) to give a running NAP audit time
-// to finish so its findings can be folded into the prompt. BrightLocal
-// Listings audits typically resolve in 1-3 minutes for our 15-directory
-// fan-out; the coach blocks on `maybeFinalizeNapAudit` with a budget that
-// leaves ~50s of headroom for the Anthropic call itself.
 export const maxDuration = 300;
 
 const RequestBody = z.object({ scanId: z.string().uuid() });
@@ -55,6 +32,7 @@ const RequestBody = z.object({ scanId: z.string().uuid() });
 export async function POST(req: Request) {
   const auth = await requireAgencyUserForApi();
   if (auth instanceof NextResponse) return auth;
+
   let body: { scanId: string };
   try {
     body = RequestBody.parse(await req.json());
@@ -66,344 +44,19 @@ export async function POST(req: Request) {
   }
 
   const supabase = getServerSupabase();
+  const result = await generateInsight(supabase, body.scanId, auth.id);
 
-  // 1. Load the scan, client, keyword
-  const { data: scan } = await supabase
-    .from('scans')
-    .select('*')
-    .eq('id', body.scanId)
-    .maybeSingle<ScanRow>();
-  if (!scan) {
-    return NextResponse.json({ error: 'scan not found' }, { status: 404 });
-  }
-  if (scan.status !== 'complete') {
-    return NextResponse.json(
-      { error: `scan status is "${scan.status}" — only complete scans can be analyzed` },
-      { status: 409 }
-    );
-  }
-
-  const { data: client } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', scan.client_id)
-    .maybeSingle<ClientRow>();
-  const { data: keyword } = await supabase
-    .from('tracked_keywords')
-    .select('*')
-    .eq('id', scan.keyword_id)
-    .maybeSingle<TrackedKeywordRow>();
-  if (!client || !keyword) {
-    return NextResponse.json(
-      { error: 'client or keyword missing for this scan' },
-      { status: 500 }
-    );
-  }
-
-  // Resolve the location this scan was run against. Multi-location
-  // clients have one location per scan; legacy scans without a
-  // location_id fall back to the client's primary.
-  const scanLocation = await resolveLocation(
-    supabase,
-    client.id,
-    scan.location_id ?? null
-  );
-
-  // 2. Pull scan_points + build the 9×9 client rank grid + observed
-  //    competitor leaderboard (top 10 by appearance count). The grid lets
-  //    Claude see the actual geographic pattern; the explicit list keeps
-  //    it from confabulating brand names from training data.
-  const { data: rawPoints } = await supabase
-    .from('scan_points')
-    .select('grid_x, grid_y, rank, competitors')
-    .eq('scan_id', scan.id);
-  const points = rawPoints ?? [];
-
-  // 9×9 client rank grid (y=row, x=col)
-  const rankGrid: Array<Array<number | null>> = Array.from({ length: 9 }, () =>
-    Array<number | null>(9).fill(null)
-  );
-  for (const p of points) {
-    const x = p.grid_x as number;
-    const y = p.grid_y as number;
-    if (y >= 0 && y < 9 && x >= 0 && x < 9) {
-      rankGrid[y][x] = (p.rank as number | null) ?? null;
-    }
-  }
-
-  // Top competitors by appearance count, excluding the client's own brand.
-  //
-  // Mirrors the dedupe + noise-filter logic in lib/metrics/competitors.ts so
-  // the Coach references the same competitive set the operator sees in the
-  // dashboard. Two important details:
-  //
-  //   - Per-cell dedupe: a single competitor only counts ONCE per grid
-  //     cell, even when DFS returns the same business across local_pack +
-  //     map item types. Without this, share-of-voice (and the prompt's
-  //     "appearances" count) can exceed the cell total.
-  //
-  //   - Noise floor (MIN_SHARE_PCT): brands appearing in < 2% of cells
-  //     (1 cell out of 81) are filtered out. A 1-cell hit is almost
-  //     always a Google-pin proximity artifact, not a real competitor —
-  //     and we already hide them from the dashboard CompetitorTable, so
-  //     leaving them in the prompt would have the Coach reference brands
-  //     the operator can't see.
-  const ownNamePattern = new RegExp(
-    client.business_name.split(/\s+/)[0] ?? '',
-    'i'
-  );
-  type Stats = { ranks: number[] };
-  const compStats = new Map<string, Stats>();
-  for (const p of points) {
-    const list = (p.competitors ?? []) as Array<{
-      name: string | null;
-      rank_group: number | null;
-      rank_absolute: number | null;
-    }>;
-    // Best rank per brand within this single cell — collapses duplicates
-    // before they inflate the appearance count.
-    const cellBest = new Map<string, number>();
-    for (const c of list) {
-      if (!c?.name) continue;
-      if (ownNamePattern.test(c.name)) continue;
-      const rank = c.rank_group ?? c.rank_absolute ?? null;
-      if (rank === null || rank > 3) continue;
-      const prev = cellBest.get(c.name);
-      if (prev === undefined || rank < prev) cellBest.set(c.name, rank);
-    }
-    for (const [name, rank] of cellBest.entries()) {
-      const s = compStats.get(name) ?? { ranks: [] };
-      s.ranks.push(rank);
-      compStats.set(name, s);
-    }
-  }
-  const totalPointsForShare = Math.max(points.length, 1);
-  const competitorList = [...compStats.entries()]
-    .map(([name, s]) => ({
-      name,
-      appearances: s.ranks.length,
-      avgRank: s.ranks.reduce((a, b) => a + b, 0) / s.ranks.length,
-      bestRank: Math.min(...s.ranks),
-      sharePct: Math.round((s.ranks.length / totalPointsForShare) * 100),
-    }))
-    .filter((c) => c.sharePct >= MIN_SHARE_PCT)
-    .sort((a, b) => b.appearances - a.appearances || a.avgRank - b.avgRank)
-    .slice(0, 10);
-
-  // New score family. Read persisted columns when populated, recompute
-  // from scan_points as a defensive fallback.
-  const ranksFromPoints = points.map(
-    (p) => (p.rank as number | null) ?? null
-  );
-  const reach =
-    scan.turf_reach != null
-      ? Number(scan.turf_reach)
-      : turfReach(ranksFromPoints, scan.total_points ?? 81);
-  const rank =
-    scan.turf_rank != null ? Number(scan.turf_rank) : turfRank(ranksFromPoints);
-  const compositeScore =
-    scan.turf_score != null ? Number(scan.turf_score) : null;
-
-  // NAP audit grounding (self-healing), scoped to the scan's LOCATION.
-  //
-  // Step 1: kick off a NAP audit if there isn't a recent one yet for
-  // this specific location. Covers the case where the operator filled
-  // in structured NAP fields AFTER the most recent scan ran, so the
-  // scan trigger silently skipped. No-op when a recent audit exists or
-  // NAP fields aren't populated. Returns in ~1-2s (BL initiate fan-out).
-  await maybeRunNapAudit(supabase, client.id, auth.id, scanLocation?.id ?? null);
-
-  // Step 2: if there's now a running audit (just kicked off, or kicked off
-  // by the prior scan), poll BrightLocal in a loop until it's ready — up
-  // to ~4 minutes — then finalize and use the findings. If it's already
-  // complete, that comes back instantly. If there's no audit at all
-  // (e.g. NAP fields still empty), returns null and the coach proceeds
-  // without grounding.
-  //
-  // Budget is 240s, leaving ~50s headroom for the Anthropic call inside
-  // the route's 300s maxDuration cap.
-  const napAudit = await maybeFinalizeNapAudit(supabase, client.id, {
-    waitForReadyMs: 240_000,
-    locationId: scanLocation?.id ?? null,
-  });
-
-  // Compose business + location label so the AI Coach knows WHICH
-  // storefront it's reasoning about. For single-location clients this
-  // ends up as just "Kidcrew Medical"; for multi-location it becomes
-  // "Kidcrew Medical (Wychwood)" so cross-sibling reasoning is unambiguous.
-  const businessLabel = scanLocation
-    ? `${client.business_name} (${locationDisplayLabel(scanLocation)})`
-    : client.business_name;
-  const serviceArea =
-    scanLocation?.address ?? client.address ?? '(unknown service area)';
-  const gridRadiusMiles = Number(
-    scanLocation?.service_radius_miles ??
-      client.service_radius_miles ??
-      1.6
-  );
-
-  // Sibling locations: every other location of the same brand. Passed to
-  // the prompt so Claude scopes recommendations to the audited location
-  // and doesn't mistake a legitimate sibling listing for an inconsistency.
-  // Only sent when there's actually a sibling — single-location clients
-  // skip this section entirely.
-  const allLocations = scanLocation ? await listLocations(supabase, client.id) : [];
-  const siblingLocations = allLocations
-    .filter((l) => l.id !== scanLocation?.id)
-    .map((l) => ({
-      label: locationDisplayLabel(l),
-      address: l.address ?? '(no address)',
-    }));
-
-  // Score history: last ~7 distinct scan-days for THIS location, with
-  // the latest scan from each day. We fetch a bigger sample (last 30
-  // complete scans) and dedupe to one row per calendar day so same-day
-  // rescan jitter doesn't crowd out real history. Newest last so the
-  // prompt reads chronologically.
-  // Score history is keyword-scoped: a "plumber emergency" trend has
-  // nothing to do with a "drain cleaning" trend. Mixing them gives the
-  // Coach a false trajectory and produces misleading momentum/diagnosis
-  // language. Same fix as the runScan momentum baseline.
-  const { data: historyRows } = scanLocation
-    ? await supabase
-        .from('scans')
-        .select('completed_at, turf_score')
-        .eq('client_id', client.id)
-        .eq('location_id', scanLocation.id)
-        .eq('keyword_id', keyword.id)
-        .eq('status', 'complete')
-        .not('turf_score', 'is', null)
-        .order('completed_at', { ascending: false })
-        .limit(30)
-        .returns<Array<{ completed_at: string; turf_score: number }>>()
-    : { data: null };
-  const byDay = new Map<string, number>(); // date → latest score that day
-  for (const r of historyRows ?? []) {
-    if (!r.completed_at || r.turf_score == null) continue;
-    const date = r.completed_at.slice(0, 10); // YYYY-MM-DD (UTC date)
-    if (!byDay.has(date)) {
-      // Rows came back DESC; the first one we see for a day is the latest.
-      byDay.set(date, Number(r.turf_score));
-    }
-  }
-  const scoreHistory = [...byDay.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-7) // last 7 distinct days
-    .map(([date, score]) => ({ date, score }));
-
-  // GBP signals — latest Google Places snapshot for this location's
-  // verified listing. Suppressed when the operator has rejected the
-  // auto-match or the lookup found nothing — better no signals than
-  // wrong-business signals. Null also when no signals row exists yet
-  // (e.g. no API key configured, or refresh hasn't run). The Coach
-  // falls back to its prior generic recommendations when null.
-  const gbpSignals: GbpSignalsContext | null = scanLocation
-    ? await (async () => {
-        const matchStatus = scanLocation.google_place_match_status;
-        if (matchStatus === 'rejected' || matchStatus === 'no_match') {
-          return null;
-        }
-        const row = await getLatestSignals(supabase, scanLocation.id);
-        if (!row) return null;
-        const hours = row.regular_opening_hours as
-          | { weekdayDescriptions?: string[] }
-          | null;
-        return {
-          rating: row.rating,
-          reviewCount: row.user_ratings_total,
-          primaryType: row.primary_type,
-          types: row.types,
-          businessStatus: row.business_status,
-          photosCount: row.photos_count,
-          hoursSummary: hours?.weekdayDescriptions ?? null,
-          editorialSummary: row.editorial_summary,
-          fetchedAt: row.fetched_at,
-        };
-      })()
-    : null;
-
-  const userPrompt = buildTurfCoachUserPrompt({
-    businessName: businessLabel,
-    industry: client.industry,
-    serviceArea,
-    keyword: keyword.keyword,
-    turfScore: compositeScore,
-    turfReach: reach,
-    turfRank: rank,
-    momentum: scan.momentum != null ? Number(scan.momentum) : null,
-    gridRadiusMiles,
-    siblingLocations,
-    scoreHistory,
-    totalPoints: scan.total_points ?? 81,
-    failedPoints: scan.failed_points ?? 0,
-    rankGrid,
-    competitors: competitorList,
-    napAudit,
-    gbpSignals,
-  });
-
-  // 3. Call Sonnet 4.6 with structured output + prompt caching
-  const anthropic = getAnthropic();
-  let parsed;
-  try {
-    const message = await anthropic.messages.parse({
-      model: COACH_MODEL,
-      max_tokens: 16000,
-      thinking: { type: 'adaptive' },
-      system: [
-        {
-          type: 'text',
-          text: TURF_COACH_SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content: userPrompt }],
-      output_config: { format: zodOutputFormat(TurfCoachInsight) },
-    });
-    parsed = message.parsed_output;
-  } catch (e) {
-    return NextResponse.json(
-      {
-        error: `AI Coach call failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
-      { status: 502 }
-    );
-  }
-
-  if (!parsed) {
-    return NextResponse.json(
-      { error: 'AI Coach returned no structured output (model may have refused)' },
-      { status: 502 }
-    );
-  }
-
-  // 4. Persist to ai_insights
-  const { data: inserted, error: insErr } = await supabase
-    .from('ai_insights')
-    .insert({
-      scan_id: scan.id,
-      diagnosis: parsed.diagnosis,
-      actions: parsed.actions,
-      projected_impact: parsed.projectedImpact,
-      model: COACH_MODEL,
-      prompt_version: TURF_COACH_PROMPT_VERSION,
-    })
-    .select('*')
-    .single();
-  if (insErr) {
-    return NextResponse.json(
-      { error: `ai_insights insert failed: ${insErr.message}` },
-      { status: 500 }
-    );
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
   return NextResponse.json({
-    id: inserted.id,
-    scanId: scan.id,
-    diagnosis: parsed.diagnosis,
-    actions: parsed.actions,
-    projectedImpact: parsed.projectedImpact,
-    model: COACH_MODEL,
-    promptVersion: TURF_COACH_PROMPT_VERSION,
+    id: result.id,
+    scanId: result.scanId,
+    diagnosis: result.diagnosis,
+    actions: result.actions,
+    projectedImpact: result.projectedImpact,
+    model: result.model,
+    promptVersion: result.promptVersion,
   });
 }
