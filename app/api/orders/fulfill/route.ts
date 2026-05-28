@@ -62,7 +62,10 @@ import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
-import { notifyLlmFitAudit } from '@/lib/audit/operatorSlack';
+import {
+  notifyLlmFitAudit,
+  notifyTurfScanPurchase,
+} from '@/lib/audit/operatorSlack';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -834,6 +837,40 @@ export async function POST(req: NextRequest) {
   const scanIds = scanResults
     .map((r) => (r.ok ? r.scanId : null))
     .filter((id): id is string => id != null);
+
+  // ─── 10. Operator Slack notification (#llm-leads) ─────────────────────
+  // Fire-and-forget — failure here is non-fatal. The buyer's success
+  // state ships either way. Operator feed in #llm-leads is the manual
+  // touchpoint for lander conversions; #llm-leads notifications for
+  // audit upgrades fire from /api/upgrade/audit/confirm instead, and
+  // COLDSCAN-cohort free buyers route through
+  // /api/yourmap/coldscan-fulfill which has its own notification.
+  //
+  // We notify on EVERY paid lander tier (scan / audit / strategy /
+  // pulse / pulse_plus). Not gated on coupon — even a 100%-off VIP
+  // /freescan order produces a #llm-leads ping so Anthony has a feed
+  // of every conversion, regardless of price.
+  after(async () => {
+    try {
+      await notifyTurfScanPurchase({
+        businessName: body.businessName.trim(),
+        tier: session.tier,
+        amountCents: session.amountTotal ?? 0,
+        coupon: session.coupon,
+        keyword: body.keywords[0] ?? '',
+        city: geocode.components?.city ?? '',
+        utmSource: session.utmSource,
+        utmContent: session.utmContent,
+        prospectId: session.prospectId,
+        shareUrl: `${origin}/clients/${client.public_id}`,
+      });
+    } catch (e) {
+      console.error(
+        '[orders/fulfill] notifyTurfScanPurchase failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  });
 
   return NextResponse.json({
     ok: true,

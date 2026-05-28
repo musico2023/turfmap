@@ -46,6 +46,19 @@ export type LoadedSession = {
    *  /order/success + dashboard for warm-cohort buyers per the
    *  campaign brief's MUST-NOT-render rules. */
   cohort: string | null;
+  /** UPPERCASE coupon code stamped onto session metadata by the
+   *  init/checkout route (MAPCHECK50, FOURDOTS50, VIP, COLDSCAN, etc.).
+   *  Surfaced here so the operator Slack feed + analytics can attribute
+   *  conversions to the coupon without re-fetching the session. NULL
+   *  for full-price buyers. */
+  coupon: string | null;
+  /** utm_source from session metadata — typically 'meta_cold',
+   *  'cold_email', 'fourdots_homepage', 'warm_reactivation'. */
+  utmSource: string | null;
+  /** utm_content from session metadata — Meta ad-creative variant
+   *  identifier. Required for paid-Meta conversion-by-creative
+   *  reporting. */
+  utmContent: string | null;
   /**
    * Intake-first payload — populated when /api/scan/checkout/init
    * stamped the intake fields onto session.metadata. Non-null iff
@@ -204,6 +217,23 @@ export async function loadCheckoutSession(
       ? String(session.metadata.cohort) || null
       : null;
 
+  // Attribution surface — coupon + utm_source + utm_content. Each
+  // stamped by the upstream checkout init route(s). Surfaced on
+  // LoadedSession so /api/orders/fulfill can include them on the
+  // operator Slack notification without re-fetching the session.
+  const coupon =
+    session.metadata && 'coupon' in session.metadata
+      ? String(session.metadata.coupon) || null
+      : null;
+  const utmSource =
+    session.metadata && 'utm_source' in session.metadata
+      ? String(session.metadata.utm_source) || null
+      : null;
+  const utmContent =
+    session.metadata && 'utm_content' in session.metadata
+      ? String(session.metadata.utm_content) || null
+      : null;
+
   // Intake-first payload — set by /api/scan/checkout/init when the
   // buyer filled the /scan/intake form BEFORE Stripe. /order/success
   // checks this to decide whether to auto-fulfill (intake-first) vs
@@ -269,6 +299,9 @@ export async function loadCheckoutSession(
     currency: session.currency ?? null,
     prospectId,
     cohort,
+    coupon,
+    utmSource,
+    utmContent,
     intake,
   };
 }

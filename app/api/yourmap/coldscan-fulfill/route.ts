@@ -41,6 +41,7 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { runScanForLocation } from '@/lib/scans/runScan';
 import { generateInsight } from '@/lib/ai-coach/generateInsight';
+import { notifyColdscanCompleted } from '@/lib/audit/operatorSlack';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -344,6 +345,30 @@ export async function POST(req: NextRequest) {
     console.warn(
       '[coldscan-fulfill] AI Coach generation threw for scan',
       scanResult.scanId,
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  // ─── 9b. Operator Slack notification (#llm-leads) ────────────────────
+  // Fire-and-forget. The free buyer is about to land on /share/<id>;
+  // this ping tells the operator a cold-email lead has converted into
+  // a scan-viewed state. The cold-stage3 follow-up email (pitching the
+  // discounted audit) fires next on the engaged trigger when the
+  // buyer opens the share page.
+  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  try {
+    await notifyColdscanCompleted({
+      businessName: prospect.business_name.trim(),
+      city: prospect.city.trim(),
+      trade: prospect.trade.trim(),
+      turfScore: scanResult.turfScore,
+      shareUrl: `${origin}/share/${share.id}`,
+      prospectId: prospect.id,
+      utmSource: body.utm_source ?? null,
+    });
+  } catch (e) {
+    console.error(
+      '[coldscan-fulfill] notifyColdscanCompleted failed (non-fatal)',
       e instanceof Error ? e.message : String(e)
     );
   }

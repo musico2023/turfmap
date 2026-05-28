@@ -40,6 +40,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import type { ClientRow, LeadOrderRow, ScanRow } from '@/lib/supabase/types';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
+import { notifyAuditUpgradePurchase } from '@/lib/audit/operatorSlack';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -360,6 +361,37 @@ export async function POST(req: Request) {
       payment_intent_id: paymentIntent.id,
       warning: 'fulfillment_record_failed',
     });
+  }
+
+  // ─── Operator Slack notification (#llm-leads) ──────────────────────
+  // Fires for EVERY successful audit-upgrade charge. Both the pending-
+  // intake branch and the full-inline branch reach this point on a
+  // successful PaymentIntent, so notifying here covers both.
+  //
+  // Fail-soft — the upgrade is already paid + recorded; a missing
+  // Slack ping shouldn't surface as an error to the buyer.
+  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  try {
+    await notifyAuditUpgradePurchase({
+      businessName:
+        client?.business_name ??
+        sessionResult.intake?.businessName ??
+        sessionResult.customerEmail ??
+        '(unknown buyer)',
+      amountCents: UPGRADE_PRICE_CENTS,
+      fromTier: sessionResult.tier,
+      originalLeadOrderId: leadOrder.id,
+      utmSource: sessionResult.utmSource,
+      prospectId: prospectIdFromMetadata,
+      auditDashboardUrl: client
+        ? `${origin}/clients/${client.public_id}`
+        : '',
+    });
+  } catch (e) {
+    console.error(
+      '[upgrade/confirm] notifyAuditUpgradePurchase failed (non-fatal)',
+      e instanceof Error ? e.message : String(e)
+    );
   }
 
   // Pending-intake path: stop here, /api/orders/fulfill picks up
