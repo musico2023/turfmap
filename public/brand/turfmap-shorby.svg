@@ -1,0 +1,196 @@
+<svg width="1200" height="500" viewBox="0 0 1200 500" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    TurfMap Shorby banner — wide-banner cover for link-in-bio.
+    1200×500 mirrors the Local Lead Machine reference banner.
+    Uses TurfMap's dark theme (#0a0a0a) + lime (#c5ff3a) accent.
+
+    Left half: icon square + "TurfMap.ai" wordmark + tagline subtitle.
+    Right half: 9×9 geo-grid heatmap — the signature product visual.
+    Bottom right: "GOOGLE MAPS AUDIT TOOL" mono italic tagline,
+    mirroring the reference's "LOCAL CUSTOMERS ON AUTOPILOT" placement.
+
+    All text uses Helvetica/Inter/Mono fallbacks so it renders the
+    same in browsers AND when piped through rsvg-convert /
+    ImageMagick (same convention as turfmap-logo.svg).
+  -->
+
+  <defs>
+    <!-- Subtle bg gradient — dark base with a faint lime glow at the
+         top-left so the brand color carries even before you see the
+         icon square. Matches the site's hero-section feel. -->
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d0d10"/>
+      <stop offset="100%" stop-color="#070708"/>
+    </linearGradient>
+    <radialGradient id="lime-glow" cx="22%" cy="38%" r="55%">
+      <stop offset="0%" stop-color="#c5ff3a" stop-opacity="0.08"/>
+      <stop offset="60%" stop-color="#c5ff3a" stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#c5ff3a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="center-pulse" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#c5ff3a" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#c5ff3a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ── Background ────────────────────────────────────────────── -->
+  <rect width="1200" height="500" fill="url(#bg-grad)"/>
+  <rect width="1200" height="500" fill="url(#lime-glow)"/>
+  <!-- Hairline border at edges so the banner has a defined edge
+       on any Shorby card surface it sits inside. -->
+  <rect x="0.5" y="0.5" width="1199" height="499" fill="none" stroke="#27272a" stroke-width="1"/>
+
+  <!-- ── LEFT: brand lockup ────────────────────────────────────── -->
+
+  <!-- Lime icon square (matches turfmap-icon.svg) -->
+  <g transform="translate(80, 190)">
+    <rect width="120" height="120" rx="22" fill="#c5ff3a"/>
+    <!-- Crosshair built from filled shapes (same approach as the
+         existing brand icon). Outer ring as a donut. -->
+    <circle cx="60" cy="60" r="28" fill="#000"/>
+    <circle cx="60" cy="60" r="22" fill="#c5ff3a"/>
+    <!-- Four cardinal tick marks -->
+    <rect x="56.5" y="22" width="7"  height="14" rx="3.5" fill="#000"/>
+    <rect x="56.5" y="84" width="7"  height="14" rx="3.5" fill="#000"/>
+    <rect x="22"   y="56.5" width="14" height="7" rx="3.5" fill="#000"/>
+    <rect x="84"   y="56.5" width="14" height="7" rx="3.5" fill="#000"/>
+    <!-- Center dot -->
+    <circle cx="60" cy="60" r="4" fill="#000"/>
+  </g>
+
+  <!-- Wordmark: "TurfMap" white + ".ai" lime -->
+  <text x="230"
+        y="277"
+        font-family="Helvetica"
+        font-size="92"
+        font-weight="bold"
+        letter-spacing="-3"
+        fill="#fafafa">TurfMap<tspan fill="#c5ff3a">.ai</tspan></text>
+
+  <!-- Sub-line directly under the wordmark — mirrors the reference's
+       supporting line + ties the banner to the product positioning -->
+  <text x="232"
+        y="320"
+        font-family="Menlo"
+        font-size="16"
+        font-weight="600"
+        letter-spacing="3"
+        fill="#a1a1aa">81-POINT GEO-GRID · RANK BY CELL</text>
+
+  <!-- ── RIGHT: 9×9 heatmap ────────────────────────────────────── -->
+  <!--
+    Grid: 9 cells × 30px + 8 gaps × 4px = 302px square.
+    Positioned right-of-center, vertically centered (y = 99).
+    Cell color buckets reflect a real TurfMap scan with strong
+    center rank + Euclidean falloff to the edges. Bright = #1
+    visibility, dark zinc = no presence.
+  -->
+
+  <!-- Faint center-cell pulse so the visual reads as "actively
+       scanning" rather than static. -->
+  <circle cx="971" cy="251" r="100" fill="url(#center-pulse)"/>
+
+  <g transform="translate(820, 99)">
+    <!-- row 0 -->
+    <rect x="0"   y="0"   width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="34"  y="0"   width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="68"  y="0"   width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="102" y="0"   width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="136" y="0"   width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="170" y="0"   width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="204" y="0"   width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="238" y="0"   width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="272" y="0"   width="30" height="30" rx="4" fill="#27272a"/>
+    <!-- row 1 -->
+    <rect x="0"   y="34"  width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="34"  y="34"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="68"  y="34"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="102" y="34"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="136" y="34"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="170" y="34"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="204" y="34"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="238" y="34"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="272" y="34"  width="30" height="30" rx="4" fill="#27272a"/>
+    <!-- row 2 -->
+    <rect x="0"   y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="34"  y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="68"  y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="102" y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="136" y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="170" y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="204" y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="238" y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="272" y="68"  width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <!-- row 3 -->
+    <rect x="0"   y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="34"  y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="68"  y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="102" y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="136" y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="170" y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="204" y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="238" y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="272" y="102" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <!-- row 4 (center row) -->
+    <rect x="0"   y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="34"  y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="68"  y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="102" y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="136" y="136" width="30" height="30" rx="4" fill="#c5ff3a"/>
+    <rect x="170" y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="204" y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="238" y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="272" y="136" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <!-- row 5 -->
+    <rect x="0"   y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="34"  y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="68"  y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="102" y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="136" y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="170" y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="204" y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="238" y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="272" y="170" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <!-- row 6 -->
+    <rect x="0"   y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="34"  y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="68"  y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="102" y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="136" y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="170" y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.72"/>
+    <rect x="204" y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="238" y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="272" y="204" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <!-- row 7 -->
+    <rect x="0"   y="238" width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="34"  y="238" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="68"  y="238" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="102" y="238" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="136" y="238" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="170" y="238" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.42"/>
+    <rect x="204" y="238" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="238" y="238" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="272" y="238" width="30" height="30" rx="4" fill="#27272a"/>
+    <!-- row 8 -->
+    <rect x="0"   y="272" width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="34"  y="272" width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="68"  y="272" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="102" y="272" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="136" y="272" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="170" y="272" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="204" y="272" width="30" height="30" rx="4" fill="#c5ff3a" fill-opacity="0.18"/>
+    <rect x="238" y="272" width="30" height="30" rx="4" fill="#27272a"/>
+    <rect x="272" y="272" width="30" height="30" rx="4" fill="#27272a"/>
+  </g>
+
+  <!-- ── Bottom-right tagline (mirrors reference placement) ─────── -->
+  <text x="1120"
+        y="455"
+        font-family="Helvetica"
+        font-size="22"
+        font-weight="bold"
+        font-style="italic"
+        fill="#c5ff3a"
+        text-anchor="end"
+        letter-spacing="1.5">GOOGLE MAPS AUDIT TOOL</text>
+</svg>
