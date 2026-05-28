@@ -115,8 +115,18 @@ export function ScanIntakeForm({
       // pick, or edited after picking), we send the freeform string
       // alone and let Nominatim handle it with whatever hints we
       // have via the API-side gate.
+      // Match against EITHER the full formatted address OR the bare
+      // street_address — Mapbox's autofill writes street_address back
+      // into the input post-pick (see the onChange tolerance above),
+      // so a "still selected" buyer's input text will match the
+      // street form, not the formatted form.
+      const trimmed = address.trim();
       const picked =
-        selected && selected.formatted === address.trim() ? selected : null;
+        selected &&
+        (selected.formatted === trimmed ||
+          selected.street_address === trimmed)
+          ? selected
+          : null;
       const res = await fetch('/api/scan/checkout/init', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -189,10 +199,23 @@ export function ScanIntakeForm({
         value={address}
         onChange={(next) => {
           setAddress(next);
-          // If they edit the address text after picking from the
-          // dropdown, the Mapbox pick is stale — clear it so we
-          // fall back to server-side Nominatim with hints.
-          if (selected && next !== selected.formatted) setSelected(null);
+          // Clear the Mapbox pick only when the buyer TYPES something
+          // that doesn't match what they previously picked. Mapbox's
+          // AddressAutofill writes street_address ("1051 Southfield
+          // Drive") to the input AFTER our onSelect fires (which set
+          // address = formatted "...Plainfield, Indiana 46168..."),
+          // triggering this onChange with the shorter string — that
+          // is NOT a real edit, just Mapbox's post-pick canonicalize.
+          // Tolerating both `formatted` and `street_address` keeps
+          // the pick alive across that auto-rewrite so the submit
+          // forwards the coords end-to-end.
+          if (
+            selected &&
+            next !== selected.formatted &&
+            next !== selected.street_address
+          ) {
+            setSelected(null);
+          }
         }}
         onSelect={(fields: AddressFields) => {
           setAddress(fields.formatted);
