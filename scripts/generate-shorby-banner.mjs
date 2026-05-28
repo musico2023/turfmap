@@ -26,7 +26,13 @@ import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const FONT_PATH = '/tmp/livefonts/bricolage-96pt-extrabold.ttf';
+// Live-site fonts — pulled byte-for-byte from turfmap.ai's next/font
+// preloads. Display = Bricolage Grotesque 96pt ExtraBold (the variable
+// font's static cut next/font ships for font-display+font-bold).
+// Mono = JetBrains Mono Regular (the cut next/font ships for
+// .font-mono spans across the site, used for tracked-out labels).
+const FONT_DISPLAY = '/tmp/livefonts/bricolage-96pt-extrabold.ttf';
+const FONT_MONO = '/tmp/livefonts/jetbrains-mono.ttf';
 const OUT_SVG = resolve(ROOT, 'public/brand/turfmap-shorby.svg');
 const OUT_PNG_1X = resolve(ROOT, 'public/brand/turfmap-shorby.png');
 const OUT_PNG_2X = resolve(ROOT, 'public/brand/turfmap-shorby@2x.png');
@@ -39,24 +45,24 @@ const OUT_PNG_2X = resolve(ROOT, 'public/brand/turfmap-shorby@2x.png');
 // → <path/> bypasses font matching entirely.)
 const FONT_HELPER = resolve(import.meta.dirname, '_font_to_svg_path.py');
 
-function renderText(text, fontSize, trackingEm = -0.03) {
+function renderText(fontPath, text, fontSize, trackingEm) {
   const out = execFileSync(
     'python3',
-    [FONT_HELPER, FONT_PATH, text, String(fontSize), String(trackingEm)],
+    [FONT_HELPER, fontPath, text, String(fontSize), String(trackingEm)],
     { encoding: 'utf8' }
   );
   return JSON.parse(out);
 }
 
 /** Render `text` as glyph outlines positioned at (x, y) baseline. */
-function textToPath(text, x, y, fontSize, fill) {
-  const { glyphs_svg } = renderText(text, fontSize);
+function textToPath(fontPath, text, x, y, fontSize, fill, trackingEm = -0.03) {
+  const { glyphs_svg } = renderText(fontPath, text, fontSize, trackingEm);
   return `<g transform="translate(${x}, ${y})" fill="${fill}">${glyphs_svg}</g>`;
 }
 
 /** Measure rendered text width so subsequent elements can flow flush. */
-function textWidth(text, fontSize) {
-  return renderText(text, fontSize).width;
+function textWidth(fontPath, text, fontSize, trackingEm = -0.03) {
+  return renderText(fontPath, text, fontSize, trackingEm).width;
 }
 
 // ── Brand constants (mirror heroSeed.ts + HeatmapGrid.tsx) ────────
@@ -156,21 +162,24 @@ const svg = `<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HE
        Bricolage Grotesque 96pt ExtraBold (the exact font next/font
        serves on turfmap.ai). Embedded as <path> so the PNG render
        doesn't depend on font matching in sharp's renderer. -->
-  ${textToPath('TurfMap', 230, 278, 100, '#fafafa')}
+  ${textToPath(FONT_DISPLAY, 'TurfMap', 230, 278, 100, '#fafafa')}
   <!-- Lime ™ superscript, also as a path -->
-  ${textToPath('™', 230 + textWidth('TurfMap', 100) + 6, 208, 30, '#c5ff3a')}
+  ${textToPath(FONT_DISPLAY, '™', 230 + textWidth(FONT_DISPLAY, 'TurfMap', 100) + 6, 208, 30, '#c5ff3a')}
 
   <!-- ── RIGHT: 9×9 heatmap (homepage PATTERN, colors only) ───── -->
   <g>
 ${buildCells()}
   </g>
 
-  <!-- ── Bottom-right tagline (also a glyph path) ─────────────── -->
+  <!-- ── Bottom-right tagline — JetBrains Mono (live-site .font-mono)
+       to read as a tracked-out operator label, matching the
+       tracked-mono caps treatment used across the site. -->
   ${(() => {
     const tag = 'GOOGLE MAPS AUDIT TOOL';
-    const tagSize = 20;
-    const tw = textWidth(tag, tagSize);
-    return textToPath(tag, WIDTH - 80 - tw, HEIGHT - 45, tagSize, '#c5ff3a');
+    const tagSize = 18;
+    const tagTracking = 0.06; // 6% positive tracking — opens up the caps
+    const tw = textWidth(FONT_MONO, tag, tagSize, tagTracking);
+    return textToPath(FONT_MONO, tag, WIDTH - 80 - tw, HEIGHT - 45, tagSize, '#c5ff3a', tagTracking);
   })()}
 </svg>
 `;
