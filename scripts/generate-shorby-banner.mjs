@@ -22,6 +22,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -30,8 +31,33 @@ const OUT_SVG = resolve(ROOT, 'public/brand/turfmap-shorby.svg');
 const OUT_PNG_1X = resolve(ROOT, 'public/brand/turfmap-shorby.png');
 const OUT_PNG_2X = resolve(ROOT, 'public/brand/turfmap-shorby@2x.png');
 
-// Embed the live-site font as base64.
-const FONT_B64 = readFileSync(FONT_PATH).toString('base64');
+// Convert wordmark glyphs to SVG paths via a Python helper that uses
+// fontTools (handles modern OpenType features opentype.js chokes on).
+// (Embedding the TTF as @font-face data URI didn't work — sharp's
+// underlying renderer doesn't honor @font-face from inline <style>,
+// so the wordmark fell back to a serif system font. Converting text
+// → <path/> bypasses font matching entirely.)
+const FONT_HELPER = resolve(import.meta.dirname, '_font_to_svg_path.py');
+
+function renderText(text, fontSize, trackingEm = -0.03) {
+  const out = execFileSync(
+    'python3',
+    [FONT_HELPER, FONT_PATH, text, String(fontSize), String(trackingEm)],
+    { encoding: 'utf8' }
+  );
+  return JSON.parse(out);
+}
+
+/** Render `text` as glyph outlines positioned at (x, y) baseline. */
+function textToPath(text, x, y, fontSize, fill) {
+  const { glyphs_svg } = renderText(text, fontSize);
+  return `<g transform="translate(${x}, ${y})" fill="${fill}">${glyphs_svg}</g>`;
+}
+
+/** Measure rendered text width so subsequent elements can flow flush. */
+function textWidth(text, fontSize) {
+  return renderText(text, fontSize).width;
+}
 
 // ── Brand constants (mirror heroSeed.ts + HeatmapGrid.tsx) ────────
 
@@ -96,14 +122,6 @@ const svg = `<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HE
     renders cells WITHOUT numeric labels for a cleaner banner visual.
   -->
   <defs>
-    <style type="text/css"><![CDATA[
-      @font-face {
-        font-family: 'Bricolage Grotesque 96pt ExtraBold';
-        font-style: normal;
-        font-weight: 800;
-        src: url(data:font/ttf;base64,${FONT_B64}) format('truetype');
-      }
-    ]]></style>
     <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#0d0d10"/>
       <stop offset="100%" stop-color="#070708"/>
@@ -134,32 +152,26 @@ const svg = `<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HE
     <circle cx="60" cy="60" r="4" fill="#000"/>
   </g>
 
-  <!-- Wordmark — Bricolage Grotesque 96pt ExtraBold (the actual
-       cut next/font serves on turfmap.ai for font-display+font-bold). -->
-  <text x="230" y="278"
-        font-family="Bricolage Grotesque 96pt ExtraBold"
-        font-size="100" font-weight="800"
-        letter-spacing="-3"
-        fill="#fafafa">TurfMap</text>
-  <!-- Lime ™ superscript — same placement convention as the live nav -->
-  <text x="664" y="208"
-        font-family="Bricolage Grotesque 96pt ExtraBold"
-        font-size="30" font-weight="800"
-        fill="#c5ff3a">™</text>
+  <!-- Wordmark — "TurfMap" rendered as a glyph outline path from
+       Bricolage Grotesque 96pt ExtraBold (the exact font next/font
+       serves on turfmap.ai). Embedded as <path> so the PNG render
+       doesn't depend on font matching in sharp's renderer. -->
+  ${textToPath('TurfMap', 230, 278, 100, '#fafafa')}
+  <!-- Lime ™ superscript, also as a path -->
+  ${textToPath('™', 230 + textWidth('TurfMap', 100) + 6, 208, 30, '#c5ff3a')}
 
   <!-- ── RIGHT: 9×9 heatmap (homepage PATTERN, colors only) ───── -->
   <g>
 ${buildCells()}
   </g>
 
-  <!-- ── Bottom-right tagline ──────────────────────────────────── -->
-  <text x="${WIDTH - 80}" y="${HEIGHT - 45}"
-        font-family="Bricolage Grotesque 96pt ExtraBold"
-        font-size="22" font-weight="bold"
-        font-style="italic"
-        fill="#c5ff3a"
-        text-anchor="end"
-        letter-spacing="1.5">GOOGLE MAPS AUDIT TOOL</text>
+  <!-- ── Bottom-right tagline (also a glyph path) ─────────────── -->
+  ${(() => {
+    const tag = 'GOOGLE MAPS AUDIT TOOL';
+    const tagSize = 20;
+    const tw = textWidth(tag, tagSize);
+    return textToPath(tag, WIDTH - 80 - tw, HEIGHT - 45, tagSize, '#c5ff3a');
+  })()}
 </svg>
 `;
 
