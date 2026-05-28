@@ -5,11 +5,12 @@ import { ArrowRight } from 'lucide-react';
 import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
 
 /**
- * Drop-in replacement for ScanCheckoutButton on the /scan cold-Meta
- * lander.
+ * Drop-in replacement for ScanCheckoutButton on intake-first CTAs
+ * (the /scan cold-Meta lander, the homepage TurfScan + Audit cards,
+ * /yourmap, /freescan, /fourdots).
  *
  * Difference: this button does NOT POST to Stripe directly. It
- * navigates the buyer to /scan/intake (the form page) with all
+ * navigates the buyer to /intake (the tier-aware form page) with all
  * attribution params preserved in the URL. Stripe Checkout fires
  * later, from the intake form submit, via /api/scan/checkout/init.
  *
@@ -23,6 +24,11 @@ import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
  */
 
 export type ScanIntakeLinkButtonProps = {
+  /** Which tier this CTA is selling. 'scan' (default) → TurfScan $99
+   *  intake; 'audit' → Visibility Audit $499 intake. Forwarded to
+   *  /intake as ?tier=<t> so the intake page renders the right price
+   *  + copy. */
+  tier?: 'scan' | 'audit';
   coupon?: string | null;
   utmSource?: string | null;
   utmMedium?: string | null;
@@ -60,6 +66,7 @@ export type ScanIntakeLinkButtonProps = {
 };
 
 export function ScanIntakeLinkButton({
+  tier = 'scan',
   coupon,
   utmSource,
   utmMedium,
@@ -73,10 +80,11 @@ export function ScanIntakeLinkButton({
   centered = false,
   helperText,
 }: ScanIntakeLinkButtonProps) {
-  // Build the /scan/intake URL preserving all attribution params so
+  // Build the /intake URL preserving tier + all attribution params so
   // the intake form (and downstream Stripe metadata) carry the
   // source/cohort identifiers through to the conversion.
   const params = new URLSearchParams();
+  params.set('tier', tier);
   if (coupon) params.set('coupon', coupon);
   if (utmSource) params.set('utm_source', utmSource);
   if (utmMedium) params.set('utm_medium', utmMedium);
@@ -86,14 +94,14 @@ export function ScanIntakeLinkButton({
   if (gclid) params.set('gclid', gclid);
   if (fbclid) params.set('fbclid', fbclid);
   if (prospectId) params.set('prospect_id', prospectId);
-  const href = `/scan/intake${params.toString() ? `?${params}` : ''}`;
+  const href = `/intake?${params.toString()}`;
 
   const onClick = () => {
     // Mid-funnel intent signal — buyer expressed buy interest, hasn't
     // committed yet. Meta logs this as a custom event under the same
     // pixel. Distinct from InitiateCheckout (now fires at form submit).
     trackMetaEvent('ScanCtaClick', {
-      content_name: 'TurfScan',
+      content_name: tier === 'audit' ? 'VisibilityAudit' : 'TurfScan',
       content_category: 'lander_cta',
       coupon: coupon ?? undefined,
       utm_source: utmSource ?? undefined,

@@ -36,11 +36,24 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
+import {
+  INTAKE_TIERS,
+  INTAKE_TIER_CONFIGS,
+  type IntakeTier,
+} from '@/lib/checkout/intakeTiers';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 const Body = z.object({
+  /** Tier the buyer is purchasing. Defaults to 'scan' so legacy
+   *  callers that don't send a tier (the pre-tier-aware /scan/intake
+   *  form) keep working. Audit ($499) and scan ($99) supported; the
+   *  strategy tier is intentionally not yet supported here (3-keyword
+   *  intake variant TBD). */
+  tier: z
+    .enum(INTAKE_TIERS as readonly [IntakeTier, ...IntakeTier[]])
+    .default('scan'),
   businessName: z.string().min(2).max(200),
   address: z.string().min(4).max(400),
   keyword: z.string().min(2).max(160),
@@ -111,10 +124,16 @@ export async function POST(req: Request) {
     return NextResponse.json(STRIPE_NOT_CONFIGURED_ERROR, { status: 503 });
   }
 
-  const priceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_SCAN;
+  // Pick the Stripe price-id per tier. The tier config carries the
+  // env-key name so the existing scan price var (which both this route
+  // AND /api/checkout/[tier] read) doesn't need to be re-aliased.
+  const tierConfig = INTAKE_TIER_CONFIGS[body.tier];
+  const priceId = process.env[tierConfig.priceEnvKey];
   if (!priceId) {
     return NextResponse.json(
-      { error: 'scan price id not configured (NEXT_PUBLIC_STRIPE_PRICE_SCAN)' },
+      {
+        error: `${body.tier} price id not configured (${tierConfig.priceEnvKey})`,
+      },
       { status: 503 }
     );
   }
@@ -153,7 +172,7 @@ export async function POST(req: Request) {
   // source='scan_intake' is the discriminator /order/success uses to
   // decide whether to auto-fulfill or show the legacy form.
   const metadata: Record<string, string> = {
-    tier: 'scan',
+    tier: body.tier,
     source: 'scan_intake',
     business_name: body.businessName.trim(),
     address: body.address.trim(),
@@ -220,11 +239,12 @@ export async function POST(req: Request) {
             setup_future_usage: 'off_session' as const,
           },
         }),
-    success_url: `${origin}/order/success?tier=scan&session_id={CHECKOUT_SESSION_ID}`,
-    // Bounce back to /scan/intake with the same coupon/prospect/utm so
+    success_url: `${origin}/order/success?tier=${body.tier}&session_id={CHECKOUT_SESSION_ID}`,
+    // Bounce back to /intake with the same tier/coupon/prospect/utm so
     // a cancelled session lands on a pre-filled form ready to retry.
     cancel_url: (() => {
-      const back = new URL(`${origin}/scan/intake`);
+      const back = new URL(`${origin}/intake`);
+      back.searchParams.set('tier', body.tier);
       back.searchParams.set('cancelled', '1');
       if (couponCode) back.searchParams.set('coupon', couponCode);
       if (body.prospect_id) back.searchParams.set('prospect_id', body.prospect_id);

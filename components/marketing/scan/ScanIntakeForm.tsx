@@ -31,7 +31,11 @@ import {
  */
 
 export type ScanIntakeFormProps = {
-  // Attribution params forwarded from the upstream lander via /scan/intake
+  /** Which tier the buyer is purchasing. Drives the Stripe price the
+   *  init route picks + which page-level copy renders. Defaults to
+   *  'scan' so legacy callers that don't pass a tier still work. */
+  tier?: 'scan' | 'audit';
+  // Attribution params forwarded from the upstream lander via /intake
   // URL → carried into the init endpoint → stamped onto Stripe metadata.
   // Each independently optional.
   coupon?: string | null;
@@ -60,6 +64,7 @@ export type ScanIntakeFormProps = {
 };
 
 export function ScanIntakeForm({
+  tier = 'scan',
   coupon = null,
   utmSource,
   utmMedium,
@@ -151,6 +156,7 @@ export function ScanIntakeForm({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          tier,
           businessName: businessName.trim(),
           address: address.trim(),
           keyword: keyword.trim(),
