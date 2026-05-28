@@ -37,7 +37,7 @@ import type { ProspectRow } from '@/lib/supabase/types';
 export const metadata: Metadata = {
   title: 'Your TurfScan details · TurfMap',
   description:
-    'Enter your business details so your TurfMap scan runs against the right address + keyword. Secure Stripe checkout follows.',
+    'Five fields, then your scan and fix list. TurfMap geo-grid scan + AI Coach Fix List, delivered in under a minute.',
   robots: { index: false, follow: false },
 };
 
