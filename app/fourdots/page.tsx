@@ -21,6 +21,8 @@ import {
   lookupCoupon,
   type CouponDescriptor,
 } from '@/lib/coupons/knownCoupons';
+import { headers } from 'next/headers';
+import { logLanderVisit } from '@/lib/analytics/landerVisits';
 
 export const metadata: Metadata = {
   title: 'Get your $49 TurfScan — TurfMap',
@@ -89,6 +91,26 @@ export default async function ScanLandingPage({
   const utmMedium = pickFirst(params.utm_medium);
   const utmCampaign = pickFirst(params.utm_campaign);
   const gclid = pickFirst(params.gclid);
+
+  // Fire-and-forget click log for the LLM Ops Dashboard funnel "Clicks" step.
+  // /fourdots is the paid-traffic lander (Google Ads + Meta + future paid
+  // channels). Unlike /yourmap (cold-email cohort), there's no prospect_id
+  // here — clicks are anonymous. The scanner-UA filter in landerVisits.ts
+  // drops obvious bots before insert. Only log when utmSource is present
+  // so internal/test traffic without UTMs doesn't pollute the count.
+  if (utmSource) {
+    const reqHeaders = await headers();
+    logLanderVisit({
+      path:         '/fourdots',
+      utm_source:   utmSource,
+      utm_medium:   utmMedium,
+      utm_campaign: utmCampaign,
+      coupon:       couponCode,
+      prospect_id:  null,
+      user_agent:   reqHeaders.get('user-agent'),
+      referer:      reqHeaders.get('referer'),
+    });
+  }
 
   const coupon = lookupCoupon(couponCode, 'scan');
   const listCents = 9900; // TurfScan list price; mirrors Stripe Price.
