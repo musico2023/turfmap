@@ -218,12 +218,14 @@ export default async function ScanLandingPage({
             Full refund within 24h
           </p>
 
-          {/* Optional walkthrough — collapsed by default, expands inline
-           *  to a Loom embed. Placed below the trust strip so it reads
-           *  as low-pressure reassurance, not a competing CTA. The
-           *  iframe doesn't load until the buyer taps so first-paint
-           *  metrics stay clean. */}
-          <LoomWalkthrough className="md:flex" />
+          {/* Optional walkthrough — thumbnail card with click-to-play.
+           *  Animated GIF preview from Loom's CDN; the iframe only
+           *  mounts on tap so first-paint stays cheap. Placed below
+           *  the trust strip so the hero's CTA remains the primary
+           *  visual anchor — the card is sized under the CTA's
+           *  prominence so a buyer who's already decided doesn't feel
+           *  pulled into a detour. */}
+          <LoomWalkthrough />
         </div>
       </section>
 
