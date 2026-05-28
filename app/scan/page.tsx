@@ -18,6 +18,7 @@ import { buildHeroCells } from '@/components/marketing/heroSeed';
 import { ExpiryCountdown } from '@/components/marketing/scan/ExpiryCountdown';
 import { StickyCheckoutBar } from '@/components/marketing/scan/StickyCheckoutBar';
 import { MetaPixelScrollDepth } from '@/components/marketing/scan/MetaPixel';
+import { LoomWalkthrough } from '@/components/marketing/scan/LoomWalkthrough';
 
 /**
  * Cold-Meta paid-traffic landing page (/scan).
@@ -216,6 +217,13 @@ export default async function ScanLandingPage({
             <span className="text-zinc-700 mx-2">·</span>
             Full refund within 24h
           </p>
+
+          {/* Optional walkthrough — collapsed by default, expands inline
+           *  to a Loom embed. Placed below the trust strip so it reads
+           *  as low-pressure reassurance, not a competing CTA. The
+           *  iframe doesn't load until the buyer taps so first-paint
+           *  metrics stay clean. */}
+          <LoomWalkthrough className="md:flex" />
         </div>
       </section>
 
