@@ -30,7 +30,25 @@ import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
  */
 
 const LOOM_VIDEO_ID = '47087d3d50ce4452813eb511c5503452';
-const LOOM_EMBED_URL = `https://www.loom.com/embed/${LOOM_VIDEO_ID}`;
+// Embed URL with chrome-stripping params:
+//   autoplay=1            — start on expand (we're already a click gesture)
+//   hideEmbedTopBar=true  — removes the whole top bar (view count, title,
+//                           owner avatar, share button). The strongest
+//                           single switch Loom exposes for stripping the
+//                           "this is a Loom" surfaces.
+//   hide_owner=true       — belt-and-braces for the avatar; some player
+//                           builds render it outside the top bar.
+//   hide_share=true       — same, for the share button.
+//   hide_title=true       — same, for the recording title.
+// Anything Loom doesn't recognize is a silent no-op, so layering all
+// the known params is safe.
+const LOOM_EMBED_URL =
+  `https://www.loom.com/embed/${LOOM_VIDEO_ID}` +
+  '?autoplay=1' +
+  '&hideEmbedTopBar=true' +
+  '&hide_owner=true' +
+  '&hide_share=true' +
+  '&hide_title=true';
 // Resolved via Loom's oEmbed endpoint — the hash suffix encodes the
 // current recording. Plain <img> (not next/image) avoids needing a
 // next.config.ts remotePatterns entry for the cdn.loom.com host, and
@@ -89,7 +107,7 @@ export function LoomWalkthrough({
         >
           {expanded ? (
             <iframe
-              src={`${LOOM_EMBED_URL}?autoplay=1`}
+              src={LOOM_EMBED_URL}
               allow="autoplay; fullscreen; encrypted-media"
               allowFullScreen
               loading="lazy"
