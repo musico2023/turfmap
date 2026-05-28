@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, AlertCircle, Lock } from 'lucide-react';
+import { ArrowRight, AlertCircle, Lock, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
 import {
@@ -89,10 +89,38 @@ export function ScanIntakeForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Submit is blocked while a Mapbox pick isn't locked in. The buyer
+  // MUST select from the dropdown — free-text fallback (Nominatim
+  // geocoding) is the path that produced wrong-city matches before
+  // (Hendricks Behavioral Hospital 2026-05-19), so we removed it.
+  // Same predicate that gates the submit handler — exposed up here so
+  // the button + visual chip can mirror its state.
+  const trimmedAddress = address.trim();
+  const addressPicked = !!(
+    selected &&
+    (selected.formatted === trimmedAddress ||
+      selected.street_address === trimmedAddress)
+  );
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
     setError(null);
+
+    // Hard gate — buyer must pick from the Mapbox dropdown. We don't
+    // accept freeform addresses anymore because the input field only
+    // ever shows the street line after Mapbox's autofill rewrite, so
+    // buyers can't visually verify which Toronto/Plainfield/etc the
+    // Mapbox match locked onto. Forcing a pick keeps lat/lng + the
+    // structured components anchored to a known-good Mapbox result.
+    if (!addressPicked) {
+      setError(
+        'Please pick your business address from the dropdown — typing freely won\'t lock the right location for your scan.'
+      );
+      // Don't fire InitiateCheckout — this isn't a checkout start yet.
+      return;
+    }
+
     setLoading(true);
 
     // Meta InitiateCheckout — the brief's "Stripe-flow-starts" event.
@@ -114,28 +142,11 @@ export function ScanIntakeForm({
     });
 
     try {
-      // Forward the Mapbox pick (when present + still matches the
-      // input text) so the downstream fulfill route can use lat/lng
-      // directly instead of re-Nominatim-geocoding the address —
-      // that re-geocode is what produced wrong-city matches for
-      // ambiguously-named streets in the past (Hendricks Behavioral
-      // Hospital "1051 Southfield Drive Plainfield IN" resolving to
-      // Auburn IN, 2026-05-19). When the buyer typed freely (no
-      // pick, or edited after picking), we send the freeform string
-      // alone and let Nominatim handle it with whatever hints we
-      // have via the API-side gate.
-      // Match against EITHER the full formatted address OR the bare
-      // street_address — Mapbox's autofill writes street_address back
-      // into the input post-pick (see the onChange tolerance above),
-      // so a "still selected" buyer's input text will match the
-      // street form, not the formatted form.
-      const trimmed = address.trim();
-      const picked =
-        selected &&
-        (selected.formatted === trimmed ||
-          selected.street_address === trimmed)
-          ? selected
-          : null;
+      // Forward the Mapbox pick — guaranteed non-null by the
+      // addressPicked gate above. lat/lng + structured components
+      // flow end-to-end so /api/orders/fulfill skips Nominatim
+      // entirely.
+      const picked = selected;
       const res = await fetch('/api/scan/checkout/init', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -209,6 +220,7 @@ export function ScanIntakeForm({
        *  a match. */}
       <AddressFieldWithAutocomplete
         value={address}
+        picked={addressPicked ? selected : null}
         onChange={(next) => {
           setAddress(next);
           // Clear the Mapbox pick only when the buyer TYPES something
@@ -232,6 +244,10 @@ export function ScanIntakeForm({
         onSelect={(fields: AddressFields) => {
           setAddress(fields.formatted);
           setSelected(fields);
+          // Clear any prior "please pick from dropdown" gate error
+          // now that the buyer has picked. Other errors (network /
+          // Stripe) stay surfaced until the next submit.
+          setError(null);
         }}
       />
       <Field
@@ -278,6 +294,12 @@ export function ScanIntakeForm({
               : 'Opening secure checkout…'
           }
           rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
+          // Disabled until the buyer picks an address from the
+          // Mapbox dropdown. Avoids a click-then-error round-trip
+          // for the most common rejection reason. The submit handler
+          // still has its own gate as defense-in-depth (Enter key,
+          // JS-disabled native submit, etc.).
+          disabled={!addressPicked}
         >
           {finalCents === 0
             ? 'Continue — free with code'
@@ -393,10 +415,16 @@ function Field({
 
 function AddressFieldWithAutocomplete({
   value,
+  picked,
   onChange,
   onSelect,
 }: {
   value: string;
+  /** Non-null when the buyer has chosen a Mapbox dropdown entry AND
+   *  the input text still matches that pick (either the full
+   *  formatted form OR the street-only form Mapbox autofills back).
+   *  Drives the confirmation chip below the input. */
+  picked: AddressFields | null;
   onChange: (next: string) => void;
   onSelect: (fields: AddressFields) => void;
 }) {
@@ -426,11 +454,37 @@ function AddressFieldWithAutocomplete({
         // every visual property has to be present here (no merge).
         inputClassName="w-full rounded-md border bg-[#0d0d10] border-[var(--color-border)] text-zinc-100 text-base placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-lime-400/40 px-3.5 py-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       />
-      <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
-        The address Google shows for your business. Pick from the dropdown
-        for the cleanest match — used to seed the 9×9 scan grid around
-        your service area.
-      </p>
+      {/* Confirmation chip — only renders once the buyer has picked
+       *  from the Mapbox dropdown. Reveals the FULL canonical address
+       *  (city / region / postcode) so the buyer can verify what
+       *  Mapbox locked in, even though the input itself only displays
+       *  the street line after Mapbox's autofill rewrite. Without
+       *  this it was easy to wonder whether your suburb / city had
+       *  been captured correctly. */}
+      {picked ? (
+        <div
+          className="mt-2 flex items-start gap-2 rounded-md border px-3 py-2"
+          style={{
+            background: 'rgba(197, 255, 58, 0.06)',
+            borderColor: 'rgba(197, 255, 58, 0.25)',
+          }}
+        >
+          <CheckCircle2
+            size={14}
+            strokeWidth={2.25}
+            className="mt-0.5 flex-shrink-0"
+            style={{ color: 'var(--color-lime)' }}
+          />
+          <div className="text-xs leading-relaxed">
+            <span className="text-zinc-400">Locked in: </span>
+            <span className="text-zinc-100">{picked.formatted}</span>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
+          Start typing, then <span className="text-zinc-300 font-semibold">pick from the dropdown</span> — required so we lock the right location (city / state / postcode) for your scan. Free-text addresses aren&apos;t accepted.
+        </p>
+      )}
     </div>
   );
 }
