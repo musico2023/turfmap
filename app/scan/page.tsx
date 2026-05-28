@@ -319,8 +319,8 @@ export default async function ScanLandingPage({
             </p>
             <p>
               Most operators discover this after months of paying for SEO that
-              &ldquo;improved rankings&rdquo; — while their phone keeps not
-              ringing.
+              &ldquo;improved rankings&rdquo; — while their phone stays
+              quiet.
             </p>
           </div>
 
