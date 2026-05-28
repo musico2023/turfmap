@@ -649,6 +649,54 @@ export default async function ScanLandingPage({
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* 07.5 — Client testimonial                                       */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* Single anonymized testimonial. Placed deliberately between the
+       *  founder section (assertion: "we built it, we use it") and the
+       *  money-back guarantee (risk reversal) so the narrative reads
+       *  assertion → external validation → risk reversal. No section
+       *  header — the quote stands on its own; labeling it "Testimonial"
+       *  makes it read as a marketing section rather than an in-context
+       *  reference. */}
+      <section
+        className="px-5 md:px-8 py-8 md:py-10 border-t"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div className="max-w-2xl mx-auto">
+          <div
+            className="rounded-lg p-6 md:p-8 border relative"
+            style={{
+              background: 'var(--color-card)',
+              borderColor: 'rgba(197, 255, 58, 0.35)',
+              boxShadow: '0 0 30px #c5ff3a14',
+            }}
+          >
+            {/* Decorative lime quote glyph in the top-left.
+             *  aria-hidden because the quote text follows immediately —
+             *  no need for screen readers to read the glyph too. */}
+            <div
+              className="font-display text-5xl md:text-6xl font-black leading-none absolute -top-1 left-5 md:left-7 select-none"
+              style={{ color: 'var(--color-lime)' }}
+              aria-hidden="true"
+            >
+              &ldquo;
+            </div>
+            <blockquote
+              className="text-base md:text-lg text-zinc-50 leading-relaxed pt-4 md:pt-5"
+            >
+              TurfMap caught a GBP category mismatch we&rsquo;d missed for
+              18 months. Fixed it the same day.
+            </blockquote>
+            <p className="mt-4 text-xs font-mono text-zinc-500 leading-relaxed">
+              — Roofing &amp; insulation operator, Greater Toronto Area
+              <span className="text-zinc-700 mx-1.5">·</span>
+              Fourdots Digital client
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
       {/* 08 — Money-back guarantee                                       */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <section
