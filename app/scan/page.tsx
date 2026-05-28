@@ -11,7 +11,7 @@ import {
   Zap,
   ChevronDown,
 } from 'lucide-react';
-import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
+import { HeatmapAnimateOnView } from '@/components/marketing/scan/HeatmapAnimateOnView';
 import { ScanCheckoutButton } from '@/components/marketing/ScanCheckoutButton';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { buildHeroCells } from '@/components/marketing/heroSeed';
@@ -238,7 +238,14 @@ export default async function ScanLandingPage({
               borderColor: 'var(--color-border)',
             }}
           >
-            <HeatmapGrid cells={cells} animateReveal={false} />
+            {/* Outside-in animated reveal on scroll into view — the
+             *  grid IS the credibility element on this lander, so we
+             *  defer the cell-by-cell reveal until the buyer is actually
+             *  looking at it. ~1.6s total animation (200ms/dist * ~5.66
+             *  max dist = ~1.1s stagger + 220ms cell fade per the
+             *  HeatmapGrid transition). Reduced-motion preference is
+             *  honored inside HeatmapGrid → static end state. */}
+            <HeatmapAnimateOnView cells={cells} />
           </div>
           <p className="text-xs md:text-sm text-zinc-400 leading-relaxed mt-5 text-center">
             <strong className="font-semibold text-zinc-200">
@@ -258,6 +265,10 @@ export default async function ScanLandingPage({
               gclid={gclid}
               label="Run mine — $49"
               centered
+              // No helper text — the hero CTA one screen above already
+              // spelled out the click-flow; repeating it dilutes the
+              // visual hierarchy on this short reassurance section.
+              helperText={null}
             />
           </div>
         </div>
@@ -337,7 +348,7 @@ export default async function ScanLandingPage({
                 className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold mb-2"
                 style={{ color: 'var(--color-lime)' }}
               >
-                81 cell-level results
+                81 cells
               </div>
               <div className="font-display text-base font-bold text-zinc-100 mb-2">
                 What TurfMap tells you
@@ -454,6 +465,10 @@ export default async function ScanLandingPage({
               gclid={gclid}
               label="Run my scan — $49 with MAPCHECK50"
               centered
+              // Section 04 dollar-anchor CTA — vary the helper to add
+              // incremental information (refund window) rather than
+              // repeat the hero's click-flow line.
+              helperText="$49 charged once. Refund within 24h if unsatisfied."
             />
           </div>
         </div>
@@ -498,7 +513,7 @@ export default async function ScanLandingPage({
             />
           </div>
 
-          <p className="text-xs text-zinc-500 mt-6 leading-relaxed italic">
+          <p className="text-xs text-zinc-500 mt-6 leading-relaxed">
             Sample output. Your fix list will be specific to your business,
             category, and what your scan reveals.
           </p>
@@ -548,6 +563,10 @@ export default async function ScanLandingPage({
               gclid={gclid}
               label="Run my scan — $49 with MAPCHECK50"
               centered
+              // Section 06 proof-cards CTA — vary the helper to spotlight
+              // delivery speed (concrete operational fact, not a repeat
+              // of the hero's click-flow line).
+              helperText="60-second delivery to your inbox."
             />
           </div>
         </div>
@@ -602,7 +621,9 @@ export default async function ScanLandingPage({
               We use TurfMap on every client engagement — before we recommend a
               single change, before we touch an ad campaign, before we publish
               a single piece of content. Because the data tells us where to
-              focus.
+              focus. It&rsquo;s what helped a national painting franchise go
+              from 62 booked calls to 671 in one month — same budget, same
+              business.
             </p>
             <p>
               We made TurfScan available direct because operators kept asking
@@ -647,7 +668,7 @@ export default async function ScanLandingPage({
                 />
               </div>
               <h3 className="font-display text-xl md:text-2xl font-black text-zinc-50">
-                24-hour money-back guarantee
+                Refund in one email.
               </h3>
             </div>
             <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
@@ -691,6 +712,11 @@ export default async function ScanLandingPage({
             'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)',
         }}
       >
+        {/* Sentinel for StickyCheckoutBar — when this enters the
+         *  viewport, the mobile sticky bar slides DOWN so the buyer
+         *  isn't looking at two "Run my scan" CTAs simultaneously.
+         *  See StickyCheckoutBar.tsx for the dual-observer logic. */}
+        <div id="scan-final-cta-sentinel" aria-hidden="true" />
         <div className="max-w-2xl mx-auto text-center md:text-left">
           <h2 className="font-display text-3xl md:text-5xl font-black leading-tight tracking-tight mb-5 text-zinc-50">
             Find out what your map looks like.

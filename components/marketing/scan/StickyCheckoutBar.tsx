@@ -6,23 +6,32 @@ import { ScanCheckoutButton } from '@/components/marketing/ScanCheckoutButton';
 /**
  * Mobile-only sticky bottom checkout bar for /scan.
  *
- * Appears after the buyer scrolls past the hero CTA (tracked via an
- * IntersectionObserver on a sentinel element rendered inline with the
- * hero). When the sentinel leaves the viewport — i.e. the hero CTA is
- * scrolled off — the bar slides up. When the buyer scrolls back to
- * the hero, the bar slides down out of the way.
+ * Visibility is gated by TWO IntersectionObservers, watching two
+ * sentinels rendered inline with the lander:
+ *
+ *   - HERO_SENTINEL_ID — placed immediately after the hero's primary
+ *     CTA. While this sentinel is in view, the buyer can still see
+ *     the hero CTA and doesn't need the sticky redundancy.
+ *
+ *   - FINAL_SENTINEL_ID — placed at the top of the final-CTA section.
+ *     While this sentinel is in view, the buyer is looking at the
+ *     large bottom CTA and we hide the sticky to avoid two competing
+ *     "Run my scan" buttons in the viewport at once.
+ *
+ * Show iff: hero CTA is OFF-screen AND final CTA is OFF-screen
+ *           (i.e. the buyer is mid-page).
  *
  * Desktop users have the hero CTA reachable via scroll-up; the sticky
  * is intentionally mobile-only (md:hidden). 60px tall meets the brief's
  * tap-target spec.
  *
- * The sentinel id is fixed at "scan-sticky-sentinel" — the lander
- * places `<div id="scan-sticky-sentinel" />` immediately after the
- * hero's primary CTA so "hero CTA off-screen" maps cleanly to "show
- * sticky".
+ * The helper text on the sticky's checkout button is suppressed
+ * (helperText={null}) — the sticky is a compact reassurance surface;
+ * the click-flow line would crowd the bar visually.
  */
 
-const SENTINEL_ID = 'scan-sticky-sentinel';
+const HERO_SENTINEL_ID = 'scan-sticky-sentinel';
+const FINAL_SENTINEL_ID = 'scan-final-cta-sentinel';
 
 export type StickyCheckoutBarProps = {
   /** Forwarded to ScanCheckoutButton — typically 'MAPCHECK50' on
@@ -39,27 +48,41 @@ export function StickyCheckoutBar({
   utmMedium,
   utmCampaign,
 }: StickyCheckoutBarProps) {
-  // Default hidden so first paint doesn't flash. IntersectionObserver
-  // toggles to visible when the hero CTA leaves the viewport.
-  const [visible, setVisible] = useState(false);
+  // Default hidden so first paint doesn't flash. Two observers feed
+  // independent visibility signals — sticky shows only when BOTH the
+  // hero sentinel is off-screen AND the final-CTA sentinel is off-screen.
+  const [heroOffScreen, setHeroOffScreen] = useState(false);
+  const [finalOffScreen, setFinalOffScreen] = useState(true);
 
   useEffect(() => {
-    const sentinel = document.getElementById(SENTINEL_ID);
-    if (!sentinel) return;
+    const hero = document.getElementById(HERO_SENTINEL_ID);
+    const final = document.getElementById(FINAL_SENTINEL_ID);
+    if (!hero) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // Show the sticky when the sentinel is NOT in view (buyer has
-        // scrolled past the hero).
-        setVisible(!entry.isIntersecting);
-      },
-      // 0% threshold — flip the moment any part of the sentinel
-      // leaves / re-enters the viewport.
+    const heroObserver = new IntersectionObserver(
+      ([entry]) => setHeroOffScreen(!entry.isIntersecting),
       { threshold: 0 }
     );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    heroObserver.observe(hero);
+
+    // The final-CTA sentinel is optional — landers without it just
+    // get hero-only behavior, which matches the pre-Edit-2 default.
+    let finalObserver: IntersectionObserver | null = null;
+    if (final) {
+      finalObserver = new IntersectionObserver(
+        ([entry]) => setFinalOffScreen(!entry.isIntersecting),
+        { threshold: 0 }
+      );
+      finalObserver.observe(final);
+    }
+
+    return () => {
+      heroObserver.disconnect();
+      finalObserver?.disconnect();
+    };
   }, []);
+
+  const visible = heroOffScreen && finalOffScreen;
 
   return (
     <div
@@ -92,6 +115,7 @@ export function StickyCheckoutBar({
           utmMedium={utmMedium}
           utmCampaign={utmCampaign}
           label="Run my scan →"
+          helperText={null}
         />
       </div>
     </div>

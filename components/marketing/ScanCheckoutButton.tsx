@@ -46,6 +46,20 @@ export type ScanCheckoutButtonProps = {
    * and shouldn't be re-centered.
    */
   centered?: boolean;
+  /**
+   * Override the click-flow transparency helper line beneath the
+   * button. Three behaviors:
+   *   - undefined (default): renders the canonical
+   *     "Next: business details → secure Stripe checkout → scan
+   *     fires immediately." reassurance line.
+   *   - null: hides the helper entirely. Used where repetition would
+   *     dilute the message (e.g. multiple CTAs on the same lander).
+   *   - string: replaces the helper with the supplied text. Used to
+   *     vary the micro-reassurance per scroll position — e.g.
+   *     "60-second delivery to your inbox." next to a mid-page CTA
+   *     where the next-step plumbing is already understood.
+   */
+  helperText?: string | null;
 };
 
 /**
@@ -75,6 +89,7 @@ export function ScanCheckoutButton({
   label,
   clientReferenceId,
   centered = false,
+  helperText,
 }: ScanCheckoutButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,14 +193,30 @@ export function ScanCheckoutButton({
       {/* Click-flow transparency line — removes hesitation at the
        *  moment of click by spelling out exactly what happens next.
        *  Same visual weight as the "FOURDOTS50 applied at checkout"
-       *  helper line so the two read as a coordinated pair. */}
-      <p
-        className={`mt-2.5 text-xs text-zinc-500 leading-relaxed ${centered ? 'text-center' : ''}`}
-      >
-        Next: business details{' '}
-        <span className="text-zinc-600">→</span> secure Stripe checkout{' '}
-        <span className="text-zinc-600">→</span> scan fires immediately.
-      </p>
+       *  helper line so the two read as a coordinated pair.
+       *
+       *  helperText prop variants:
+       *    undefined → render the default 3-step click-flow line
+       *    null      → render nothing (suppress on landers where
+       *                the line would repeat across multiple CTAs)
+       *    string    → render that text in the same visual style
+       *                (used to vary micro-reassurance per CTA on
+       *                the cold-Meta /scan lander). */}
+      {helperText !== null && (
+        <p
+          className={`mt-2.5 text-xs text-zinc-500 leading-relaxed ${centered ? 'text-center' : ''}`}
+        >
+          {helperText === undefined ? (
+            <>
+              Next: business details{' '}
+              <span className="text-zinc-600">→</span> secure Stripe checkout{' '}
+              <span className="text-zinc-600">→</span> scan fires immediately.
+            </>
+          ) : (
+            helperText
+          )}
+        </p>
+      )}
       {error && (
         <p
           className={`mt-3 text-xs text-red-400 leading-relaxed ${centered ? 'text-center' : ''}`}

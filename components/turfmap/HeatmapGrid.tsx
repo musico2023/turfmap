@@ -17,8 +17,32 @@ export type HeatmapCell = {
 
 export type HeatmapGridProps = {
   cells: HeatmapCell[];
-  /** When true, cells fade in from the center outward on mount. */
+  /** When true, cells fade in on mount with a distance-staggered
+   *  delay. Use HeatmapAnimateOnView wrapper to defer the animation
+   *  until the grid is actually scrolled into view (e.g. on the /scan
+   *  cold-Meta lander where the grid sits below the hero). */
   animateReveal?: boolean;
+  /**
+   * Direction the reveal animation travels.
+   *
+   *   - 'center-out' (default): cells closest to the center pin appear
+   *     first, corners last. The classic "scan radiates outward" look —
+   *     used on /yourmap, /freescan, /fourdots, and the live operator
+   *     dashboard.
+   *   - 'outside-in': corners and edges appear first, center last. Used
+   *     on the cold-Meta /scan lander where the goal is "live software
+   *     converging on your business" — closes on the center pin for a
+   *     stronger CTA-handoff moment.
+   */
+  revealOrder?: 'center-out' | 'outside-in';
+  /**
+   * Milliseconds of delay added per unit of distance from the center.
+   * Lower values (≤ ~80) snap the animation through quickly (~700ms total
+   * across the 9x9 grid); higher values stretch it for landing pages
+   * where the animation IS the demo. /scan uses ~200 to land near the
+   * brief-specified 1.8s total.
+   */
+  revealMsPerDist?: number;
 };
 
 // Cell colors must match the legend rendered above the heatmap on the
@@ -51,11 +75,37 @@ function distFromCenter(x: number, y: number): number {
   return Math.sqrt((x - c) ** 2 + (y - c) ** 2);
 }
 
-export function HeatmapGrid({ cells, animateReveal = true }: HeatmapGridProps) {
-  const [revealedAt, setRevealedAt] = useState<number>(animateReveal ? 0 : Infinity);
+export function HeatmapGrid({
+  cells,
+  animateReveal = true,
+  revealOrder = 'center-out',
+  revealMsPerDist = 80,
+}: HeatmapGridProps) {
+  // Honor prefers-reduced-motion at runtime — buyers who've opted out
+  // of OS-level animation get the static end state immediately. Lives
+  // in state because the media query can change mid-session.
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReducedMotion(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const effectiveAnimate = animateReveal && !reducedMotion;
+
+  const [revealedAt, setRevealedAt] = useState<number>(
+    effectiveAnimate ? 0 : Infinity
+  );
 
   useEffect(() => {
-    if (!animateReveal) return;
+    if (!effectiveAnimate) {
+      // Snap to the fully-revealed end state when animation is
+      // disabled (incl. reduced-motion toggled on mid-session).
+      setRevealedAt(Infinity);
+      return;
+    }
+    setRevealedAt(0);
     const start = performance.now();
     let raf = 0;
     const tick = (now: number) => {
@@ -64,7 +114,12 @@ export function HeatmapGrid({ cells, animateReveal = true }: HeatmapGridProps) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [animateReveal]);
+  }, [effectiveAnimate]);
+
+  // Pre-compute the geometric max distance for outside-in inversion.
+  // For a 9x9 grid, MAX_DIST = sqrt(2*4^2) ≈ 5.657. Cached out of the
+  // cell loop since it's the same for every cell on every render.
+  const MAX_DIST = Math.sqrt(2 * Math.pow((GRID_SIZE - 1) / 2, 2));
 
   return (
     <div
@@ -129,7 +184,13 @@ export function HeatmapGrid({ cells, animateReveal = true }: HeatmapGridProps) {
         {/* Grid points */}
         {cells.map((cell) => {
           const dist = distFromCenter(cell.x, cell.y);
-          const revealMs = animateReveal ? dist * 80 : 0;
+          // Direction-aware delay: outside-in inverts distance so the
+          // farthest cells reveal first (corners → center). The product
+          // is in `revealMs` units, scaled by revealMsPerDist so the
+          // caller controls total animation length.
+          const orderedDist =
+            revealOrder === 'outside-in' ? MAX_DIST - dist : dist;
+          const revealMs = effectiveAnimate ? orderedDist * revealMsPerDist : 0;
           const isRevealed = revealedAt >= revealMs;
           const cx = CELL_PIXELS / 2 + cell.x * CELL_PIXELS;
           const cy = CELL_PIXELS / 2 + cell.y * CELL_PIXELS;

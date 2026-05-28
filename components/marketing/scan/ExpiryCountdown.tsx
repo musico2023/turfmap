@@ -6,13 +6,20 @@ import { useEffect, useState } from 'react';
  * 24-hour MAPCHECK50 expiry countdown.
  *
  * On first /scan visit (no cookie yet) we stamp `mapcheck50_arrival`
- * with the current ISO timestamp + a 24h max-age. The countdown reads
- * from that cookie and decrements live until expiry.
+ * with the current ISO timestamp. The countdown reads from that
+ * cookie and decrements live until expiry.
  *
- * Persistence across refreshes is automatic (cookie). A buyer who
- * clears cookies or switches devices gets a fresh window — accepted
- * trade-off; the urgency mechanic is psychological framing, not a
- * security boundary (per dev brief).
+ * Persistence: the cookie's max-age is intentionally 30 days, not 24h.
+ * The OFFER window stays 24h (computed from the stamped arrival), but
+ * we keep the cookie around longer so a returning visitor at hour 25
+ * sees the "expired" state — not a fresh 24h window. A 24h cookie
+ * max-age would auto-evict at exactly the moment the buyer most needs
+ * to see "you missed it," which would let them re-trigger arrival
+ * and silently reset the window.
+ *
+ * Buyer who clears cookies or switches devices still gets a fresh
+ * window — accepted trade-off; the urgency mechanic is psychological
+ * framing, not a security boundary (per dev brief).
  *
  * Server-side enforcement of the 24h window at Stripe-checkout time
  * is intentionally deferred to v2. v1 relies on cookie-side framing
@@ -28,6 +35,9 @@ import { useEffect, useState } from 'react';
 
 const COOKIE_NAME = 'mapcheck50_arrival';
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+// 30-day cookie persistence — see header note. Outlasts the 24h offer
+// window so the "expired" state can render for returning visitors.
+const COOKIE_MAX_AGE_SEC = 30 * 24 * 60 * 60;
 
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
@@ -52,15 +62,19 @@ function getOrStampArrival(): Date {
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   const now = new Date();
-  // Cookie max-age in seconds = 24 hours. Auto-evicts after the window
-  // closes so a return-after-expiry visitor gets a fresh window on the
-  // next visit (per brief — cookie-cleared / new-device behavior).
-  writeCookie(COOKIE_NAME, now.toISOString(), 24 * 60 * 60);
+  writeCookie(COOKIE_NAME, now.toISOString(), COOKIE_MAX_AGE_SEC);
   return now;
 }
 
 function formatRemaining(ms: number): string {
-  if (ms <= 0) return 'MAPCHECK50 has expired';
+  if (ms <= 0) {
+    // Brief Option A: when the offer window has closed, replace the
+    // countdown with a clear post-expiry message + a recovery path.
+    // Stripe-side enforcement is deferred to v2, so MAPCHECK50 is
+    // technically still valid in Stripe — surface a contact channel
+    // for buyers who want to redeem after the window.
+    return 'Coupon expired — email hello@turfmap.ai if you need a new code';
+  }
   if (ms < 60_000) return 'MAPCHECK50 expires in less than a minute';
   const hours = Math.floor(ms / 3_600_000);
   const minutes = Math.floor((ms % 3_600_000) / 60_000);
