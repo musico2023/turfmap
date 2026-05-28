@@ -13,13 +13,28 @@ import { Check, Gift, Loader2 } from 'lucide-react';
  * primary lime fill. The outer two CTAs are secondary outlines so the
  * eye lands on $499 first.
  *
- * Each CTA POSTs to /api/checkout/<tier>, the server creates a Stripe
- * Checkout session, the response includes the redirect URL. Client
- * navigates there. Failure mode: the API responds 503 + an error
- * envelope when STRIPE_SECRET_KEY or the per-tier price-id env var
- * is unset (pre-Stripe-config). The button surfaces that copy inline
- * so the page doesn't silently fail during the period before the
- * Stripe products are created.
+ * Checkout flow per tier:
+ *
+ *   TurfScan ($99)  → intake-first. Click navigates to /scan/intake
+ *                     where the buyer fills 5 business details, THEN
+ *                     hits Stripe Checkout, THEN auto-lands on
+ *                     /order/success (no second form). Mirrors the
+ *                     same migration applied to /scan, /fourdots,
+ *                     /yourmap, /freescan — friction reduction at
+ *                     the moment of highest motivation.
+ *
+ *   Audit ($499)    → legacy Stripe-first. POSTs to /api/checkout/<tier>,
+ *   Strategy ($1.5k)  server creates a Stripe Checkout session,
+ *                     buyer pays first, then fills the intake form
+ *                     on /order/success. Strategy needs 3 keywords +
+ *                     Cal.com booking which the current intake-first
+ *                     form doesn't yet support; audit could be
+ *                     migrated when that lands.
+ *
+ * Failure mode (legacy path): the API responds 503 + an error envelope
+ * when STRIPE_SECRET_KEY or the per-tier price-id env var is unset.
+ * The button surfaces that copy inline so the page doesn't silently
+ * fail during the period before the Stripe products are created.
  */
 
 type Tier = 'scan' | 'audit' | 'strategy';
@@ -137,6 +152,18 @@ function PricingCard({ tier }: { tier: TierSpec }) {
   const [error, setError] = useState<string | null>(null);
 
   const onCheckout = async () => {
+    // ── TurfScan: intake-first ────────────────────────────────────
+    // Navigate to /scan/intake — the form will collect business
+    // details, then init Stripe Checkout, then auto-fulfill on
+    // /order/success. No POST here, no fetch error surface needed
+    // — this is a plain page navigation.
+    if (tier.id === 'scan') {
+      setBusy(true);
+      window.location.href = '/scan/intake';
+      return;
+    }
+
+    // ── Audit + Strategy: legacy Stripe-first ─────────────────────
     setError(null);
     setBusy(true);
     try {
