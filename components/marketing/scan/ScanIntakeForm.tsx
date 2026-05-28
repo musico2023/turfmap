@@ -27,26 +27,42 @@ import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
  */
 
 export type ScanIntakeFormProps = {
-  // Attribution params forwarded from the /scan URL → carried into
-  // the new endpoint → stamped onto Stripe metadata. Each independently
-  // optional; the page hardcodes defaults that match the lander.
+  // Attribution params forwarded from the upstream lander via /scan/intake
+  // URL → carried into the init endpoint → stamped onto Stripe metadata.
+  // Each independently optional.
   coupon?: string | null;
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
   gclid?: string | null;
+  /** Cold/warm cohort prospect id. Forwarded to the init endpoint so
+   *  the Stripe session metadata carries prospect_id for downstream
+   *  conversion stamping on prospects.converted_at. */
+  prospectId?: string | null;
+  /** Resolved final price in cents (after coupon). Drives the button
+   *  label + helper copy so a $0 (VIP) buyer sees "Continue to free
+   *  checkout" instead of "Continue to secure checkout — $49". */
+  finalCents?: number | null;
+  /** Pre-filled business name from prospects lookup (warm/cold cohort). */
+  prefillBusinessName?: string | null;
+  /** Pre-filled keyword from prospects.trade. */
+  prefillKeyword?: string | null;
 };
 
 export function ScanIntakeForm({
-  coupon = 'MAPCHECK50',
+  coupon = null,
   utmSource,
   utmMedium,
   utmCampaign,
   gclid,
+  prospectId = null,
+  finalCents = null,
+  prefillBusinessName = null,
+  prefillKeyword = null,
 }: ScanIntakeFormProps) {
-  const [businessName, setBusinessName] = useState('');
+  const [businessName, setBusinessName] = useState(prefillBusinessName ?? '');
   const [address, setAddress] = useState('');
-  const [keyword, setKeyword] = useState('');
+  const [keyword, setKeyword] = useState(prefillKeyword ?? '');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,12 +75,15 @@ export function ScanIntakeForm({
     setLoading(true);
 
     // Meta InitiateCheckout — the brief's "Stripe-flow-starts" event.
-    // Moved from the /scan CTA click (legacy Stripe-first signal) to
-    // the intake-form submit, since that's where the actual Stripe
-    // Checkout flow now begins.
+    // Moved from the lander CTA click to the intake-form submit since
+    // that's where the actual Stripe Checkout flow begins. Value is
+    // the actual paid amount (post-coupon), so VIP $0 buyers don't
+    // get counted as paid conversions in Meta.
+    const valueDollars =
+      finalCents != null ? finalCents / 100 : 49;
     trackMetaEvent('InitiateCheckout', {
       currency: 'USD',
-      value: 49,
+      value: valueDollars,
       content_name: 'TurfScan',
       content_category: 'scan_intake_submit',
       coupon: coupon ?? undefined,
@@ -88,6 +107,7 @@ export function ScanIntakeForm({
           utm_medium: utmMedium ?? undefined,
           utm_campaign: utmCampaign ?? undefined,
           gclid: gclid ?? undefined,
+          prospect_id: prospectId ?? undefined,
         }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
@@ -171,15 +191,34 @@ export function ScanIntakeForm({
           variant="primary"
           size="lg"
           loading={loading}
-          loadingLabel="Opening secure checkout…"
+          loadingLabel={
+            finalCents === 0
+              ? 'Confirming your free scan…'
+              : 'Opening secure checkout…'
+          }
           rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
         >
-          Continue to secure checkout — $49
+          {finalCents === 0
+            ? 'Continue — free with code'
+            : finalCents != null
+              ? `Continue to secure checkout — $${finalCents / 100}`
+              : 'Continue to secure checkout'}
         </Button>
         <p className="mt-3 text-xs text-zinc-500 leading-relaxed flex items-center gap-1.5">
           <Lock size={11} className="text-zinc-600" />
-          MAPCHECK50 auto-applied at checkout. Stripe charges $49 once. No
-          subscription, refund within 24h.
+          {finalCents === 0 ? (
+            <>
+              {coupon ?? 'Discount'} applied — no card charged. Scan fires the
+              moment we confirm.
+            </>
+          ) : (
+            <>
+              {coupon ? `${coupon} auto-applied at checkout. ` : ''}Stripe
+              charges{' '}
+              {finalCents != null ? `$${finalCents / 100}` : 'the listed price'}{' '}
+              once. No subscription, refund within 24h.
+            </>
+          )}
         </p>
         {error && (
           <p

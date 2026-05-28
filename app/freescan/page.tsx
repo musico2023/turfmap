@@ -12,7 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
-import { ScanCheckoutButton } from '@/components/marketing/ScanCheckoutButton';
+import { ScanIntakeLinkButton } from '@/components/marketing/scan/ScanIntakeLinkButton';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { buildHeroCells, HERO_METRICS } from '@/components/marketing/heroSeed';
 import {
@@ -897,7 +897,7 @@ export default async function FreeScanLandingPage({
                 </>
               )}
             </p>
-            <ScanCheckoutButton
+            <ScanIntakeLinkButton
               coupon={couponCode}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -1135,7 +1135,7 @@ function PricePanel({
             </p>
           )}
         </div>
-        <ScanCheckoutButton
+        <ScanIntakeLinkButton
           coupon={couponCode}
           utmSource={utmSource}
           utmMedium={utmMedium}

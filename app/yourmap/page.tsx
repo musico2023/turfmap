@@ -12,7 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
-import { ScanCheckoutButton } from '@/components/marketing/ScanCheckoutButton';
+import { ScanIntakeLinkButton } from '@/components/marketing/scan/ScanIntakeLinkButton';
 import { ColdscanRunButton } from '@/components/marketing/ColdscanRunButton';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { buildHeroCells, HERO_METRICS } from '@/components/marketing/heroSeed';
@@ -952,7 +952,7 @@ export default async function YourMapLandingPage({
                 centered
               />
             ) : (
-              <ScanCheckoutButton
+              <ScanIntakeLinkButton
                 coupon={couponCode}
                 utmSource={utmSource}
                 utmMedium={utmMedium}
@@ -1207,7 +1207,7 @@ function PricePanel({
             label="Run my free TurfScan"
           />
         ) : (
-          <ScanCheckoutButton
+          <ScanIntakeLinkButton
             coupon={couponCode}
             utmSource={utmSource}
             utmMedium={utmMedium}

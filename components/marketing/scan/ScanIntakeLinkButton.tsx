@@ -28,6 +28,10 @@ export type ScanIntakeLinkButtonProps = {
   utmMedium?: string | null;
   utmCampaign?: string | null;
   gclid?: string | null;
+  /** Cold/warm cohort prospect id from /yourmap or /freescan. When
+   *  set, the intake page looks up the prospect record and pre-fills
+   *  business_name + suggests address/keyword from city + trade. */
+  prospectId?: string | null;
   /** Visible CTA text. Same semantics as ScanCheckoutButton.label. */
   label: string;
   /** Center the button + helper line — matches
@@ -47,19 +51,21 @@ export function ScanIntakeLinkButton({
   utmMedium,
   utmCampaign,
   gclid,
+  prospectId,
   label,
   centered = false,
   helperText,
 }: ScanIntakeLinkButtonProps) {
   // Build the /scan/intake URL preserving all attribution params so
-  // the intake form (and downstream Stripe metadata) carry the cold-
-  // Meta source identifiers through to the conversion.
+  // the intake form (and downstream Stripe metadata) carry the
+  // source/cohort identifiers through to the conversion.
   const params = new URLSearchParams();
   if (coupon) params.set('coupon', coupon);
   if (utmSource) params.set('utm_source', utmSource);
   if (utmMedium) params.set('utm_medium', utmMedium);
   if (utmCampaign) params.set('utm_campaign', utmCampaign);
   if (gclid) params.set('gclid', gclid);
+  if (prospectId) params.set('prospect_id', prospectId);
   const href = `/scan/intake${params.toString() ? `?${params}` : ''}`;
 
   const onClick = () => {
