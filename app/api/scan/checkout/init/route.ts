@@ -50,7 +50,13 @@ const Body = z.object({
   utm_source: z.string().max(120).optional(),
   utm_medium: z.string().max(120).optional(),
   utm_campaign: z.string().max(200).optional(),
+  utm_content: z.string().max(200).optional(),
+  utm_term: z.string().max(200).optional(),
   gclid: z.string().max(200).optional(),
+  /** Meta click id (auto-appended by Facebook/Instagram). Mirror of
+   *  gclid for Meta-paid traffic. Stamped on Stripe metadata for
+   *  the future Conversion API deduplication path. */
+  fbclid: z.string().max(200).optional(),
   /** Cold/warm cohort prospect id. Stamped onto Stripe metadata so the
    *  fulfill pipeline can mark prospects.converted_at on payment. */
   prospect_id: z.string().max(64).optional(),
@@ -159,7 +165,10 @@ export async function POST(req: Request) {
   if (body.utm_source) metadata.utm_source = body.utm_source;
   if (body.utm_medium) metadata.utm_medium = body.utm_medium;
   if (body.utm_campaign) metadata.utm_campaign = body.utm_campaign;
+  if (body.utm_content) metadata.utm_content = body.utm_content;
+  if (body.utm_term) metadata.utm_term = body.utm_term;
   if (body.gclid) metadata.gclid = body.gclid;
+  if (body.fbclid) metadata.fbclid = body.fbclid;
   // Mapbox-picked geo — when present, the fulfill route uses these
   // directly and skips Nominatim. Stamped as separate keys (rather
   // than one JSON blob) so they're queryable in the Stripe dashboard
@@ -222,6 +231,10 @@ export async function POST(req: Request) {
       if (body.utm_source) back.searchParams.set('utm_source', body.utm_source);
       if (body.utm_medium) back.searchParams.set('utm_medium', body.utm_medium);
       if (body.utm_campaign) back.searchParams.set('utm_campaign', body.utm_campaign);
+      if (body.utm_content) back.searchParams.set('utm_content', body.utm_content);
+      if (body.utm_term) back.searchParams.set('utm_term', body.utm_term);
+      if (body.gclid) back.searchParams.set('gclid', body.gclid);
+      if (body.fbclid) back.searchParams.set('fbclid', body.fbclid);
       return back.toString();
     })(),
     metadata,

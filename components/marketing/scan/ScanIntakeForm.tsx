@@ -38,7 +38,13 @@ export type ScanIntakeFormProps = {
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
+  utmContent?: string | null;
+  utmTerm?: string | null;
   gclid?: string | null;
+  /** Meta click id auto-appended by Facebook/Instagram to ad
+   *  destinations. Forwarded to Stripe metadata for downstream
+   *  Conversion API deduplication. */
+  fbclid?: string | null;
   /** Cold/warm cohort prospect id. Forwarded to the init endpoint so
    *  the Stripe session metadata carries prospect_id for downstream
    *  conversion stamping on prospects.converted_at. */
@@ -58,7 +64,10 @@ export function ScanIntakeForm({
   utmSource,
   utmMedium,
   utmCampaign,
+  utmContent,
+  utmTerm,
   gclid,
+  fbclid,
   prospectId = null,
   finalCents = null,
   prefillBusinessName = null,
@@ -140,7 +149,10 @@ export function ScanIntakeForm({
           utm_source: utmSource ?? undefined,
           utm_medium: utmMedium ?? undefined,
           utm_campaign: utmCampaign ?? undefined,
+          utm_content: utmContent ?? undefined,
+          utm_term: utmTerm ?? undefined,
           gclid: gclid ?? undefined,
+          fbclid: fbclid ?? undefined,
           prospect_id: prospectId ?? undefined,
           latitude: picked?.latitude,
           longitude: picked?.longitude,

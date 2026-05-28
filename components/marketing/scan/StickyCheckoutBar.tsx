@@ -40,6 +40,10 @@ export type StickyCheckoutBarProps = {
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
+  utmContent?: string | null;
+  utmTerm?: string | null;
+  gclid?: string | null;
+  fbclid?: string | null;
 };
 
 export function StickyCheckoutBar({
@@ -47,6 +51,10 @@ export function StickyCheckoutBar({
   utmSource,
   utmMedium,
   utmCampaign,
+  utmContent,
+  utmTerm,
+  gclid,
+  fbclid,
 }: StickyCheckoutBarProps) {
   // Default hidden so first paint doesn't flash. Two observers feed
   // independent visibility signals — sticky shows only when BOTH the
@@ -114,6 +122,10 @@ export function StickyCheckoutBar({
           utmSource={utmSource}
           utmMedium={utmMedium}
           utmCampaign={utmCampaign}
+          utmContent={utmContent}
+          utmTerm={utmTerm}
+          gclid={gclid}
+          fbclid={fbclid}
           label="Run my scan"
           helperText={null}
         />

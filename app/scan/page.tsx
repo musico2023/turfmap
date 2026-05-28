@@ -96,7 +96,17 @@ export default async function ScanLandingPage({
   const utmSource = pickFirst(params.utm_source) ?? DEFAULT_UTM_SOURCE;
   const utmMedium = pickFirst(params.utm_medium) ?? DEFAULT_UTM_MEDIUM;
   const utmCampaign = pickFirst(params.utm_campaign);
+  // Per-ad-variant identifier — Meta passes via the ad's URL params
+  // (typically templated with {{ad.name}}). Carries through to Stripe
+  // metadata so we can attribute a conversion to a creative variant.
+  const utmContent = pickFirst(params.utm_content);
+  // Audience/keyword bucket — Meta {{adset.name}} or Google's keyword.
+  const utmTerm = pickFirst(params.utm_term);
   const gclid = pickFirst(params.gclid);
+  // Meta click id — auto-appended to Facebook/Instagram ad clicks.
+  // Used by Meta's Conversion API to deduplicate server-side events
+  // against pixel events (when CAPI eventually lands).
+  const fbclid = pickFirst(params.fbclid);
 
   const cells = buildHeroCells();
 
@@ -113,6 +123,10 @@ export default async function ScanLandingPage({
         utmSource={utmSource}
         utmMedium={utmMedium}
         utmCampaign={utmCampaign}
+        utmContent={utmContent}
+        utmTerm={utmTerm}
+        gclid={gclid}
+        fbclid={fbclid}
       />
 
       {/* Meta pixel engagement signal — fires at 50% scroll depth. */}
@@ -198,7 +212,10 @@ export default async function ScanLandingPage({
             utmSource={utmSource}
             utmMedium={utmMedium}
             utmCampaign={utmCampaign}
+            utmContent={utmContent}
+            utmTerm={utmTerm}
             gclid={gclid}
+            fbclid={fbclid}
             label="Run my scan — $49 with MAPCHECK50"
             centered
           />
@@ -272,7 +289,10 @@ export default async function ScanLandingPage({
               utmSource={utmSource}
               utmMedium={utmMedium}
               utmCampaign={utmCampaign}
+              utmContent={utmContent}
+              utmTerm={utmTerm}
               gclid={gclid}
+              fbclid={fbclid}
               label="Run mine — $49"
               centered
               // No helper text — the hero CTA one screen above already
@@ -519,7 +539,10 @@ export default async function ScanLandingPage({
               utmSource={utmSource}
               utmMedium={utmMedium}
               utmCampaign={utmCampaign}
+              utmContent={utmContent}
+              utmTerm={utmTerm}
               gclid={gclid}
+              fbclid={fbclid}
               label="Run my scan — $49 with MAPCHECK50"
               centered
               // Section 04 dollar-anchor CTA — vary the helper to add
@@ -617,7 +640,10 @@ export default async function ScanLandingPage({
               utmSource={utmSource}
               utmMedium={utmMedium}
               utmCampaign={utmCampaign}
+              utmContent={utmContent}
+              utmTerm={utmTerm}
               gclid={gclid}
+              fbclid={fbclid}
               label="Run my scan — $49 with MAPCHECK50"
               centered
               // Section 06 proof-cards CTA — vary the helper to spotlight
@@ -789,7 +815,10 @@ export default async function ScanLandingPage({
             utmSource={utmSource}
             utmMedium={utmMedium}
             utmCampaign={utmCampaign}
+            utmContent={utmContent}
+            utmTerm={utmTerm}
             gclid={gclid}
+            fbclid={fbclid}
             label="Run my scan — $49 with MAPCHECK50"
             centered
           />

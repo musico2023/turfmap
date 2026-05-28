@@ -27,7 +27,21 @@ export type ScanIntakeLinkButtonProps = {
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
+  /** Per-ad-variant identifier — typically set in the Meta ad URL
+   *  params field with the {{ad.name}} dynamic placeholder. Forwarded
+   *  through to Stripe metadata so we can read which creative variant
+   *  drove a conversion. */
+  utmContent?: string | null;
+  /** Audience / keyword bucket — less critical than utm_content but
+   *  cheap to forward when Meta/Google sets it. */
+  utmTerm?: string | null;
+  /** Google Ads click id. */
   gclid?: string | null;
+  /** Meta click id — auto-appended by Facebook/Instagram to ad
+   *  destinations. Equivalent of gclid for Meta. Used by Meta's
+   *  Conversion API to deduplicate server-side events against pixel
+   *  events. */
+  fbclid?: string | null;
   /** Cold/warm cohort prospect id from /yourmap or /freescan. When
    *  set, the intake page looks up the prospect record and pre-fills
    *  business_name + suggests address/keyword from city + trade. */
@@ -50,7 +64,10 @@ export function ScanIntakeLinkButton({
   utmSource,
   utmMedium,
   utmCampaign,
+  utmContent,
+  utmTerm,
   gclid,
+  fbclid,
   prospectId,
   label,
   centered = false,
@@ -64,7 +81,10 @@ export function ScanIntakeLinkButton({
   if (utmSource) params.set('utm_source', utmSource);
   if (utmMedium) params.set('utm_medium', utmMedium);
   if (utmCampaign) params.set('utm_campaign', utmCampaign);
+  if (utmContent) params.set('utm_content', utmContent);
+  if (utmTerm) params.set('utm_term', utmTerm);
   if (gclid) params.set('gclid', gclid);
+  if (fbclid) params.set('fbclid', fbclid);
   if (prospectId) params.set('prospect_id', prospectId);
   const href = `/scan/intake${params.toString() ? `?${params}` : ''}`;
 
