@@ -350,6 +350,51 @@ export async function sendScanReady(args: {
 }
 
 /**
+ * Audit Roadmap Ready — sent to the buyer after a Visibility Audit
+ * purchase, ~30-60s post-scan, with the AI-generated 90-Day Roadmap
+ * PDF attached.
+ *
+ * Distinct from sendScanReady (which fires at scan completion with no
+ * PDF). The two emails together give the audit buyer immediate
+ * gratification on the scan + the substantive deliverable when it's
+ * ready. The PDF generation runs in /api/orders/fulfill's after()
+ * callback so it doesn't block either the fulfill response or the
+ * scan-ready email.
+ */
+export async function sendAuditRoadmapReady(args: {
+  to: string;
+  businessName: string;
+  startingTurfScore: number;
+  projectedTurfScore: number;
+  diagnosisPreview: string;
+  dashboardUrl: string;
+  /** PDF buffer + filename. Required — the email IS the wrapper for
+   *  this attachment; sending without it defeats the purpose. */
+  pdf: { filename: string; content: Buffer };
+}): Promise<boolean> {
+  const { AuditRoadmapReadyEmail } = await import(
+    '@/components/email/AuditRoadmapReadyEmail'
+  );
+  const html = await render(
+    AuditRoadmapReadyEmail({
+      businessName: args.businessName,
+      startingTurfScore: args.startingTurfScore,
+      projectedTurfScore: args.projectedTurfScore,
+      diagnosisPreview: args.diagnosisPreview,
+      dashboardUrl: args.dashboardUrl,
+    })
+  );
+  return sendEmailOk({
+    to: args.to,
+    subject: `Your 90-Day Visibility Roadmap is ready — ${args.businessName}`,
+    html,
+    attachments: [
+      { filename: args.pdf.filename, content: args.pdf.content },
+    ],
+  });
+}
+
+/**
  * Portal-user invite. Sent by the operator when adding a portal user
  * to a client account. The link uses Supabase admin.generateLink so
  * the recipient's browser doesn't need a PKCE verifier (which is what

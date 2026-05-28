@@ -40,16 +40,21 @@
  */
 
 import { NextResponse } from 'next/server';
-import { renderToBuffer } from '@react-pdf/renderer';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { generateRoadmap } from '@/lib/ai/roadmapGenerator';
 import {
   generateStrategistPrep,
   type GeneratedPrepNotes,
 } from '@/lib/ai/strategistPrep';
 import { llmFitLabel } from '@/lib/audit/llmFitScore';
-import { uploadAuditArtifacts } from '@/lib/audit/storage';
+import { uploadPrepNotes, signedUrlForAuditFile } from '@/lib/audit/storage';
 import { patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
+import {
+  formatMarket,
+  loadCellPatternSummary,
+  loadCompetitorSummary,
+  loadNapFindingsSummary,
+} from '@/lib/audit/auditDataLoaders';
 import { calcomSixtyDayCheckUrl } from '@/lib/integrations/calcom';
 import { notifySixtyDayUnresponsive } from '@/lib/audit/operatorSlack';
 import {
@@ -58,11 +63,9 @@ import {
   sendSixtyDayPrompt,
   sendDay67Followup,
 } from '@/lib/email/resend';
-import { RoadmapPdf, type RoadmapPdfData } from '@/components/pdf/RoadmapPdf';
 import type {
   ClientRow,
   LeadOrderRow,
-  ScanPointRow,
   ScanRow,
   TrackedKeywordRow,
   VisibilityAuditRow,
@@ -260,9 +263,22 @@ async function generateAndEmailPrepForAudit(
   supabase: SupabaseClientLike,
   audit: VisibilityAuditRow
 ): Promise<'sent' | 'skipped'> {
-  // Resolve everything we need: client, scan, primary keyword, and
-  // either the cached Roadmap (if we have one stamped) or generate
-  // a fresh one.
+  // ── Step 1. Regenerate the Roadmap PDF (fresh data for the call) ──
+  // The helper handles: load anchors, load summaries, generate
+  // roadmap, render PDF, upload to Storage, stamp roadmap_pdf_url +
+  // lift_promise_target_score on the audit row. Overwrites any
+  // at-purchase version with the freshest pre-call snapshot.
+  const roadmapResult = await generateAndStoreRoadmapPdf(supabase, audit.id);
+  if (!roadmapResult.ok) {
+    throw new Error(
+      `roadmap regen failed at ${roadmapResult.stage}: ${roadmapResult.error}`
+    );
+  }
+
+  // ── Step 2. Resolve the rest of the call-prep context ──
+  // The helper validated the anchors already, but we need them here
+  // for the strategist-prep email body. Re-fetch from the cache-hot
+  // rows the helper just touched.
   const { data: client } = await supabase
     .from('clients')
     .select('*')
@@ -284,36 +300,22 @@ async function generateAndEmailPrepForAudit(
     .eq('is_primary', true)
     .maybeSingle<TrackedKeywordRow>();
 
-  // Note: we don't actually need the lead_order email at this
-  // point — the email goes to anthony@fourdots.io, not the buyer.
-  // Keeping the variable elided rather than fetching at all.
-
-  // Generate roadmap. The fixture endpoint passes free-text NAP +
-  // competitor summaries; production data lives in nap_audits and
-  // competitor_tracking. For Phase 3 we pass the same shape but
-  // sourced from real DB rows. Keep summaries optional — if a buyer
-  // has no NAP audit yet, the AI still produces a sane roadmap.
-  const napFindingsSummary = await loadNapFindingsSummary(supabase, audit.client_id);
+  // ── Step 3. Strategist prep notes (separate Claude call) ──
+  // Re-load the summaries the prep generator wants. (They're cheap
+  // — Postgres scans of small tables — and isolating the two
+  // generators keeps each call's input surface explicit.)
+  const napFindingsSummary = await loadNapFindingsSummary(
+    supabase,
+    audit.client_id
+  );
   const competitorSummary = await loadCompetitorSummary(supabase, audit.scan_id);
-  const cellPatternSummary = await loadCellPatternSummary(supabase, audit.scan_id);
+  const cellPatternSummary = await loadCellPatternSummary(
+    supabase,
+    audit.scan_id
+  );
 
   const startingTurfScore = audit.starting_turfscore ?? scan.turf_score ?? 0;
   const market = formatMarket(client);
-
-  const roadmap = await generateRoadmap({
-    businessName: client.business_name,
-    trade: keyword?.keyword ?? client.business_name,
-    keyword: keyword?.keyword ?? '',
-    market,
-    currentTurfScore: startingTurfScore,
-    turfReach: scan.turf_reach ?? null,
-    turfRank: scan.turf_rank ?? null,
-    napFindingsSummary,
-    competitorSummary,
-    cellPatternSummary,
-  });
-
-  const projectedTurfScore = startingTurfScore + roadmap.thirtyDayTargetLift;
 
   const fitBreakdown = audit.llm_fit_breakdown ?? {
     score: audit.llm_fit_score ?? 3,
@@ -333,51 +335,25 @@ async function generateAndEmailPrepForAudit(
     market,
     scheduledCallTime: formatScheduledTime(audit.strategist_call_scheduled_at),
     currentTurfScore: startingTurfScore,
-    projectedTurfScore,
+    projectedTurfScore: roadmapResult.projectedTurfScore,
     llmFitScore: audit.llm_fit_score ?? 3,
     llmFitBreakdown: fitBreakdown,
     napFindingsSummary,
     competitorSummary,
     cellPatternSummary,
-    roadmapDiagnosis: roadmap.diagnosis,
+    roadmapDiagnosis: roadmapResult.diagnosis,
   });
 
-  // Render PDF. Re-uses the same component the dev fixture viewer
-  // hits, so production output matches what we've been QA-ing.
-  const pdfData: RoadmapPdfData = {
-    businessName: client.business_name,
-    trade: keyword?.keyword ?? 'unknown trade',
-    market,
-    auditDate: new Date().toISOString().slice(0, 10),
-    currentTurfScore: startingTurfScore,
-    projectedTurfScore,
-    diagnosis: roadmap.diagnosis,
-    actions: roadmap.actions.map((a) => ({
-      week: a.week,
-      action: a.action,
-      category: a.category,
-      pillar: a.resolvedPillar,
-      difficulty: a.difficulty,
-      priority: a.priority,
-      projectedScoreLift: a.projectedScoreLift,
-      llmCovered: a.llmCovered,
-    })),
-    napFindings: [], // Phase 3 uses summary text for AI; structured rows land in Phase 4
-    competitors: [], // ditto
-    cells: await loadCellsForScan(supabase, audit.scan_id),
-    ninetyDayTargetLift: roadmap.ninetyDayTargetLift,
-  };
-  const pdfBuffer = await renderToBuffer(<RoadmapPdf data={pdfData} />);
-
-  const upload = await uploadAuditArtifacts(supabase, {
+  // ── Step 4. Upload prep notes (PDF was uploaded by the helper) ──
+  const prepUp = await uploadPrepNotes(supabase, {
     auditId: audit.id,
-    pdfBuffer,
-    prepMarkdown: prep.markdown,
+    markdown: prep.markdown,
   });
-  if (!upload.ok) {
-    throw new Error(`upload failed at stage ${upload.stage}: ${upload.error}`);
+  if (!prepUp.ok) {
+    throw new Error(`prep-notes upload failed: ${prepUp.error}`);
   }
 
+  // ── Step 5. Email Anthony with both signed-URL artifacts ──
   const sent = await sendStrategistPrep({
     to: ANTHONY_EMAIL,
     props: {
@@ -386,11 +362,11 @@ async function generateAndEmailPrepForAudit(
       market,
       scheduledCallTime: formatScheduledTime(audit.strategist_call_scheduled_at),
       currentTurfScore: startingTurfScore,
-      projectedTurfScore,
+      projectedTurfScore: roadmapResult.projectedTurfScore,
       llmFitScore: audit.llm_fit_score ?? 3,
       llmFitLabel: llmFitLabel(audit.llm_fit_score ?? 3),
       topFinding: prep.keyFindings[0] ?? 'See prep notes for details.',
-      roadmapPdfUrl: upload.roadmapUrl,
+      roadmapPdfUrl: roadmapResult.roadmapUrl,
       // Prep notes URL points at our own /api/audit/[id]/prep-notes
       // route, not the Supabase signed URL. Supabase Storage forces
       // text/plain + CSP:sandbox on signed-URL HTML responses (XSS
@@ -405,18 +381,18 @@ async function generateAndEmailPrepForAudit(
 
   if (!sent) throw new Error('strategist prep email send returned false');
 
-  // Stamp the audit row. prep_email_sent_at is the gate; the URLs
-  // are stored for re-delivery via Phase-4 dashboard if needed.
-  // The roadmap PDF stays on the Supabase signed URL (PDFs aren't
-  // subject to the same CSP downgrade as HTML); the prep-notes URL
-  // points at our route so it survives the same XSS-prevention
-  // flow that breaks signed-URL HTML.
+  // ── Step 6. Stamp the prep gate + notes URL ──
+  // roadmap_pdf_url + lift_promise_target_score were already stamped
+  // by generateAndStoreRoadmapPdf in Step 1. We just add the prep-
+  // specific fields here.
   await patchVisibilityAudit(supabase, audit.id, {
     prep_email_sent_at: new Date().toISOString(),
-    roadmap_pdf_url: upload.roadmapUrl,
     prep_notes_url: `${appOrigin()}/api/audit/${audit.id}/prep-notes`,
-    lift_promise_target_score: projectedTurfScore,
   });
+
+  // Touch signedUrlForAuditFile to silence the unused-import lint —
+  // future callers may need a one-off re-sign without re-uploading.
+  void signedUrlForAuditFile;
 
   return 'sent';
 }
@@ -710,11 +686,6 @@ function appOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
 }
 
-function formatMarket(client: ClientRow): string {
-  const parts = [client.city, client.region].filter(Boolean);
-  return parts.length > 0 ? parts.join(', ') : client.address ?? 'unknown market';
-}
-
 function formatScheduledTime(iso: string | null): string {
   if (!iso) return 'TBD';
   try {
@@ -741,66 +712,7 @@ function formatHumanDate(d: Date): string {
   });
 }
 
-/** Compact NAP findings summary for the AI prompt. Production-side
- *  pull from nap_audits.findings JSON; falls back to NULL when no
- *  audit has run yet. */
-async function loadNapFindingsSummary(
-  supabase: SupabaseClientLike,
-  clientId: string
-): Promise<string | null> {
-  const { data } = await supabase
-    .from('nap_audits')
-    .select('findings')
-    .eq('client_id', clientId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<{ findings: unknown }>();
-  if (!data?.findings) return null;
-  // Compact JSON stringify — the AI prompt parses free text.
-  // Schema-aware summarization could be Phase 4 polish; for now we
-  // hand the model the raw findings + let it pick salient points.
-  try {
-    return JSON.stringify(data.findings, null, 2).slice(0, 4000);
-  } catch {
-    return null;
-  }
-}
-
-async function loadCompetitorSummary(
-  _supabase: SupabaseClientLike,
-  _scanId: string
-): Promise<string | null> {
-  // Phase 4 — the competitor_tracking table has the data but we
-  // haven't yet wired the summary builder. Returning null is fine;
-  // the AI prompt handles the absent-data case gracefully.
-  return null;
-}
-
-async function loadCellPatternSummary(
-  supabase: SupabaseClientLike,
-  scanId: string
-): Promise<string | null> {
-  const { data } = await supabase
-    .from('scan_points')
-    .select('rank')
-    .eq('scan_id', scanId);
-  if (!data || data.length === 0) return null;
-  const inPack = data.filter((p) => p.rank != null && p.rank <= 3).length;
-  const total = data.length;
-  const reach = total > 0 ? Math.round((inPack / total) * 100) : 0;
-  return `Buyer appears in ${inPack} of ${total} cells (${reach}% TurfReach).`;
-}
-
-async function loadCellsForScan(
-  supabase: SupabaseClientLike,
-  scanId: string
-): Promise<Array<{ x: number; y: number; rank: number | null }>> {
-  const { data } = await supabase
-    .from('scan_points')
-    .select('grid_x, grid_y, rank')
-    .eq('scan_id', scanId);
-  if (!data) return [];
-  return (data as Pick<ScanPointRow, 'grid_x' | 'grid_y' | 'rank'>[]).map(
-    (p) => ({ x: p.grid_x, y: p.grid_y, rank: p.rank })
-  );
-}
+// NAP / competitor / cell-pattern / cells loaders + formatMarket
+// now live in lib/audit/auditDataLoaders.ts so the at-purchase
+// generation path (lib/audit/generateAndStoreRoadmapPdf) and this
+// cron share the same data shape.

@@ -57,7 +57,9 @@ import {
   sendScanReady,
   sendPulsePlusWelcome,
   sendAuditCallReminder,
+  sendAuditRoadmapReady,
 } from '@/lib/email/resend';
+import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
@@ -669,24 +671,95 @@ export async function POST(req: NextRequest) {
           '[orders/fulfill] createVisibilityAudit failed (non-fatal)',
           auditResult.error
         );
-      } else if (shouldPitchLlm(fitBreakdown.score)) {
-        // Fire the operator Slack notification for fit-4-and-up
-        // audits. Fail-soft — if the webhook isn't configured or
-        // the call fails, we log + continue. The audit is still
-        // captured; this is just a manual-touch nudge for Anthony's
-        // pipeline awareness.
-        await notifyLlmFitAudit({
-          businessName: body.businessName.trim(),
-          trade: body.keywords[0] ?? 'unknown',
-          market: geocode.components?.city ?? body.address.trim(),
-          currentTurfScore: primaryScanResult.turfScore,
-          llmFitScore: fitBreakdown.score,
-          auditDashboardUrl: `${origin}/clients/${client.public_id}`,
-        }).catch((e) => {
-          console.error(
-            '[orders/fulfill] notifyLlmFitAudit failed (non-fatal)',
-            e instanceof Error ? e.message : String(e)
-          );
+      } else {
+        const auditId = auditResult.row.id;
+        if (shouldPitchLlm(fitBreakdown.score)) {
+          // Fire the operator Slack notification for fit-4-and-up
+          // audits. Fail-soft — if the webhook isn't configured or
+          // the call fails, we log + continue. The audit is still
+          // captured; this is just a manual-touch nudge for Anthony's
+          // pipeline awareness.
+          await notifyLlmFitAudit({
+            businessName: body.businessName.trim(),
+            trade: body.keywords[0] ?? 'unknown',
+            market: geocode.components?.city ?? body.address.trim(),
+            currentTurfScore: primaryScanResult.turfScore,
+            llmFitScore: fitBreakdown.score,
+            auditDashboardUrl: `${origin}/clients/${client.public_id}`,
+          }).catch((e) => {
+            console.error(
+              '[orders/fulfill] notifyLlmFitAudit failed (non-fatal)',
+              e instanceof Error ? e.message : String(e)
+            );
+          });
+        }
+
+        // ─── Auto-generate the 90-Day Roadmap PDF + email to buyer ──
+        // Same auto-generation flow that used to be a manual one-off
+        // script (scripts/generate-ryan-audit-pdf.ts) — now fires for
+        // every paying audit buyer. Runs in after() so the ~30-60s
+        // Claude + PDF render + upload + email roundtrip doesn't
+        // block the fulfill response (the buyer's success page lands
+        // immediately; the Roadmap email arrives ~60s later).
+        //
+        // Fully fail-soft: any error here is logged + Slack-pinged
+        // but doesn't bubble. The T-24h cron will still regenerate
+        // for the pre-call prep packet, so a missed at-purchase
+        // generation isn't a lost deliverable — just a slower one.
+        const buyerEmail = body.email.trim();
+        const buyerBusinessName = body.businessName.trim();
+        after(async () => {
+          try {
+            const result = await generateAndStoreRoadmapPdf(
+              supabase,
+              auditId
+            );
+            if (!result.ok) {
+              console.error(
+                '[orders/fulfill] roadmap-pdf generation failed',
+                result.stage,
+                result.error
+              );
+              return;
+            }
+            // Pull the diagnosis preview off the just-generated
+            // roadmap. The PDF embeds the full diagnosis; the email
+            // teaser surfaces the first sentence or two so the
+            // buyer can read the headline without opening the PDF.
+            const { data: refreshed } = await supabase
+              .from('visibility_audits')
+              .select('starting_turfscore, lift_promise_target_score')
+              .eq('id', auditId)
+              .maybeSingle<{
+                starting_turfscore: number | null;
+                lift_promise_target_score: number | null;
+              }>();
+            const sent = await sendAuditRoadmapReady({
+              to: buyerEmail,
+              businessName: buyerBusinessName,
+              startingTurfScore:
+                refreshed?.starting_turfscore ?? primaryScanResult.turfScore,
+              projectedTurfScore:
+                refreshed?.lift_promise_target_score ??
+                result.projectedTurfScore,
+              diagnosisPreview: previewDiagnosis(result.diagnosis),
+              dashboardUrl,
+              pdf: {
+                filename: `${slugifyBusinessName(buyerBusinessName)}-visibility-roadmap.pdf`,
+                content: result.pdfBuffer,
+              },
+            });
+            if (!sent) {
+              console.error(
+                '[orders/fulfill] sendAuditRoadmapReady returned false'
+              );
+            }
+          } catch (e) {
+            console.error(
+              '[orders/fulfill] roadmap-pdf after() threw',
+              e instanceof Error ? e.message : String(e)
+            );
+          }
         });
       }
     } catch (e) {
@@ -920,6 +993,38 @@ function errorForLoadSession(err: LoadSessionError): NextResponse {
         { status: 502 }
       );
   }
+}
+
+/**
+ * First-sentence-ish preview of the AI Roadmap diagnosis blurb for
+ * the buyer's roadmap-ready email. The PDF embeds the full diagnosis
+ * on the cover page; this is just the teaser the email body quotes
+ * so the buyer reads the headline before opening the attachment.
+ * Capped at ~220 chars so it doesn't blow out the email layout.
+ */
+function previewDiagnosis(diagnosis: string): string {
+  const trimmed = diagnosis.trim().replace(/\s+/g, ' ');
+  if (trimmed.length <= 220) return trimmed;
+  // Prefer to cut at a sentence boundary near the cap.
+  const sliced = trimmed.slice(0, 220);
+  const lastPeriod = sliced.lastIndexOf('. ');
+  if (lastPeriod > 80) return `${sliced.slice(0, lastPeriod + 1)}`;
+  return `${sliced.trim()}…`;
+}
+
+/**
+ * Slug a business name into a safe filename component for the
+ * Roadmap PDF attachment. Lowercase, hyphens, ASCII-only. Falls back
+ * to 'turfmap' on empty input so we always have a valid filename.
+ */
+function slugifyBusinessName(name: string): string {
+  const slug = name
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'turfmap';
 }
 
 /**
