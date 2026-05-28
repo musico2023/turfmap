@@ -501,13 +501,27 @@ type SessionState =
       /** Intake-first payload — non-null when the buyer arrived via
        *  /scan/intake (cold-Meta funnel). OrderSuccessForm auto-
        *  submits fulfill on mount when this is set, skipping the
-       *  legacy form prompt. */
+       *  legacy form prompt.
+       *
+       *  When latitude+longitude are present, fulfill uses them
+       *  directly instead of re-Nominatim-geocoding the address
+       *  string. Components mirror the Mapbox pick. Both null when
+       *  the buyer typed freely. */
       intake: {
         businessName: string;
         address: string;
         keyword: string;
         email: string;
         phone: string;
+        latitude: number | null;
+        longitude: number | null;
+        components: {
+          street_address: string | null;
+          city: string | null;
+          region: string | null;
+          postcode: string | null;
+          country_code: string | null;
+        } | null;
       } | null;
     }
   | { kind: 'warning'; message: string };

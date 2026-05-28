@@ -62,6 +62,23 @@ export type LoadedSession = {
     keyword: string;
     email: string;
     phone: string;
+    /** Mapbox-picked latitude. When non-null, fulfill should USE
+     *  these coordinates directly instead of re-geocoding the
+     *  address — that re-geocode is the path that produced wrong-
+     *  city matches for ambiguously-named streets. */
+    latitude: number | null;
+    longitude: number | null;
+    /** Structured address components from the Mapbox pick. Used by
+     *  fulfill to populate clients.{street_address, city, region,
+     *  postcode, country_code} without re-parsing the freeform
+     *  string. Null when the buyer typed freely. */
+    components: {
+      street_address: string | null;
+      city: string | null;
+      region: string | null;
+      postcode: string | null;
+      country_code: string | null;
+    } | null;
   } | null;
 };
 
@@ -209,12 +226,34 @@ export async function loadCheckoutSession(
     // bail to null so /order/success falls back to the legacy form
     // instead of submitting half-populated fulfill.
     if (businessName && address && keyword && intakeEmail && phone) {
+      // Optional Mapbox-picked geo + structured components. Parsed
+      // defensively — if either lat or lng fails Number(), we treat
+      // the pick as missing and fulfill falls back to Nominatim.
+      const latStr = m.latitude;
+      const lngStr = m.longitude;
+      const lat = latStr ? Number(latStr) : NaN;
+      const lng = lngStr ? Number(lngStr) : NaN;
+      const hasGeo = Number.isFinite(lat) && Number.isFinite(lng);
+      const components = {
+        street_address: m.street_address?.trim() || null,
+        city: m.city?.trim() || null,
+        region: m.region?.trim() || null,
+        postcode: m.postcode?.trim() || null,
+        country_code: m.country_code?.trim() || null,
+      };
+      // Only attach `components` when at least one structured field
+      // is populated — keeps null distinguishable from "all empty"
+      // for downstream typecheck consumers.
+      const hasComponents = Object.values(components).some((v) => v !== null);
       intake = {
         businessName,
         address,
         keyword,
         email: intakeEmail,
         phone,
+        latitude: hasGeo ? lat : null,
+        longitude: hasGeo ? lng : null,
+        components: hasComponents ? components : null,
       };
     }
   }

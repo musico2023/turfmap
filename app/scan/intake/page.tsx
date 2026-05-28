@@ -159,7 +159,7 @@ export default async function ScanIntakePage({
             Tell us where to scan.
           </h1>
           <p className="text-sm md:text-base text-zinc-400 leading-relaxed mb-6">
-            Five fields; your scan and fix list awaits.
+            Five fields away from your scan and fix list.
           </p>
 
           {cancelled && (

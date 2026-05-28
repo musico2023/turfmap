@@ -66,6 +66,14 @@ export function ScanIntakeForm({
 }: ScanIntakeFormProps) {
   const [businessName, setBusinessName] = useState(prefillBusinessName ?? '');
   const [address, setAddress] = useState('');
+  // Mapbox-picked address record. Set when the buyer chooses from the
+  // autocomplete dropdown; cleared if they subsequently edit the text
+  // (so a stale pick can't override their fresh typing). Carries
+  // lat/lng + structured components that we forward to /api/scan/
+  // checkout/init so the downstream fulfill route can skip Nominatim
+  // entirely for picked addresses — that's the address path that
+  // produced the Hendricks / Meadowview wrong-city matches before.
+  const [selected, setSelected] = useState<AddressFields | null>(null);
   const [keyword, setKeyword] = useState(prefillKeyword ?? '');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -97,6 +105,18 @@ export function ScanIntakeForm({
     });
 
     try {
+      // Forward the Mapbox pick (when present + still matches the
+      // input text) so the downstream fulfill route can use lat/lng
+      // directly instead of re-Nominatim-geocoding the address —
+      // that re-geocode is what produced wrong-city matches for
+      // ambiguously-named streets in the past (Hendricks Behavioral
+      // Hospital "1051 Southfield Drive Plainfield IN" resolving to
+      // Auburn IN, 2026-05-19). When the buyer typed freely (no
+      // pick, or edited after picking), we send the freeform string
+      // alone and let Nominatim handle it with whatever hints we
+      // have via the API-side gate.
+      const picked =
+        selected && selected.formatted === address.trim() ? selected : null;
       const res = await fetch('/api/scan/checkout/init', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -112,6 +132,17 @@ export function ScanIntakeForm({
           utm_campaign: utmCampaign ?? undefined,
           gclid: gclid ?? undefined,
           prospect_id: prospectId ?? undefined,
+          latitude: picked?.latitude,
+          longitude: picked?.longitude,
+          components: picked
+            ? {
+                street_address: picked.street_address,
+                city: picked.city,
+                region: picked.region,
+                postcode: picked.postcode,
+                country_code: picked.country_code,
+              }
+            : undefined,
         }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
@@ -156,8 +187,17 @@ export function ScanIntakeForm({
        *  a match. */}
       <AddressFieldWithAutocomplete
         value={address}
-        onChange={setAddress}
-        onSelect={(fields: AddressFields) => setAddress(fields.formatted)}
+        onChange={(next) => {
+          setAddress(next);
+          // If they edit the address text after picking from the
+          // dropdown, the Mapbox pick is stale — clear it so we
+          // fall back to server-side Nominatim with hints.
+          if (selected && next !== selected.formatted) setSelected(null);
+        }}
+        onSelect={(fields: AddressFields) => {
+          setAddress(fields.formatted);
+          setSelected(fields);
+        }}
       />
       <Field
         label="Keyword to scan"

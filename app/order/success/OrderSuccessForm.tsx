@@ -149,6 +149,15 @@ export function OrderSuccessForm({
     keyword: string;
     email: string;
     phone: string;
+    latitude: number | null;
+    longitude: number | null;
+    components: {
+      street_address: string | null;
+      city: string | null;
+      region: string | null;
+      postcode: string | null;
+      country_code: string | null;
+    } | null;
   } | null;
 }) {
   const [businessName, setBusinessName] = useState('');
@@ -287,6 +296,13 @@ export function OrderSuccessForm({
             keywords: [prefilledIntake.keyword],
             email: prefilledIntake.email,
             phone: prefilledIntake.phone,
+            // Mapbox-picked geo (when present) so fulfill skips
+            // Nominatim and uses the exact coordinates instead.
+            // Prevents wrong-city matches for ambiguously-named
+            // streets (Hendricks / Meadowview class of bug).
+            latitude: prefilledIntake.latitude ?? undefined,
+            longitude: prefilledIntake.longitude ?? undefined,
+            components: prefilledIntake.components ?? undefined,
           }),
         });
         if (cancelled) return;

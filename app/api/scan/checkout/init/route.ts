@@ -54,6 +54,23 @@ const Body = z.object({
   /** Cold/warm cohort prospect id. Stamped onto Stripe metadata so the
    *  fulfill pipeline can mark prospects.converted_at on payment. */
   prospect_id: z.string().max(64).optional(),
+  /** Lat/lng + structured fields from the Mapbox autocomplete pick.
+   *  Forwarded to /order/success → fulfill so we can use Mapbox's
+   *  exact coordinates instead of re-Nominatim-geocoding the
+   *  freeform string (which caused wrong-city matches for
+   *  ambiguously-named streets — see Hendricks Behavioral Hospital
+   *  2026-05-19 incident). Omitted when the buyer typed freely. */
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  components: z
+    .object({
+      street_address: z.string().max(200).nullish(),
+      city: z.string().max(120).nullish(),
+      region: z.string().max(120).nullish(),
+      postcode: z.string().max(20).nullish(),
+      country_code: z.string().max(8).nullish(),
+    })
+    .optional(),
 });
 
 // Coupons that resolve to a $0 charge after the discount applies.
@@ -143,6 +160,25 @@ export async function POST(req: Request) {
   if (body.utm_medium) metadata.utm_medium = body.utm_medium;
   if (body.utm_campaign) metadata.utm_campaign = body.utm_campaign;
   if (body.gclid) metadata.gclid = body.gclid;
+  // Mapbox-picked geo — when present, the fulfill route uses these
+  // directly and skips Nominatim. Stamped as separate keys (rather
+  // than one JSON blob) so they're queryable in the Stripe dashboard
+  // + the session loader can typecheck individual values.
+  if (
+    typeof body.latitude === 'number' &&
+    typeof body.longitude === 'number'
+  ) {
+    metadata.latitude = String(body.latitude);
+    metadata.longitude = String(body.longitude);
+  }
+  if (body.components) {
+    const c = body.components;
+    if (c.street_address) metadata.street_address = c.street_address;
+    if (c.city) metadata.city = c.city;
+    if (c.region) metadata.region = c.region;
+    if (c.postcode) metadata.postcode = c.postcode;
+    if (c.country_code) metadata.country_code = c.country_code;
+  }
   // Prospect id + derived cohort marker, mirroring /api/checkout/[tier]:
   // VIP → crm_reactivation_q2 (warm), prospect_id present → cold_email.
   // /order/success + the audit-upgrade gate read these to suppress

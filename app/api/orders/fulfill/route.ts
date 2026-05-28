@@ -90,6 +90,23 @@ const FulfillBody = z.object({
   // shortest plausible international form (e.g. "+1 416 5"); the
   // form's tel input does the heavy lifting on local format.
   phone: z.string().min(7).max(40),
+  // Optional Mapbox-picked geo. When BOTH lat and lng are present,
+  // fulfill USES them directly and skips Nominatim — prevents wrong-
+  // city matches for ambiguously-named streets (Hendricks / Meadowview
+  // 2026-05-19 class of bug). Free-text addresses (no Mapbox pick)
+  // omit these and fall back to Nominatim with whatever structured
+  // hints `components` carries.
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  components: z
+    .object({
+      street_address: z.string().nullish(),
+      city: z.string().nullish(),
+      region: z.string().nullish(),
+      postcode: z.string().nullish(),
+      country_code: z.string().nullish(),
+    })
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -178,8 +195,53 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ─── 3. Geocode the submitted address ─────────────────────────────────
-  const geocode = await geocodeAddress(body.address);
+  // ─── 3. Resolve the address geo ────────────────────────────────────────
+  // Two paths:
+  //
+  //   (a) Mapbox pick — when the intake form supplied latitude + longitude
+  //       (the buyer chose from the Mapbox autocomplete dropdown), we
+  //       USE those coordinates directly + read structured fields from
+  //       body.components. Skips Nominatim entirely. This is the safe
+  //       path: Mapbox gave us the canonical street + lat/lng for the
+  //       buyer's actual chosen result, so there's no risk of
+  //       same-name-different-city aliasing.
+  //
+  //   (b) Freeform fallback — the buyer typed without picking. Call
+  //       Nominatim with whatever structured hints we have (city /
+  //       region / postcode from `body.components` if present, via
+  //       geocodeAddress's hints option). Hints make Nominatim respect
+  //       disambiguators instead of letting its "importance" score
+  //       silently land on a wrong-city match — the f60bdf9 fix for
+  //       Hendricks Behavioral Hospital (Plainfield IN -> Auburn IN).
+  let geocode: Awaited<ReturnType<typeof geocodeAddress>>;
+  if (typeof body.latitude === 'number' && typeof body.longitude === 'number') {
+    geocode = {
+      lat: body.latitude,
+      lng: body.longitude,
+      display_name: body.address.trim(),
+      importance: 1,
+      components: body.components
+        ? {
+            street_address: body.components.street_address ?? null,
+            city: body.components.city ?? null,
+            region: body.components.region ?? null,
+            postcode: body.components.postcode ?? null,
+            country_code: body.components.country_code ?? null,
+          }
+        : undefined,
+    };
+  } else {
+    geocode = await geocodeAddress(body.address, {
+      hints: body.components
+        ? {
+            street: body.components.street_address ?? undefined,
+            city: body.components.city ?? undefined,
+            state: body.components.region ?? undefined,
+            postalcode: body.components.postcode ?? undefined,
+          }
+        : undefined,
+    });
+  }
   if (!geocode) {
     await markLeadOrderFailed(
       supabase,
