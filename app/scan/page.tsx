@@ -326,8 +326,6 @@ export default async function ScanLandingPage({
             </blockquote>
             <p className="mt-4 text-xs font-mono text-zinc-500 leading-relaxed">
               — Painting operator, Greater Toronto Area
-              <span className="text-zinc-700 mx-1.5">·</span>
-              Fourdots Digital client
             </p>
           </div>
         </div>
