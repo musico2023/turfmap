@@ -171,15 +171,30 @@ const svg = `<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HE
 ${buildCells()}
   </g>
 
-  <!-- ── Bottom-right tagline — JetBrains Mono (live-site .font-mono)
-       to read as a tracked-out operator label, matching the
-       tracked-mono caps treatment used across the site. -->
+  <!-- ── Tagline — JetBrains Mono (live-site .font-mono), centered
+       horizontally under the logo lockup (icon + wordmark + ™).
+       Tracked-out caps treatment matches the operator-label style
+       used across the site. -->
   ${(() => {
     const tag = 'GOOGLE MAPS AUDIT TOOL';
     const tagSize = 18;
     const tagTracking = 0.06; // 6% positive tracking — opens up the caps
     const tw = textWidth(FONT_MONO, tag, tagSize, tagTracking);
-    return textToPath(FONT_MONO, tag, WIDTH - 80 - tw, HEIGHT - 45, tagSize, '#c5ff3a', tagTracking);
+    // Logo lockup horizontal extent:
+    //   icon: 80 → 200 (120 wide)
+    //   wordmark: 230 → 230 + textWidth('TurfMap', 100)
+    //   ™: tucks up against the wordmark, so it doesn't extend the
+    //      right edge further (the lime cap is to the right of the
+    //      wordmark but the visual baseline of the lockup ends with
+    //      the 'p' in 'Map'). Center on the wordmark+icon span.
+    const logoLeft = 80;
+    const logoRight = 230 + textWidth(FONT_DISPLAY, 'TurfMap', 100);
+    const logoCenter = (logoLeft + logoRight) / 2;
+    const tagX = logoCenter - tw / 2;
+    // Sit ~50px below the wordmark baseline (y=278) so it reads as
+    // a sub-line of the brand lockup, not a separate footer element.
+    const tagY = 350;
+    return textToPath(FONT_MONO, tag, tagX, tagY, tagSize, '#c5ff3a', tagTracking);
   })()}
 </svg>
 `;
