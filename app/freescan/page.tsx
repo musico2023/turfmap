@@ -897,7 +897,7 @@ export default async function FreeScanLandingPage({
                 </>
               )}
             </p>
-            <ScanIntakeLinkButton
+            <ScanIntakeLinkButton from="freescan"
               coupon={couponCode}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -1135,7 +1135,7 @@ function PricePanel({
             </p>
           )}
         </div>
-        <ScanIntakeLinkButton
+        <ScanIntakeLinkButton from="freescan"
           coupon={couponCode}
           utmSource={utmSource}
           utmMedium={utmMedium}

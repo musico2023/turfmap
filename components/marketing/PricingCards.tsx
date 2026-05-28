@@ -159,7 +159,9 @@ function PricingCard({ tier }: { tier: TierSpec }) {
     // surface needed — this is a plain page navigation.
     if (tier.id === 'scan' || tier.id === 'audit') {
       setBusy(true);
-      window.location.href = `/intake?tier=${tier.id}`;
+      // from=home pins the /intake page's back link to / so cancel/back
+      // returns the buyer to the homepage, not to the /scan lander.
+      window.location.href = `/intake?tier=${tier.id}&from=home`;
       return;
     }
 

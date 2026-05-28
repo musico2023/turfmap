@@ -37,6 +37,10 @@ export type StickyCheckoutBarProps = {
   /** Forwarded to ScanCheckoutButton — typically 'MAPCHECK50' on
    *  /scan. Hardcoded by the parent. */
   coupon: string;
+  /** Which lander hosts this sticky — forwarded to /intake's back
+   *  link so cancel/back returns the buyer here, not /scan by
+   *  default. */
+  from?: 'scan' | 'yourmap' | 'freescan' | 'fourdots';
   utmSource?: string | null;
   utmMedium?: string | null;
   utmCampaign?: string | null;
@@ -48,6 +52,7 @@ export type StickyCheckoutBarProps = {
 
 export function StickyCheckoutBar({
   coupon,
+  from,
   utmSource,
   utmMedium,
   utmCampaign,
@@ -118,6 +123,7 @@ export function StickyCheckoutBar({
           </span>
         </div>
         <ScanIntakeLinkButton
+          from={from}
           coupon={coupon}
           utmSource={utmSource}
           utmMedium={utmMedium}

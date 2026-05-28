@@ -118,7 +118,7 @@ export default async function ScanLandingPage({
   return (
     <div className="min-h-screen w-full text-white">
       {/* Mobile sticky bottom checkout bar — appears after scroll past hero. */}
-      <StickyCheckoutBar
+      <StickyCheckoutBar from="scan"
         coupon={SCAN_COUPON}
         utmSource={utmSource}
         utmMedium={utmMedium}
@@ -207,7 +207,7 @@ export default async function ScanLandingPage({
           </div>
 
           {/* Primary CTA — full-width on mobile, large tap target */}
-          <ScanIntakeLinkButton
+          <ScanIntakeLinkButton from="scan"
             coupon={SCAN_COUPON}
             utmSource={utmSource}
             utmMedium={utmMedium}
@@ -284,7 +284,7 @@ export default async function ScanLandingPage({
           </p>
 
           <div className="mt-6">
-            <ScanIntakeLinkButton
+            <ScanIntakeLinkButton from="scan"
               coupon={SCAN_COUPON}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -534,7 +534,7 @@ export default async function ScanLandingPage({
           </div>
 
           <div className="mt-8">
-            <ScanIntakeLinkButton
+            <ScanIntakeLinkButton from="scan"
               coupon={SCAN_COUPON}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -635,7 +635,7 @@ export default async function ScanLandingPage({
           </div>
 
           <div className="mt-8">
-            <ScanIntakeLinkButton
+            <ScanIntakeLinkButton from="scan"
               coupon={SCAN_COUPON}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -810,7 +810,7 @@ export default async function ScanLandingPage({
             it. Best case, you find a fix that pays for itself in one new
             customer.
           </p>
-          <ScanIntakeLinkButton
+          <ScanIntakeLinkButton from="scan"
             coupon={SCAN_COUPON}
             utmSource={utmSource}
             utmMedium={utmMedium}

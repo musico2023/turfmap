@@ -702,7 +702,7 @@ export default async function ScanLandingPage({
                 <>{formatUsd(finalCents)} TurfScan. One-time, no subscription.</>
               )}
             </p>
-            <ScanIntakeLinkButton
+            <ScanIntakeLinkButton from="fourdots"
               coupon={couponCode}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -870,7 +870,7 @@ function PricePanel({
             </p>
           )}
         </div>
-        <ScanIntakeLinkButton
+        <ScanIntakeLinkButton from="fourdots"
           coupon={couponCode}
           utmSource={utmSource}
           utmMedium={utmMedium}

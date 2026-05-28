@@ -952,7 +952,7 @@ export default async function YourMapLandingPage({
                 centered
               />
             ) : (
-              <ScanIntakeLinkButton
+              <ScanIntakeLinkButton from="yourmap"
                 coupon={couponCode}
                 utmSource={utmSource}
                 utmMedium={utmMedium}
@@ -1207,7 +1207,7 @@ function PricePanel({
             label="Run my free TurfScan"
           />
         ) : (
-          <ScanIntakeLinkButton
+          <ScanIntakeLinkButton from="yourmap"
             coupon={couponCode}
             utmSource={utmSource}
             utmMedium={utmMedium}

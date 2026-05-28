@@ -29,6 +29,11 @@ export type ScanIntakeLinkButtonProps = {
    *  /intake as ?tier=<t> so the intake page renders the right price
    *  + copy. */
   tier?: 'scan' | 'audit';
+  /** Where the "Back" link on /intake should return to. Each lander
+   *  declares its identity ('scan' / 'yourmap' / 'freescan' /
+   *  'fourdots'); the homepage passes 'home'. Forwarded to /intake as
+   *  ?from=<source>. When omitted /intake defaults to 'home'. */
+  from?: 'home' | 'scan' | 'yourmap' | 'freescan' | 'fourdots';
   coupon?: string | null;
   utmSource?: string | null;
   utmMedium?: string | null;
@@ -67,6 +72,7 @@ export type ScanIntakeLinkButtonProps = {
 
 export function ScanIntakeLinkButton({
   tier = 'scan',
+  from,
   coupon,
   utmSource,
   utmMedium,
@@ -85,6 +91,7 @@ export function ScanIntakeLinkButton({
   // source/cohort identifiers through to the conversion.
   const params = new URLSearchParams();
   params.set('tier', tier);
+  if (from) params.set('from', from);
   if (coupon) params.set('coupon', coupon);
   if (utmSource) params.set('utm_source', utmSource);
   if (utmMedium) params.set('utm_medium', utmMedium);

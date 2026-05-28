@@ -4,7 +4,10 @@ import { ArrowLeft, Crosshair, ShieldCheck, Zap, Clock } from 'lucide-react';
 import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
 import { finalPriceCents, lookupCoupon } from '@/lib/coupons/knownCoupons';
 import {
+  asIntakeSource,
   asIntakeTier,
+  DEFAULT_INTAKE_SOURCE,
+  INTAKE_SOURCE_CONFIGS,
   INTAKE_TIER_CONFIGS,
   type IntakeTier,
 } from '@/lib/checkout/intakeTiers';
@@ -112,16 +115,14 @@ export default async function IntakePage({
       : null;
   const finalCents = coupon ? finalPriceCents(coupon) : tierConfig.listCents;
 
-  // Back-link heuristic — VIP → /freescan, FOURDOTS50 → /fourdots,
-  // prospect_id present → /yourmap, otherwise the tier's default
-  // (scan → /scan, audit → /).
-  const backHref = (() => {
-    const c = (couponCode ?? '').toUpperCase();
-    if (c === 'VIP') return '/freescan';
-    if (c === 'FOURDOTS50') return '/fourdots';
-    if (prospectId) return '/yourmap';
-    return tierConfig.defaultBackHref;
-  })();
+  // Back-link is driven by an explicit ?from=<source> the upstream CTA
+  // declares. Falls back to 'home' when missing so direct/bookmark
+  // traffic never lands on a lander they didn't come from. The previous
+  // coupon-based heuristic mis-routed homepage TurfScan buyers to /scan
+  // because they had no coupon/prospect signal at all.
+  const fromSource =
+    asIntakeSource(pickFirst(params.from)) ?? DEFAULT_INTAKE_SOURCE;
+  const sourceConfig = INTAKE_SOURCE_CONFIGS[fromSource];
 
   const prefill = await prospectPrefill(prospectId);
 
@@ -144,11 +145,11 @@ export default async function IntakePage({
           <span className="font-display text-base font-bold">TurfMap.ai</span>
         </div>
         <Link
-          href={backHref}
+          href={sourceConfig.backHref}
           className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors inline-flex items-center gap-1"
         >
           <ArrowLeft size={11} />
-          Back
+          {sourceConfig.backLabel}
         </Link>
       </nav>
 
