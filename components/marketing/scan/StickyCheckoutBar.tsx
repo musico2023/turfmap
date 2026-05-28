@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ScanCheckoutButton } from '@/components/marketing/ScanCheckoutButton';
+import { ScanIntakeLinkButton } from '@/components/marketing/scan/ScanIntakeLinkButton';
 
 /**
  * Mobile-only sticky bottom checkout bar for /scan.
@@ -109,12 +109,12 @@ export function StickyCheckoutBar({
             <span className="text-xs text-zinc-400">with MAPCHECK50</span>
           </span>
         </div>
-        <ScanCheckoutButton
+        <ScanIntakeLinkButton
           coupon={coupon}
           utmSource={utmSource}
           utmMedium={utmMedium}
           utmCampaign={utmCampaign}
-          label="Run my scan →"
+          label="Run my scan"
           helperText={null}
         />
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Loader2, Sparkles } from 'lucide-react';
 import {
   AddressAutocomplete,
@@ -47,6 +47,7 @@ export function OrderSuccessForm({
   cohort,
   amountTotalCents,
   prefillKeyword,
+  prefilledIntake,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -131,6 +132,24 @@ export function OrderSuccessForm({
    *  narrative. Buyer can still edit if they want a different keyword.
    *  NULL for organic buyers or when the prospect lookup failed. */
   prefillKeyword: string | null;
+  /**
+   * Intake-first payload — non-null when the buyer arrived through the
+   * /scan/intake form (cold-Meta funnel). All five fields are already
+   * known + stamped on Stripe metadata; this form auto-submits
+   * /api/orders/fulfill on mount and never shows the form UI. The
+   * buyer experiences /order/success as "Starting your scan…" → scan
+   * success card, no second data-entry step.
+   *
+   * NULL = legacy Stripe-first flow (/fourdots, /yourmap, /freescan).
+   * The form renders normally and waits for buyer input.
+   */
+  prefilledIntake: {
+    businessName: string;
+    address: string;
+    keyword: string;
+    email: string;
+    phone: string;
+  } | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -230,6 +249,103 @@ export function OrderSuccessForm({
       );
     });
   }, [done, publicId, prospectId, engagedPosted]);
+
+  // ─── Intake-first auto-fulfill ───────────────────────────────────
+  // When the buyer arrived through /scan/intake (cold-Meta flow),
+  // every intake field is already stamped on the Stripe session
+  // metadata + threaded down here as `prefilledIntake`. We don't
+  // need to re-prompt — fire /api/orders/fulfill once on mount and
+  // let the page transition straight to the post-fulfillment
+  // success state.
+  //
+  // One-shot guard via ref so React-strict-mode double-mounts and
+  // any state-change-driven re-runs of this effect can't fire two
+  // fulfill POSTs. /api/orders/fulfill is server-side idempotent
+  // on lead_orders.status anyway, but the local guard avoids the
+  // double-spinner UX glitch.
+  const intakeAutoFulfillRef = useRef(false);
+  useEffect(() => {
+    if (!prefilledIntake) return;
+    if (!sessionId) return;
+    if (intakeAutoFulfillRef.current) return;
+    if (done) return;
+    intakeAutoFulfillRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      setError(null);
+      setBusy(true);
+      try {
+        const res = await fetch('/api/orders/fulfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tier,
+            sessionId,
+            businessName: prefilledIntake.businessName,
+            address: prefilledIntake.address,
+            keywords: [prefilledIntake.keyword],
+            email: prefilledIntake.email,
+            phone: prefilledIntake.phone,
+          }),
+        });
+        if (cancelled) return;
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          public_id?: string;
+          already_fulfilled?: boolean;
+          message?: string;
+          booking_url?: string | null;
+          onboarding_step?: OnboardingStep | null;
+        };
+        // 409 (already_fulfilled) — treat as success, same as the
+        // hand-submit path. Happens when the webhook beat us to it.
+        if (res.status === 409 && data.already_fulfilled) {
+          setPublicId(
+            typeof data.public_id === 'string' ? data.public_id : null
+          );
+          setBookingUrl(
+            typeof data.booking_url === 'string' ? data.booking_url : null
+          );
+          setOnboardingStep(
+            (data.onboarding_step as OnboardingStep | null) ?? null
+          );
+          setDone(true);
+          setBusy(false);
+          return;
+        }
+        if (!res.ok) {
+          setError(
+            data.error ??
+              "We couldn't fire your scan. Email support@turfmap.ai with your order id and we'll fulfill manually."
+          );
+          setBusy(false);
+          return;
+        }
+        setPublicId(
+          typeof data.public_id === 'string' ? data.public_id : null
+        );
+        setPartialMessage(
+          typeof data.message === 'string' ? data.message : null
+        );
+        setBookingUrl(
+          typeof data.booking_url === 'string' ? data.booking_url : null
+        );
+        setOnboardingStep(
+          (data.onboarding_step as OnboardingStep | null) ?? null
+        );
+        setDone(true);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+        setBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prefilledIntake, sessionId, tier, done]);
 
   const setKeywordAt = (idx: number, value: string) => {
     setKeywords((prev) => {
@@ -665,6 +781,32 @@ export function OrderSuccessForm({
         )}
         </>
       </>
+    );
+  }
+
+  // ─── Intake-first auto-fulfill loader ─────────────────────────────
+  // When the buyer arrived through /scan/intake (cold-Meta flow), the
+  // useEffect above is mid-flight POSTing /api/orders/fulfill with
+  // the prefilled intake data. Render a "Starting your scan…" loader
+  // instead of the form (which would just collect data we already
+  // have) or the AuditUpgradePanel (which the post-fulfillment branch
+  // below handles after done=true). Error state still renders so the
+  // buyer has a recovery message if fulfill fails.
+  if (prefilledIntake && !done) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-6">
+        <ScanProgress className="max-w-md w-full" />
+        {error && (
+          <p
+            className="text-xs leading-relaxed flex items-start gap-1.5 max-w-md"
+            style={{ color: '#f5b651' }}
+            role="alert"
+          >
+            <span className="font-mono">⚠</span>
+            <span>{error}</span>
+          </p>
+        )}
+      </div>
     );
   }
 

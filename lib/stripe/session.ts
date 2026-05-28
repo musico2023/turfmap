@@ -46,6 +46,23 @@ export type LoadedSession = {
    *  /order/success + dashboard for warm-cohort buyers per the
    *  campaign brief's MUST-NOT-render rules. */
   cohort: string | null;
+  /**
+   * Intake-first payload — populated when /api/scan/checkout/init
+   * stamped the intake fields onto session.metadata. Non-null iff
+   * metadata.source === 'scan_intake'.
+   *
+   * When present, /order/success auto-fulfills the order from this
+   * payload instead of prompting the buyer for the same fields a
+   * second time. NULL for the legacy Stripe-first flows used by
+   * /fourdots / /yourmap / /freescan (those still surface the form).
+   */
+  intake: {
+    businessName: string;
+    address: string;
+    keyword: string;
+    email: string;
+    phone: string;
+  } | null;
 };
 
 /** Errors callers should distinguish: we want a clean way to know
@@ -170,6 +187,38 @@ export async function loadCheckoutSession(
       ? String(session.metadata.cohort) || null
       : null;
 
+  // Intake-first payload — set by /api/scan/checkout/init when the
+  // buyer filled the /scan/intake form BEFORE Stripe. /order/success
+  // checks this to decide whether to auto-fulfill (intake-first) vs
+  // prompt the buyer for the same fields again (legacy Stripe-first).
+  const metaSource =
+    session.metadata && 'source' in session.metadata
+      ? String(session.metadata.source) || null
+      : null;
+  let intake: LoadedSession['intake'] = null;
+  if (metaSource === 'scan_intake' && session.metadata) {
+    const m = session.metadata as Record<string, string | undefined>;
+    const businessName = m.business_name?.trim();
+    const address = m.address?.trim();
+    const keyword = m.keyword?.trim();
+    const intakeEmail = m.intake_email?.trim();
+    const phone = m.phone?.trim();
+    // All five fields are required by the /scan/intake form +
+    // mirrored in the Zod schema of /api/scan/checkout/init. If any
+    // are missing here something stamped the session externally —
+    // bail to null so /order/success falls back to the legacy form
+    // instead of submitting half-populated fulfill.
+    if (businessName && address && keyword && intakeEmail && phone) {
+      intake = {
+        businessName,
+        address,
+        keyword,
+        email: intakeEmail,
+        phone,
+      };
+    }
+  }
+
   return {
     sessionId,
     tier: tierRaw,
@@ -181,5 +230,6 @@ export async function loadCheckoutSession(
     currency: session.currency ?? null,
     prospectId,
     cohort,
+    intake,
   };
 }

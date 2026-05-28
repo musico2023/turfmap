@@ -412,6 +412,9 @@ export default async function OrderSuccessPage({
                   : null
               }
               prefillKeyword={prefillKeyword}
+              prefilledIntake={
+                sessionState?.kind === 'ok' ? sessionState.intake : null
+              }
             />
           </Suspense>
         </div>
@@ -495,6 +498,17 @@ type SessionState =
        *  'cold_email' = paid cold-email cohort (MAPCHECK50, /yourmap)
        *  — standard upsell flow. NULL = organic / popup buyer. */
       cohort: string | null;
+      /** Intake-first payload — non-null when the buyer arrived via
+       *  /scan/intake (cold-Meta funnel). OrderSuccessForm auto-
+       *  submits fulfill on mount when this is set, skipping the
+       *  legacy form prompt. */
+      intake: {
+        businessName: string;
+        address: string;
+        keyword: string;
+        email: string;
+        phone: string;
+      } | null;
     }
   | { kind: 'warning'; message: string };
 
@@ -562,5 +576,6 @@ async function validateAndRecordSession(
     amountTotalCents: result.amountTotal,
     prospectId: result.prospectId,
     cohort: result.cohort,
+    intake: result.intake,
   };
 }

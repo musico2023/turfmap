@@ -12,7 +12,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { HeatmapAnimateOnView } from '@/components/marketing/scan/HeatmapAnimateOnView';
-import { ScanCheckoutButton } from '@/components/marketing/ScanCheckoutButton';
+import { ScanIntakeLinkButton } from '@/components/marketing/scan/ScanIntakeLinkButton';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { buildHeroCells } from '@/components/marketing/heroSeed';
 import { ExpiryCountdown } from '@/components/marketing/scan/ExpiryCountdown';
@@ -193,7 +193,7 @@ export default async function ScanLandingPage({
           </div>
 
           {/* Primary CTA — full-width on mobile, large tap target */}
-          <ScanCheckoutButton
+          <ScanIntakeLinkButton
             coupon={SCAN_COUPON}
             utmSource={utmSource}
             utmMedium={utmMedium}
@@ -267,7 +267,7 @@ export default async function ScanLandingPage({
           </p>
 
           <div className="mt-6">
-            <ScanCheckoutButton
+            <ScanIntakeLinkButton
               coupon={SCAN_COUPON}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -514,7 +514,7 @@ export default async function ScanLandingPage({
           </div>
 
           <div className="mt-8">
-            <ScanCheckoutButton
+            <ScanIntakeLinkButton
               coupon={SCAN_COUPON}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -612,7 +612,7 @@ export default async function ScanLandingPage({
           </div>
 
           <div className="mt-8">
-            <ScanCheckoutButton
+            <ScanIntakeLinkButton
               coupon={SCAN_COUPON}
               utmSource={utmSource}
               utmMedium={utmMedium}
@@ -784,7 +784,7 @@ export default async function ScanLandingPage({
             it. Best case, you find a fix that pays for itself in one new
             customer.
           </p>
-          <ScanCheckoutButton
+          <ScanIntakeLinkButton
             coupon={SCAN_COUPON}
             utmSource={utmSource}
             utmMedium={utmMedium}
