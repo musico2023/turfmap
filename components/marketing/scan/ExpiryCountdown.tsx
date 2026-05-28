@@ -75,13 +75,22 @@ function formatRemaining(ms: number): string {
     // for buyers who want to redeem after the window.
     return 'Coupon expired — email hello@turfmap.ai if you need a new code';
   }
-  if (ms < 60_000) return 'MAPCHECK50 expires in less than a minute';
+  // Live seconds tick — the ticking digit creates a real-time
+  // urgency signal that the static "23h 14m" form can't. Pads to
+  // two digits below the hour so the string width stays stable as
+  // values descend (otherwise the layout reflows every minute when
+  // 7m → 6m crosses a glyph boundary).
   const hours = Math.floor(ms / 3_600_000);
   const minutes = Math.floor((ms % 3_600_000) / 60_000);
-  if (hours === 0) {
-    return `MAPCHECK50 expires in ${minutes}m`;
+  const seconds = Math.floor((ms % 60_000) / 1_000);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  if (hours > 0) {
+    return `MAPCHECK50 expires in ${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
   }
-  return `MAPCHECK50 expires in ${hours}h ${minutes}m`;
+  if (minutes > 0) {
+    return `MAPCHECK50 expires in ${minutes}m ${pad(seconds)}s`;
+  }
+  return `MAPCHECK50 expires in ${seconds}s`;
 }
 
 export type ExpiryCountdownProps = {
@@ -107,9 +116,10 @@ export function ExpiryCountdown({
   }, []);
 
   // SSR / pre-mount placeholder. Same shape as the live countdown so
-  // the flash on mount isn't visually jarring.
+  // the flash on mount isn't visually jarring — full hour/min/sec
+  // form, even though the values are nominal until tick() runs.
   if (remainingMs === null) {
-    return <span className={className}>MAPCHECK50 expires in 24h</span>;
+    return <span className={className}>MAPCHECK50 expires in 23h 59m 59s</span>;
   }
 
   return <span className={className}>{formatRemaining(remainingMs)}</span>;

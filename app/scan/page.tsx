@@ -941,7 +941,7 @@ function ProofCard({ title, body }: { title: string; body: string }) {
 const FAQ_ITEMS = [
   {
     q: 'How fast is it?',
-    a: "Under a minute. We run all 81 queries in parallel against Google's local-pack feed. After you complete checkout, you'll enter your business details, and you'll get an email with your map and fix list as soon as the scan completes — usually 30-60 seconds later.",
+    a: "Under a minute. You'll enter five business details first (name, address, keyword, email, phone), then a single Stripe Checkout step. The scan fires the moment payment clears — 81 queries run in parallel against Google's local-pack feed, and you're on the results dashboard 30-60 seconds later.",
   },
   {
     q: 'What keyword should I pick?',
@@ -961,7 +961,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What happens after I get my scan?',
-    a: 'You get an email with your branded PDF report and access to your scan dashboard. From there, you can implement the fix list yourself, share it with your team or freelancer, or book a strategist walkthrough if you want help interpreting the results.',
+    a: 'You land directly on your scan dashboard — heatmap, TurfScore, and a prioritized fix list. We also email you a shareable link so you can pass it to a team member or freelancer. From there, you can implement the fix list yourself or book a strategist walkthrough if you want help interpreting the results.',
   },
   {
     q: "What's the MAPCHECK50 code? Will it expire?",
