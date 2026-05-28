@@ -4,6 +4,10 @@ import { useState } from 'react';
 import { ArrowRight, AlertCircle, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
+import {
+  AddressAutocomplete,
+  type AddressFields,
+} from '@/components/turfmap/AddressAutocomplete';
 
 /**
  * Intake form for the /scan cold-Meta intake-first flow.
@@ -143,15 +147,17 @@ export function ScanIntakeForm({
         autoComplete="organization"
         required
       />
-      <Field
-        label="Business address"
-        id="biz-address"
+      {/* Address — special-cased: Mapbox AddressAutofill instead of
+       *  the plain Field component. Picking from the dropdown writes
+       *  the canonical formatted address back into state so the
+       *  downstream Stripe + fulfill steps geocode against a known-
+       *  good string. Free typing still works (degrades gracefully)
+       *  if NEXT_PUBLIC_MAPBOX_TOKEN is unset or Mapbox doesn't have
+       *  a match. */}
+      <AddressFieldWithAutocomplete
         value={address}
         onChange={setAddress}
-        placeholder="123 Main St, Toronto, ON"
-        autoComplete="street-address"
-        required
-        hint="The address Google sees for your business. Used to seed the 9×9 scan grid around your service area."
+        onSelect={(fields: AddressFields) => setAddress(fields.formatted)}
       />
       <Field
         label="Keyword to scan"
@@ -174,7 +180,7 @@ export function ScanIntakeForm({
         hint="Where we send your report + receipt."
       />
       <Field
-        label="Phone"
+        label="Business phone"
         id="biz-phone"
         type="tel"
         value={phone}
@@ -182,7 +188,7 @@ export function ScanIntakeForm({
         placeholder="(416) 555-1234"
         autoComplete="tel"
         required
-        hint="The Phone in NAP — used for the citation-consistency check across directories."
+        hint="The number your business publishes on Google + directories. Not your personal cell."
       />
 
       <div className="pt-2">
@@ -294,6 +300,62 @@ function Field({
           {hint}
         </p>
       )}
+    </div>
+  );
+}
+
+// ─── Business-address input with Mapbox autocomplete ─────────────────
+// Wraps the shared <AddressAutocomplete> in the same label + hint
+// shell as <Field /> so it sits flush in the form's typographic rhythm.
+// The address is the most pivotal field (drives the 9x9 scan grid +
+// downstream NAP audit + GBP enrichment), so a suggestion dropdown is
+// worth the extra render complexity over the bare HTML5 input.
+//
+// Mapbox token is read inside AddressAutocomplete from
+// process.env.NEXT_PUBLIC_MAPBOX_TOKEN; if unset the component
+// degrades to a plain input (no dropdown). US + CA are the default
+// suggestion universe — matches our service area.
+
+function AddressFieldWithAutocomplete({
+  value,
+  onChange,
+  onSelect,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onSelect: (fields: AddressFields) => void;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor="biz-address"
+        className="block text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-mono font-semibold mb-1.5"
+      >
+        Business address
+        <span className="ml-1 text-zinc-600" aria-hidden="true">
+          *
+        </span>
+      </label>
+      <AddressAutocomplete
+        id="biz-address"
+        value={value}
+        onChange={onChange}
+        onSelect={onSelect}
+        placeholder="Start typing your business address…"
+        required
+        // Match the rest of the form's input styling — same #0d0d10
+        // dark background, lime focus ring, generous padding for
+        // mobile tap targets. Overrides AddressAutocomplete's default
+        // operator-dashboard styling. AddressAutocomplete REPLACES
+        // its DEFAULT_INPUT_CLASS when inputClassName is provided, so
+        // every visual property has to be present here (no merge).
+        inputClassName="w-full rounded-md border bg-[#0d0d10] border-[var(--color-border)] text-zinc-100 text-base placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-lime-400/40 px-3.5 py-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      />
+      <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
+        The address Google shows for your business. Pick from the dropdown
+        for the cleanest match — used to seed the 9×9 scan grid around
+        your service area.
+      </p>
     </div>
   );
 }

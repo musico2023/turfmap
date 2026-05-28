@@ -2,11 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, Crosshair, ShieldCheck, Zap, Clock } from 'lucide-react';
 import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
-import {
-  finalPriceCents,
-  formatUsd,
-  lookupCoupon,
-} from '@/lib/coupons/knownCoupons';
+import { finalPriceCents, lookupCoupon } from '@/lib/coupons/knownCoupons';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type { ProspectRow } from '@/lib/supabase/types';
 
@@ -103,17 +99,11 @@ export default async function ScanIntakePage({
   const prospectId = pickFirst(params.prospect_id);
   const cancelled = pickFirst(params.cancelled) === '1';
 
-  // Resolve coupon to price for the sub-headline copy. Falls back to
-  // list when the code is unknown / tier-mismatched / null.
+  // Resolve coupon to final price so the intake form's button label +
+  // reassurance copy can adapt (paid vs free). Falls back to list when
+  // the code is unknown / tier-mismatched / null.
   const coupon = couponCode ? lookupCoupon(couponCode, 'scan') : null;
   const finalCents = coupon ? finalPriceCents(coupon) : LIST_CENTS;
-  const priceLabel =
-    finalCents === 0 ? 'free' : `${formatUsd(finalCents)} once`;
-  const couponNote = coupon
-    ? coupon.code === 'VIP' || finalCents === 0
-      ? `${coupon.code} applied — no card charged.`
-      : `${coupon.code} auto-applied at checkout.`
-    : '';
 
   // Where does the "Back" link go? Mirror the lander the buyer came
   // from when we can infer it from URL params; default to /scan.
@@ -169,13 +159,7 @@ export default async function ScanIntakePage({
             Tell us where to scan.
           </h1>
           <p className="text-sm md:text-base text-zinc-400 leading-relaxed mb-6">
-            Five fields.{' '}
-            {finalCents === 0
-              ? 'Secure Stripe checkout follows — '
-              : 'Secure Stripe checkout follows — '}
-            {priceLabel}
-            {couponNote ? ` with ${couponNote.replace(/\.$/, '')}.` : '.'}{' '}
-            Scan fires the moment payment clears.
+            Five fields; your scan and fix list awaits.
           </p>
 
           {cancelled && (
