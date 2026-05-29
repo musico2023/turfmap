@@ -562,30 +562,41 @@ function slugifyBusinessName(name: string): string {
   return slug || 'turfmap';
 }
 
-/** Walk prospect_id → coldscan lead_order → client. Shared by the
- *  prospectId-direct and email→prospects.email resolution strategies
- *  in the multi-path resolver above. Returns { data: ClientRow | null }
- *  matching the supabase-js return shape so call sites can destructure
- *  uniformly. */
+/** Walk prospect_id → ANY lead_order with this prospect_id → client.
+ *  Shared by the prospectId-direct and email→prospects.email
+ *  resolution strategies in the multi-path resolver above.
+ *
+ *  Previously this required `stripe_metadata.source = 'coldscan_free'`,
+ *  which only matches lead_orders created by the no-Stripe bypass at
+ *  /api/yourmap/coldscan-fulfill. Yohann at Ainger Group Roofing came
+ *  through an older Stripe-checkout path (cohort='cold_email',
+ *  amount_total=0, source=null) — same prospect_id stamping convention
+ *  but no source field. The filter excluded him silently.
+ *
+ *  The new logic just matches by prospect_id + picks the freshest
+ *  lead_order. Any historical or future cold-email path that stamps
+ *  prospect_id into metadata works, regardless of how it stamps
+ *  source (null, 'coldscan_free', 'cold_email_stripe', whatever).
+ */
 async function resolveClientFromProspectId(
   supabase: ReturnType<typeof getServerSupabase>,
   prospectId: string
 ): Promise<{ data: ClientRow | null }> {
-  const { data: coldOrder } = await supabase
+  const { data: order } = await supabase
     .from('lead_orders')
     .select('client_id')
     .filter('stripe_metadata->>prospect_id', 'eq', prospectId)
-    .filter('stripe_metadata->>source', 'eq', 'coldscan_free')
+    .not('client_id', 'is', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle<{ client_id: string }>();
-  if (!coldOrder?.client_id) {
+  if (!order?.client_id) {
     return { data: null };
   }
   const { data } = await supabase
     .from('clients')
     .select('*')
-    .eq('id', coldOrder.client_id)
+    .eq('id', order.client_id)
     .maybeSingle<ClientRow>();
   return { data: data ?? null };
 }

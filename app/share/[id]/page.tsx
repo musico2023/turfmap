@@ -195,23 +195,41 @@ export default async function PublicSharePage({
   const ctaText = share.cta_text?.trim() || 'Want a TurfMap of your business?';
   const ctaUrl = share.cta_url?.trim() || 'https://turfmap.ai';
 
-  // COLDSCAN cohort: detect free-scan outreach orders so we can
+  // Cold-outreach cohort: detect free-scan outreach orders so we can
   // suppress the conversion CTA in the footer. Cold buyers received
-  // the scan FREE via /yourmap?coupon=COLDSCAN — pitching them a
-  // paid TurfScan upgrade or the Visibility Audit walkthrough on
-  // this page would conflict with the post-scan funnel design,
-  // which routes the audit-walkthrough offer through the
-  // cold-stage3 founder email and nothing else. Detected by
-  // joining the scan's client back to lead_orders and looking for
-  // stripe_metadata.source = 'coldscan_free'.
-  const { data: coldscanOrder } = await supabase
+  // the scan FREE — pitching them a paid TurfScan upgrade or the
+  // Visibility Audit walkthrough on this page would conflict with
+  // the post-scan funnel design, which routes the audit-walkthrough
+  // offer through the cold-stage3 founder email and nothing else.
+  //
+  // Detection is the OR of three independent markers on the scan-
+  // tier lead_order for this client:
+  //   - stripe_metadata.source = 'coldscan_free' (new no-Stripe
+  //     bypass via /api/yourmap/coldscan-fulfill)
+  //   - stripe_metadata.cohort LIKE 'cold_email%' (legacy Stripe-
+  //     checkout cold path — Yohann at Ainger Group came through
+  //     this; cohort='cold_email', source=null)
+  //   - stripe_metadata.prospect_id IS NOT NULL (catch-all: any
+  //     prospect-stamped scan was outreach-sourced, regardless of
+  //     how the lead_order got created)
+  const { data: scanLeadOrder } = await supabase
     .from('lead_orders')
-    .select('id')
+    .select('stripe_metadata')
     .eq('client_id', client.id)
-    .filter('stripe_metadata->>source', 'eq', 'coldscan_free')
+    .eq('tier', 'scan')
+    .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle<{ id: string }>();
-  const isColdscanShare = Boolean(coldscanOrder);
+    .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
+  const meta = scanLeadOrder?.stripe_metadata ?? null;
+  const isColdscanShare = Boolean(
+    meta &&
+      ((meta as Record<string, unknown>)['source'] === 'coldscan_free' ||
+        (typeof (meta as Record<string, unknown>)['cohort'] === 'string' &&
+          ((meta as Record<string, unknown>)['cohort'] as string).startsWith(
+            'cold_email'
+          )) ||
+        (meta as Record<string, unknown>)['prospect_id'] != null)
+  );
 
   return (
     <div className="min-h-screen w-full text-white">
