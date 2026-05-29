@@ -683,7 +683,7 @@ async function regenerateForExistingAudit(args: {
 
   try {
     await sendAuditPurchaseRoadmap({
-      to: 'anthony@fourdots.io',
+      to: OPERATOR_AUDIT_EMAIL,
       businessName: client.business_name,
       tierLabel: 'Visibility Audit',
       buyerEmail: buyerEmail ?? '(unknown email)',
