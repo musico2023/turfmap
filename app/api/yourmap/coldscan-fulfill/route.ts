@@ -40,18 +40,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { runScanForLocation } from '@/lib/scans/runScan';
-import { generateInsight } from '@/lib/ai-coach/generateInsight';
-import {
-  notifyColdscanCompleted,
-  postOperatorSlack,
-} from '@/lib/audit/operatorSlack';
+import { notifyColdscanCompleted } from '@/lib/audit/operatorSlack';
 import type {
   ClientLocationRow,
   ClientRow,
   ProspectRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
-import { agencyClientUrl } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -303,68 +298,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ─── 9. Pre-generate the AI Coach Fix List ───────────────────────────
-  // The share page (/share/[id]) is the buyer's destination and the
-  // only surface they'll ever see for this scan. Unlike the agency
-  // console, it has no Generate button — exposing one publicly would
-  // let any visitor trigger a paid Claude call. So we pre-generate
-  // here, while we still own the request, before redirecting.
-  //
-  // Tighter NAP-audit wait budget than the operator route (90s vs
-  // 240s default) because runScanForLocation above has already burned
-  // ~30-60s of the route's 300s maxDuration. Worst-case timing:
-  //   scan       (~60s)
-  //   NAP poll   (~90s, capped)
-  //   Claude     (~60s)
-  //   ──────────────────
-  //   total      ~210s, well inside 300s.
-  //
-  // Best-effort: if generation fails (timeout, model refusal, API key
-  // missing), we log + still return the share URL. The share page
-  // tolerates a missing insight (renders the "81 data points captured"
-  // placeholder). Operator can backfill from the agency console's
-  // AICoachGenerateButton if needed. Query for orphans:
-  //   select c.id, c.business_name, s.id as scan_id
-  //   from clients c
-  //   join scans s on s.client_id = c.id
-  //   join lead_orders lo on lo.client_id = c.id
-  //   left join ai_insights ai on ai.scan_id = s.id
-  //   where lo.stripe_metadata->>'source' = 'coldscan_free'
-  //     and ai.id is null;
-  // Track whether pre-gen succeeded so the Slack ping downstream can
-  // alert Anthony when it didn't. Cold prospects landing on a share
-  // page without a Fix List look stale + force a manual generate;
-  // visibility into silent failures matters here.
-  let aiCoachPregenFailed = false;
-  let aiCoachPregenErrorMsg = '';
-  try {
-    const insightResult = await generateInsight(
-      supabase,
-      scanResult.scanId,
-      null,
-      { napAuditWaitMs: 90_000 }
-    );
-    if (!insightResult.ok) {
-      aiCoachPregenFailed = true;
-      aiCoachPregenErrorMsg = insightResult.error;
-      console.warn(
-        '[coldscan-fulfill] AI Coach generation failed for scan',
-        scanResult.scanId,
-        insightResult.error
-      );
-    }
-  } catch (e) {
-    aiCoachPregenFailed = true;
-    aiCoachPregenErrorMsg =
-      e instanceof Error ? e.message : String(e);
-    console.warn(
-      '[coldscan-fulfill] AI Coach generation threw for scan',
-      scanResult.scanId,
-      aiCoachPregenErrorMsg
-    );
-  }
-
-  // ─── 9b. Operator Slack notification (#llm-leads) ────────────────────
+  // ─── 9. Operator Slack notification (#llm-leads) ────────────────────
   // Fire-and-forget. The free buyer is about to land on /share/<id>;
   // this ping tells the operator a cold-email lead has converted into
   // a scan-viewed state. The cold-stage3 follow-up email (pitching the
@@ -386,44 +320,6 @@ export async function POST(req: NextRequest) {
       '[coldscan-fulfill] notifyColdscanCompleted failed (non-fatal)',
       e instanceof Error ? e.message : String(e)
     );
-  }
-
-  // If the AI Coach pre-generation failed, ping #llm-leads separately
-  // with the failure context. Cold prospects landing on a share page
-  // without the Fix List is the worst possible UX moment — they came
-  // because we promised actionable advice + the AI Coach is the
-  // payoff. Anthony needs to know NOW (not when the prospect emails
-  // back asking where their recommendations are) so he can run the
-  // manual generate from the agency dashboard.
-  if (aiCoachPregenFailed) {
-    try {
-      await postOperatorSlack({
-        text: `⚠️ AI Coach pre-gen failed for ${prospect.business_name.trim()} — manual generation required`,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `*⚠️ AI Coach pre-generation failed*\n*${prospect.business_name.trim()}* — ${prospect.trade.trim()} in ${prospect.city.trim()}\nProspect ID: \`${prospect.id}\`\nScan ID: \`${scanResult.scanId}\`\nError: \`${aiCoachPregenErrorMsg.slice(0, 200)}\`\n\nManual fix: open the agency dashboard for this client + hit the AI Coach generate button before reaching out to the prospect.`,
-            },
-          },
-          {
-            type: 'context',
-            elements: [
-              {
-                type: 'mrkdwn',
-                text: `<${agencyClientUrl(origin, client.public_id)}#ai-coach|Open agency dashboard →>`,
-              },
-            ],
-          },
-        ],
-      });
-    } catch (e) {
-      console.error(
-        '[coldscan-fulfill] AI Coach failure Slack ping threw',
-        e instanceof Error ? e.message : String(e)
-      );
-    }
   }
 
   // ─── 10. Stamp prospect attribution ──────────────────────────────────

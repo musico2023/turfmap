@@ -431,7 +431,8 @@ export default async function PublicSharePage({
 
         <div className="lg:col-span-12">
           <AICoach
-            scanId={null}
+            scanId={scan.id}
+            shareId={shareId}
             insight={insightRow ?? null}
             scanComplete={Boolean(scan)}
           />

@@ -26,9 +26,19 @@ export type AICoachProps = {
   } | null;
   /** Disable the generate button when there's no scan yet. */
   scanComplete: boolean;
+  /** When set, the Generate button hits the share-id-gated public
+   *  endpoint instead of /api/ai/insights. Cold buyers on
+   *  /share/<id> have no Supabase auth and this is their path to
+   *  trigger AI Coach generation themselves. */
+  shareId?: string;
 };
 
-export function AICoach({ scanId, insight, scanComplete }: AICoachProps) {
+export function AICoach({
+  scanId,
+  insight,
+  scanComplete,
+  shareId,
+}: AICoachProps) {
   return (
     <div
       // `id="ai-coach"` is the scroll/focus target for the
@@ -67,7 +77,7 @@ export function AICoach({ scanId, insight, scanComplete }: AICoachProps) {
           </p>
         </div>
         {scanComplete && !insight && scanId && (
-          <AICoachGenerateButton scanId={scanId} />
+          <AICoachGenerateButton scanId={scanId} shareId={shareId} />
         )}
       </div>
 

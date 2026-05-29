@@ -22,11 +22,25 @@ const AI_COACH_PHRASES = [
 
 export type AICoachGenerateButtonProps = {
   scanId: string;
+  /** When set, the button POSTs to the share-id-gated public
+   *  endpoint (/api/share/<shareId>/generate-insight) instead of the
+   *  agency-only /api/ai/insights. Cold-outreach buyers on
+   *  /share/<id> have no Supabase auth, so this is how they
+   *  generate their own Fix List. */
+  shareId?: string;
 };
 
 /**
- * Triggers POST /api/ai/insights for the latest scan and refreshes the page
- * on success so the server component can render the persisted insight.
+ * Triggers AI Coach generation and refreshes the page on success so
+ * the server component can render the persisted insight.
+ *
+ * Two endpoints, picked by `shareId`:
+ *   - shareId set → POST /api/share/<shareId>/generate-insight
+ *     (public, share-id-gated). Used on /share/<id> for cold and
+ *     coldscan buyers.
+ *   - shareId unset → POST /api/ai/insights (agency-staff auth).
+ *     Used on the agency console + /portal/<slug> for paying
+ *     buyers with a magic-link session.
  *
  * Wait time is variable:
  *   - Hot path (NAP audit already complete or none in flight): ~10-15s
@@ -38,7 +52,10 @@ export type AICoachGenerateButtonProps = {
  * The button shows a "Generating playbook…" state plus an elapsed timer
  * so the operator knows it's still working through the longer wait.
  */
-export function AICoachGenerateButton({ scanId }: AICoachGenerateButtonProps) {
+export function AICoachGenerateButton({
+  scanId,
+  shareId,
+}: AICoachGenerateButtonProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(false);
@@ -66,11 +83,16 @@ export function AICoachGenerateButton({ scanId }: AICoachGenerateButtonProps) {
     setIsLoading(true);
     setStartedAt(Date.now());
     try {
-      const res = await fetch('/api/ai/insights', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scanId }),
-      });
+      const res = shareId
+        ? await fetch(`/api/share/${shareId}/generate-insight`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          })
+        : await fetch('/api/ai/insights', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scanId }),
+          });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? `request failed (HTTP ${res.status})`);
