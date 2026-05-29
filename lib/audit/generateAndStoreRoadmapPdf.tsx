@@ -44,8 +44,11 @@ import { uploadRoadmapPdf, signedUrlForAuditFile } from '@/lib/audit/storage';
 import {
   RoadmapPdf,
   type RoadmapPdfData,
+  type RoadmapPdfCompetitor,
   type RoadmapPdfKeywordRow,
+  type RoadmapPdfNapFinding,
 } from '@/components/pdf/RoadmapPdf';
+import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import {
   formatMarket,
   loadCellPatternSummary,
@@ -240,6 +243,41 @@ export async function generateAndStoreRoadmapPdf(
   // it up here avoids two reads of the same scan_points block.
   const primaryCells = await loadCellsForScan(supabase, audit.scan_id);
 
+  // ─── 4a. Competitor aggregation (TOP COMPETITORS page) ────────────
+  // The Roadmap PDF's competitor section was rendering blank because
+  // generateAndStoreRoadmapPdf hardcoded competitors=[] — but the
+  // data IS available on scan_points.competitors. Read once, aggregate
+  // via the shared aggregateCompetitors helper, surface the top 3 with
+  // a heuristic per-competitor TurfScore estimate (we don't run a
+  // separate scan per competitor; the deck-only estimate is calibrated
+  // from share_pct × (1 - (avg_rank - 1) / 6), matching the formula
+  // generate-ryan-audit-pdf.ts proved on Ryan's call deck).
+  const compRows = await loadCompetitorRows(supabase, audit.scan_id);
+  const aggregated = aggregateCompetitors(
+    compRows.map((r) => ({ competitors: r.competitors })),
+    Math.max(compRows.length, 1),
+    {
+      // Exclude the buyer's own brand from the competitor list — same
+      // pattern the live dashboard uses on /clients/<id>.
+      excludeNamePattern: businessNameAsRegex(client.business_name),
+      topN: 3,
+    }
+  );
+  const competitorsForPdf: RoadmapPdfCompetitor[] = aggregated.map((c) => ({
+    name: c.name,
+    turfScore: estimateCompetitorTurfScore(c.top3Pct, c.amr),
+    differential: `Holds top-3 in ${c.top3Pct}% of the grid (avg rank ${c.amr.toFixed(2)})`,
+  }));
+
+  // ─── 4b. NAP findings (NAP AUDIT page) ────────────────────────────
+  // The NAP audit's findings JSON is stored on nap_audits.findings as
+  // the shape summarizeFindings emits — { citations[], inconsistencies[],
+  // missing[] }. The PDF wants a flat list of {status, text} rows.
+  // When no nap_audit row exists yet (cold-prospect comp audits that
+  // haven't had a BL audit triggered), pass an empty array — the PDF
+  // renders a "no findings yet" placeholder rather than fake data.
+  const napFindings = await loadNapFindingsForPdf(supabase, audit.client_id);
+
   // Build the Strategy-tier keyword landscape: primary first
   // (annotated + lime highlight), then the secondaries with their own
   // mini-heatmap cells so the strategist call can point at three
@@ -289,8 +327,8 @@ export async function generateAndStoreRoadmapPdf(
       projectedScoreLift: a.projectedScoreLift,
       llmCovered: a.llmCovered,
     })),
-    napFindings: [], // Phase-4 — structured rows ride the summary text today
-    competitors: [], // ditto
+    napFindings,
+    competitors: competitorsForPdf,
     cells: primaryCells,
     keywordLandscape,
     tierLabel,
@@ -338,4 +376,127 @@ export async function generateAndStoreRoadmapPdf(
     market,
     diagnosis: roadmap.diagnosis,
   };
+}
+
+// ─── PDF data loaders ──────────────────────────────────────────────────
+// SupabaseClientLike comes in via the auditDataLoaders import alongside
+// formatMarket / loadCellPatternSummary / etc. — re-using it here
+// keeps a single source of truth for the server-supabase type alias.
+
+/** Pull every scan_points row for this scan with its competitors
+ *  array so the per-cell dedupe inside aggregateCompetitors can
+ *  collapse duplicate DFS payloads. */
+async function loadCompetitorRows(
+  supabase: SupabaseClientLike,
+  scanId: string
+): Promise<Array<{ competitors: unknown }>> {
+  const { data } = await supabase
+    .from('scan_points')
+    .select('competitors')
+    .eq('scan_id', scanId);
+  return (data ?? []) as Array<{ competitors: unknown }>;
+}
+
+/** Convert a business name into a case-insensitive RegExp suitable for
+ *  aggregateCompetitors' excludeNamePattern — strips punctuation +
+ *  collapses whitespace so "Ainger Group Roofing & Exteriors" matches
+ *  "Ainger Group Roofing and Exteriors" the way DFS records it back. */
+function businessNameAsRegex(name: string): RegExp {
+  const cleaned = name
+    .replace(/[&]/g, 'and')
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length >= 4) // skip short/common tokens that'd over-match
+    .slice(0, 2)
+    .join('|');
+  return new RegExp(cleaned || name, 'i');
+}
+
+/** Per-competitor TurfScore estimate for the deliverable PDF. We don't
+ *  scan each competitor separately (that'd burn 81 DFS Live Mode
+ *  requests per competitor); the estimate is a defensible heuristic
+ *  calibrated from the Ryan / BVM Contracting call deck:
+ *
+ *    score = share_pct × (1 − (avg_rank − 1) / 6)
+ *
+ *  Sanity: share_pct=98.8 + avg_rank=1.6 → ~89. share_pct=42 +
+ *  avg_rank=2.85 → ~29. Clamped to [0, 100]. */
+function estimateCompetitorTurfScore(
+  sharePct: number,
+  avgRank: number
+): number {
+  const raw = sharePct * (1 - (avgRank - 1) / 6);
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
+
+/** Load + flatten the most recent nap_audits row for this client into
+ *  the {status, text} rows the PDF's PageNap renders. Returns []
+ *  when no audit exists (cold-prospect comp audits where the BL
+ *  audit hasn't been triggered/completed yet). */
+async function loadNapFindingsForPdf(
+  supabase: SupabaseClientLike,
+  clientId: string
+): Promise<RoadmapPdfNapFinding[]> {
+  const { data: napRow } = await supabase
+    .from('nap_audits')
+    .select('findings')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ findings: unknown }>();
+  if (!napRow?.findings) return [];
+
+  // Shape: { citations: {directory, status}[], inconsistencies:
+  // {directory, field, canonical, found}[], missing:
+  // {directory, priority}[] }. Defensive parsing — the JSONB can
+  // technically be anything; cast carefully + skip malformed entries.
+  const f = napRow.findings as {
+    citations?: Array<{
+      directory?: string;
+      status?: 'matched' | 'mismatch' | 'unverified';
+    }>;
+    inconsistencies?: Array<{
+      directory?: string;
+      field?: string;
+    }>;
+    missing?: Array<{
+      directory?: string;
+      priority?: 'high' | 'medium' | 'low';
+    }>;
+  };
+
+  const rows: RoadmapPdfNapFinding[] = [];
+
+  // Inconsistencies first (most actionable), cap at 4.
+  for (const i of (f.inconsistencies ?? []).slice(0, 4)) {
+    if (!i.directory) continue;
+    rows.push({
+      status: 'INCONSISTENT',
+      text: `${i.directory} — ${i.field ?? 'NAP'} differs from canonical`,
+    });
+  }
+  // High-priority missing next, then any other missing — combined cap
+  // so the page stays at ~10 rows total.
+  const highPriorityMissing = (f.missing ?? [])
+    .filter((m) => m.priority === 'high')
+    .slice(0, 6);
+  const otherMissing = (f.missing ?? [])
+    .filter((m) => m.priority !== 'high')
+    .slice(0, Math.max(0, 10 - rows.length - highPriorityMissing.length));
+  for (const m of [...highPriorityMissing, ...otherMissing]) {
+    if (!m.directory) continue;
+    rows.push({ status: 'MISSING', text: m.directory });
+  }
+  // Live citations close the section — proof of progress.
+  for (const c of (f.citations ?? [])
+    .filter((c) => c.status === 'matched')
+    .slice(0, 3)) {
+    if (!c.directory) continue;
+    rows.push({
+      status: 'LIVE',
+      text: `${c.directory} — NAP consistent`,
+    });
+  }
+  return rows;
 }

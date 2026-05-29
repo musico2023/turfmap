@@ -72,6 +72,14 @@ export type BootstrapCompAuditInput = {
    *  operator origin: 'calcom_webhook' (Cal.com pinged us), 'admin'
    *  (Anthony ran the admin endpoint), or 'unknown' (fallback). */
   source: 'calcom_webhook' | 'admin' | 'unknown';
+  /** When true: if an existing visibility_audits row is found, RE-RUN
+   *  generateAndStoreRoadmapPdf against it so the PDF + operator email
+   *  are refreshed with the current template / data. Used by the admin
+   *  endpoint when Anthony needs to ship an updated Roadmap (template
+   *  copy changed, new competitor data landed, NAP audit just
+   *  completed, etc.). Default false — Cal.com webhook retries
+   *  should be idempotent. */
+  forceRegenerate?: boolean;
 };
 
 export type BootstrapCompAuditResult =
@@ -206,6 +214,25 @@ export async function bootstrapCompAudit(
         strategist_call_scheduled_at: input.callStartTime,
       });
     }
+
+    // Force-regenerate path — re-run the PDF + operator email
+    // pipeline against the existing audit row. Used when the
+    // template or upstream data changed since the original
+    // bootstrap (Anthony pushed a copy fix, NAP audit just
+    // completed, etc.). Skips the lead_order creation step
+    // since we already have one.
+    if (input.forceRegenerate) {
+      return await regenerateForExistingAudit({
+        supabase,
+        auditId: existingAudit.id,
+        leadOrderId: existingAudit.lead_order_id,
+        client,
+        appOrigin,
+        buyerEmail: input.email ?? prospect?.email ?? null,
+        prospect,
+      });
+    }
+
     return {
       ok: true,
       created: false,
@@ -395,6 +422,90 @@ function slugifyBusinessName(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return slug || 'turfmap';
+}
+
+/** Refresh the PDF + operator email for an audit that already exists.
+ *  Called by bootstrapCompAudit when forceRegenerate=true is set.
+ *  Re-runs generateAndStoreRoadmapPdf (Claude + PDF + Storage upload),
+ *  then re-sends Anthony the operator-facing roadmap email so he gets
+ *  the freshest deliverable in his inbox. Doesn't re-fire the Slack
+ *  ping — that's a one-time signal per audit, not per regeneration. */
+async function regenerateForExistingAudit(args: {
+  supabase: ReturnType<typeof getServerSupabase>;
+  auditId: string;
+  leadOrderId: string;
+  client: ClientRow;
+  appOrigin: string;
+  buyerEmail: string | null;
+  prospect: ProspectRow | null;
+}): Promise<BootstrapCompAuditResult> {
+  const { supabase, auditId, leadOrderId, client, appOrigin, buyerEmail, prospect } = args;
+
+  const pdfResult = await generateAndStoreRoadmapPdf(supabase, auditId);
+  if (!pdfResult.ok) {
+    return { ok: false, stage: pdfResult.stage, error: pdfResult.error };
+  }
+
+  // Look up the LLM Fit Score from the existing audit row so the
+  // refreshed email reports the same value the original generation
+  // wrote (vs. recomputing from possibly-changed inputs).
+  const { data: refreshedAudit } = await supabase
+    .from('visibility_audits')
+    .select('llm_fit_score, starting_turfscore, lift_promise_target_score')
+    .eq('id', auditId)
+    .maybeSingle<{
+      llm_fit_score: number | null;
+      starting_turfscore: number | null;
+      lift_promise_target_score: number | null;
+    }>();
+
+  // Look up the primary keyword for the operator email body.
+  const { data: keyword } = await supabase
+    .from('tracked_keywords')
+    .select('keyword')
+    .eq('client_id', client.id)
+    .eq('is_primary', true)
+    .maybeSingle<{ keyword: string }>();
+
+  try {
+    await sendAuditPurchaseRoadmap({
+      to: 'anthony@fourdots.io',
+      businessName: client.business_name,
+      tierLabel: 'Visibility Audit',
+      buyerEmail: buyerEmail ?? '(unknown email)',
+      buyerPhone: client.phone ?? null,
+      market:
+        [client.city, client.region].filter(Boolean).join(', ') ||
+        client.address ||
+        '',
+      trade: keyword?.keyword ?? prospect?.trade ?? 'unknown',
+      startingTurfScore: refreshedAudit?.starting_turfscore ?? 0,
+      projectedTurfScore:
+        refreshedAudit?.lift_promise_target_score ??
+        pdfResult.projectedTurfScore,
+      llmFitScore: refreshedAudit?.llm_fit_score ?? 3,
+      diagnosisPreview: previewDiagnosis(pdfResult.diagnosis),
+      agencyDashboardUrl: `${appOrigin}/clients/${client.public_id}`,
+      pdf: {
+        filename: `${slugifyBusinessName(client.business_name)}-visibility-roadmap.pdf`,
+        content: pdfResult.pdfBuffer,
+      },
+    });
+  } catch (e) {
+    console.error(
+      '[bootstrapCompAudit/regenerate] sendAuditPurchaseRoadmap threw',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  return {
+    ok: true,
+    created: false,
+    auditId,
+    leadOrderId,
+    clientId: client.id,
+    roadmapPdfUrl: pdfResult.roadmapUrl,
+  };
 }
 
 function inferTradeFitFromKeyword(keyword: string | undefined): boolean | null {

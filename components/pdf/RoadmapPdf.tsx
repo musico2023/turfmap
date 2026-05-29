@@ -963,16 +963,11 @@ function CoverHeatmap({ cells }: { cells: RoadmapPdfCell[] }) {
 // ─── Page 1: cover + snapshot ─────────────────────────────────────────
 
 function PageCover({ data }: { data: RoadmapPdfData }) {
+  // `lift` still drives the "+X pts projected from this Roadmap"
+  // score-cell sub-label. The article-aware copy ("a 10-point lift"
+  // vs "an 8-point lift") that lived in the now-removed Lift Promise
+  // box was dropped along with the box itself.
   const lift = data.projectedTurfScore - data.currentTurfScore;
-  // "a/an" article check — the lift number can be vowel-sound-leading
-  // ("an 8-point lift") or consonant-leading ("a 10-point lift") and
-  // the wrong article reads as a typo to the buyer. English number
-  // pronunciation cheat: 8, 11, 18, and any 8X starts with a vowel
-  // sound; everything else starts with a consonant. This Roadmap's
-  // lift range is realistically 10-40, so the rule is simple.
-  const liftFirstDigit = lift.toString()[0];
-  const liftArticle =
-    liftFirstDigit === '8' || lift === 11 || lift === 18 ? 'an' : 'a';
   return (
     <Page size="LETTER" style={styles.page}>
       <Header data={data} pageLabel="COVER" />
@@ -1027,16 +1022,14 @@ function PageCover({ data }: { data: RoadmapPdfData }) {
         </View>
       </View>
 
-      <View style={styles.promiseBox}>
-        <Text style={styles.promiseLabel}>TURFSCORE LIFT PROMISE</Text>
-        <Text style={styles.promiseText}>
-          We&apos;re projecting {liftArticle} {lift}-point lift to{' '}
-          {data.projectedTurfScore} in 30 days based on this Roadmap.
-          Implement these recommendations within 14 days. If your
-          TurfScore doesn&apos;t lift by at least 10 points within
-          90 days, we refund your $499.
-        </Text>
-      </View>
+      {/* TurfScore Lift Promise was removed from the deliverable PDF
+       *  per operator decision — it lives in marketing surfaces
+       *  (homepage, /scan, PricingCards, audit-purchase emails) only,
+       *  not in the Roadmap PDF the strategist hands to the buyer.
+       *  The buyer-facing artifact stays focused on diagnosis +
+       *  actions, not the refund mechanic. The unused liftArticle
+       *  computation upstream is kept for any future cover treatment
+       *  that wants the article-aware copy back. */}
 
       <Footer />
     </Page>
@@ -1463,10 +1456,8 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
 
       <View style={styles.qualifyBox}>
         <Text style={styles.qualifyTitle}>QUALIFICATION CHECKLIST</Text>
-        <View style={styles.qualifyRow}>
-          <View style={styles.qualifyBox_check} />
-          <Text style={styles.qualifyText}>Currently $50K+/month in revenue</Text>
-        </View>
+        {/* Revenue gate ($50K+/month) removed per operator decision —
+         *  being phased out of all LLM-positioning touchpoints. */}
         <View style={styles.qualifyRow}>
           <View style={styles.qualifyBox_check} />
           <Text style={styles.qualifyText}>Can commit $3K+/month to ad spend</Text>

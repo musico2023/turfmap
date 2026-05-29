@@ -44,6 +44,12 @@ const Body = z.object({
   call_start_time: z.string().datetime().optional(),
   call_uid: z.string().max(120).optional(),
   booker_url: z.string().url().optional(),
+  /** When true: if a visibility_audits row already exists for this
+   *  client, RE-RUN the PDF generation + re-send Anthony the
+   *  operator email. Use when the template/data changed since the
+   *  original bootstrap (e.g. PDF copy fixes shipped, NAP audit
+   *  just completed, fresh competitor data). Default false. */
+  force_regenerate: z.boolean().optional(),
 });
 
 async function isAuthorized(req: Request): Promise<boolean> {
@@ -109,6 +115,7 @@ export async function POST(req: Request) {
       callUid: body.call_uid ?? null,
       bookerUrl: body.booker_url ?? null,
       source: 'admin',
+      forceRegenerate: body.force_regenerate ?? false,
     },
     origin
   );
