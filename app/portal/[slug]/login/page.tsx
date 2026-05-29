@@ -12,10 +12,11 @@
  * with only the logo varying per client.
  */
 
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { LoginForm } from './LoginForm';
+import type { ScanRow, ScanShareLinkRow } from '@/lib/supabase/types';
 
 export default async function PortalLoginPage({
   params,
@@ -31,6 +32,75 @@ export default async function PortalLoginPage({
   // public_id slugs introduced in migration 0007.
   const client = await findClientByPublicIdOrUuid(supabase, slug);
   if (!client) notFound();
+
+  // ─── Outreach-lead redirect ─────────────────────────────────────────
+  // Cold-outreach prospects (is_outreach_lead=true) shouldn't see the
+  // agency-client portal login at all — they're not magic-link members
+  // of any agency. Their data lives at the public /share/<id> URL.
+  // If someone (operator misclick, stale email link, etc.) lands them
+  // here, find their active share link and bounce them there instead
+  // of showing the misleading "this email is not authorized" rejection.
+  if (client.is_outreach_lead) {
+    const { data: scan } = await supabase
+      .from('scans')
+      .select('id')
+      .eq('client_id', client.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<Pick<ScanRow, 'id'>>();
+    if (scan) {
+      const { data: share } = await supabase
+        .from('scan_share_links')
+        .select('id, expires_at, revoked_at')
+        .eq('scan_id', scan.id)
+        .is('revoked_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<
+          Pick<ScanShareLinkRow, 'id' | 'expires_at' | 'revoked_at'>
+        >();
+      if (share && new Date(share.expires_at).getTime() >= Date.now()) {
+        redirect(`/share/${share.id}`);
+      }
+    }
+    // No active share link found — render a clearer expired-link
+    // message instead of the agency-portal rejection. Cold prospects
+    // who lose their share link should ask for a fresh one, not get
+    // funneled into a sign-in form they can't satisfy.
+    return (
+      <div className="min-h-screen w-full text-white flex items-center justify-center px-6">
+        <div
+          className="w-full max-w-md rounded-lg border p-8 text-center"
+          style={{
+            background: 'var(--color-card)',
+            borderColor: 'var(--color-border)',
+          }}
+        >
+          <div className="font-display text-xl font-bold mb-3">
+            This scan link has expired.
+          </div>
+          <p className="text-sm text-zinc-400 leading-relaxed mb-4">
+            We sent {client.business_name} a TurfMap scan, but the
+            share link is no longer active. Email{' '}
+            <a
+              href="mailto:hello@turfmap.ai"
+              className="text-zinc-200 underline"
+            >
+              hello@turfmap.ai
+            </a>{' '}
+            and we&apos;ll send you a fresh one.
+          </p>
+          <div
+            className="mt-8 pt-5 border-t text-[10px] text-zinc-600 leading-relaxed"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            Powered by{' '}
+            <span className="text-zinc-400 font-semibold">TurfMap™</span>.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full text-white flex items-center justify-center px-6">
