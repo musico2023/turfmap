@@ -49,6 +49,7 @@ import { render } from '@react-email/components';
 import AICoachNudgeEmail, {
   pickSubject,
 } from '@/components/email/AICoachNudgeEmail';
+import { portalUrl } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -280,7 +281,7 @@ async function handle(req: Request): Promise<Response> {
         }
         dashboardUrl = shareUrl;
       } else {
-        dashboardUrl = `${origin}/portal/${client.public_id}#ai-coach`;
+        dashboardUrl = `${portalUrl(origin, client.public_id)}#ai-coach`;
       }
 
       // 2e. Render + send.

@@ -39,6 +39,7 @@ import { createVisibilityAudit, patchVisibilityAudit } from '@/lib/audit/visibil
 import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
 import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
+import { agencyClientUrl } from '@/lib/urls';
 import { sendAuditPurchaseRoadmap } from '@/lib/email/resend';
 import { notifyCompAuditBooked } from '@/lib/audit/operatorSlack';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
@@ -530,7 +531,7 @@ export async function bootstrapCompAudit(
         projectedTurfScore: pdfResult.projectedTurfScore,
         llmFitScore: fitBreakdown.score,
         diagnosisPreview: previewDiagnosis(pdfResult.diagnosis),
-        agencyDashboardUrl: `${appOrigin}/clients/${client.public_id}`,
+        agencyDashboardUrl: agencyClientUrl(appOrigin, client.public_id),
         pdf: {
           filename: `${slugifyBusinessName(client.business_name)}-visibility-roadmap.pdf`,
           content: pdfResult.pdfBuffer,
@@ -563,7 +564,7 @@ export async function bootstrapCompAudit(
       llmFitScore: fitBreakdown.score,
       callScheduledAt: input.callStartTime ?? null,
       bootstrapSource: input.source,
-      agencyDashboardUrl: `${appOrigin}/clients/${client.public_id}`,
+      agencyDashboardUrl: agencyClientUrl(appOrigin, client.public_id),
     });
   } catch (e) {
     console.error(
@@ -682,7 +683,7 @@ async function regenerateForExistingAudit(args: {
         pdfResult.projectedTurfScore,
       llmFitScore: refreshedAudit?.llm_fit_score ?? 3,
       diagnosisPreview: previewDiagnosis(pdfResult.diagnosis),
-      agencyDashboardUrl: `${appOrigin}/clients/${client.public_id}`,
+      agencyDashboardUrl: agencyClientUrl(appOrigin, client.public_id),
       pdf: {
         filename: `${slugifyBusinessName(client.business_name)}-visibility-roadmap.pdf`,
         content: pdfResult.pdfBuffer,

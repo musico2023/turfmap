@@ -52,6 +52,7 @@ import { sendPulseTrialEnding, sendOrderConfirmation } from '@/lib/email/resend'
 import { fireMeasurementProtocolEvent } from '@/lib/analytics/measurementProtocol';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
 import { inferTradeFitFromKeyword } from '@/lib/audit/tradeClassifier';
+import { portalUrl } from '@/lib/urls';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import type {
@@ -648,12 +649,12 @@ async function sendTrialEndingReminder(
   // The portal renders at /portal/<publicId> (no /billing sub-route);
   // the billing panel mounts inline on that page when the client is
   // on a subscription. Both URLs land in the same place.
-  const manageSubscriptionUrl = `${origin}/portal/${client.public_id}`;
+  const manageSubscriptionUrl = portalUrl(origin, client.public_id);
   // Cancel link uses the ?cancel_trial=1 query param that the
   // ClientBillingPanel reads on mount and auto-opens the
   // cancel-confirm modal. One click confirms; sub-2-second flow
   // matching the launch checklist.
-  const cancelTrialUrl = `${origin}/portal/${client.public_id}?cancel_trial=1`;
+  const cancelTrialUrl = `${portalUrl(origin, client.public_id)}?cancel_trial=1`;
 
   await sendPulseTrialEnding({
     to: buyerEmail,
@@ -943,7 +944,7 @@ async function handleAuditUpgradeCompletion(
   // standalone audit purchase, includes the Cal.com booking link
   // pre-filled with the buyer's email + business name.
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.turfmap.ai';
-  const dashboardUrl = `${origin}/portal/${client.public_id}`;
+  const dashboardUrl = portalUrl(origin, client.public_id);
   const bookingUrl = buyerEmail
     ? calcomBookingUrlForTier({
         tier: 'audit',

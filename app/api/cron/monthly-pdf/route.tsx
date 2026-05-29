@@ -29,6 +29,7 @@ import { withAlertPrefDefaults } from '@/lib/alerts/prefs';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
+import { portalUrl as makePortalUrl } from '@/lib/urls';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import type {
@@ -276,7 +277,7 @@ async function sendMonthlyPdfForClient(
   const filename = `turfreport-${slug}-${dateStr}.pdf`;
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
-  const portalUrl = `${origin}/portal/${client.public_id}`;
+  const portalUrl = makePortalUrl(origin, client.public_id);
 
   let sent = 0;
   for (const to of recipients) {

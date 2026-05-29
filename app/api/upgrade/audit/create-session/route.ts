@@ -44,6 +44,7 @@ import { getStripe, STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
 import { loadCheckoutSession } from '@/lib/stripe/session';
 import { getServerSupabase } from '@/lib/supabase/server';
 import type { ClientRow, LeadOrderRow, ScanRow } from '@/lib/supabase/types';
+import { portalUrl } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -509,7 +510,7 @@ export async function POST(req: Request) {
           : body.source === 'stage_2_email' && body.prospect_id
             ? `${origin}/audit-upgrade?source=stage_2_email&prospect_id=${body.prospect_id}&cancelled=1`
             : client
-              ? `${origin}/portal/${client.public_id}`
+              ? portalUrl(origin, client.public_id)
               : `${origin}/`,
       metadata: attribution,
     });

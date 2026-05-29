@@ -50,6 +50,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { patchLeadOrderMetadataByClientId } from '@/lib/stripe/leadOrders';
 import { sendAuditCallConfirmed, cancelScheduledEmail } from '@/lib/email/resend';
 import { patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import { portalUrl } from '@/lib/urls';
 import type {
   ClientRow,
   LeadOrderRow,
@@ -374,7 +375,7 @@ export async function POST(req: Request) {
     if (client) {
       const origin =
         process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
-      const dashboardUrl = `${origin}/portal/${client.public_id}`;
+      const dashboardUrl = portalUrl(origin, client.public_id);
       const scheduledAt = formatScheduledAt(
         payload.startTime,
         payload.attendees?.[0]?.timeZone

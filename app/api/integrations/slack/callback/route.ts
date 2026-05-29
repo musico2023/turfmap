@@ -20,6 +20,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
+import { agencyClientUrl } from '@/lib/urls';
 import {
   exchangeSlackCode,
   slackRedirectUri,
@@ -84,7 +85,7 @@ export async function GET(req: Request) {
       { status: 302 }
     );
   }
-  const settingsUrl = `${origin}/clients/${client.public_id}/settings`;
+  const settingsUrl = `${agencyClientUrl(origin, client.public_id)}/settings`;
 
   const slackClientId = process.env.SLACK_CLIENT_ID;
   const slackClientSecret = process.env.SLACK_CLIENT_SECRET;

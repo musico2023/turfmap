@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
+import { agencyClientUrl } from '@/lib/urls';
 import {
   buildSlackAuthorizeUrl,
   signSlackState,
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
     process.env.NEXT_PUBLIC_APP_URL ??
     req.headers.get('origin') ??
     'https://turfmap.ai';
-  const settingsUrl = `${origin}/clients/${client.public_id}/settings`;
+  const settingsUrl = `${agencyClientUrl(origin, client.public_id)}/settings`;
 
   if (!slackClientId) {
     return NextResponse.redirect(

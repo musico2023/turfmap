@@ -51,6 +51,7 @@ import type {
   ProspectRow,
   TrackedKeywordRow,
 } from '@/lib/supabase/types';
+import { agencyClientUrl } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -411,7 +412,7 @@ export async function POST(req: NextRequest) {
             elements: [
               {
                 type: 'mrkdwn',
-                text: `<${origin}/clients/${client.public_id}#ai-coach|Open agency dashboard →>`,
+                text: `<${agencyClientUrl(origin, client.public_id)}#ai-coach|Open agency dashboard →>`,
               },
             ],
           },

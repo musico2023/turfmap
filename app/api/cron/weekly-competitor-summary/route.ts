@@ -23,6 +23,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { sendWeeklyCompetitorSummary } from '@/lib/email/resend';
 import { extractCompetitorNames } from '@/lib/alerts/diff';
 import { withAlertPrefDefaults } from '@/lib/alerts/prefs';
+import { portalUrl as makePortalUrl } from '@/lib/urls';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -198,7 +199,7 @@ async function sendWeeklySummaryForClient(
   }
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
-  const portalUrl = `${origin}/portal/${client.public_id}`;
+  const portalUrl = makePortalUrl(origin, client.public_id);
 
   let sent = 0;
   for (const to of recipients) {

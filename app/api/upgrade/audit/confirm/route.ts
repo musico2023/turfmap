@@ -41,6 +41,7 @@ import type { ClientRow, LeadOrderRow, ScanRow } from '@/lib/supabase/types';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
 import { notifyAuditUpgradePurchase } from '@/lib/audit/operatorSlack';
+import { agencyClientUrl } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -384,7 +385,7 @@ export async function POST(req: Request) {
       utmSource: sessionResult.utmSource,
       prospectId: prospectIdFromMetadata,
       auditDashboardUrl: client
-        ? `${origin}/clients/${client.public_id}`
+        ? agencyClientUrl(origin, client.public_id)
         : '',
     });
   } catch (e) {

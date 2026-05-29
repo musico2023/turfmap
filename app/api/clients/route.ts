@@ -24,6 +24,7 @@ import { getStripe } from '@/lib/stripe/client';
 import { sendStripeSetupLink } from '@/lib/email/resend';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
+import { agencyClientUrl } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 
@@ -285,8 +286,8 @@ export async function POST(req: Request) {
               tier: parsed.plan,
               client_id: client.id,
             },
-            success_url: `${origin}/clients/${client.public_id}?stripe_setup=complete`,
-            cancel_url: `${origin}/clients/${client.public_id}?stripe_setup=cancelled`,
+            success_url: `${agencyClientUrl(origin, client.public_id)}?stripe_setup=complete`,
+            cancel_url: `${agencyClientUrl(origin, client.public_id)}?stripe_setup=cancelled`,
             allow_promotion_codes: true,
           });
           checkoutUrl = session.url ?? null;

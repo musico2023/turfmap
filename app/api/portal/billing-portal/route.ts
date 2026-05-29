@@ -22,6 +22,7 @@ import { getAuthSupabase } from '@/lib/supabase/ssr';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { createBillingPortalSession } from '@/lib/stripe/subscription';
 import type { ClientRow } from '@/lib/supabase/types';
+import { portalUrl } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
     'https://turfmap.ai';
   const result = await createBillingPortalSession({
     customerId: client.stripe_customer_id,
-    returnUrl: `${origin}/portal/${client.public_id}`,
+    returnUrl: portalUrl(origin, client.public_id),
   });
   if (!result.ok) {
     const status = result.kind === 'stripe_not_configured' ? 503 : 502;

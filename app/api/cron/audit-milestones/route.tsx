@@ -71,6 +71,7 @@ import {
   sendDay67Followup,
   sendAuditBookingNudge,
 } from '@/lib/email/resend';
+import { agencyClientUrl, portalUrl } from '@/lib/urls';
 import type {
   ClientRow,
   LeadOrderRow,
@@ -412,7 +413,7 @@ async function generateAndEmailPrepForAudit(
       // and serves it from www.turfmap.ai with correct Content-Type.
       // Auth-gated to fourdots-domain operators.
       prepNotesUrl: `${appOrigin()}/api/audit/${audit.id}/prep-notes`,
-      dashboardUrl: `${appOrigin()}/portal/${client.public_id}`,
+      dashboardUrl: portalUrl(appOrigin(), client.public_id),
       callType,
     },
   });
@@ -509,8 +510,8 @@ async function sendDay25ForAudit(
       rescanDate: formatHumanDate(rescanDate),
       startingTurfScore: audit.starting_turfscore ?? 0,
       projectedTurfScore: audit.lift_promise_target_score ?? 0,
-      dashboardUrl: `${appOrigin()}/portal/${client.public_id}`,
-      roadmapPdfUrl: audit.roadmap_pdf_url ?? `${appOrigin()}/portal/${client.public_id}`,
+      dashboardUrl: portalUrl(appOrigin(), client.public_id),
+      roadmapPdfUrl: audit.roadmap_pdf_url ?? portalUrl(appOrigin(), client.public_id),
     },
   });
 
@@ -598,7 +599,7 @@ async function sendDay53ForAudit(
       email: leadOrder.email,
       businessName: client.business_name,
       startingTurfScore: audit.starting_turfscore,
-    }) ?? `${appOrigin()}/portal/${client.public_id}`;
+    }) ?? portalUrl(appOrigin(), client.public_id);
 
   const sent = await sendSixtyDayPrompt({
     to: leadOrder.email,
@@ -609,7 +610,7 @@ async function sendDay53ForAudit(
       projectedTurfScore: audit.lift_promise_target_score ?? 0,
       currentTurfScore: latestScan?.turf_score ?? null,
       bookingUrl,
-      dashboardUrl: `${appOrigin()}/portal/${client.public_id}`,
+      dashboardUrl: portalUrl(appOrigin(), client.public_id),
     },
   });
 
@@ -688,14 +689,14 @@ async function sendDay67ForAudit(
       email: leadOrder.email,
       businessName: client.business_name,
       startingTurfScore: audit.starting_turfscore,
-    }) ?? `${appOrigin()}/portal/${client.public_id}`;
+    }) ?? portalUrl(appOrigin(), client.public_id);
 
   const sent = await sendDay67Followup({
     to: leadOrder.email,
     props: {
       businessName: client.business_name,
       bookingUrl,
-      dashboardUrl: `${appOrigin()}/portal/${client.public_id}`,
+      dashboardUrl: portalUrl(appOrigin(), client.public_id),
     },
   });
 
@@ -913,7 +914,7 @@ async function sweepUnbookedNudge(
             .join(', ') || client.address || '',
           currentTurfScore: 0,
           llmFitScore: 0,
-          auditDashboardUrl: `${appOrigin()}/clients/${client.public_id}`,
+          auditDashboardUrl: agencyClientUrl(appOrigin(), client.public_id),
         }).catch((e) => {
           console.error(
             `[audit-milestones] notifyAuditUnscheduled failed (non-fatal)`,

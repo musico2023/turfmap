@@ -74,6 +74,7 @@ import {
   previewDiagnosis,
   slugifyBusinessName,
 } from '@/lib/audit/tradeClassifier';
+import { agencyClientUrl, portalUrl } from '@/lib/urls';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
@@ -384,7 +385,7 @@ export async function POST(req: NextRequest) {
   // redirect them to /login (agency-staff-only). All emails sent
   // out of this fulfill flow are to the BUYER, never the operator,
   // so /portal is the right destination.
-  const dashboardUrl = `${origin}/portal/${client.public_id}`;
+  const dashboardUrl = portalUrl(origin, client.public_id);
   // Cal.com booking link for Audit + Strategy buyers — pre-filled
   // with the buyer's email + business name. Returns null for tiers
   // without a strategist call OR when CAL_COM_*_URL env isn't set
@@ -509,7 +510,7 @@ export async function POST(req: NextRequest) {
       // email/Slack to gather categories + hours. Will swap to a
       // direct citation-onboarding URL once we ship buyer access
       // to that form (planned follow-up).
-      const onboardingUrl = `${origin}/portal/${client.public_id}`;
+      const onboardingUrl = portalUrl(origin, client.public_id);
       await sendPulsePlusWelcome({
         to: body.email,
         businessName: body.businessName.trim(),
@@ -745,7 +746,7 @@ export async function POST(req: NextRequest) {
             market: geocode.components?.city ?? body.address.trim(),
             currentTurfScore: primaryScanResult.turfScore,
             llmFitScore: fitBreakdown.score,
-            auditDashboardUrl: `${origin}/clients/${client.public_id}`,
+            auditDashboardUrl: agencyClientUrl(origin, client.public_id),
           }).catch((e) => {
             console.error(
               '[orders/fulfill] notifyLlmFitAudit failed (non-fatal)',
@@ -781,7 +782,7 @@ export async function POST(req: NextRequest) {
         const buyerKeyword = body.keywords[0] ?? 'unknown';
         const buyerMarket = geocode.components?.city ?? body.address.trim();
         const buyerLlmFit = fitBreakdown.score;
-        const agencyDashboardUrl = `${origin}/clients/${client.public_id}`;
+        const agencyDashboardUrl = agencyClientUrl(origin, client.public_id);
         // Human-readable tier label for the operator email subject +
         // body. Strategy buyers paid $1,497 and bought the 3-keyword
         // deliverable; audit buyers paid $499 for the single-keyword
@@ -985,7 +986,7 @@ export async function POST(req: NextRequest) {
     // route the buyer to the dashboard's settings page where they can
     // fill in the missing fields manually. Update this URL once the
     // dedicated onboarding flow ships.
-    const onboardingUrl = `${origin}/clients/${client.public_id}/settings`;
+    const onboardingUrl = `${agencyClientUrl(origin, client.public_id)}/settings`;
     await sendPulsePlusWelcome({
       to: body.email,
       businessName: body.businessName.trim(),
@@ -1021,7 +1022,7 @@ export async function POST(req: NextRequest) {
         utmSource: session.utmSource,
         utmContent: session.utmContent,
         prospectId: session.prospectId,
-        shareUrl: `${origin}/clients/${client.public_id}`,
+        shareUrl: agencyClientUrl(origin, client.public_id),
       });
     } catch (e) {
       console.error(

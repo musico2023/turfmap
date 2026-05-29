@@ -20,6 +20,7 @@ import {
 } from './diff';
 import { dispatchAlert } from './dispatch';
 import { withAlertPrefDefaults } from './prefs';
+import { portalUrl } from '@/lib/urls';
 import type {
   ClientRow,
   ScanPointRow,
@@ -162,7 +163,7 @@ export async function dispatchScanAlerts(
   // are at least shaped right.
   const origin =
     process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
-  const dashboardUrl = `${origin}/portal/${client.public_id}`;
+  const dashboardUrl = portalUrl(origin, client.public_id);
 
   // 7. Dispatch.
   let dispatched = 0;
