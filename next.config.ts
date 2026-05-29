@@ -23,6 +23,17 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Ensure the Bricolage Grotesque TTF that the PDF renderers read
+  // via fs.readFileSync (components/pdf/registerBrandFonts.ts) gets
+  // bundled into every API route's serverless function. By default,
+  // Next.js serves public/ via the static CDN and does NOT include
+  // those files in lambda bundles — the fs read would 404 in prod
+  // even though it works in `next dev`. This trace include line
+  // adds the font file to the function bundle for the PDF-emitting
+  // routes (and any future route that imports the renderers).
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./public/fonts/**/*'],
+  },
 };
 
 export default nextConfig;

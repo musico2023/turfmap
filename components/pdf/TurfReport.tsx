@@ -23,6 +23,15 @@ import {
   Image,
 } from '@react-pdf/renderer';
 import { BrandLogo } from './BrandLogo';
+import {
+  BRAND_FONT_FAMILY,
+  registerBrandFonts,
+} from './registerBrandFonts';
+
+// Font registration must run before any <Page> is constructed.
+// Idempotent — safe to call from multiple PDF modules in the same
+// Node process.
+registerBrandFonts();
 
 // Color tokens duplicated from globals.css. react-pdf evaluates outside the
 // browser, so we can't read CSS custom properties.
@@ -49,7 +58,7 @@ const styles = StyleSheet.create({
     color: C.text,
     padding: 32,
     fontSize: 9,
-    fontFamily: 'Helvetica',
+    fontFamily: BRAND_FONT_FAMILY,
   },
   header: {
     flexDirection: 'row',

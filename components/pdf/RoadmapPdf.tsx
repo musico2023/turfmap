@@ -42,6 +42,15 @@ import {
 } from '@react-pdf/renderer';
 import { BrandLogo } from './BrandLogo';
 import {
+  BRAND_FONT_FAMILY,
+  registerBrandFonts,
+} from './registerBrandFonts';
+
+// Font registration must run before any <Page> is constructed.
+// Idempotent — safe to call from multiple PDF modules in the same
+// Node process.
+registerBrandFonts();
+import {
   ACTION_CATEGORY_BY_ID,
   PILLAR_LABEL,
   type Pillar,
@@ -75,7 +84,7 @@ const styles = StyleSheet.create({
     color: C.text,
     padding: 36,
     fontSize: 9,
-    fontFamily: 'Helvetica',
+    fontFamily: BRAND_FONT_FAMILY,
   },
 
   // ─── Header / footer ────────────────────────────────────────────────
