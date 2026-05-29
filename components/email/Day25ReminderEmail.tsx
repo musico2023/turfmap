@@ -1,9 +1,11 @@
 /**
  * Day-25 buyer re-scan reminder — fires 25 days after the strategist
- * call completes (i.e., 5 days before the 30-day re-scan that gates
- * the TurfScore Lift Promise). Nudges the buyer to wrap any
- * outstanding Foundation-phase actions before the re-scan locks in
- * the lift number.
+ * call completes (i.e., 5 days before the 30-day Foundation-phase
+ * re-scan). The 30-day re-scan is the EARLY progress checkpoint;
+ * the TurfScore Lift Promise itself is measured at 90 days now (the
+ * full Roadmap window). This email nudges the buyer to wrap
+ * Foundation-phase actions so the 30-day checkpoint shows the
+ * trajectory and the buyer can adjust before the 90-day measurement.
  */
 
 import { EmailLayout, FactStrip, H1, P, PSmall, PrimaryButton } from './EmailLayout';
@@ -38,31 +40,35 @@ export function Day25ReminderEmail(props: Day25ReminderEmailProps) {
 
       <P>
         Quick check-in on <strong>{props.businessName}</strong>: your
-        30-day re-scan runs <strong>{props.rescanDate}</strong>. That
-        scan locks in your TurfScore Lift Promise number — the
-        difference between today&rsquo;s score and where you started.
+        30-day Foundation-phase re-scan runs{' '}
+        <strong>{props.rescanDate}</strong>. This is the early
+        progress checkpoint — the full TurfScore Lift Promise is
+        measured at 90 days against the +10-point floor.
       </P>
 
       <FactStrip
         items={[
           { label: 'Started at', value: String(props.startingTurfScore) },
           { label: '30-day target', value: String(props.projectedTurfScore) },
-          { label: 'Promise floor', value: '+10 pts' },
+          { label: '90-day floor', value: '+10 pts' },
         ]}
       />
 
       <P>
         We projected a <strong>+{targetLift}-point</strong>{' '}lift if
         you complete the Foundation-phase actions (Weeks 1–4 of your
-        Roadmap). The Lift Promise floor is +10 points — minimum 10,
-        or we redo the analysis at no charge.
+        Roadmap). The 90-day Lift Promise floor is +10 points — if
+        you implemented within 14 days and your TurfScore hasn&rsquo;t
+        lifted 10 points by day 90, we refund your $499.
       </P>
 
       <P>
         <strong>If you&rsquo;re behind:</strong>{' '}the Roadmap is
         sequenced for a reason — the highest-impact actions are in
-        Weeks 1–4. Knock those out this week if you can; the rescan
-        will reflect them.
+        Weeks 1–4. Knock those out this week if you can; the
+        Foundation re-scan will reflect them and the 60-day check-in
+        catches anything that needs course-correcting before the
+        90-day measurement.
       </P>
 
       <PrimaryButton href={props.dashboardUrl}>

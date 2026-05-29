@@ -503,13 +503,14 @@ export default function MarketingLanding() {
             <span className="text-zinc-400">
               Every Visibility Audit and Strategy Session ships with a{' '}
               <strong className="font-semibold text-zinc-200">
-                minimum 10-point TurfScore lift in 30 days
+                minimum 10-point TurfScore lift in 90 days
               </strong>{' '}
               — measured by the automated re-scan that&rsquo;s built
-              into your audit. If your map doesn&rsquo;t move 10 points
-              after you&rsquo;ve executed the 90-Day Roadmap,{' '}
+              into your audit. Implement our recommendations within
+              14 days. If your TurfScore doesn&rsquo;t lift by at
+              least 10 points within 90 days,{' '}
               <strong className="font-semibold text-zinc-200">
-                we redo the analysis at no charge.
+                we refund your $499.
               </strong>
             </span>
           </div>
@@ -750,15 +751,18 @@ export default function MarketingLanding() {
                     <strong className="font-semibold text-zinc-200">
                       10-point TurfScore Lift Promise
                     </strong>
-                    : if your 30-day automated re-scan doesn&rsquo;t
-                    show at least a 10-point lift after you&rsquo;ve
-                    executed the 90-Day Roadmap, we redo the analysis
-                    at no charge. The 60-day strategist check-in
-                    catches anything the first roadmap missed and
-                    adjusts the plan. The promise is the contract —
-                    we wouldn&rsquo;t put it in writing if it
-                    didn&rsquo;t hold up across the categories we
-                    work in.
+                    : implement our recommendations within 14 days,
+                    and if your TurfScore doesn&rsquo;t lift by at
+                    least 10 points within 90 days,{' '}
+                    <strong className="font-semibold text-zinc-200">
+                      we refund your $499.
+                    </strong>{' '}
+                    The 60-day strategist check-in catches anything
+                    the first roadmap missed and adjusts the plan
+                    while you&rsquo;re still inside the window. The
+                    promise is the contract — we wouldn&rsquo;t put
+                    it in writing if it didn&rsquo;t hold up across
+                    the categories we work in.
                   </>
                 ),
               },

@@ -1032,8 +1032,9 @@ function PageCover({ data }: { data: RoadmapPdfData }) {
         <Text style={styles.promiseText}>
           We&apos;re projecting {liftArticle} {lift}-point lift to{' '}
           {data.projectedTurfScore} in 30 days based on this Roadmap.
-          Minimum 10-point lift in 30 days, or we redo the analysis at
-          no charge.
+          Implement these recommendations within 14 days. If your
+          TurfScore doesn&apos;t lift by at least 10 points within
+          90 days, we refund your $499.
         </Text>
       </View>
 

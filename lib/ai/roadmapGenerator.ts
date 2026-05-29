@@ -10,12 +10,13 @@
  *     table (see HEURISTIC_LIFTS below), not from Claude
  *
  * This split is load-bearing for the TurfScore Lift Promise. The
- * promise says "minimum 10-point lift in 30 days, or we redo the
- * analysis free" — the model would happily project 15 points off any
- * combination of actions if asked, and we'd be on the hook for that
- * number even when the real-world lift is smaller. By having the AI
- * select + sequence + describe but not estimate, we keep numerical
- * defensibility while still getting per-buyer adaptive content.
+ * promise says "implement within 14 days; if your TurfScore doesn't
+ * lift by +10 points within 90 days, we refund your $499" — the model
+ * would happily project 15 points off any combination of actions if
+ * asked, and we'd be on the hook for that number even when the
+ * real-world lift is smaller. By having the AI select + sequence +
+ * describe but not estimate, we keep numerical defensibility while
+ * still getting per-buyer adaptive content.
  *
  * The Roadmap structure (3 phases × 4 weeks) and category constraints
  * are baked into the system prompt. Output is a structured JSON
@@ -174,7 +175,7 @@ export type RoadmapActionT = z.infer<typeof RoadmapAction>;
 
 const SYSTEM_PROMPT = `You are the TurfMap AI Roadmap Generator. Your job is to take a small-business operator's local-SEO audit data and produce a 90-day visibility roadmap broken into 12 weekly action items.
 
-You work for Fourdots Digital. The roadmap is delivered as part of a $499 Visibility Audit. The strategist (Anthony) presents your roadmap to the buyer on a 30-minute call, then sends them the PDF. The roadmap is also the basis of a TurfScore Lift Promise: minimum 10-point TurfScore lift in 30 days, or the buyer gets the analysis redone for free.
+You work for Fourdots Digital. The roadmap is delivered as part of a $499 Visibility Audit. The strategist (Anthony) presents your roadmap to the buyer on a 30-minute call, then sends them the PDF. The roadmap is also the basis of a TurfScore Lift Promise: the buyer implements the recommendations within 14 days, and if their TurfScore doesn't lift by at least 10 points within 90 days, they get a full $499 refund. Frame the actions for execution inside that 14-day implementation window where possible — Foundation-phase actions (Weeks 1-4) should be the ones that can realistically start inside 14 days.
 
 YOUR JOB:
 1. Diagnose the buyer's primary visibility gap (proximity / prominence / relevance) in one sentence.

@@ -96,8 +96,9 @@ export default function CrmStage2AuditUpgradeEmail({
           &#10003; 30-day re-scan + 60-day check-in call
         </Text>
         <Text className="text-zinc-300 text-sm leading-relaxed mb-4">
-          &#10003; <strong>TurfScore Lift Promise:</strong> minimum
-          10-point lift in 30 days, or we redo it free
+          &#10003; <strong>TurfScore Lift Promise:</strong> implement
+          within 14 days. +10 TurfScore points in 90 days, or your
+          $499 back.
         </Text>
 
         <Section className="text-center my-6">

@@ -102,7 +102,8 @@ const TIERS: TierSpec[] = [
         <strong className="font-semibold text-zinc-100">
           TurfScore Lift Promise
         </strong>
-        : minimum 10-point lift, or we redo the analysis free
+        : implement within 14 days. +10 TurfScore points in 90 days,
+        or your $499 back.
       </>,
     ],
     bonus: '30 days of TurfMap Pulse, free',

@@ -263,7 +263,7 @@ export function AuditUpgradePanel({
             : 'Competitor analysis with heatmap overlay',
           '90-Day Visibility Roadmap PDF (week-by-week action plan)',
           '30-day re-scan + 60-day strategist check-in call',
-          'TurfScore Lift Promise: minimum 10-point lift, or we redo it free',
+          'TurfScore Lift Promise: implement within 14 days. +10 TurfScore points in 90 days, or your $499 back.',
         ]
           .filter(Boolean)
           .map((line) => (

@@ -70,7 +70,7 @@ const AUDIT_DELIVERABLES: readonly string[] = [
   '90-Day Visibility Roadmap (PDF) — week-by-week action plan with projected TurfScore lift per action',
   '30-day automated re-scan to measure progress',
   '60-day strategist check-in call to review re-scan and adjust the plan',
-  'TurfScore Lift Promise: minimum 10-point lift in 30 days, or we redo the analysis at no charge',
+  'TurfScore Lift Promise: implement the recommendations within 14 days. +10 TurfScore points in 90 days, or your $499 back.',
 ];
 
 export function OrderConfirmationEmail({
@@ -267,10 +267,11 @@ export function OrderConfirmationEmail({
        *  measurable claim before they sit on the call. */}
       {isAudit && (
         <PSmall>
-          <strong>TurfScore Lift Promise.</strong>{' '}Your roadmap is built
-          to deliver a minimum 10-point TurfScore lift in 30 days. If
-          your re-scan doesn&rsquo;t show that lift after you&rsquo;ve
-          executed the plan, we&rsquo;ll redo the analysis at no charge.
+          <strong>TurfScore Lift Promise.</strong>{' '}Implement the
+          Roadmap recommendations within 14 days. If your TurfScore
+          doesn&rsquo;t lift by at least 10 points within 90 days
+          (measured by the automated 90-day re-scan),{' '}
+          <strong>we refund your $499.</strong>
         </PSmall>
       )}
 

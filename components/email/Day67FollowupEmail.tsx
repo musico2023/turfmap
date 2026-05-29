@@ -37,8 +37,9 @@ export function Day67FollowupEmail(props: Day67FollowupEmailProps) {
       </P>
 
       <P>
-        — Did the Lift Promise fire? (We&rsquo;ll check the math
-        before the call so you don&rsquo;t need to.)
+        — Are you tracking toward the 90-day +10-point Lift Promise
+        floor? (We&rsquo;ll run the math before the call so you
+        don&rsquo;t need to.)
         <br />
         — What&rsquo;s shifted in your map vs. when we started?
         <br />
