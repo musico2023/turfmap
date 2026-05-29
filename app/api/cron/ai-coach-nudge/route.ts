@@ -210,12 +210,17 @@ async function handle(req: Request): Promise<Response> {
         continue;
       }
 
-      // 2d. Resolve the buyer's client.public_id for the dashboard URL.
+      // 2d. Resolve the buyer's dashboard URL.
+      // For paying clients → /portal/<public_id> (magic-link gated).
+      // For cold-outreach leads → /share/<latest active share id>
+      // (public, no auth). The old code sent everyone to /portal,
+      // which 401'd cold prospects at the agency-portal sign-in page
+      // with a misleading "this email is not authorized" error.
       const { data: client } = await supabase
         .from('clients')
-        .select('public_id')
+        .select('public_id, is_outreach_lead')
         .eq('id', order.client_id)
-        .maybeSingle<{ public_id: string }>();
+        .maybeSingle<{ public_id: string; is_outreach_lead: boolean }>();
 
       if (!client?.public_id) {
         errors.push({
@@ -225,7 +230,42 @@ async function handle(req: Request): Promise<Response> {
         continue;
       }
 
-      const dashboardUrl = `${origin}/portal/${client.public_id}#ai-coach`;
+      let dashboardUrl: string;
+      if (client.is_outreach_lead) {
+        // Look up the freshest non-revoked, non-expired share link.
+        // The COLDSCAN flow creates one per outreach lead; if it's
+        // missing/expired we fall back to the portal URL so the buyer
+        // at least lands on the "this scan link has expired" message
+        // (cleaner than the auth-rejection screen).
+        const { data: scan } = await supabase
+          .from('scans')
+          .select('id')
+          .eq('client_id', order.client_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<{ id: string }>();
+        let shareUrl: string | null = null;
+        if (scan) {
+          const { data: share } = await supabase
+            .from('scan_share_links')
+            .select('id, expires_at')
+            .eq('scan_id', scan.id)
+            .is('revoked_at', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle<{ id: string; expires_at: string }>();
+          if (
+            share &&
+            new Date(share.expires_at).getTime() >= Date.now()
+          ) {
+            shareUrl = `${origin}/share/${share.id}#ai-coach`;
+          }
+        }
+        dashboardUrl =
+          shareUrl ?? `${origin}/portal/${client.public_id}#ai-coach`;
+      } else {
+        dashboardUrl = `${origin}/portal/${client.public_id}#ai-coach`;
+      }
 
       // 2e. Render + send.
       const html = await render(
