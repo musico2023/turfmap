@@ -22,6 +22,7 @@ import {
   G,
   Image,
 } from '@react-pdf/renderer';
+import { BrandLogo } from './BrandLogo';
 
 // Color tokens duplicated from globals.css. react-pdf evaluates outside the
 // browser, so we can't read CSS custom properties.
@@ -59,15 +60,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoBox: {
-    width: 22,
-    height: 22,
-    backgroundColor: C.lime,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoX: { color: '#000', fontSize: 14, fontWeight: 700 },
   brandTitle: { fontSize: 16, fontWeight: 700, color: C.text },
   brandSub: { fontSize: 7, color: C.textMuted, letterSpacing: 1.6 },
   headerRight: {
@@ -347,9 +339,7 @@ function ReportHeader({
   return (
     <View style={styles.header} fixed>
       <View style={styles.brand}>
-        <View style={styles.logoBox}>
-          <Text style={styles.logoX}>+</Text>
-        </View>
+        <BrandLogo size={22} />
         <View>
           <Text style={styles.brandTitle}>TurfMap™</Text>
           <Text style={styles.brandSub}>

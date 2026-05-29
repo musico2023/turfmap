@@ -40,6 +40,7 @@ import {
   Circle,
   G,
 } from '@react-pdf/renderer';
+import { BrandLogo } from './BrandLogo';
 import {
   ACTION_CATEGORY_BY_ID,
   PILLAR_LABEL,
@@ -87,15 +88,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoBox: {
-    width: 22,
-    height: 22,
-    backgroundColor: C.lime,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoSymbol: { color: '#000', fontSize: 14, fontWeight: 700 },
   brandTitle: { fontSize: 16, fontWeight: 700, color: C.text },
   brandSub: { fontSize: 7, color: C.textMuted, letterSpacing: 1.6 },
   headerRight: {
@@ -783,9 +775,7 @@ function Header({
   return (
     <View style={styles.header} fixed>
       <View style={styles.brand}>
-        <View style={styles.logoBox}>
-          <Text style={styles.logoSymbol}>+</Text>
-        </View>
+        <BrandLogo size={22} />
         <View>
           <Text style={styles.brandTitle}>TurfMap™</Text>
           <Text style={styles.brandSub}>90-DAY VISIBILITY ROADMAP</Text>
