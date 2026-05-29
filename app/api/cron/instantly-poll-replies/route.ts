@@ -224,6 +224,12 @@ type ProspectRow = {
   stage_2_sent_at: string | null;
   stage_2_scheduled_at: string | null;
   unsubscribed_at: string | null;
+  /** Stage 3 audit-pitch auto-halt marker (migration 0033). Set by
+   *  this cron on post-Stage-2 replies + by /api/admin/disable-cold-stage3
+   *  manual halts. cold-stage3 cron skips when present. */
+  stage_3_disabled_at: string | null;
+  /** Stage 3 idempotency gate — set by cold-stage3 cron on send. */
+  stage_3_sent_at: string | null;
   audit_upgrade_url: string | null;
   instantly_reply_uuid: string | null;
   instantly_eaccount: string | null;
@@ -290,7 +296,8 @@ async function handle(req: Request): Promise<Response> {
         .from('prospects')
         .select(
           'id, cohort, business_name, first_name, email, trade, ' +
-            'stage_2_sent_at, stage_2_scheduled_at, unsubscribed_at, audit_upgrade_url, ' +
+            'stage_2_sent_at, stage_2_scheduled_at, unsubscribed_at, ' +
+            'stage_3_disabled_at, stage_3_sent_at, audit_upgrade_url, ' +
             'instantly_reply_uuid, instantly_eaccount, instantly_reply_subject'
         )
         .ilike('email', email)
@@ -300,13 +307,51 @@ async function handle(req: Request): Promise<Response> {
       if (!prospect) continue;
       stats.pass1_prospect_matched++;
 
-      // Skip if any terminal state already set OR a scheduled send is
-      // pending (don't re-schedule the same reply).
+      // Unsubscribed prospects always skip — terminal state.
+      if (prospect.unsubscribed_at) {
+        stats.pass1_already_processed++;
+        continue;
+      }
+
+      // ─── Post-Stage-2 reply detection (Stage 3 auto-halt) ──────────
+      // When a prospect who already received Stage 2 replies AGAIN,
+      // Anthony wants the founder-from-anthony@fourdots.io Stage 3
+      // audit pitch to NOT fire — he'd rather offer it personably
+      // in the live Instantly thread. We detect this by comparing
+      // the latest inbound's timestamp against stage_2_sent_at; if
+      // the inbound is more recent, stamp stage_3_disabled_at so
+      // the cold-stage3 cron skips this prospect on its next sweep.
+      //
+      // Idempotent — once stage_3_disabled_at is set, we don't
+      // re-process. Also stamps Stage 3-already-sent prospects
+      // defensively (no harm; the cron's stage_3_sent_at gate
+      // already catches them).
       if (
-        prospect.stage_2_sent_at ||
-        prospect.stage_2_scheduled_at ||
-        prospect.unsubscribed_at
+        prospect.stage_2_sent_at &&
+        !prospect.stage_3_disabled_at &&
+        !prospect.stage_3_sent_at
       ) {
+        const postStage2Inbound = await fetchLatestInbound(
+          instantlyKey,
+          email
+        );
+        if (
+          postStage2Inbound?.timestamp_email &&
+          new Date(postStage2Inbound.timestamp_email).getTime() >
+            new Date(prospect.stage_2_sent_at).getTime()
+        ) {
+          await supabase
+            .from('prospects')
+            .update({ stage_3_disabled_at: new Date().toISOString() })
+            .eq('id', prospect.id)
+            .is('stage_3_disabled_at', null);
+          stats.pass1_already_processed++;
+          continue;
+        }
+      }
+
+      // Skip if Stage 2 send is in-flight or already complete.
+      if (prospect.stage_2_sent_at || prospect.stage_2_scheduled_at) {
         stats.pass1_already_processed++;
         continue;
       }

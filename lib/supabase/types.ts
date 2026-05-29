@@ -529,6 +529,11 @@ export type ProspectRow = {
   // ─── Cold cohort q2 (migration 0028) ──────────────────────────────
   stage_3_sent_at: string | null;
   unsubscribed_at: string | null;
+  // ─── Stage 3 auto-pitch halt (migration 0033) ─────────────────────
+  // Set when the prospect replies post-Stage-2 (auto, via
+  // poll-replies) OR by the operator via /api/admin/disable-cold-stage3.
+  // cold-stage3 cron filters this IS NULL.
+  stage_3_disabled_at: string | null;
   // ─── Geo for coldscan bypass (migration 0031) ─────────────────────
   // Populated by the lead-gen pipeline at row-build time. NULL on
   // legacy rows pre-2026-05-25 — /yourmap falls back to the Stripe

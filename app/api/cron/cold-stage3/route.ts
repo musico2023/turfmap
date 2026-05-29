@@ -158,6 +158,11 @@ async function handle(req: Request): Promise<Response> {
     .not('scan_engaged_at', 'is', null)
     .is('stage_3_sent_at', null)
     .is('unsubscribed_at', null)
+    // Halt gate (migration 0033) — when set, the operator is handling
+    // the audit pitch personably in-thread (auto-flipped by
+    // poll-replies on a post-Stage-2 reply, or manually flipped via
+    // /api/admin/disable-cold-stage3). Either way, the cron skips.
+    .is('stage_3_disabled_at', null)
     .lte('scan_engaged_at', min30AgoIso)
     .gte('scan_engaged_at', hr72AgoIso);
 
