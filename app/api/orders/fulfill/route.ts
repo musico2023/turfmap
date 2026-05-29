@@ -57,9 +57,15 @@ import {
   sendScanReady,
   sendPulsePlusWelcome,
   sendAuditCallReminder,
-  sendAuditRoadmapReady,
+  sendAuditPurchaseRoadmap,
 } from '@/lib/email/resend';
 import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
+
+/** Operator inbox for audit-tier deliverables. Mirrors the same
+ *  constant used by app/api/cron/audit-milestones — both surfaces
+ *  ship audit artifacts here so the strategist (Anthony) has the
+ *  PDF + prep notes in hand before any buyer touchpoint. */
+const OPERATOR_AUDIT_EMAIL = 'anthony@fourdots.io';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
@@ -694,20 +700,34 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // ─── Auto-generate the 90-Day Roadmap PDF + email to buyer ──
+        // ─── Auto-generate the 90-Day Roadmap PDF + email to operator ─
         // Same auto-generation flow that used to be a manual one-off
         // script (scripts/generate-ryan-audit-pdf.ts) — now fires for
         // every paying audit buyer. Runs in after() so the ~30-60s
         // Claude + PDF render + upload + email roundtrip doesn't
         // block the fulfill response (the buyer's success page lands
-        // immediately; the Roadmap email arrives ~60s later).
+        // immediately; the Roadmap email arrives in Anthony's inbox
+        // ~60s later).
         //
-        // Fully fail-soft: any error here is logged + Slack-pinged
-        // but doesn't bubble. The T-24h cron will still regenerate
-        // for the pre-call prep packet, so a missed at-purchase
-        // generation isn't a lost deliverable — just a slower one.
+        // The PDF goes to Anthony (operator), NOT the buyer. Anthony
+        // reviews it before the strategist call (or before manual
+        // outreach when the buyer hasn't booked Cal.com yet) and
+        // sends the deliverable to the buyer himself post-call so it
+        // arrives with strategist context, not as a cold automated
+        // attachment. The buyer's only audit-tier email at this stage
+        // is sendScanReady (no PDF).
+        //
+        // Fully fail-soft: any error here is logged but doesn't
+        // bubble. The T-24h cron will still regenerate fresh for the
+        // pre-call prep packet, so a missed at-purchase generation
+        // isn't a lost deliverable — just a slower one.
         const buyerEmail = body.email.trim();
+        const buyerPhone = body.phone?.trim() || null;
         const buyerBusinessName = body.businessName.trim();
+        const buyerKeyword = body.keywords[0] ?? 'unknown';
+        const buyerMarket = geocode.components?.city ?? body.address.trim();
+        const buyerLlmFit = fitBreakdown.score;
+        const agencyDashboardUrl = `${origin}/clients/${client.public_id}`;
         after(async () => {
           try {
             const result = await generateAndStoreRoadmapPdf(
@@ -722,10 +742,9 @@ export async function POST(req: NextRequest) {
               );
               return;
             }
-            // Pull the diagnosis preview off the just-generated
-            // roadmap. The PDF embeds the full diagnosis; the email
-            // teaser surfaces the first sentence or two so the
-            // buyer can read the headline without opening the PDF.
+            // Re-fetch the audit row after the helper's patch landed
+            // so the email surfaces the stamped lift_promise_target.
+            // Falls back to the in-memory generation result on a miss.
             const { data: refreshed } = await supabase
               .from('visibility_audits')
               .select('starting_turfscore, lift_promise_target_score')
@@ -734,16 +753,21 @@ export async function POST(req: NextRequest) {
                 starting_turfscore: number | null;
                 lift_promise_target_score: number | null;
               }>();
-            const sent = await sendAuditRoadmapReady({
-              to: buyerEmail,
+            const sent = await sendAuditPurchaseRoadmap({
+              to: OPERATOR_AUDIT_EMAIL,
               businessName: buyerBusinessName,
+              buyerEmail,
+              buyerPhone,
+              market: buyerMarket,
+              trade: buyerKeyword,
               startingTurfScore:
                 refreshed?.starting_turfscore ?? primaryScanResult.turfScore,
               projectedTurfScore:
                 refreshed?.lift_promise_target_score ??
                 result.projectedTurfScore,
+              llmFitScore: buyerLlmFit,
               diagnosisPreview: previewDiagnosis(result.diagnosis),
-              dashboardUrl,
+              agencyDashboardUrl,
               pdf: {
                 filename: `${slugifyBusinessName(buyerBusinessName)}-visibility-roadmap.pdf`,
                 content: result.pdfBuffer,
@@ -751,7 +775,7 @@ export async function POST(req: NextRequest) {
             });
             if (!sent) {
               console.error(
-                '[orders/fulfill] sendAuditRoadmapReady returned false'
+                '[orders/fulfill] sendAuditPurchaseRoadmap returned false'
               );
             }
           } catch (e) {

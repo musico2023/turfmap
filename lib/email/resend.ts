@@ -350,43 +350,60 @@ export async function sendScanReady(args: {
 }
 
 /**
- * Audit Roadmap Ready — sent to the buyer after a Visibility Audit
- * purchase, ~30-60s post-scan, with the AI-generated 90-Day Roadmap
- * PDF attached.
+ * Audit Purchase Roadmap — sent to anthony@fourdots.io ~30-60s after
+ * a Visibility Audit purchase, with the freshly-generated 90-Day
+ * Roadmap PDF attached. This is the OPERATOR copy of the deliverable
+ * — Anthony reviews it before the strategist call (or before manual
+ * outreach when the buyer hasn't booked yet) and sends the PDF to
+ * the buyer himself after the call.
  *
- * Distinct from sendScanReady (which fires at scan completion with no
- * PDF). The two emails together give the audit buyer immediate
- * gratification on the scan + the substantive deliverable when it's
- * ready. The PDF generation runs in /api/orders/fulfill's after()
- * callback so it doesn't block either the fulfill response or the
- * scan-ready email.
+ * Distinct from sendStrategistPrep:
+ *   - This fires at PURCHASE (no Cal.com call required, no schedule
+ *     dependency).
+ *   - No Strategist Prep Notes document — that's still generated
+ *     fresh at T-24h since it depends on the scheduled call time.
+ *
+ * The buyer never receives the PDF automatically; auto-emailing the
+ * deliverable would land it cold without strategist context. The
+ * scan-ready email (sendScanReady) is the only buyer-facing email
+ * the audit-tier purchase flow fires.
  */
-export async function sendAuditRoadmapReady(args: {
+export async function sendAuditPurchaseRoadmap(args: {
   to: string;
   businessName: string;
+  buyerEmail: string;
+  buyerPhone: string | null;
+  market: string;
+  trade: string;
   startingTurfScore: number;
   projectedTurfScore: number;
+  llmFitScore: number;
   diagnosisPreview: string;
-  dashboardUrl: string;
+  agencyDashboardUrl: string;
   /** PDF buffer + filename. Required — the email IS the wrapper for
    *  this attachment; sending without it defeats the purpose. */
   pdf: { filename: string; content: Buffer };
 }): Promise<boolean> {
-  const { AuditRoadmapReadyEmail } = await import(
-    '@/components/email/AuditRoadmapReadyEmail'
+  const { AuditPurchaseRoadmapEmail } = await import(
+    '@/components/email/AuditPurchaseRoadmapEmail'
   );
   const html = await render(
-    AuditRoadmapReadyEmail({
+    AuditPurchaseRoadmapEmail({
       businessName: args.businessName,
+      buyerEmail: args.buyerEmail,
+      buyerPhone: args.buyerPhone,
+      market: args.market,
+      trade: args.trade,
       startingTurfScore: args.startingTurfScore,
       projectedTurfScore: args.projectedTurfScore,
+      llmFitScore: args.llmFitScore,
       diagnosisPreview: args.diagnosisPreview,
-      dashboardUrl: args.dashboardUrl,
+      agencyDashboardUrl: args.agencyDashboardUrl,
     })
   );
   return sendEmailOk({
     to: args.to,
-    subject: `Your 90-Day Visibility Roadmap is ready — ${args.businessName}`,
+    subject: `New audit buyer Roadmap: ${args.businessName}`,
     html,
     attachments: [
       { filename: args.pdf.filename, content: args.pdf.content },
