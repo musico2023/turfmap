@@ -2,7 +2,7 @@
 
 /**
  * ScanProgress — reassuring progress animation for the long scan
- * waits (40-100s typical) on TurfMap's primary flows.
+ * waits (40-120s+ typical) on TurfMap's primary flows.
  *
  * What it shows:
  *   - Rotating status phrases that reflect roughly what the backend
@@ -13,7 +13,7 @@
  *     phrases are time-based not event-driven.
  *   - A subtle lime pulse animation so the page doesn't feel static.
  *   - Elapsed-seconds counter at small size so the impatient know
- *     where we are relative to the 90s upper bound.
+ *     where we are.
  *
  * Why time-based rotation instead of streaming real progress events:
  *   The scan runs across multiple services (DFS, Supabase, Claude,
@@ -24,19 +24,31 @@
  *   we ever need to surface real failure points to the buyer (today
  *   we just retry server-side and don't expose retry signals).
  *
- * Phrase list is calibrated to the typical scan cadence: each phrase
- * holds for ~6s, total cycle ~48s (matches the median scan + NAP
- * audit time observed in production). If the scan finishes faster,
- * the parent unmounts this component; if slower, the last phrase
- * holds.
+ * Phrase strategy:
+ *   - A NARRATIVE phrase list runs once (~48s at the default 6s tick)
+ *     telling the story of the scan: grid → SERPs → competitors →
+ *     NAP → AI Coach → Fix List → finalizing. These should NOT loop —
+ *     re-reading "Mapping 81 search points…" mid-scan would imply
+ *     the work reset.
+ *   - When the narrative exhausts and the scan still hasn't finished
+ *     (now likely since /api/orders/fulfill auto-generates AI Coach
+ *     for paid one-time tiers, pushing total wait past 100s), an
+ *     OVERFLOW phrase list loops indefinitely. Overflow phrases are
+ *     phrased to imply "still on the finalization step" so re-reading
+ *     them doesn't break the perceived forward motion.
  */
 
 import { useEffect, useState } from 'react';
 
 export type ScanProgressProps = {
-  /** Optional override of the phrase list. Default fits the standard
-   *  geo-grid scan + NAP audit + AI Coach flow. */
+  /** Optional override of the narrative phrase list. Runs once.
+   *  Default fits the standard geo-grid scan + NAP audit + AI Coach
+   *  flow. */
   phrases?: string[];
+  /** Optional override of the overflow phrase list. Loops indefinitely
+   *  after the narrative phrases exhaust. Default phrasing implies
+   *  "still finalizing" so re-reads don't break perceived motion. */
+  overflowPhrases?: string[];
   /** Milliseconds each phrase holds before rotating. Default 6000ms. */
   rotateMs?: number;
   /** Optional className for the outer container. */
@@ -46,9 +58,10 @@ export type ScanProgressProps = {
   hideElapsed?: boolean;
 };
 
-/** Default phrase list — calibrated for the full first-scan flow:
+/** Narrative phrase list — calibrated for the full first-scan flow:
  *  DFS local-pack grid (30-90s) + DFS NAP audit (5-9s) + Claude AI
- *  Coach generation (10-20s). Each phrase ~6s = ~48s cycle. */
+ *  Coach generation (10-30s). Each phrase ~6s = ~48s cycle. Runs ONCE
+ *  — re-reading these mid-scan would imply we reset. */
 const DEFAULT_PHRASES = [
   'Mapping 81 search points across your service area…',
   'Querying Google’s local 3-pack at each grid point…',
@@ -60,26 +73,44 @@ const DEFAULT_PHRASES = [
   'Almost there — finalizing your TurfMap…',
 ];
 
+/** Overflow phrase list — loops indefinitely after the narrative
+ *  exhausts. Each phrase implies "still in the home stretch" rather
+ *  than a discrete step, so cycling back to phrase 0 doesn't feel
+ *  like a progress reset to the buyer. */
+const DEFAULT_OVERFLOW_PHRASES = [
+  'Cross-checking each Fix List recommendation…',
+  'Polishing the AI Coach playbook…',
+  'Reconciling competitor data across cells…',
+  'Double-checking each finding before we hand it off…',
+  'Putting the finishing touches on your TurfMap…',
+];
+
 export function ScanProgress({
   phrases = DEFAULT_PHRASES,
+  overflowPhrases = DEFAULT_OVERFLOW_PHRASES,
   rotateMs = 6000,
   className = '',
   hideElapsed = false,
 }: ScanProgressProps) {
-  // Index into the phrase list. Rotates every rotateMs until we hit
-  // the last entry, then holds — the scan should be done before we
-  // burn through all phrases, but if not we don't want to loop back
-  // to "Mapping 81 search points…" which would imply progress reset.
+  // Monotonic phrase index — keeps incrementing forever. We resolve
+  // it against narrative + overflow lists in `currentPhrase` below so
+  // overflow can loop without the index itself needing to reset.
   const [idx, setIdx] = useState(0);
   const [elapsedSec, setElapsedSec] = useState(0);
-  const lastIdx = phrases.length - 1;
 
-  // Phrase rotation.
+  // Phrase rotation. Keep incrementing forever — `currentPhrase`
+  // handles the narrative→overflow transition + the overflow loop.
+  // The parent unmounts this component when the scan resolves, so
+  // there's no "stop condition" inside the component itself.
   useEffect(() => {
-    if (idx >= lastIdx) return; // hold on last phrase
-    const t = setTimeout(() => setIdx((i) => Math.min(i + 1, lastIdx)), rotateMs);
+    if (overflowPhrases.length === 0 && idx >= phrases.length - 1) {
+      // No overflow configured + we've exhausted the narrative —
+      // hold on the last narrative phrase (pre-overflow behavior).
+      return;
+    }
+    const t = setTimeout(() => setIdx((i) => i + 1), rotateMs);
     return () => clearTimeout(t);
-  }, [idx, lastIdx, rotateMs]);
+  }, [idx, phrases.length, overflowPhrases.length, rotateMs]);
 
   // Elapsed counter — 1Hz tick. Cheap; one setInterval. Used for
   // "30s" / "1m 12s" display, not for any logic.
@@ -90,7 +121,16 @@ export function ScanProgress({
   }, [hideElapsed]);
 
   const elapsed = formatElapsed(elapsedSec);
-  const currentPhrase = phrases[idx] ?? phrases[0];
+  // Narrative first (idx < phrases.length), then overflow loops via
+  // modulo on the tail. Defensive fallback to phrases[0] if both
+  // lists are empty (which shouldn't happen with the default props
+  // but keeps the component crash-proof for explicit overrides).
+  const currentPhrase =
+    idx < phrases.length
+      ? phrases[idx]
+      : overflowPhrases.length > 0
+        ? overflowPhrases[(idx - phrases.length) % overflowPhrases.length]
+        : (phrases[phrases.length - 1] ?? '');
 
   return (
     <div
