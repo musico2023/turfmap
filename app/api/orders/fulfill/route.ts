@@ -60,6 +60,7 @@ import {
   sendAuditPurchaseRoadmap,
 } from '@/lib/email/resend';
 import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
+import { generateInsight } from '@/lib/ai-coach/generateInsight';
 
 /** Operator inbox for audit-tier deliverables. Mirrors the same
  *  constant used by app/api/cron/audit-milestones — both surfaces
@@ -856,6 +857,60 @@ export async function POST(req: NextRequest) {
         e instanceof Error ? e.message : String(e)
       );
     }
+  }
+
+  // ─── 8d. AI Coach auto-generation for one-time tiers ─────────────────
+  // The COLDSCAN free flow auto-generates the Fix List inline (the
+  // /share/<id> page is the buyer's only surface — no Generate
+  // button), and paying one-time buyers expect the same "deliverable
+  // is ready" experience. Without auto-gen, the buyer's first visit
+  // to /portal shows a "click Generate to see your Fix List" CTA
+  // they have to act on themselves, and the ai-coach-nudge cron is
+  // the only push surface that reminds them.
+  //
+  // Gated to one-time tiers (scan / audit / strategy). Pulse and
+  // Pulse+ are recurring subscriptions — auto-generating on every
+  // weekly scan would burn Claude tokens on impressions that mostly
+  // never happen (most weeks a subscriber doesn't open the dashboard).
+  // The nudge cron stays as the lazy-load trigger for those.
+  //
+  // Fire-and-forget in after() so the ~30-60s Claude run doesn't
+  // block the fulfill response. Best-effort: if it fails the buyer
+  // can still trigger generation manually from /portal's Generate
+  // button. Mirrors the coldscan-fulfill pattern with a 90s NAP-audit
+  // wait — for audit/strategy tiers, the NAP audit just kicked off
+  // alongside the visibility_audits stamp above; 90s usually catches
+  // it, but the T-24h cron regenerates if it didn't.
+  if (
+    (session.tier === 'scan' ||
+      session.tier === 'audit' ||
+      session.tier === 'strategy') &&
+    primaryScanResult?.ok
+  ) {
+    const insightScanId = primaryScanResult.scanId;
+    after(async () => {
+      try {
+        const insightResult = await generateInsight(
+          supabase,
+          insightScanId,
+          null,
+          { napAuditWaitMs: 90_000 }
+        );
+        if (!insightResult.ok) {
+          console.warn(
+            '[orders/fulfill] AI Coach auto-gen failed for scan',
+            insightScanId,
+            insightResult.error
+          );
+        }
+      } catch (e) {
+        console.warn(
+          '[orders/fulfill] AI Coach auto-gen threw for scan',
+          insightScanId,
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    });
   }
 
   // ─── 8.5 Pending audit-upgrade sweep (scan tier only) ─────────────────
