@@ -135,9 +135,11 @@ export async function generateAndStoreRoadmapPdf(
   // client + matching the secondary keyword text are the right ones.
   type SecondaryRow = {
     keyword: string;
+    scanId: string;
     turfScore: number;
     turfReach: number | null;
     turfRank: number | null;
+    cells: Array<{ x: number; y: number; rank: number | null }>;
   };
   const secondaries: SecondaryRow[] = [];
   if (isStrategyTier) {
@@ -149,7 +151,7 @@ export async function generateAndStoreRoadmapPdf(
       .order('created_at', { ascending: true });
     for (const k of (otherKeywords ?? []) as TrackedKeywordRow[]) {
       // Pick the freshest scan for this keyword. runScanForLocation
-      // stamps tracked_keyword_id on each scan row, so the lookup is
+      // stamps keyword_id on each scan row, so the lookup is
       // index-friendly.
       const { data: kScan } = await supabase
         .from('scans')
@@ -162,11 +164,17 @@ export async function generateAndStoreRoadmapPdf(
           Pick<ScanRow, 'id' | 'turf_score' | 'turf_reach' | 'turf_rank'>
         >();
       if (!kScan) continue;
+      // Load this scan's cells too so the strategy landscape page can
+      // render a mini-heatmap fingerprint per keyword. Empty array is
+      // OK — the PDF falls back to a "scan data pending" placeholder.
+      const cells = await loadCellsForScan(supabase, kScan.id);
       secondaries.push({
         keyword: k.keyword,
+        scanId: kScan.id,
         turfScore: kScan.turf_score ?? 0,
         turfReach: kScan.turf_reach ?? null,
         turfRank: kScan.turf_rank ?? null,
+        cells,
       });
     }
   }
@@ -227,9 +235,15 @@ export async function generateAndStoreRoadmapPdf(
   const projectedTurfScore = startingTurfScore + roadmap.thirtyDayTargetLift;
 
   // ─── 4. PDF render ─────────────────────────────────────────────────
-  // Build the Strategy-tier keyword landscape table: primary first
-  // (annotated as such), then the secondaries with operator-facing
-  // notes computed from the score deltas. For audit/scan, leave the
+  // Load the primary scan's cells once — used by BOTH the cover-page
+  // heatmap (existing) and the landscape primary card (new). Pulling
+  // it up here avoids two reads of the same scan_points block.
+  const primaryCells = await loadCellsForScan(supabase, audit.scan_id);
+
+  // Build the Strategy-tier keyword landscape: primary first
+  // (annotated + lime highlight), then the secondaries with their own
+  // mini-heatmap cells so the strategist call can point at three
+  // visibility fingerprints side-by-side. For audit/scan, leave the
   // array empty so the PDF skips the landscape page entirely.
   const keywordLandscape: RoadmapPdfKeywordRow[] = [];
   if (isStrategyTier) {
@@ -239,16 +253,20 @@ export async function generateAndStoreRoadmapPdf(
       turfReach: scan.turf_reach ?? null,
       turfRank: scan.turf_rank ?? null,
       note: 'Primary — the 90-day Roadmap on the following pages is framed around this keyword.',
+      cells: primaryCells,
     });
-    // Sort secondaries by TurfScore descending so the strongest
-    // visibility lands first under the primary.
-    const sorted = [...secondaries].sort((a, b) => b.turfScore - a.turfScore);
-    for (const s of sorted) {
+    // Keep the order primary → angle #2 → angle #3 matching what the
+    // buyer typed on intake (sorting by score reordered them, which
+    // is confusing — the strategist call leans on the SAME ordering
+    // the buyer used). The note column already differentiates
+    // strongest vs weakest via the AI diagnosis on the cover.
+    for (const s of secondaries) {
       keywordLandscape.push({
         keyword: s.keyword,
         turfScore: s.turfScore,
         turfReach: s.turfReach,
         turfRank: s.turfRank,
+        cells: s.cells,
       });
     }
   }
@@ -273,7 +291,7 @@ export async function generateAndStoreRoadmapPdf(
     })),
     napFindings: [], // Phase-4 — structured rows ride the summary text today
     competitors: [], // ditto
-    cells: await loadCellsForScan(supabase, audit.scan_id),
+    cells: primaryCells,
     keywordLandscape,
     tierLabel,
     ninetyDayTargetLift: roadmap.ninetyDayTargetLift,

@@ -666,6 +666,11 @@ export type RoadmapPdfKeywordRow = {
    *  "Strongest current visibility" / "Largest opportunity gap" /
    *  "Most contested". Optional; the row reads fine without it. */
   note?: string;
+  /** 81 cells from this keyword's scan. Drives the mini-heatmap on
+   *  the landscape page so the buyer + strategist see how visibility
+   *  differs between keywords at a glance. Empty / absent falls
+   *  back to a label-only rendering. */
+  cells?: RoadmapPdfCell[];
 };
 
 /** One cell on the 9x9 grid. Mirrors the shape used by TurfReport.tsx
@@ -850,6 +855,38 @@ function rankLabel(rank: number | null): string {
   if (rank === null) return '—';
   if (rank > 3) return '—'; // see rankColor — defensive fallthrough
   return String(rank);
+}
+
+/**
+ * Compact 9×9 heatmap used on the Strategy Session landscape page.
+ * Same color + label semantics as CoverHeatmap, scaled down to fit
+ * 3 keyword cards across a letter-page width. No grid lines (visual
+ * noise at this size) + no center pin (the comparative beat is
+ * "compare these three patterns," not "locate your business").
+ */
+function MiniHeatmap({
+  cells,
+  size,
+}: {
+  cells: RoadmapPdfCell[];
+  size: number;
+}) {
+  const cellSize = size / COVER_GRID;
+  const cellR = cellSize * 0.42;
+  return (
+    <Svg width={size} height={size}>
+      {cells.map((c) => {
+        const cx = cellSize / 2 + c.x * cellSize;
+        const cy = cellSize / 2 + c.y * cellSize;
+        const color = rankColor(c.rank);
+        return (
+          <G key={`${c.x}-${c.y}`}>
+            <Circle cx={cx} cy={cy} r={cellR} fill={color} fillOpacity={0.96} />
+          </G>
+        );
+      })}
+    </Svg>
+  );
 }
 
 function CoverHeatmap({ cells }: { cells: RoadmapPdfCell[] }) {
@@ -1494,10 +1531,86 @@ function PageKeywordLandscape({ data }: { data: RoadmapPdfData }) {
         </Text>
       </View>
 
-      {/* Per-keyword score rows — mirrors the cover's scoreRow
-       *  styling but stacks vertically so 3 keywords fit cleanly
-       *  with their TurfScore + Reach + Rank + operator note. */}
-      <View style={{ marginTop: 18, gap: 10 }}>
+      {/* Three heatmaps across the top — eye-level comparative beat.
+       *  Each card carries a label + the buyer's TurfScore for that
+       *  keyword, with the primary highlighted lime. The 9×9 grid
+       *  reads as a visual fingerprint per keyword so the strategist
+       *  can point at the differences without explaining the colors. */}
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: 10,
+          marginTop: 14,
+        }}
+      >
+        {rows.map((row, i) => {
+          const isPrimary = i === 0;
+          const labelText = isPrimary ? 'PRIMARY' : `ANGLE #${i + 1}`;
+          return (
+            <View
+              key={`hm-${row.keyword}-${i}`}
+              style={[
+                isPrimary ? styles.scoreCellHi : styles.scoreCell,
+                { flex: 1, alignItems: 'center', padding: 10 },
+              ]}
+            >
+              <Text style={styles.scoreLabel}>{labelText}</Text>
+              <Text
+                style={{
+                  fontSize: 10,
+                  color: C.text,
+                  fontWeight: 700,
+                  marginTop: 2,
+                  marginBottom: 8,
+                  textAlign: 'center',
+                  lineHeight: 1.25,
+                }}
+              >
+                &ldquo;{row.keyword}&rdquo;
+              </Text>
+              {row.cells && row.cells.length > 0 ? (
+                <MiniHeatmap cells={row.cells} size={140} />
+              ) : (
+                <View
+                  style={{
+                    width: 140,
+                    height: 140,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 9, color: C.textMuted }}>
+                    Scan data pending
+                  </Text>
+                </View>
+              )}
+              <Text
+                style={{
+                  fontSize: 9,
+                  color: C.textMuted,
+                  marginTop: 8,
+                  letterSpacing: 1,
+                }}
+              >
+                TURFSCORE
+              </Text>
+              <Text
+                style={
+                  isPrimary
+                    ? { ...styles.scoreValueLime, fontSize: 20, marginTop: 2 }
+                    : { ...styles.scoreValue, fontSize: 20, marginTop: 2 }
+                }
+              >
+                {row.turfScore}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Per-keyword detail rows below the heatmap fingerprints. Same
+       *  Reach/Rank fact strip + operator note as before. */}
+      <View style={{ marginTop: 18, gap: 8 }}>
         {rows.map((row, i) => {
           const isPrimary = i === 0;
           return (
