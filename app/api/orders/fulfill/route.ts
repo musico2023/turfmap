@@ -70,6 +70,7 @@ import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
 import {
   notifyLlmFitAudit,
   notifyTurfScanPurchase,
@@ -684,6 +685,28 @@ export async function POST(req: NextRequest) {
         );
       } else {
         const auditId = auditResult.row.id;
+
+        // Trigger NAP audit at audit-init. Fire-and-forget — the
+        // BL/DFS run takes ~5-15min, the at-purchase Roadmap PDF
+        // ships immediately with whatever findings are available
+        // (often empty on first run for cold-prospect bootstraps),
+        // and the T-24h pre-call cron regenerates the PDF with the
+        // populated findings later. For paid audit buyers whose
+        // intake captured phone + structured address, this is a
+        // near no-op — maybeRunNapAudit's idempotency gate fires on
+        // the scan-time call from runScanForLocation.
+        void triggerNapAuditAtAuditInit(supabase, auditId, {
+          operatorOrigin: origin,
+        }).then((r) => {
+          if (!r.ok) {
+            console.error(
+              '[orders/fulfill] triggerNapAuditAtAuditInit failed',
+              r.stage,
+              r.error
+            );
+          }
+        });
+
         if (shouldPitchLlm(fitBreakdown.score)) {
           // Fire the operator Slack notification for fit-4-and-up
           // audits. Fail-soft — if the webhook isn't configured or

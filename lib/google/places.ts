@@ -40,6 +40,12 @@ const PLACE_DETAILS_FIELD_MASK = [
   'id',
   'displayName',
   'formattedAddress',
+  // addressComponents — added to support audit-time NAP-field
+  // enrichment for cold-prospect comp audits. The fan-out used to
+  // grab only formattedAddress; structured components let us stamp
+  // client_locations.street_address / city / region / postcode
+  // directly without regex-parsing the freeform string.
+  'addressComponents',
   'location',
   'types',
   'primaryType',
@@ -74,10 +80,27 @@ export type SearchCandidate = {
   userRatingCount: number | null;
 };
 
+/** Parsed-out structured address fields the NAP audit + dashboard
+ *  need. Derived from Google's addressComponents on getPlaceDetails;
+ *  all fields nullable because Google occasionally returns partial
+ *  components (rural addresses sometimes lack postal_code, etc.). */
+export type PlaceAddressComponents = {
+  streetAddress: string | null; // "123 Main St"
+  city: string | null;
+  region: string | null; // state / province short_name (e.g. "ON")
+  postcode: string | null;
+  countryCode: string | null; // ISO short_name (e.g. "CA", "US")
+};
+
 export type PlaceDetails = {
   placeId: string;
   displayName: string | null;
   formattedAddress: string | null;
+  /** Parsed-out structured components — populated when Google
+   *  returns addressComponents on the details response. Used by
+   *  the audit-init NAP-field enrichment path to stamp
+   *  client_locations.street_address / city / region / postcode. */
+  addressComponents: PlaceAddressComponents | null;
   latitude: number | null;
   longitude: number | null;
   primaryType: string | null;
@@ -256,6 +279,13 @@ export async function getPlaceDetails(
     placeId,
     displayName: displayName?.text ?? null,
     formattedAddress: (raw.formattedAddress as string | undefined) ?? null,
+    addressComponents: parseAddressComponents(
+      raw.addressComponents as Array<{
+        longText?: string;
+        shortText?: string;
+        types?: string[];
+      }> | undefined
+    ),
     latitude: typeof loc?.latitude === 'number' ? loc.latitude : null,
     longitude: typeof loc?.longitude === 'number' ? loc.longitude : null,
     primaryType: (raw.primaryType as string | undefined) ?? null,
@@ -391,10 +421,61 @@ function jaccardTokenSimilarity(a: string, b: string): number {
   return union === 0 ? 0 : inter / union;
 }
 
+/**
+ * Parse Google Places addressComponents[] into the structured shape
+ * the NAP audit + client_locations table expect. Returns null when
+ * no usable components were returned (the helper falls back to
+ * formattedAddress in that case).
+ *
+ * Component type semantics:
+ *   - street_number + route   → streetAddress
+ *   - locality | postal_town  → city
+ *   - administrative_area_level_1 → region (shortText for state code)
+ *   - postal_code             → postcode
+ *   - country                 → countryCode (shortText, ISO alpha-2)
+ *
+ * Some components carry multiple types; we look for the first match
+ * and use the type-appropriate length (long for street names, short
+ * for state / country codes). Defensive parsing — every field is
+ * nullable so a partial Google response doesn't collapse the result.
+ */
+function parseAddressComponents(
+  components:
+    | Array<{ longText?: string; shortText?: string; types?: string[] }>
+    | undefined
+): PlaceAddressComponents | null {
+  if (!components || components.length === 0) return null;
+  const findOf = (
+    typeName: string,
+    field: 'longText' | 'shortText' = 'longText'
+  ): string | null => {
+    const c = components.find((c) => (c.types ?? []).includes(typeName));
+    return (c?.[field] ?? null) || null;
+  };
+  const streetNumber = findOf('street_number');
+  const route = findOf('route');
+  const streetAddress =
+    [streetNumber, route].filter(Boolean).join(' ') || null;
+  // City: prefer locality, fall back to postal_town (used in some
+  // UK / Commonwealth markets where locality is set to the
+  // sub-locality instead).
+  const city = findOf('locality') ?? findOf('postal_town');
+  const region = findOf('administrative_area_level_1', 'shortText');
+  const postcode = findOf('postal_code');
+  const countryCode = findOf('country', 'shortText');
+  // If nothing parsed, return null so the caller can fall back to
+  // formattedAddress string parsing.
+  if (!streetAddress && !city && !region && !postcode && !countryCode) {
+    return null;
+  }
+  return { streetAddress, city, region, postcode, countryCode };
+}
+
 export const __test = {
   haversineMeters,
   normalizedTokens,
   jaccardTokenSimilarity,
+  parseAddressComponents,
   MATCH_RADIUS_M,
   MATCH_NAME_SIMILARITY,
   COST_CENTS,

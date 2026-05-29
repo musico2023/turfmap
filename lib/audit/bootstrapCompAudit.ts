@@ -37,6 +37,7 @@
 import { getServerSupabase } from '@/lib/supabase/server';
 import { createVisibilityAudit, patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
+import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
 import { sendAuditPurchaseRoadmap } from '@/lib/email/resend';
 import { notifyCompAuditBooked } from '@/lib/audit/operatorSlack';
 import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade } from '@/lib/audit/llmFitScore';
@@ -324,6 +325,27 @@ export async function bootstrapCompAudit(
       status: 'call_scheduled',
     });
   }
+
+  // ─── 5b. Trigger NAP audit at audit-init ──────────────────────────
+  // Fire-and-forget — the BL/DFS audit takes ~5-15min to complete +
+  // we don't want it blocking the bootstrap response. The
+  // triggerNapAuditAtAuditInit helper auto-enriches the location's
+  // NAP fields from Google Places when missing (cold-prospect case)
+  // BEFORE calling maybeRunNapAudit, so this works even for clients
+  // whose COLDSCAN-created location lacks phone + structured address.
+  // T-24h cron will regenerate the Roadmap PDF with the populated
+  // findings once the audit lands in nap_audits.
+  void triggerNapAuditAtAuditInit(supabase, auditId, {
+    operatorOrigin: appOrigin,
+  }).then((r) => {
+    if (!r.ok) {
+      console.error(
+        '[bootstrapCompAudit] triggerNapAuditAtAuditInit failed',
+        r.stage,
+        r.error
+      );
+    }
+  });
 
   // ─── 6. Generate the Roadmap PDF + email Anthony ──────────────────
   // Mirrors the paid-audit fulfill route's after() callback. Fail-soft
