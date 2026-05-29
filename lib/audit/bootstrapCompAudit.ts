@@ -41,7 +41,12 @@ import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditIn
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
 import { sendAuditPurchaseRoadmap } from '@/lib/email/resend';
 import { notifyCompAuditBooked } from '@/lib/audit/operatorSlack';
-import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade } from '@/lib/audit/llmFitScore';
+import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
+import {
+  inferTradeFitFromKeyword,
+  previewDiagnosis,
+  slugifyBusinessName,
+} from '@/lib/audit/tradeClassifier';
 import type {
   ClientRow,
   LeadOrderRow,
@@ -577,28 +582,6 @@ export async function bootstrapCompAudit(
   };
 }
 
-// ─── Helpers — copied from /api/orders/fulfill so the bootstrap can run
-// standalone (no orchestration through the fulfill route).
-
-function previewDiagnosis(diagnosis: string): string {
-  const trimmed = diagnosis.trim().replace(/\s+/g, ' ');
-  if (trimmed.length <= 220) return trimmed;
-  const sliced = trimmed.slice(0, 220);
-  const lastPeriod = sliced.lastIndexOf('. ');
-  if (lastPeriod > 80) return `${sliced.slice(0, lastPeriod + 1)}`;
-  return `${sliced.trim()}…`;
-}
-
-function slugifyBusinessName(name: string): string {
-  const slug = name
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'turfmap';
-}
-
 /** Walk prospect_id → ANY lead_order with this prospect_id → client.
  *  Shared by the prospectId-direct and email→prospects.email
  *  resolution strategies in the multi-path resolver above.
@@ -722,27 +705,3 @@ async function regenerateForExistingAudit(args: {
   };
 }
 
-function inferTradeFitFromKeyword(keyword: string | undefined): boolean | null {
-  if (!keyword) return null;
-  const k = keyword.toLowerCase();
-  const TRADE_KEYWORDS: Array<{ trade: LlmTargetTrade; needles: string[] }> = [
-    { trade: 'electrical', needles: ['electrician', 'electrical'] },
-    { trade: 'hvac', needles: ['hvac', 'heating', 'air conditioning', 'a/c repair', 'furnace'] },
-    { trade: 'landscaping', needles: ['landscap', 'lawn care', 'lawn maintenance'] },
-    { trade: 'plumbing', needles: ['plumb', 'drain cleaning', 'water heater'] },
-    { trade: 'renovation', needles: ['renovat', 'remodel', 'kitchen remodel', 'bathroom remodel'] },
-    { trade: 'restoration', needles: ['restoration', 'water damage', 'fire damage', 'mold remediation'] },
-    { trade: 'roofing', needles: ['roof'] },
-    { trade: 'windows_doors', needles: ['windows', 'doors', 'window install', 'door install'] },
-  ];
-  for (const { trade, needles } of TRADE_KEYWORDS) {
-    for (const needle of needles) {
-      if (k.includes(needle)) {
-        if ((LLM_TARGET_TRADES as readonly string[]).includes(trade)) {
-          return true;
-        }
-      }
-    }
-  }
-  return null;
-}

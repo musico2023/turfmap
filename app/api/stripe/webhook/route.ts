@@ -51,6 +51,7 @@ import { runScanForLocation } from '@/lib/scans/runScan';
 import { sendPulseTrialEnding, sendOrderConfirmation } from '@/lib/email/resend';
 import { fireMeasurementProtocolEvent } from '@/lib/analytics/measurementProtocol';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
+import { inferTradeFitFromKeyword } from '@/lib/audit/tradeClassifier';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import type {
@@ -969,44 +970,3 @@ async function handleAuditUpgradeCompletion(
   }
 }
 
-/** Same trade-keyword matcher used in /api/orders/fulfill. Duplicated
- *  rather than extracted into lib/audit/ since the heuristic might
- *  diverge per surface in the future. */
-function inferTradeFitFromKeyword(
-  keyword: string | undefined
-): boolean | null {
-  if (!keyword) return null;
-  const k = keyword.toLowerCase();
-  const TRADE_NEEDLES = [
-    'electrician',
-    'electrical',
-    'hvac',
-    'heating',
-    'air conditioning',
-    'a/c repair',
-    'furnace',
-    'landscap',
-    'lawn care',
-    'lawn maintenance',
-    'plumb',
-    'drain cleaning',
-    'water heater',
-    'renovat',
-    'remodel',
-    'kitchen remodel',
-    'bathroom remodel',
-    'restoration',
-    'water damage',
-    'fire damage',
-    'mold remediation',
-    'roof',
-    'windows',
-    'doors',
-    'window install',
-    'door install',
-  ];
-  for (const needle of TRADE_NEEDLES) {
-    if (k.includes(needle)) return true;
-  }
-  return null;
-}

@@ -68,7 +68,12 @@ import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapP
 const OPERATOR_AUDIT_EMAIL = 'anthony@fourdots.io';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
-import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
+import { computeLlmFitScore, shouldPitchLlm } from '@/lib/audit/llmFitScore';
+import {
+  inferTradeFitFromKeyword,
+  previewDiagnosis,
+  slugifyBusinessName,
+} from '@/lib/audit/tradeClassifier';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
@@ -1076,78 +1081,3 @@ function errorForLoadSession(err: LoadSessionError): NextResponse {
   }
 }
 
-/**
- * First-sentence-ish preview of the AI Roadmap diagnosis blurb for
- * the buyer's roadmap-ready email. The PDF embeds the full diagnosis
- * on the cover page; this is just the teaser the email body quotes
- * so the buyer reads the headline before opening the attachment.
- * Capped at ~220 chars so it doesn't blow out the email layout.
- */
-function previewDiagnosis(diagnosis: string): string {
-  const trimmed = diagnosis.trim().replace(/\s+/g, ' ');
-  if (trimmed.length <= 220) return trimmed;
-  // Prefer to cut at a sentence boundary near the cap.
-  const sliced = trimmed.slice(0, 220);
-  const lastPeriod = sliced.lastIndexOf('. ');
-  if (lastPeriod > 80) return `${sliced.slice(0, lastPeriod + 1)}`;
-  return `${sliced.trim()}…`;
-}
-
-/**
- * Slug a business name into a safe filename component for the
- * Roadmap PDF attachment. Lowercase, hyphens, ASCII-only. Falls back
- * to 'turfmap' on empty input so we always have a valid filename.
- */
-function slugifyBusinessName(name: string): string {
-  const slug = name
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'turfmap';
-}
-
-/**
- * Map a buyer's primary keyword to one of the LLM target trades.
- * Returns the matched trade or null when no confident classification
- * is possible. Used at audit fulfillment to compute the buyer's
- * tradeFit signal for the LLM Fit Score; called once per order, so
- * O(n*m) string matching against the keyword is fine.
- *
- * Intentionally narrow: we only flip tradeFit=TRUE when the keyword
- * unambiguously names one of LLM_TARGET_TRADES. Any ambiguous keyword
- * ("local services", "home services") returns null so the Fit
- * Score treats it as unknown rather than falsely positive.
- */
-function inferTradeFitFromKeyword(keyword: string | undefined): boolean | null {
-  if (!keyword) return null;
-  const k = keyword.toLowerCase();
-  // Each entry: array of canonical-trade keywords that, if present,
-  // resolve to that trade. Order matters only insofar as more-specific
-  // matches should appear before broader ones — none of these
-  // currently overlap, so order is alphabetical.
-  const TRADE_KEYWORDS: Array<{ trade: LlmTargetTrade; needles: string[] }> = [
-    { trade: 'electrical', needles: ['electrician', 'electrical'] },
-    { trade: 'hvac', needles: ['hvac', 'heating', 'air conditioning', 'a/c repair', 'furnace'] },
-    { trade: 'landscaping', needles: ['landscap', 'lawn care', 'lawn maintenance'] },
-    { trade: 'plumbing', needles: ['plumb', 'drain cleaning', 'water heater'] },
-    { trade: 'renovation', needles: ['renovat', 'remodel', 'kitchen remodel', 'bathroom remodel'] },
-    { trade: 'restoration', needles: ['restoration', 'water damage', 'fire damage', 'mold remediation'] },
-    { trade: 'roofing', needles: ['roof'] },
-    { trade: 'windows_doors', needles: ['windows', 'doors', 'window install', 'door install'] },
-  ];
-  for (const { trade, needles } of TRADE_KEYWORDS) {
-    for (const needle of needles) {
-      if (k.includes(needle)) {
-        // Sanity-check the matched trade is in the canonical list.
-        // (Belt-and-suspenders — if LLM_TARGET_TRADES drifts, we'd
-        // rather a typecheck error here than a runtime mis-classify.)
-        if ((LLM_TARGET_TRADES as readonly string[]).includes(trade)) {
-          return true;
-        }
-      }
-    }
-  }
-  return null; // unknown — not a confident TRUE or FALSE
-}
