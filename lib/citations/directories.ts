@@ -108,21 +108,66 @@ export function directoriesForProfile(
   return dirs.filter((d) => d.countries === 'all' || d.countries === country);
 }
 
-/** Free-text industry → DfsDirectoryProfile. Mirrors the heuristic
- *  in lib/brightlocal/directories.ts so the same buyer maps to the
- *  same profile across both providers. */
+/** Free-text industry → DfsDirectoryProfile. Mirrors the same intent
+ *  as lib/brightlocal/directories.ts's inferProfileForIndustry, but
+ *  the DFS-checker's vertical roster is narrower (we only ship
+ *  vertical additions for home-services and medical today; restaurant
+ *  / real-estate / automotive / legal use the UNIVERSAL set only).
+ *
+ *  Industries are matched in priority order:
+ *    1. Explicit non-home verticals (restaurant, medical, legal, etc.)
+ *       → these short-circuit to 'universal' or 'medical' so they
+ *       never pick up HOME_SERVICES_ADD entries (Homestars / Angi /
+ *       HomeAdvisor / Thumbtack). This was the catalyst — a
+ *       restaurant audit was surfacing HomeStars as a "missing
+ *       citation" because the function used to default unknown
+ *       industries to 'home-services'.
+ *    2. Explicit home-services regex (plumbing / HVAC / roofing /
+ *       etc.) → 'home-services' profile.
+ *    3. Anything still unmatched → 'universal'. Operators who want
+ *       a tighter vertical audit should set clients.industry to a
+ *       value that matches one of the regexes above.
+ */
 export function inferDfsProfile(industry: string | null): DfsDirectoryProfile {
   if (!industry) return 'universal';
   const i = industry.toLowerCase();
+
+  // Explicit non-home verticals — match BEFORE the home-services
+  // regex so multi-word industries like "restaurant construction"
+  // (rare but real) don't slip into home-services. Order within
+  // this block doesn't matter; the regexes are disjoint.
   if (
-    /plumb|hvac|roof|landscape|construction|contractor|home builder|electrician|paint|cleaning|restoration|handyman|garage|window|blinds|carpet|appliance/.test(
+    /\b(restaurant|caf[eé]|bakery|cater(er|ing)|food ?(truck|service)|pizz|sushi|bistro|diner|pub|brewery|deli|tavern|grill|eatery)\b/.test(
+      i
+    )
+  ) {
+    return 'universal';
+  }
+  if (/\b(law(yer|firm)?|attorney|legal|paralegal)\b/.test(i)) {
+    return 'universal';
+  }
+  if (/\b(real ?estate|realt(or|y)|broker(age)?)\b/.test(i)) {
+    return 'universal';
+  }
+  if (
+    /\b(automotive|car ?(dealer|lot|sale|repair|wash)|auto ?(repair|body|sales|parts)|mechanic|tire|transmission|detailing)\b/.test(
+      i
+    )
+  ) {
+    return 'universal';
+  }
+
+  if (/\b(medical|health(care)?|clinic|doctor|dental|orthodont|chiropract|veterinar|pediatric|therap(y|ist)|physic(ian|al)|psychia|psycholog|optometr|optic|urgent ?care|nurs|rehab|pharma)/.test(i)) {
+    return 'medical';
+  }
+
+  if (
+    /\b(plumb|hvac|roof|landscape|lawn|construction|contractor|home ?builder|electric(ian|al)|paint|cleaning|restoration|handyman|garage|window|blinds|carpet|appliance|tree ?service|gutter|deck|fence|pool|pest|septic|driveway|concrete|drywall)\b/.test(
       i
     )
   ) {
     return 'home-services';
   }
-  if (/medical|doctor|dentist|chiropract|pediatric|clinic|veterinar/.test(i)) {
-    return 'medical';
-  }
-  return 'home-services'; // default for unknown industries (TurfMap's primary book)
+
+  return 'universal';
 }

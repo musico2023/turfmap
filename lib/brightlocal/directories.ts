@@ -172,20 +172,32 @@ const INDUSTRY_RULES: Array<{ pattern: RegExp; profile: DirectoryProfile }> = [
       /\b(automotive|car ?(dealer|lot|sale|repair|wash)|auto ?(repair|body|sales|parts)|mechanic|tire|transmission|detailing)\b/i,
     profile: 'automotive',
   },
-  // No "home-services" pattern here — it's the explicit fallback for
-  // clients whose industry is set but doesn't match any rule above.
-  // The plumbing/HVAC/roofing/etc. terms are common enough in industry
-  // that we just default to home-services for them rather than enumerate.
+  {
+    // Explicit home-services trades. Previously this was implicit —
+    // the unmatched fallback defaulted to 'home-services' on the
+    // assumption that TurfMap's book was home services only. Now
+    // that we run audits for restaurants + other verticals, the
+    // implicit fallback caused Homestars / Angi / Houzz to surface
+    // as "missing citations" for industries they don't apply to
+    // (e.g. a restaurant audit recommending HomeStars). Matching
+    // the trades explicitly here, with 'universal' as the new
+    // catch-all, keeps the home-services dirs targeted to the
+    // businesses that actually want them.
+    pattern:
+      /\b(plumb|hvac|roof|landscape|lawn|construction|contractor|home ?builder|electric(ian|al)|paint|cleaning|restoration|handyman|garage|window|blinds|carpet|appliance|tree ?service|gutter|deck|fence|pool|pest|septic|driveway|concrete|drywall)\b/i,
+    profile: 'home-services',
+  },
 ];
 
 /** What gets returned when industry is null/empty: the safer universal
  *  set so we don't burn audit credits on the wrong vertical. */
 const DEFAULT_FOR_NO_INDUSTRY: DirectoryProfile = 'universal';
 
-/** What gets returned when industry IS set but matches no rule: home
- *  services (TurfMap's primary book). Operators in unusual verticals
- *  who want a tighter audit can just leave industry blank. */
-const DEFAULT_FOR_UNMATCHED_INDUSTRY: DirectoryProfile = 'home-services';
+/** What gets returned when industry IS set but matches no rule: the
+ *  universal set. Operators with unusual verticals (salon, gym,
+ *  consultancy, etc.) get the safe core dirs only — no false-
+ *  positive Homestars-on-a-restaurant style recommendations. */
+const DEFAULT_FOR_UNMATCHED_INDUSTRY: DirectoryProfile = 'universal';
 
 export function inferProfileForIndustry(
   industry: string | null
