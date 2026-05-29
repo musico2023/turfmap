@@ -79,40 +79,51 @@ export default async function ClientPortalPage({
 
   // ─── Outreach-lead redirect ─────────────────────────────────────────
   // Cold prospects (is_outreach_lead=true) don't belong on the
-  // agency-client portal — they're not magic-link members of anything.
-  // Bounce them to the active share link before the auth gate fires,
-  // so they don't ping-pong through /login and hit the misleading
-  // "not authorized" rejection. /login renders the same redirect logic
-  // independently, so a buyer who lands at either route ends up on
-  // /share regardless.
+  // agency-client portal UNLESS they've been provisioned portal
+  // access (a client_users row exists for the client). Once an
+  // outreach lead converts to a paying audit buyer, audit
+  // initialization auto-provisions client_users so they can magic-
+  // link in like any other client; the redirect-to-share path is
+  // reserved for outreach leads who never converted (no portal
+  // access established yet — sending them through /login would hit
+  // the auth-rejection page and confuse them).
   if (client.is_outreach_lead) {
-    const { data: outreachScan } = await supabase
-      .from('scans')
-      .select('id')
-      .eq('client_id', client.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<{ id: string }>();
-    if (outreachScan) {
-      const { data: outreachShare } = await supabase
-        .from('scan_share_links')
-        .select('id, expires_at')
-        .eq('scan_id', outreachScan.id)
-        .is('revoked_at', null)
+    const { count: portalMemberCount } = await supabase
+      .from('client_users')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', client.id);
+    if (!portalMemberCount || portalMemberCount === 0) {
+      // No portal access — find their share link + redirect.
+      const { data: outreachScan } = await supabase
+        .from('scans')
+        .select('id')
+        .eq('client_id', client.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle<{ id: string; expires_at: string }>();
-      if (
-        outreachShare &&
-        new Date(outreachShare.expires_at).getTime() >= Date.now()
-      ) {
-        redirect(`/share/${outreachShare.id}`);
+        .maybeSingle<{ id: string }>();
+      if (outreachScan) {
+        const { data: outreachShare } = await supabase
+          .from('scan_share_links')
+          .select('id, expires_at')
+          .eq('scan_id', outreachScan.id)
+          .is('revoked_at', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<{ id: string; expires_at: string }>();
+        if (
+          outreachShare &&
+          new Date(outreachShare.expires_at).getTime() >= Date.now()
+        ) {
+          redirect(`/share/${outreachShare.id}`);
+        }
       }
+      // No active share — let the request fall through to /login,
+      // which renders the cleaner "share link has expired" message
+      // for outreach leads.
+      redirect(`/portal/${slug}/login`);
     }
-    // No active share — let the request fall through to /login,
-    // which renders the cleaner "share link has expired" message
-    // for outreach leads.
-    redirect(`/portal/${slug}/login`);
+    // Has portal members → fall through to the normal auth gate
+    // (lets audit-buyer outreach leads sign in normally).
   }
 
   // ─── auth gate ────────────────────────────────────────────────────────────

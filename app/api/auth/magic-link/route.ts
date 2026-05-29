@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { sendMagicLink } from '@/lib/auth/sendMagicLink';
+import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
 
 export const runtime = 'nodejs';
 
@@ -46,9 +47,74 @@ export async function POST(req: Request) {
     );
   }
 
-  // Service-role check: is this email on the membership list for this client?
   const admin = getServerSupabase();
   const email = parsed.email.trim().toLowerCase();
+
+  // ─── Agency-domain bypass ───────────────────────────────────────────
+  // Fourdots-domain emails get magic-link access to any client portal
+  // — they're operators, not portal members. The portal page itself
+  // (/portal/[slug]/page.tsx) already has matching impersonation
+  // logic that flags the session with an "Agency preview" header tag
+  // when no client_users membership exists but the user is in the
+  // `users` table. Without this bypass an agency user couldn't reach
+  // that screen via the per-client login surface.
+  //
+  // Auto-provision a `users` row on first hit so the post-auth check
+  // resolves correctly. Mirrors the same self-provisioning the
+  // unified /api/auth/agency-magic-link entrypoint does.
+  if (isAgencyDomainEmail(email)) {
+    // Look up the client to validate the client_id + fetch the
+    // business_name for the magic-link email template's portal-flavor
+    // copy.
+    const { data: client } = await admin
+      .from('clients')
+      .select('public_id, business_name')
+      .eq('id', parsed.client_id)
+      .maybeSingle<{ public_id: string; business_name: string }>();
+    if (!client) {
+      return NextResponse.json(
+        { error: 'client not found' },
+        { status: 404 }
+      );
+    }
+    // Self-provision the agency users row (idempotent on the email
+    // unique constraint — 23505 means a concurrent request beat us;
+    // any other code is fatal).
+    const { error: provisionErr } = await admin
+      .from('users')
+      .insert({ email, role: 'admin' });
+    if (provisionErr) {
+      const code = (provisionErr as { code?: string }).code;
+      if (code !== '23505') {
+        return NextResponse.json(
+          { error: `agency provisioning failed: ${provisionErr.message}` },
+          { status: 500 }
+        );
+      }
+    }
+    const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+    const next = `/portal/${client.public_id}`;
+    const result = await sendMagicLink({
+      supabase: admin,
+      email,
+      origin,
+      next,
+      // No businessName tagging on agency previews — the SignInLinkEmail
+      // template flips to the operator-flavor copy when null.
+      businessName: null,
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: `magic-link send failed: ${result.error}` },
+        { status: 502 }
+      );
+    }
+    return NextResponse.json({ ok: true, agency: true });
+  }
+
+  // ─── Standard portal-member path ────────────────────────────────────
+  // Service-role check: is this email on the membership list for this
+  // client?
   const { data: row } = await admin
     .from('client_users')
     .select('id, email, client_id, clients ( public_id, business_name )')

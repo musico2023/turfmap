@@ -35,39 +35,44 @@ export default async function PortalLoginPage({
 
   // ─── Outreach-lead redirect ─────────────────────────────────────────
   // Cold-outreach prospects (is_outreach_lead=true) shouldn't see the
-  // agency-client portal login at all — they're not magic-link members
-  // of any agency. Their data lives at the public /share/<id> URL.
-  // If someone (operator misclick, stale email link, etc.) lands them
-  // here, find their active share link and bounce them there instead
-  // of showing the misleading "this email is not authorized" rejection.
+  // agency-client portal login UNLESS they've been provisioned portal
+  // access (a client_users row exists). Once an outreach lead
+  // converts to a paying audit buyer, audit initialization auto-
+  // provisions client_users so they can magic-link in normally. The
+  // redirect-to-share path stays for outreach leads who never
+  // converted (no portal access → show share or expired-link
+  // message rather than the auth-rejection screen).
   if (client.is_outreach_lead) {
-    const { data: scan } = await supabase
-      .from('scans')
-      .select('id')
-      .eq('client_id', client.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<Pick<ScanRow, 'id'>>();
-    if (scan) {
-      const { data: share } = await supabase
-        .from('scan_share_links')
-        .select('id, expires_at, revoked_at')
-        .eq('scan_id', scan.id)
-        .is('revoked_at', null)
+    const { count: portalMemberCount } = await supabase
+      .from('client_users')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', client.id);
+    if (!portalMemberCount || portalMemberCount === 0) {
+      const { data: scan } = await supabase
+        .from('scans')
+        .select('id')
+        .eq('client_id', client.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle<
-          Pick<ScanShareLinkRow, 'id' | 'expires_at' | 'revoked_at'>
-        >();
-      if (share && new Date(share.expires_at).getTime() >= Date.now()) {
-        redirect(`/share/${share.id}`);
+        .maybeSingle<Pick<ScanRow, 'id'>>();
+      if (scan) {
+        const { data: share } = await supabase
+          .from('scan_share_links')
+          .select('id, expires_at, revoked_at')
+          .eq('scan_id', scan.id)
+          .is('revoked_at', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<
+            Pick<ScanShareLinkRow, 'id' | 'expires_at' | 'revoked_at'>
+          >();
+        if (share && new Date(share.expires_at).getTime() >= Date.now()) {
+          redirect(`/share/${share.id}`);
+        }
       }
-    }
-    // No active share link found — render a clearer expired-link
-    // message instead of the agency-portal rejection. Cold prospects
-    // who lose their share link should ask for a fresh one, not get
-    // funneled into a sign-in form they can't satisfy.
-    return (
+      // No active share link found — render a clearer expired-link
+      // message instead of the agency-portal rejection.
+      return (
       <div className="min-h-screen w-full text-white flex items-center justify-center px-6">
         <div
           className="w-full max-w-md rounded-lg border p-8 text-center"
@@ -100,6 +105,9 @@ export default async function PortalLoginPage({
         </div>
       </div>
     );
+    }
+    // Has portal members → fall through to the normal login form
+    // (lets audit-buyer outreach leads sign in normally).
   }
 
   return (

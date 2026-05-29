@@ -38,6 +38,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { createVisibilityAudit, patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
 import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
+import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
 import { sendAuditPurchaseRoadmap } from '@/lib/email/resend';
 import { notifyCompAuditBooked } from '@/lib/audit/operatorSlack';
 import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade } from '@/lib/audit/llmFitScore';
@@ -440,6 +441,33 @@ export async function bootstrapCompAudit(
       strategist_call_scheduled_at: input.callStartTime,
       status: 'call_scheduled',
     });
+  }
+
+  // ─── 5a. Ensure buyer has portal access ───────────────────────────
+  // Create a client_users row for the buyer so they can magic-link
+  // sign into their portal (/portal/<public_id>). Audit buyers paid
+  // $499+ and will want ongoing access to their dashboard, Cal.com
+  // booking, AI Coach regeneration, etc. Free scan buyers stay on
+  // the public /share/<id> URL — we only provision portal accounts at
+  // audit-init to keep client_users membership meaningful.
+  const portalEmail =
+    input.email?.trim().toLowerCase() ??
+    prospect?.email?.trim().toLowerCase() ??
+    null;
+  if (portalEmail) {
+    const portalResult = await ensurePortalUser(
+      supabase,
+      client.id,
+      portalEmail
+    );
+    if (!portalResult.ok) {
+      // Non-fatal — the audit + PDF still ship. Anthony can manually
+      // grant access later via the agency dashboard's ClientUsersManager.
+      console.error(
+        '[bootstrapCompAudit] ensurePortalUser failed (non-fatal)',
+        portalResult.error
+      );
+    }
   }
 
   // ─── 5b. Trigger NAP audit at audit-init ──────────────────────────

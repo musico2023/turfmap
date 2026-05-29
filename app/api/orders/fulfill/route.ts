@@ -71,6 +71,7 @@ import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
 import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade, shouldPitchLlm } from '@/lib/audit/llmFitScore';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
+import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
 import {
   notifyLlmFitAudit,
   notifyTurfScanPurchase,
@@ -706,6 +707,19 @@ export async function POST(req: NextRequest) {
             );
           }
         });
+
+        // Ensure the buyer has portal access. Idempotent — a second
+        // run for the same email is a no-op. Non-fatal; Anthony can
+        // grant access later via the agency dashboard's
+        // ClientUsersManager if this fails.
+        try {
+          await ensurePortalUser(supabase, client.id, body.email);
+        } catch (e) {
+          console.error(
+            '[orders/fulfill] ensurePortalUser threw (non-fatal)',
+            e instanceof Error ? e.message : String(e)
+          );
+        }
 
         if (shouldPitchLlm(fitBreakdown.score)) {
           // Fire the operator Slack notification for fit-4-and-up
