@@ -41,6 +41,11 @@ const Body = z.object({
   email: z.string().email().optional(),
   prospect_id: z.string().min(4).max(64).optional(),
   client_id: z.string().uuid().optional(),
+  /** Operator-friendly fallback when none of email/prospect_id/
+   *  client_id resolve. Fuzzy-matches against clients.business_name
+   *  ILIKE %name% with is_outreach_lead=true (so we never collapse
+   *  a paying client with an outreach lead of the same name). */
+  business_name: z.string().min(3).max(200).optional(),
   call_start_time: z.string().datetime().optional(),
   call_uid: z.string().max(120).optional(),
   booker_url: z.string().url().optional(),
@@ -93,11 +98,16 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!body.email && !body.prospect_id && !body.client_id) {
+  if (
+    !body.email &&
+    !body.prospect_id &&
+    !body.client_id &&
+    !body.business_name
+  ) {
     return NextResponse.json(
       {
         error:
-          'one of {email, prospect_id, client_id} is required to resolve the buyer',
+          'one of {email, prospect_id, client_id, business_name} is required to resolve the buyer',
       },
       { status: 400 }
     );
@@ -111,6 +121,7 @@ export async function POST(req: Request) {
       clientId: body.client_id,
       prospectId: body.prospect_id,
       email: body.email ?? null,
+      businessName: body.business_name ?? null,
       callStartTime: body.call_start_time ?? null,
       callUid: body.call_uid ?? null,
       bookerUrl: body.booker_url ?? null,

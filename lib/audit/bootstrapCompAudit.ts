@@ -56,9 +56,17 @@ export type BootstrapCompAuditInput = {
    *  here; the admin endpoint can accept either. */
   clientId?: string;
   prospectId?: string;
-  /** Buyer email — used as fallback prospect resolution + as a sanity
-   *  check that we're operating on the right buyer. */
+  /** Buyer email — used as a resolution path AND stamped on the
+   *  comp lead_orders row so the agency dashboard + Slack ping
+   *  surface the actual address the buyer uses (which may differ
+   *  from the prospect row's stored email). */
   email?: string | null;
+  /** Operator-friendly resolution fallback — when none of the above
+   *  match, we fuzzy-match clients.business_name. Useful when the
+   *  prospect row was created by a pipeline that didn't capture an
+   *  email (some legacy enrichment-only feeds) and the operator
+   *  knows the business name but doesn't have UUIDs handy. */
+  businessName?: string | null;
   /** Cal.com booking timestamp (ISO). When present, stamps
    *  strategist_call_scheduled_at so the T-24h pre-call cron picks
    *  the row up. Omit when bootstrapping pre-booking. */
@@ -108,9 +116,24 @@ export async function bootstrapCompAudit(
   const supabase = getServerSupabase();
 
   // ─── 1. Resolve the buyer's client row ─────────────────────────────
+  // Multi-strategy resolution. Each strategy is independent; we stop
+  // at the first one that returns a client. The history of attempts
+  // is reported in the failure error so the operator knows what was
+  // tried + which paths were dry.
+  //
+  // Originally the only fallback was email → prospects.email → coldscan
+  // lead_order chain, which broke for Yohann at Ainger Group Roofing
+  // because cold-email pipelines that upstreamed his prospect row
+  // didn't populate prospects.email (or populated it with a non-
+  // matching format). The lead_orders.email column is the canonical
+  // contact email — it's what Resend, Cal.com prefills, and the
+  // unbooked-nudge crons all use — so going through lead_orders is
+  // more robust than going through prospects.
   let client: ClientRow | null = null;
   let prospect: ProspectRow | null = null;
+  const trace: string[] = [];
 
+  // ─── Strategy 1: clientId (direct) ────────────────────────────────
   if (input.clientId) {
     const { data } = await supabase
       .from('clients')
@@ -118,48 +141,141 @@ export async function bootstrapCompAudit(
       .eq('id', input.clientId)
       .maybeSingle<ClientRow>();
     client = data ?? null;
+    trace.push(`clientId(${input.clientId}) → ${client ? 'hit' : 'miss'}`);
   }
 
-  if (input.prospectId) {
-    const { data } = await supabase
+  // ─── Strategy 2: prospectId (direct → client via coldscan order) ──
+  if (!client && input.prospectId) {
+    const { data: p } = await supabase
       .from('prospects')
       .select('*')
       .eq('id', input.prospectId)
       .maybeSingle<ProspectRow>();
-    prospect = data ?? null;
+    prospect = p ?? null;
+    if (p) {
+      const { data: c } = await resolveClientFromProspectId(supabase, p.id);
+      client = c;
+    }
+    trace.push(
+      `prospectId(${input.prospectId}) → ${prospect ? 'prospect-hit' : 'prospect-miss'}, ${client ? 'client-hit' : 'client-miss'}`
+    );
   }
 
-  // Fallback resolution: if we don't have a client yet but have an
-  // email, find the prospect by email + then resolve their client via
-  // the coldscan lead_order.
+  // ─── Strategy 3: email → lead_orders.email match ──────────────────
+  // lead_orders.email is the canonical contact email — set by the
+  // coldscan-fulfill flow + every subsequent purchase. Matching here
+  // bypasses the prospect indirection entirely, which is the path
+  // that broke for Yohann.
   if (!client && input.email) {
+    const normalized = input.email.trim().toLowerCase();
+    const { data: leadByEmail } = await supabase
+      .from('lead_orders')
+      .select('client_id, stripe_metadata')
+      .ilike('email', normalized)
+      .not('client_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        client_id: string;
+        stripe_metadata: Record<string, unknown> | null;
+      }>();
+    if (leadByEmail?.client_id) {
+      const { data: c } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', leadByEmail.client_id)
+        .maybeSingle<ClientRow>();
+      client = c ?? null;
+      // If the lead_order carries a prospect_id, hydrate the prospect
+      // row too — useful for downstream metadata stamping.
+      const metaProspectId =
+        (leadByEmail.stripe_metadata as Record<string, unknown> | null)?.[
+          'prospect_id'
+        ];
+      if (!prospect && typeof metaProspectId === 'string') {
+        const { data: p } = await supabase
+          .from('prospects')
+          .select('*')
+          .eq('id', metaProspectId)
+          .maybeSingle<ProspectRow>();
+        prospect = p ?? null;
+      }
+    }
+    trace.push(`email→lead_orders(${normalized}) → ${client ? 'hit' : 'miss'}`);
+  }
+
+  // ─── Strategy 4: email → prospects.email exact ────────────────────
+  // Legacy path retained for cohorts where lead_orders haven't been
+  // created yet (replied-but-no-coldscan prospects) but a prospect row
+  // exists. Same chain as before: prospect → coldscan order → client.
+  if (!client && input.email) {
+    const normalized = input.email.trim().toLowerCase();
     const { data: pByEmail } = await supabase
       .from('prospects')
       .select('*')
-      .ilike('email', input.email)
+      .ilike('email', normalized)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle<ProspectRow>();
     if (pByEmail) {
       prospect = pByEmail;
-      // The coldscan lead_order carries the client_id linked to the
-      // prospect (via stripe_metadata.prospect_id).
-      const { data: coldOrder } = await supabase
-        .from('lead_orders')
-        .select('client_id')
-        .filter('stripe_metadata->>prospect_id', 'eq', pByEmail.id)
-        .filter('stripe_metadata->>source', 'eq', 'coldscan_free')
+      const { data: c } = await resolveClientFromProspectId(
+        supabase,
+        pByEmail.id
+      );
+      client = c;
+    }
+    trace.push(
+      `email→prospects.email(${normalized}) → ${pByEmail ? 'prospect-hit' : 'prospect-miss'}, ${client ? 'client-hit' : 'client-miss'}`
+    );
+  }
+
+  // ─── Strategy 5: email partial (defensive whitespace/format match) ─
+  // ILIKE with %word% catches stored-with-whitespace edge cases. We
+  // only do this for partial email (everything before the @) so we
+  // don't accidentally collapse two distinct people at the same
+  // domain.
+  if (!client && input.email) {
+    const localPart = input.email.split('@')[0]?.trim().toLowerCase();
+    const domain = input.email.split('@')[1]?.trim().toLowerCase();
+    if (localPart && domain) {
+      const { data: pPartial } = await supabase
+        .from('prospects')
+        .select('*')
+        .ilike('email', `%${localPart}%${domain}%`)
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle<{ client_id: string }>();
-      if (coldOrder?.client_id) {
-        const { data: c } = await supabase
-          .from('clients')
-          .select('*')
-          .eq('id', coldOrder.client_id)
-          .maybeSingle<ClientRow>();
-        client = c ?? null;
+        .maybeSingle<ProspectRow>();
+      if (pPartial) {
+        prospect = pPartial;
+        const { data: c } = await resolveClientFromProspectId(
+          supabase,
+          pPartial.id
+        );
+        client = c;
       }
+      trace.push(
+        `email→prospects.email(ILIKE %${localPart}%${domain}%) → ${pPartial ? 'prospect-hit' : 'prospect-miss'}, ${client ? 'client-hit' : 'client-miss'}`
+      );
+    }
+  }
+
+  // ─── Strategy 6: business_name fuzzy (operator-friendly fallback) ─
+  if (!client && input.businessName) {
+    const name = input.businessName.trim();
+    if (name.length >= 3) {
+      const { data: cByName } = await supabase
+        .from('clients')
+        .select('*')
+        .ilike('business_name', `%${name}%`)
+        .eq('is_outreach_lead', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<ClientRow>();
+      client = cByName ?? null;
+      trace.push(
+        `businessName(${name}) → ${client ? 'hit' : 'miss'}`
+      );
     }
   }
 
@@ -167,7 +283,7 @@ export async function bootstrapCompAudit(
     return {
       ok: false,
       stage: 'resolve-client',
-      error: 'could not resolve a client row from clientId / prospectId / email',
+      error: `could not resolve a client row. Attempts: ${trace.join(' | ') || '(no inputs provided)'}`,
     };
   }
 
@@ -444,6 +560,34 @@ function slugifyBusinessName(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return slug || 'turfmap';
+}
+
+/** Walk prospect_id → coldscan lead_order → client. Shared by the
+ *  prospectId-direct and email→prospects.email resolution strategies
+ *  in the multi-path resolver above. Returns { data: ClientRow | null }
+ *  matching the supabase-js return shape so call sites can destructure
+ *  uniformly. */
+async function resolveClientFromProspectId(
+  supabase: ReturnType<typeof getServerSupabase>,
+  prospectId: string
+): Promise<{ data: ClientRow | null }> {
+  const { data: coldOrder } = await supabase
+    .from('lead_orders')
+    .select('client_id')
+    .filter('stripe_metadata->>prospect_id', 'eq', prospectId)
+    .filter('stripe_metadata->>source', 'eq', 'coldscan_free')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ client_id: string }>();
+  if (!coldOrder?.client_id) {
+    return { data: null };
+  }
+  const { data } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', coldOrder.client_id)
+    .maybeSingle<ClientRow>();
+  return { data: data ?? null };
 }
 
 /** Refresh the PDF + operator email for an audit that already exists.
