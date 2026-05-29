@@ -233,10 +233,19 @@ async function handle(req: Request): Promise<Response> {
       let dashboardUrl: string;
       if (client.is_outreach_lead) {
         // Look up the freshest non-revoked, non-expired share link.
-        // The COLDSCAN flow creates one per outreach lead; if it's
-        // missing/expired we fall back to the portal URL so the buyer
-        // at least lands on the "this scan link has expired" message
-        // (cleaner than the auth-rejection screen).
+        // The COLDSCAN flow creates one per outreach lead.
+        //
+        // If there's no active share link, skip the nudge entirely
+        // and stamp ai_coach_nudge_sent_at so the cron doesn't
+        // re-evaluate. The old fallback handed cold prospects a
+        // /portal/<slug> URL which bounced them at the agency-portal
+        // auth wall ("this email is not authorized"). And there's no
+        // point sending an AI-Coach nudge to an outreach lead anyway —
+        // the coldscan-fulfill route auto-generates the Fix List at
+        // scan time, so an engaged cold prospect already saw it on
+        // /share/<id>. If they didn't engage AND their share expired,
+        // the right re-engagement surface is a manual cold-stage3
+        // follow-up, not an automated nudge with a broken URL.
         const { data: scan } = await supabase
           .from('scans')
           .select('id')
@@ -261,8 +270,15 @@ async function handle(req: Request): Promise<Response> {
             shareUrl = `${origin}/share/${share.id}#ai-coach`;
           }
         }
-        dashboardUrl =
-          shareUrl ?? `${origin}/portal/${client.public_id}#ai-coach`;
+        if (!shareUrl) {
+          await supabase
+            .from('prospects')
+            .update({ ai_coach_nudge_sent_at: new Date().toISOString() })
+            .eq('id', p.id)
+            .is('ai_coach_nudge_sent_at', null);
+          continue;
+        }
+        dashboardUrl = shareUrl;
       } else {
         dashboardUrl = `${origin}/portal/${client.public_id}#ai-coach`;
       }
