@@ -324,6 +324,19 @@ async function generateAndEmailPrepForAudit(
     .eq('is_primary', true)
     .maybeSingle<TrackedKeywordRow>();
 
+  // Pull the originating lead_order so we know whether this is an
+  // audit-tier ($499, 30-min Audit walkthrough) or strategy-tier
+  // ($1,497, 90-min Strategy Session) call. The StrategistPrepEmail
+  // template uses this to write the right call-type label in the
+  // headline + preview.
+  const { data: leadOrder } = await supabase
+    .from('lead_orders')
+    .select('tier')
+    .eq('id', audit.lead_order_id)
+    .maybeSingle<Pick<LeadOrderRow, 'tier'>>();
+  const callType: 'audit' | 'strategy' =
+    leadOrder?.tier === 'strategy' ? 'strategy' : 'audit';
+
   // ── Step 3. Strategist prep notes (separate Claude call) ──
   // Re-load the summaries the prep generator wants. (They're cheap
   // — Postgres scans of small tables — and isolating the two
@@ -400,6 +413,7 @@ async function generateAndEmailPrepForAudit(
       // Auth-gated to fourdots-domain operators.
       prepNotesUrl: `${appOrigin()}/api/audit/${audit.id}/prep-notes`,
       dashboardUrl: `${appOrigin()}/portal/${client.public_id}`,
+      callType,
     },
   });
 

@@ -39,15 +39,22 @@ export type StrategistPrepEmailProps = {
   /** Buyer's dashboard URL — Anthony jumps to it during the call
    *  to walk through the heatmap with them. */
   dashboardUrl: string;
+  /** Human-readable tier label — "audit" (Visibility Audit, 30-min
+   *  walkthrough) or "strategy" (Strategy Session, 90-min). Drives
+   *  the headline + preview so Anthony's inbox is scannable across
+   *  both call types. Optional with audit default so existing
+   *  audit-tier callers don't need to thread it through. */
+  callType?: 'audit' | 'strategy';
 };
 
 export function StrategistPrepEmail(props: StrategistPrepEmailProps) {
   const pitchFlag = props.llmFitScore >= 4 ? 'YES' : 'NO';
+  const callLabel = props.callType === 'strategy' ? 'strategy session' : 'audit call';
   return (
     <EmailLayout
-      preview={`Tomorrow's audit call: ${props.businessName} (${props.trade}, ${props.market}) — TurfScore ${props.currentTurfScore}, LLM Fit ${props.llmFitScore}/5`}
+      preview={`Tomorrow's ${callLabel}: ${props.businessName} (${props.trade}, ${props.market}) — TurfScore ${props.currentTurfScore}, LLM Fit ${props.llmFitScore}/5`}
     >
-      <H1>Tomorrow&rsquo;s audit call: {props.businessName}</H1>
+      <H1>Tomorrow&rsquo;s {callLabel}: {props.businessName}</H1>
 
       <P>
         <strong>{props.trade}</strong> · {props.market} · scheduled{' '}

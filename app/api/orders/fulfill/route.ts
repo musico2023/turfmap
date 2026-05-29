@@ -624,19 +624,24 @@ export async function POST(req: NextRequest) {
   const primaryScanResult = scanResults[0];
 
   // ─── 8c. Stamp the visibility_audits row (Phase 1 foundation) ────────
-  // For Audit tier only: insert a visibility_audits row capturing
-  // the buyer's starting state + LLM Fit Score. Phase 2 will add
-  // Roadmap PDF generation; Phase 3 will populate the call-completion
-  // + 60-day-prompt fields. For Phase 1 we just want the row to exist
-  // + the Fit Score to be computed at purchase time so the
-  // strategist's prep notes (when generated 24h before the call)
-  // reference the score that informed the call, not whatever the
-  // data says tomorrow.
+  // For Audit + Strategy tiers: insert a visibility_audits row
+  // capturing the buyer's starting state + LLM Fit Score. The row
+  // anchors:
+  //   - the at-purchase Roadmap PDF generation (helper below)
+  //   - the T-24h pre-call prep packet to Anthony (audit-milestones
+  //     cron's sweepPreCall)
+  //   - the post-call follow-up sweeps (day-25 re-scan reminder,
+  //     day-60 check-in prompt, day-67 nudge)
   //
-  // Strategy tier ($1,497) is a different deliverable (3-keyword scan
-  // + 90-min session) and isn't routed through this pipeline.
+  // For Strategy (3-keyword purchase), the row tracks the PRIMARY
+  // keyword's scan. The other two scans still exist in the DB for
+  // the comparative analysis Anthony builds post-call; the
+  // visibility_audits row + auto-Roadmap PDF reference the primary
+  // keyword only, matching how the PDF template handles single-
+  // keyword input. Anthony layers the multi-keyword comparison on
+  // top manually using the agency dashboard's per-scan views.
   if (
-    session.tier === 'audit' &&
+    (session.tier === 'audit' || session.tier === 'strategy') &&
     primaryScanResult?.ok &&
     fulfilled.ok
   ) {
@@ -728,6 +733,13 @@ export async function POST(req: NextRequest) {
         const buyerMarket = geocode.components?.city ?? body.address.trim();
         const buyerLlmFit = fitBreakdown.score;
         const agencyDashboardUrl = `${origin}/clients/${client.public_id}`;
+        // Human-readable tier label for the operator email subject +
+        // body. Strategy buyers paid $1,497 and bought the 3-keyword
+        // deliverable; audit buyers paid $499 for the single-keyword
+        // version. Anthony scans the inbox by subject so this needs
+        // to read correctly per tier.
+        const tierLabel =
+          session.tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit';
         after(async () => {
           try {
             const result = await generateAndStoreRoadmapPdf(
@@ -756,6 +768,7 @@ export async function POST(req: NextRequest) {
             const sent = await sendAuditPurchaseRoadmap({
               to: OPERATOR_AUDIT_EMAIL,
               businessName: buyerBusinessName,
+              tierLabel,
               buyerEmail,
               buyerPhone,
               market: buyerMarket,

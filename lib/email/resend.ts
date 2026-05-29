@@ -414,6 +414,10 @@ export async function sendAuditBookingNudge(args: {
 export async function sendAuditPurchaseRoadmap(args: {
   to: string;
   businessName: string;
+  /** Human-readable tier label — "Visibility Audit" or "Strategy
+   *  Session". Drives both the inbox subject and the email body
+   *  copy so Anthony's inbox is scannable across both tiers. */
+  tierLabel: string;
   buyerEmail: string;
   buyerPhone: string | null;
   market: string;
@@ -433,6 +437,7 @@ export async function sendAuditPurchaseRoadmap(args: {
   const html = await render(
     AuditPurchaseRoadmapEmail({
       businessName: args.businessName,
+      tierLabel: args.tierLabel,
       buyerEmail: args.buyerEmail,
       buyerPhone: args.buyerPhone,
       market: args.market,
@@ -446,7 +451,7 @@ export async function sendAuditPurchaseRoadmap(args: {
   );
   return sendEmailOk({
     to: args.to,
-    subject: `New audit buyer Roadmap: ${args.businessName}`,
+    subject: `New ${args.tierLabel} buyer Roadmap: ${args.businessName}`,
     html,
     attachments: [
       { filename: args.pdf.filename, content: args.pdf.content },

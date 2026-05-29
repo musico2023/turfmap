@@ -28,6 +28,10 @@ import {
 export type AuditPurchaseRoadmapEmailProps = {
   /** Buyer business name. */
   businessName: string;
+  /** Human-readable tier label — "Visibility Audit" or "Strategy
+   *  Session". Drives the subject + body copy so the inbox preview
+   *  reads correctly regardless of which tier the buyer purchased. */
+  tierLabel: string;
   /** Buyer email — surfaced inline so Anthony can copy/forward
    *  without opening the agency dashboard first. */
   buyerEmail: string;
@@ -52,6 +56,7 @@ export type AuditPurchaseRoadmapEmailProps = {
 
 export function AuditPurchaseRoadmapEmail({
   businessName,
+  tierLabel,
   buyerEmail,
   buyerPhone,
   market,
@@ -65,14 +70,14 @@ export function AuditPurchaseRoadmapEmail({
   const lift = Math.max(0, projectedTurfScore - startingTurfScore);
   return (
     <EmailLayout
-      preview={`New audit buyer: ${businessName} — Roadmap PDF attached`}
+      preview={`New ${tierLabel} buyer: ${businessName} — Roadmap PDF attached`}
     >
-      <H1>New audit buyer Roadmap.</H1>
+      <H1>New {tierLabel} buyer Roadmap.</H1>
       <P>
-        <strong>{businessName}</strong> just completed a Visibility
-        Audit purchase. Their 90-Day Roadmap PDF is attached —
-        review before the strategist call (or before manual outreach
-        if they haven&apos;t booked Cal.com yet).
+        <strong>{businessName}</strong> just completed a {tierLabel}{' '}
+        purchase. Their 90-Day Roadmap PDF is attached — review
+        before the strategist call (or before manual outreach if
+        they haven&apos;t booked Cal.com yet).
       </P>
 
       <FactStrip
