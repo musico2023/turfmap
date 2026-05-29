@@ -311,6 +311,42 @@ export async function bootstrapCompAudit(
     .eq('is_primary', true)
     .maybeSingle<TrackedKeywordRow>();
 
+  // ─── 2a. Ensure buyer has portal access ───────────────────────────
+  // Runs BEFORE the existing-audit branching so it provisions on both
+  // create AND regenerate paths. Yohann at Ainger Group Roofing was
+  // the catalyst: his audit already existed (created by an earlier
+  // bootstrap that predated the portal-provisioning wiring), so every
+  // subsequent regenerate call hit the existingAudit branch and
+  // skipped the provisioning. Result: he held a TurfMap-sent email
+  // pointing at /portal/<slug> and got bounced at the login screen
+  // because no client_users row existed.
+  //
+  // Audit buyers paid $499+ and will want ongoing access to their
+  // dashboard, Cal.com booking, AI Coach regeneration, etc. Free
+  // scan buyers stay on the public /share/<id> URL — we only
+  // provision portal accounts at audit-init to keep client_users
+  // membership meaningful. Idempotent — safe to call on every
+  // bootstrap pass.
+  const portalEmail =
+    input.email?.trim().toLowerCase() ??
+    prospect?.email?.trim().toLowerCase() ??
+    null;
+  if (portalEmail) {
+    const portalResult = await ensurePortalUser(
+      supabase,
+      client.id,
+      portalEmail
+    );
+    if (!portalResult.ok) {
+      // Non-fatal — the audit + PDF still ship. Anthony can manually
+      // grant access later via the agency dashboard's ClientUsersManager.
+      console.error(
+        '[bootstrapCompAudit] ensurePortalUser failed (non-fatal)',
+        portalResult.error
+      );
+    }
+  }
+
   // ─── 3. Idempotency: existing visibility_audits row? ──────────────
   // The unique-on-lead_order_id constraint creates rows 1:1 with
   // lead_orders. Before creating new rows, check whether we've
@@ -443,34 +479,7 @@ export async function bootstrapCompAudit(
     });
   }
 
-  // ─── 5a. Ensure buyer has portal access ───────────────────────────
-  // Create a client_users row for the buyer so they can magic-link
-  // sign into their portal (/portal/<public_id>). Audit buyers paid
-  // $499+ and will want ongoing access to their dashboard, Cal.com
-  // booking, AI Coach regeneration, etc. Free scan buyers stay on
-  // the public /share/<id> URL — we only provision portal accounts at
-  // audit-init to keep client_users membership meaningful.
-  const portalEmail =
-    input.email?.trim().toLowerCase() ??
-    prospect?.email?.trim().toLowerCase() ??
-    null;
-  if (portalEmail) {
-    const portalResult = await ensurePortalUser(
-      supabase,
-      client.id,
-      portalEmail
-    );
-    if (!portalResult.ok) {
-      // Non-fatal — the audit + PDF still ship. Anthony can manually
-      // grant access later via the agency dashboard's ClientUsersManager.
-      console.error(
-        '[bootstrapCompAudit] ensurePortalUser failed (non-fatal)',
-        portalResult.error
-      );
-    }
-  }
-
-  // ─── 5b. Trigger NAP audit at audit-init ──────────────────────────
+  // ─── 5a. Trigger NAP audit at audit-init ──────────────────────────
   // Fire-and-forget — the BL/DFS audit takes ~5-15min to complete +
   // we don't want it blocking the bootstrap response. The
   // triggerNapAuditAtAuditInit helper auto-enriches the location's
