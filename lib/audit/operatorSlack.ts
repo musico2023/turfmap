@@ -325,3 +325,95 @@ export async function notifyColdscanCompleted(
     ],
   });
 }
+
+// ─── Comp audit booking notification ──────────────────────────────────
+//
+// Fires when a cold-outreach prospect books a Visibility Audit Cal.com
+// slot without going through a paid Stripe purchase. Distinct from
+// notifyTurfScanPurchase (which assumes paid $499 audit) — this one
+// uses the relationship-win framing since it's $0 revenue but high
+// signal that outreach is working.
+
+export type CompAuditBookedContext = {
+  /** Buyer's business name. */
+  businessName: string;
+  /** Buyer's email — Anthony will reply manually post-call. */
+  buyerEmail: string;
+  /** Buyer's city / region from the COLDSCAN client row. */
+  market: string;
+  /** Primary keyword from the COLDSCAN scan. */
+  trade: string;
+  /** Buyer's TurfScore from the original COLDSCAN scan. */
+  startingTurfScore: number;
+  /** LLM Fit Score (1-5) — same scoring used for paid audits. */
+  llmFitScore: number;
+  /** Cal.com booking timestamp (ISO). Null when bootstrap fires
+   *  before the buyer's booking (admin endpoint pre-booking case). */
+  callScheduledAt: string | null;
+  /** Where the bootstrap was triggered from — webhook vs. admin
+   *  endpoint vs. unknown. Surfaces in the operator ping so Anthony
+   *  knows whether the booking auto-fired or he ran the manual path. */
+  bootstrapSource: 'calcom_webhook' | 'admin' | 'unknown';
+  /** Agency-side dashboard URL — clicks land Anthony directly on
+   *  the buyer's data in /clients/<public_id>. */
+  agencyDashboardUrl: string;
+};
+
+/** "🤝 Comp audit booked" — fires from bootstrapCompAudit when a
+ *  cold-outreach prospect books the audit Cal.com link. The
+ *  relationship-win framing differentiates from paid-audit pings
+ *  (notifyTurfScanPurchase fires those with $499 in the subject). */
+export async function notifyCompAuditBooked(
+  ctx: CompAuditBookedContext
+): Promise<boolean> {
+  const callLine = ctx.callScheduledAt
+    ? `Call: ${formatScheduledTime(ctx.callScheduledAt)}`
+    : 'Pre-booking bootstrap (no Cal.com slot yet)';
+  const sourceLine =
+    ctx.bootstrapSource === 'calcom_webhook'
+      ? 'Auto-fired from Cal.com BOOKING_CREATED'
+      : ctx.bootstrapSource === 'admin'
+        ? 'Manual bootstrap via /api/admin/bootstrap-comp-audit'
+        : 'Bootstrap source: unknown';
+  return postOperatorSlack({
+    text: `🤝 Comp audit booked: ${ctx.businessName} (${ctx.buyerEmail})`,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*🤝 Cold prospect booked Visibility Audit*\n*${ctx.businessName}* — ${ctx.trade} in ${ctx.market}\nBuyer: ${ctx.buyerEmail}\nTurfScore: ${ctx.startingTurfScore} · LLM Fit: ${ctx.llmFitScore}/5\n${callLine}\n_${sourceLine}_`,
+        },
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `<${ctx.agencyDashboardUrl}|Open buyer in agency dashboard →>`,
+          },
+        ],
+      },
+    ],
+  });
+}
+
+/** ISO date → human-readable scheduled-call string in America/Toronto
+ *  timezone, used by notifyCompAuditBooked (and any future Slack
+ *  template that needs a buyer-facing date format). */
+function formatScheduledTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    });
+  } catch {
+    return iso;
+  }
+}

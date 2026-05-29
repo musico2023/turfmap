@@ -41,7 +41,10 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { runScanForLocation } from '@/lib/scans/runScan';
 import { generateInsight } from '@/lib/ai-coach/generateInsight';
-import { notifyColdscanCompleted } from '@/lib/audit/operatorSlack';
+import {
+  notifyColdscanCompleted,
+  postOperatorSlack,
+} from '@/lib/audit/operatorSlack';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -327,6 +330,12 @@ export async function POST(req: NextRequest) {
   //   left join ai_insights ai on ai.scan_id = s.id
   //   where lo.stripe_metadata->>'source' = 'coldscan_free'
   //     and ai.id is null;
+  // Track whether pre-gen succeeded so the Slack ping downstream can
+  // alert Anthony when it didn't. Cold prospects landing on a share
+  // page without a Fix List look stale + force a manual generate;
+  // visibility into silent failures matters here.
+  let aiCoachPregenFailed = false;
+  let aiCoachPregenErrorMsg = '';
   try {
     const insightResult = await generateInsight(
       supabase,
@@ -335,6 +344,8 @@ export async function POST(req: NextRequest) {
       { napAuditWaitMs: 90_000 }
     );
     if (!insightResult.ok) {
+      aiCoachPregenFailed = true;
+      aiCoachPregenErrorMsg = insightResult.error;
       console.warn(
         '[coldscan-fulfill] AI Coach generation failed for scan',
         scanResult.scanId,
@@ -342,10 +353,13 @@ export async function POST(req: NextRequest) {
       );
     }
   } catch (e) {
+    aiCoachPregenFailed = true;
+    aiCoachPregenErrorMsg =
+      e instanceof Error ? e.message : String(e);
     console.warn(
       '[coldscan-fulfill] AI Coach generation threw for scan',
       scanResult.scanId,
-      e instanceof Error ? e.message : String(e)
+      aiCoachPregenErrorMsg
     );
   }
 
@@ -371,6 +385,44 @@ export async function POST(req: NextRequest) {
       '[coldscan-fulfill] notifyColdscanCompleted failed (non-fatal)',
       e instanceof Error ? e.message : String(e)
     );
+  }
+
+  // If the AI Coach pre-generation failed, ping #llm-leads separately
+  // with the failure context. Cold prospects landing on a share page
+  // without the Fix List is the worst possible UX moment — they came
+  // because we promised actionable advice + the AI Coach is the
+  // payoff. Anthony needs to know NOW (not when the prospect emails
+  // back asking where their recommendations are) so he can run the
+  // manual generate from the agency dashboard.
+  if (aiCoachPregenFailed) {
+    try {
+      await postOperatorSlack({
+        text: `⚠️ AI Coach pre-gen failed for ${prospect.business_name.trim()} — manual generation required`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*⚠️ AI Coach pre-generation failed*\n*${prospect.business_name.trim()}* — ${prospect.trade.trim()} in ${prospect.city.trim()}\nProspect ID: \`${prospect.id}\`\nScan ID: \`${scanResult.scanId}\`\nError: \`${aiCoachPregenErrorMsg.slice(0, 200)}\`\n\nManual fix: open the agency dashboard for this client + hit the AI Coach generate button before reaching out to the prospect.`,
+            },
+          },
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'mrkdwn',
+                text: `<${origin}/clients/${client.public_id}#ai-coach|Open agency dashboard →>`,
+              },
+            ],
+          },
+        ],
+      });
+    } catch (e) {
+      console.error(
+        '[coldscan-fulfill] AI Coach failure Slack ping threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
   }
 
   // ─── 10. Stamp prospect attribution ──────────────────────────────────

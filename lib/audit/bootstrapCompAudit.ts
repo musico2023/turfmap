@@ -1,0 +1,423 @@
+/**
+ * Bootstrap a comp ($0) Visibility Audit for a cold-outreach prospect
+ * who booked the audit Cal.com link without going through a paid
+ * Stripe purchase.
+ *
+ * Triggered by:
+ *   1. The Cal.com webhook when an audit/strategy BOOKING_CREATED
+ *      lands for an email that has NO paid audit lead_order but DOES
+ *      have a converted COLDSCAN prospect record.
+ *   2. The admin endpoint /api/admin/bootstrap-comp-audit when Anthony
+ *      manually bootstraps an audit for a buyer who already booked
+ *      before this code shipped (Yohann at Ainger Group Roofing was
+ *      the catalyst — booked the audit Cal.com slot without anyone
+ *      being notified).
+ *
+ * Bootstrap fires the same automation a paid $499 audit purchase
+ * gets:
+ *
+ *   - lead_orders row (tier='audit', source='comp_outreach_booking',
+ *     stripe_session_id=null, status='fulfilled')
+ *   - visibility_audits row tied to the existing COLDSCAN scan
+ *     (LLM Fit Score computed inline from primary keyword)
+ *   - strategist_call_scheduled_at stamped if a booking timestamp
+ *     was supplied
+ *   - generateAndStoreRoadmapPdf fires (Claude → Roadmap PDF →
+ *     Supabase Storage upload → audit row stamped with
+ *     roadmap_pdf_url + lift_promise_target_score)
+ *   - sendAuditPurchaseRoadmap email lands in Anthony's inbox with
+ *     the PDF attached
+ *   - notifyCompAuditBooked Slack ping to #llm-leads
+ *
+ * Idempotent: if a visibility_audits row already exists for this
+ * client, returns it without re-firing. The Cal.com webhook may
+ * retry; the admin endpoint may be hit twice; both should be safe.
+ */
+
+import { getServerSupabase } from '@/lib/supabase/server';
+import { createVisibilityAudit, patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
+import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
+import { sendAuditPurchaseRoadmap } from '@/lib/email/resend';
+import { notifyCompAuditBooked } from '@/lib/audit/operatorSlack';
+import { computeLlmFitScore, LLM_TARGET_TRADES, type LlmTargetTrade } from '@/lib/audit/llmFitScore';
+import type {
+  ClientRow,
+  LeadOrderRow,
+  ProspectRow,
+  ScanRow,
+  TrackedKeywordRow,
+  VisibilityAuditRow,
+} from '@/lib/supabase/types';
+
+export type BootstrapCompAuditInput = {
+  /** Either prospect_id OR client_id — whichever the caller has. The
+   *  webhook resolves prospect by email first then passes client_id
+   *  here; the admin endpoint can accept either. */
+  clientId?: string;
+  prospectId?: string;
+  /** Buyer email — used as fallback prospect resolution + as a sanity
+   *  check that we're operating on the right buyer. */
+  email?: string | null;
+  /** Cal.com booking timestamp (ISO). When present, stamps
+   *  strategist_call_scheduled_at so the T-24h pre-call cron picks
+   *  the row up. Omit when bootstrapping pre-booking. */
+  callStartTime?: string | null;
+  /** Cal.com booking uid (round-trippable identifier). Stamped on
+   *  lead_orders.stripe_metadata.audit_call_uid. */
+  callUid?: string | null;
+  /** Cal.com manage URL — round-trippable management link for
+   *  rescheduling. Stamped on lead_orders.stripe_metadata. */
+  bookerUrl?: string | null;
+  /** Where the auto-Roadmap email subject/body should report the
+   *  operator origin: 'calcom_webhook' (Cal.com pinged us), 'admin'
+   *  (Anthony ran the admin endpoint), or 'unknown' (fallback). */
+  source: 'calcom_webhook' | 'admin' | 'unknown';
+};
+
+export type BootstrapCompAuditResult =
+  | {
+      ok: true;
+      /** True when the bootstrap created new rows; false when an
+       *  existing visibility_audits row was found and reused. */
+      created: boolean;
+      auditId: string;
+      leadOrderId: string;
+      clientId: string;
+      /** Signed Supabase Storage URL for the Roadmap PDF when
+       *  generation succeeded; null when generation failed (audit
+       *  rows + email still attempted). */
+      roadmapPdfUrl: string | null;
+    }
+  | { ok: false; stage: string; error: string };
+
+const OPERATOR_AUDIT_EMAIL = 'anthony@fourdots.io';
+
+export async function bootstrapCompAudit(
+  input: BootstrapCompAuditInput,
+  appOrigin: string
+): Promise<BootstrapCompAuditResult> {
+  const supabase = getServerSupabase();
+
+  // ─── 1. Resolve the buyer's client row ─────────────────────────────
+  let client: ClientRow | null = null;
+  let prospect: ProspectRow | null = null;
+
+  if (input.clientId) {
+    const { data } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('id', input.clientId)
+      .maybeSingle<ClientRow>();
+    client = data ?? null;
+  }
+
+  if (input.prospectId) {
+    const { data } = await supabase
+      .from('prospects')
+      .select('*')
+      .eq('id', input.prospectId)
+      .maybeSingle<ProspectRow>();
+    prospect = data ?? null;
+  }
+
+  // Fallback resolution: if we don't have a client yet but have an
+  // email, find the prospect by email + then resolve their client via
+  // the coldscan lead_order.
+  if (!client && input.email) {
+    const { data: pByEmail } = await supabase
+      .from('prospects')
+      .select('*')
+      .ilike('email', input.email)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<ProspectRow>();
+    if (pByEmail) {
+      prospect = pByEmail;
+      // The coldscan lead_order carries the client_id linked to the
+      // prospect (via stripe_metadata.prospect_id).
+      const { data: coldOrder } = await supabase
+        .from('lead_orders')
+        .select('client_id')
+        .filter('stripe_metadata->>prospect_id', 'eq', pByEmail.id)
+        .filter('stripe_metadata->>source', 'eq', 'coldscan_free')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ client_id: string }>();
+      if (coldOrder?.client_id) {
+        const { data: c } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('id', coldOrder.client_id)
+          .maybeSingle<ClientRow>();
+        client = c ?? null;
+      }
+    }
+  }
+
+  if (!client) {
+    return {
+      ok: false,
+      stage: 'resolve-client',
+      error: 'could not resolve a client row from clientId / prospectId / email',
+    };
+  }
+
+  // ─── 2. Find their existing scan (from COLDSCAN) ───────────────────
+  const { data: scan } = await supabase
+    .from('scans')
+    .select('*')
+    .eq('client_id', client.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<ScanRow>();
+  if (!scan) {
+    return {
+      ok: false,
+      stage: 'resolve-scan',
+      error: `client ${client.id} has no scan rows — comp audit requires the COLDSCAN to have run first`,
+    };
+  }
+
+  const { data: keyword } = await supabase
+    .from('tracked_keywords')
+    .select('*')
+    .eq('client_id', client.id)
+    .eq('is_primary', true)
+    .maybeSingle<TrackedKeywordRow>();
+
+  // ─── 3. Idempotency: existing visibility_audits row? ──────────────
+  // The unique-on-lead_order_id constraint creates rows 1:1 with
+  // lead_orders. Before creating new rows, check whether we've
+  // already bootstrapped this buyer.
+  const { data: existingAudit } = await supabase
+    .from('visibility_audits')
+    .select('id, lead_order_id, roadmap_pdf_url')
+    .eq('client_id', client.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<
+      Pick<VisibilityAuditRow, 'id' | 'lead_order_id' | 'roadmap_pdf_url'>
+    >();
+  if (existingAudit) {
+    // Already bootstrapped. Refresh the booking timestamp if the
+    // caller supplied one (e.g. buyer rescheduled).
+    if (input.callStartTime) {
+      await patchVisibilityAudit(supabase, existingAudit.id, {
+        strategist_call_scheduled_at: input.callStartTime,
+      });
+    }
+    return {
+      ok: true,
+      created: false,
+      auditId: existingAudit.id,
+      leadOrderId: existingAudit.lead_order_id,
+      clientId: client.id,
+      roadmapPdfUrl: existingAudit.roadmap_pdf_url,
+    };
+  }
+
+  // ─── 4. Create the comp audit lead_orders row ─────────────────────
+  // No stripe_session_id (this isn't a paid order). The metadata
+  // discriminator is source='comp_outreach_booking' so reporting +
+  // future "is this a paid audit?" gates can exclude it. The
+  // audit_call_status starts at 'booked' (if we have a startTime) or
+  // 'unbooked' (if the bootstrap fired pre-booking, e.g. admin
+  // endpoint hit before the buyer scheduled).
+  const audit_call_status = input.callStartTime ? 'booked' : 'unbooked';
+  const buyerEmail =
+    input.email ?? prospect?.email ?? null;
+  const compMetadata: Record<string, unknown> = {
+    source: 'comp_outreach_booking',
+    bootstrap_source: input.source,
+    audit_call_status,
+    audit_call_initiated_at: new Date().toISOString(),
+  };
+  if (input.callStartTime) {
+    compMetadata.audit_call_booked_at = new Date().toISOString();
+    compMetadata.audit_call_start_time = input.callStartTime;
+  }
+  if (input.callUid) compMetadata.audit_call_uid = input.callUid;
+  if (input.bookerUrl) compMetadata.audit_call_manage_url = input.bookerUrl;
+  if (prospect?.id) compMetadata.prospect_id = prospect.id;
+
+  const { data: leadOrder, error: leadErr } = await supabase
+    .from('lead_orders')
+    .insert({
+      stripe_session_id: null,
+      tier: 'audit',
+      email: buyerEmail,
+      client_id: client.id,
+      status: 'fulfilled',
+      stripe_metadata: compMetadata,
+    })
+    .select('*')
+    .single<LeadOrderRow>();
+  if (leadErr || !leadOrder) {
+    return {
+      ok: false,
+      stage: 'lead-order-insert',
+      error: leadErr?.message ?? 'no row returned',
+    };
+  }
+
+  // ─── 5. Create the visibility_audits row ──────────────────────────
+  const tradeFit = inferTradeFitFromKeyword(keyword?.keyword);
+  const fitBreakdown = computeLlmFitScore({
+    revenueBand: null,
+    tradeFit,
+    metroFit: null,
+    adActive: null,
+    reviewCount: null,
+  });
+
+  const auditResult = await createVisibilityAudit(supabase, {
+    leadOrderId: leadOrder.id,
+    scanId: scan.id,
+    clientId: client.id,
+    startingTurfScore: scan.turf_score ?? 0,
+    liftPromiseTargetScore: null,
+    llmFitScore: fitBreakdown.score,
+    llmFitBreakdown: fitBreakdown,
+  });
+  if (!auditResult.ok) {
+    return {
+      ok: false,
+      stage: 'visibility-audit-insert',
+      error: auditResult.error,
+    };
+  }
+  const auditId = auditResult.row.id;
+
+  // Stamp the scheduled-call timestamp if we have it (so the T-24h
+  // cron picks the row up). Status flip from pending_call_schedule
+  // happens here for the booked-at-bootstrap path.
+  if (input.callStartTime) {
+    await patchVisibilityAudit(supabase, auditId, {
+      strategist_call_scheduled_at: input.callStartTime,
+      status: 'call_scheduled',
+    });
+  }
+
+  // ─── 6. Generate the Roadmap PDF + email Anthony ──────────────────
+  // Mirrors the paid-audit fulfill route's after() callback. Fail-soft
+  // — we still report success on the bootstrap (the rows are created)
+  // even if Claude / PDF / email fail; Anthony can re-trigger
+  // generation later via the existing T-24h cron path.
+  const pdfResult = await generateAndStoreRoadmapPdf(supabase, auditId);
+
+  let roadmapPdfUrl: string | null = null;
+  if (pdfResult.ok) {
+    roadmapPdfUrl = pdfResult.roadmapUrl;
+    try {
+      await sendAuditPurchaseRoadmap({
+        to: OPERATOR_AUDIT_EMAIL,
+        businessName: client.business_name,
+        tierLabel: 'Visibility Audit',
+        buyerEmail: buyerEmail ?? '(unknown email)',
+        buyerPhone: client.phone ?? null,
+        market: [client.city, client.region]
+          .filter(Boolean)
+          .join(', ') || client.address || '',
+        trade: keyword?.keyword ?? prospect?.trade ?? 'unknown',
+        startingTurfScore: scan.turf_score ?? 0,
+        projectedTurfScore: pdfResult.projectedTurfScore,
+        llmFitScore: fitBreakdown.score,
+        diagnosisPreview: previewDiagnosis(pdfResult.diagnosis),
+        agencyDashboardUrl: `${appOrigin}/clients/${client.public_id}`,
+        pdf: {
+          filename: `${slugifyBusinessName(client.business_name)}-visibility-roadmap.pdf`,
+          content: pdfResult.pdfBuffer,
+        },
+      });
+    } catch (e) {
+      console.error(
+        '[bootstrapCompAudit] sendAuditPurchaseRoadmap threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  } else {
+    console.error(
+      '[bootstrapCompAudit] generateAndStoreRoadmapPdf failed',
+      pdfResult.stage,
+      pdfResult.error
+    );
+  }
+
+  // ─── 7. Slack ping ────────────────────────────────────────────────
+  try {
+    await notifyCompAuditBooked({
+      businessName: client.business_name,
+      buyerEmail: buyerEmail ?? '(unknown email)',
+      market: [client.city, client.region]
+        .filter(Boolean)
+        .join(', ') || client.address || '',
+      trade: keyword?.keyword ?? prospect?.trade ?? 'unknown',
+      startingTurfScore: scan.turf_score ?? 0,
+      llmFitScore: fitBreakdown.score,
+      callScheduledAt: input.callStartTime ?? null,
+      bootstrapSource: input.source,
+      agencyDashboardUrl: `${appOrigin}/clients/${client.public_id}`,
+    });
+  } catch (e) {
+    console.error(
+      '[bootstrapCompAudit] notifyCompAuditBooked threw',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  return {
+    ok: true,
+    created: true,
+    auditId,
+    leadOrderId: leadOrder.id,
+    clientId: client.id,
+    roadmapPdfUrl,
+  };
+}
+
+// ─── Helpers — copied from /api/orders/fulfill so the bootstrap can run
+// standalone (no orchestration through the fulfill route).
+
+function previewDiagnosis(diagnosis: string): string {
+  const trimmed = diagnosis.trim().replace(/\s+/g, ' ');
+  if (trimmed.length <= 220) return trimmed;
+  const sliced = trimmed.slice(0, 220);
+  const lastPeriod = sliced.lastIndexOf('. ');
+  if (lastPeriod > 80) return `${sliced.slice(0, lastPeriod + 1)}`;
+  return `${sliced.trim()}…`;
+}
+
+function slugifyBusinessName(name: string): string {
+  const slug = name
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'turfmap';
+}
+
+function inferTradeFitFromKeyword(keyword: string | undefined): boolean | null {
+  if (!keyword) return null;
+  const k = keyword.toLowerCase();
+  const TRADE_KEYWORDS: Array<{ trade: LlmTargetTrade; needles: string[] }> = [
+    { trade: 'electrical', needles: ['electrician', 'electrical'] },
+    { trade: 'hvac', needles: ['hvac', 'heating', 'air conditioning', 'a/c repair', 'furnace'] },
+    { trade: 'landscaping', needles: ['landscap', 'lawn care', 'lawn maintenance'] },
+    { trade: 'plumbing', needles: ['plumb', 'drain cleaning', 'water heater'] },
+    { trade: 'renovation', needles: ['renovat', 'remodel', 'kitchen remodel', 'bathroom remodel'] },
+    { trade: 'restoration', needles: ['restoration', 'water damage', 'fire damage', 'mold remediation'] },
+    { trade: 'roofing', needles: ['roof'] },
+    { trade: 'windows_doors', needles: ['windows', 'doors', 'window install', 'door install'] },
+  ];
+  for (const { trade, needles } of TRADE_KEYWORDS) {
+    for (const needle of needles) {
+      if (k.includes(needle)) {
+        if ((LLM_TARGET_TRADES as readonly string[]).includes(trade)) {
+          return true;
+        }
+      }
+    }
+  }
+  return null;
+}

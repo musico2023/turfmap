@@ -180,6 +180,50 @@ export async function POST(req: Request) {
     >();
 
   if (!order || !order.client_id) {
+    // No paid audit/strategy lead_order matches this email. But it
+    // might be a cold-outreach prospect who got sent the audit
+    // Cal.com link directly (no payment path). Try to bootstrap a
+    // comp audit for them so Anthony still gets the auto-Roadmap PDF
+    // + Slack ping + downstream T-24h cron coverage.
+    //
+    // Only attempt on BOOKING_CREATED — reschedules / cancellations
+    // for non-bootstrapped audits don't have anywhere meaningful to
+    // land state.
+    if (trigger === 'BOOKING_CREATED') {
+      try {
+        const { bootstrapCompAudit } = await import(
+          '@/lib/audit/bootstrapCompAudit'
+        );
+        const origin =
+          process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
+        const bootstrap = await bootstrapCompAudit(
+          {
+            email: attendeeEmail,
+            callStartTime: payload.startTime ?? null,
+            callUid: payload.uid ?? null,
+            bookerUrl: payload.bookerUrl ?? null,
+            source: 'calcom_webhook',
+          },
+          origin
+        );
+        if (bootstrap.ok) {
+          return NextResponse.json({
+            received: true,
+            bootstrapped: true,
+            audit_id: bootstrap.auditId,
+            roadmap_pdf_url: bootstrap.roadmapPdfUrl,
+          });
+        }
+        console.warn(
+          `[calcom-webhook] bootstrapCompAudit failed for ${attendeeEmail} at ${bootstrap.stage}: ${bootstrap.error}`
+        );
+      } catch (e) {
+        console.error(
+          '[calcom-webhook] bootstrapCompAudit threw',
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    }
     console.warn(
       `[calcom-webhook] no audit/strategy order matched email ${attendeeEmail} for ${trigger} — ignoring`
     );
