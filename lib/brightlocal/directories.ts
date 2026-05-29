@@ -26,6 +26,16 @@
 // /data/v1/listings/directories endpoint (run via `npm run bl:directories`
 // for ground truth). Don't add a slug to this file without confirming it
 // exists there — BL rejects unknown ones at initiate time.
+//
+// UNIVERSAL_CORE: the dirs that every local business — regardless of
+// vertical — should have a presence on. Keep this list tight: anything
+// added here gets audited for every buyer in every vertical, and missing
+// rows surface as AI Coach citation recommendations. The 4 additions
+// over the original core (bbb / foursquare / mapquest / nextdoor) match
+// what the DFS-side checker treats as universal (lib/citations/
+// directories.ts) — keeping the two providers' rosters parallel means a
+// buyer who switches between BL- and DFS-backed audits sees consistent
+// recommendations.
 const UNIVERSAL_CORE = [
   'google',
   'bing',
@@ -35,6 +45,20 @@ const UNIVERSAL_CORE = [
   'facebook',
   'yelp',
   'yellowpages',
+  // BBB accreditation matters for every vertical — restaurants, realtors,
+  // dealers all get listed there too. Previously only attached to 3
+  // profiles (home-services, medical, legal); food/real-estate/automotive
+  // were silently missing this.
+  'bbb',
+  // Foursquare is a location-data backbone — many other apps consume it.
+  // Was only in home-services + food-restaurant before.
+  'foursquare',
+  // MapQuest is generic mapping infra; every vertical was including it
+  // ad-hoc. Was in 5 profiles, missing from legal + universal.
+  'mapquest',
+  // Nextdoor's professional-services adoption has been increasing — it
+  // matters for medical, legal, real estate, etc., not just home services.
+  'nextdoor',
 ] as const;
 
 const PROFILES = {
@@ -42,10 +66,6 @@ const PROFILES = {
    *  TurfMap default — matches Anthony's primary book. */
   'home-services': [
     ...UNIVERSAL_CORE,
-    'bbb',
-    'foursquare',
-    'mapquest',
-    'nextdoor',
     'angi',
     'houzz',
     'thumbtack',
@@ -57,7 +77,6 @@ const PROFILES = {
    *  Health directories carry strong signal in Google's medical pack. */
   'medical-healthcare': [
     ...UNIVERSAL_CORE,
-    'bbb',
     'healthgrades',
     'vitals',
     'ratemds',
@@ -68,13 +87,11 @@ const PROFILES = {
     // `sharecare` isn't in BL's canonical list; `wellness` is the closest
     // general-health analogue (https://www.wellness.com).
     'wellness',
-    'mapquest',
   ],
 
   /** Lawyers / attorneys / legal services. */
   legal: [
     ...UNIVERSAL_CORE,
-    'bbb',
     'avvo',
     'justia',
     'findlaw',
@@ -91,9 +108,6 @@ const PROFILES = {
     ...UNIVERSAL_CORE,
     'tripadvisor',
     'opentable',
-    'foursquare',
-    'mapquest',
-    'nextdoor',
     'zomato',
     'doordash',
     'grubhub',
@@ -106,7 +120,6 @@ const PROFILES = {
     // BL slug is `realtor` (URL: https://www.realtor.com), not `realtor-com`.
     'realtor',
     'redfin',
-    'mapquest',
     // `trulia` isn't in BL's canonical list (Zillow Group folded it into
     // their network); `apartments` (https://www.apartments.com) is the
     // best replacement for residential property listings.
@@ -124,12 +137,13 @@ const PROFILES = {
     // and `mechanicadvisor` are the strongest automotive replacements.
     'dealerrater',
     'mechanicadvisor',
-    'mapquest',
   ],
 
   /** Tight universal-only set — used when the operator hasn't set an
-   *  industry yet, so we don't burn audit credits on irrelevant
-   *  directories that produce misleading "missing from" recommendations. */
+   *  industry yet OR when an industry is set but doesn't match any
+   *  vertical rule (the salon-style "unusual" case). UNIVERSAL_CORE is
+   *  the 10 dirs every local business should be on — no vertical-
+   *  specific dirs that would produce false-positive recommendations. */
   universal: [...UNIVERSAL_CORE],
 } as const;
 

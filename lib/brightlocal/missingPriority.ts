@@ -31,15 +31,17 @@ import { inferProfileForIndustry } from '@/lib/brightlocal/directories';
  * not in this set defaults to 'medium' priority when missing.
  */
 const HIGH_PRIORITY_BY_PROFILE: Record<string, readonly string[]> = {
-  // Universal core that matters for any vertical — search engines and
-  // the largest review aggregators. Missing any of these is always
-  // high-priority regardless of industry.
-  _universal: ['google', 'apple', 'bing', 'yelp', 'facebook'],
+  // Universal core that matters for any vertical — search engines, the
+  // largest review aggregators, and trust signals. Missing any of these
+  // is always high-priority regardless of industry. BBB joined this set
+  // once we moved it to UNIVERSAL_CORE in directories.ts — restaurants,
+  // realtors, dealers all get BBB-accredited, so missing from there is
+  // a high-priority gap for every vertical, not just home services.
+  _universal: ['google', 'apple', 'bing', 'yelp', 'facebook', 'bbb'],
 
   // Home services — Angi is the dominant lead-gen pipe; HomeAdvisor,
   // Houzz, Thumbtack each carry significant trust signal in their niche.
-  // BBB matters more for trade-license trust than for restaurants etc.
-  'home-services': ['angi', 'houzz', 'thumbtack', 'bbb'],
+  'home-services': ['angi', 'houzz', 'thumbtack'],
 
   // Medical / healthcare — Healthgrades + Vitals + Zocdoc + WebMD are
   // the gravitational sites for patient discovery. RateMDs is significant
