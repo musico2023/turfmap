@@ -55,18 +55,27 @@ import {
   loadCompetitorSummary,
   loadNapFindingsSummary,
 } from '@/lib/audit/auditDataLoaders';
-import { calcomSixtyDayCheckUrl } from '@/lib/integrations/calcom';
-import { notifySixtyDayUnresponsive } from '@/lib/audit/operatorSlack';
+import {
+  calcomBookingUrlForTier,
+  calcomSixtyDayCheckUrl,
+} from '@/lib/integrations/calcom';
+import {
+  notifyAuditUnscheduled,
+  notifySixtyDayUnresponsive,
+} from '@/lib/audit/operatorSlack';
+import { patchLeadOrderMetadataByClientId } from '@/lib/stripe/leadOrders';
 import {
   sendStrategistPrep,
   sendDay25Reminder,
   sendSixtyDayPrompt,
   sendDay67Followup,
+  sendAuditBookingNudge,
 } from '@/lib/email/resend';
 import type {
   ClientRow,
   LeadOrderRow,
   ScanRow,
+  Tier,
   TrackedKeywordRow,
   VisibilityAuditRow,
 } from '@/lib/supabase/types';
@@ -180,14 +189,26 @@ async function handle(req: Request) {
     }
   }
 
-  // Normal path: run all four sweeps concurrently. They touch
-  // disjoint rows (different gate columns) so there's no risk of
-  // write contention.
-  const [preCall, day25, day53, day67] = await Promise.all([
+  // Normal path: run all sweeps concurrently. They touch disjoint
+  // rows (different gate columns, and the unbooked sweeps target
+  // lead_orders metadata, not visibility_audits) so there's no risk
+  // of write contention.
+  const [
+    preCall,
+    day25,
+    day53,
+    day67,
+    unbookedDay1,
+    unbookedDay3,
+    unbookedDay7,
+  ] = await Promise.all([
     sweepPreCall(supabase, now),
     sweepDay25(supabase, now),
     sweepDay53(supabase, now),
     sweepDay67(supabase, now),
+    sweepUnbookedNudge(supabase, now, 'day_1'),
+    sweepUnbookedNudge(supabase, now, 'day_3'),
+    sweepUnbookedNudge(supabase, now, 'day_7'),
   ]);
 
   return NextResponse.json({
@@ -197,6 +218,9 @@ async function handle(req: Request) {
       day25,
       day53,
       day67,
+      unbookedDay1,
+      unbookedDay3,
+      unbookedDay7,
     },
   });
 }
@@ -678,6 +702,220 @@ async function sendDay67ForAudit(
     });
   }
   return sent;
+}
+
+// ─── Sweep 5-7: unbooked-audit nudge sequence (T+1d / T+3d / T+7d) ───
+//
+// Three escalating reminders for audit/strategy buyers who paid but
+// never picked a Cal.com slot. The existing T+20m AuditCallReminder
+// (queued from /api/orders/fulfill via Resend's scheduled-send) is
+// the first touch; this sequence is the follow-up.
+//
+// Each stage is gated on a dedicated metadata key on lead_orders.
+// stripe_metadata so the gates are independent and idempotent:
+//
+//   day_1 (24h post-fulfill) → audit_call_nudge_day_1_sent_at
+//   day_3 (72h post-fulfill) → audit_call_nudge_day_3_sent_at
+//   day_7 (168h post-fulfill, +Slack escalation) → audit_call_nudge_day_7_sent_at
+//
+// Booking immediately stops the cascade — the cron filters on
+// audit_call_status === 'unbooked' and Cal.com's BOOKING_CREATED
+// webhook flips that to 'booked' inside the loadCheckoutSession ↔
+// patchLeadOrderMetadataByClientId flow.
+//
+// Outer 30-day cap on the working set keeps the sweep bounded as
+// the lead_orders table grows. Past day 30 we assume operator has
+// long since picked the buyer up via the agency dashboard's
+// pending-orders view; the automated nudge has nothing left to add.
+
+type UnbookedStage = 'day_1' | 'day_3' | 'day_7';
+
+type UnbookedStageConfig = {
+  thresholdMs: number;
+  /** Metadata key stamped on success. Mirrors the column convention
+   *  used by the existing audit-call-reminded_at + post-call sweeps. */
+  gateKey: `audit_call_nudge_${UnbookedStage}_sent_at`;
+  /** When true, the sweep also fires the operator Slack alert
+   *  (notifyAuditUnscheduled). Used by day_7 only — three automated
+   *  nudges is the limit; past that, Anthony picks it up manually. */
+  fireSlackEscalation: boolean;
+};
+
+const UNBOOKED_STAGE_CONFIGS: Record<UnbookedStage, UnbookedStageConfig> = {
+  day_1: {
+    thresholdMs: 1 * DAY_MS,
+    gateKey: 'audit_call_nudge_day_1_sent_at',
+    fireSlackEscalation: false,
+  },
+  day_3: {
+    thresholdMs: 3 * DAY_MS,
+    gateKey: 'audit_call_nudge_day_3_sent_at',
+    fireSlackEscalation: false,
+  },
+  day_7: {
+    thresholdMs: 7 * DAY_MS,
+    gateKey: 'audit_call_nudge_day_7_sent_at',
+    fireSlackEscalation: true,
+  },
+};
+
+/** Terminal outer bound — past 30 days we don't auto-nudge anymore. */
+const UNBOOKED_TERMINAL_MS = 30 * DAY_MS;
+
+async function sweepUnbookedNudge(
+  supabase: SupabaseClientLike,
+  now: number,
+  stage: UnbookedStage
+): Promise<Outcome> {
+  const cfg = UNBOOKED_STAGE_CONFIGS[stage];
+  const reachedThreshold = new Date(now - cfg.thresholdMs).toISOString();
+  const terminalCutoff = new Date(now - UNBOOKED_TERMINAL_MS).toISOString();
+
+  // Pull fulfilled audit/strategy orders that have hit the stage
+  // threshold but haven't aged past the terminal cap. JSONB
+  // filtering for nudge_sent_at / audit_call_status happens in code
+  // after the fetch — supabase-js doesn't have efficient JSONB
+  // predicate support without an RPC. Volume is low (single-digit
+  // unbooked audits at any time), so the in-code filter is fine.
+  const { data: candidates, error } = await supabase
+    .from('lead_orders')
+    .select('id, client_id, tier, email, stripe_metadata, created_at')
+    .in('tier', ['audit', 'strategy'])
+    .eq('status', 'fulfilled')
+    .gte('created_at', terminalCutoff)
+    .lte('created_at', reachedThreshold)
+    .not('client_id', 'is', null)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error(`[audit-milestones] unbooked-${stage} select failed`, error);
+    return { candidates: 0, succeeded: 0, skipped: 0, failures: [] };
+  }
+
+  const rows = (candidates ?? []) as Pick<
+    LeadOrderRow,
+    'id' | 'client_id' | 'tier' | 'email' | 'stripe_metadata' | 'created_at'
+  >[];
+
+  let succeeded = 0;
+  let skipped = 0;
+  const failures: Outcome['failures'] = [];
+
+  for (const row of rows) {
+    const meta =
+      (row.stripe_metadata as Record<string, unknown> | null) ?? {};
+    const callStatus = meta.audit_call_status as string | undefined;
+    const alreadySent = meta[cfg.gateKey];
+
+    // Skip terminal states (already booked) + already-nudged.
+    if (callStatus === 'booked' || callStatus === 'cancelled') {
+      skipped++;
+      continue;
+    }
+    if (callStatus !== 'unbooked') {
+      // Legacy orders pre-stamp lifecycle — skip + let operator
+      // handle. Same approach the existing audit-call-reminders
+      // cron takes.
+      skipped++;
+      continue;
+    }
+    if (alreadySent) {
+      skipped++;
+      continue;
+    }
+    if (!row.email || !row.client_id) {
+      skipped++;
+      continue;
+    }
+
+    const { data: client } = await supabase
+      .from('clients')
+      .select('public_id, business_name, city, region, address')
+      .eq('id', row.client_id)
+      .maybeSingle<
+        Pick<ClientRow, 'public_id' | 'business_name' | 'city' | 'region' | 'address'>
+      >();
+    if (!client) {
+      failures.push({ auditId: row.id, reason: 'client not found' });
+      continue;
+    }
+
+    const bookingUrl = calcomBookingUrlForTier({
+      tier: row.tier as Tier,
+      email: row.email,
+      businessName: client.business_name,
+    });
+    if (!bookingUrl) {
+      failures.push({
+        auditId: row.id,
+        reason: 'CAL_COM_*_URL not configured',
+      });
+      continue;
+    }
+
+    // Stamp the gate BEFORE sending. Same ordering rationale as the
+    // existing audit-call-reminders cron: a duplicated email is
+    // worse than a failed-send-on-stamped-row (which the operator
+    // can recover from the metadata + manually).
+    const stamped = await patchLeadOrderMetadataByClientId(
+      supabase,
+      row.client_id,
+      { [cfg.gateKey]: new Date().toISOString() }
+    );
+    if (!stamped.ok) {
+      failures.push({
+        auditId: row.id,
+        reason: `metadata stamp failed: ${stamped.error}`,
+      });
+      continue;
+    }
+
+    try {
+      const ok = await sendAuditBookingNudge({
+        to: row.email,
+        businessName: client.business_name,
+        bookingUrl,
+        stage,
+      });
+      if (!ok) {
+        failures.push({
+          auditId: row.id,
+          reason: 'sendAuditBookingNudge returned false',
+        });
+        continue;
+      }
+      succeeded++;
+
+      // Day-7 escalation: ping the operator Slack so Anthony knows
+      // the buyer is at the end of the automated sequence and
+      // personal outreach is the next move. Fail-soft — if the
+      // webhook isn't configured the nudge email still went out.
+      if (cfg.fireSlackEscalation) {
+        await notifyAuditUnscheduled({
+          businessName: client.business_name,
+          trade: '',
+          market: [client.city, client.region]
+            .filter(Boolean)
+            .join(', ') || client.address || '',
+          currentTurfScore: 0,
+          llmFitScore: 0,
+          auditDashboardUrl: `${appOrigin()}/clients/${client.public_id}`,
+        }).catch((e) => {
+          console.error(
+            `[audit-milestones] notifyAuditUnscheduled failed (non-fatal)`,
+            e instanceof Error ? e.message : String(e)
+          );
+        });
+      }
+    } catch (e) {
+      failures.push({
+        auditId: row.id,
+        reason: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  return { candidates: rows.length, succeeded, skipped, failures };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────

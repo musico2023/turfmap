@@ -350,6 +350,49 @@ export async function sendScanReady(args: {
 }
 
 /**
+ * Audit booking nudge — escalating reminder sequence sent to
+ * audit/strategy buyers who haven't booked their Cal.com strategist
+ * call. Three stages (day_1, day_3, day_7) fire from the
+ * audit-milestones cron, each gated on a dedicated
+ * audit_call_nudge_<stage>_sent_at metadata key so they're
+ * idempotent. The existing T+20m AuditCallReminder is the first
+ * touch; this is the follow-up sequence.
+ *
+ * The Resend send wraps the React email and dispatches via the
+ * shared sendEmailOk helper — same pattern as sendAuditCallReminder
+ * + the post-call follow-ups.
+ */
+export async function sendAuditBookingNudge(args: {
+  to: string;
+  businessName: string;
+  bookingUrl: string;
+  stage: 'day_1' | 'day_3' | 'day_7';
+}): Promise<boolean> {
+  const { AuditBookingNudgeEmail } = await import(
+    '@/components/email/AuditBookingNudgeEmail'
+  );
+  const html = await render(
+    AuditBookingNudgeEmail({
+      businessName: args.businessName,
+      bookingUrl: args.bookingUrl,
+      stage: args.stage,
+    })
+  );
+  // Subject mirrors the email's preview text so the buyer's inbox
+  // shows a coherent thread regardless of which stage they're on.
+  const subjectByStage = {
+    day_1: `Quick reminder — your Visibility Audit call for ${args.businessName}`,
+    day_3: `Let's get your audit on the calendar — ${args.businessName}`,
+    day_7: `Last reminder before I reach out personally — ${args.businessName}`,
+  } as const;
+  return sendEmailOk({
+    to: args.to,
+    subject: subjectByStage[args.stage],
+    html,
+  });
+}
+
+/**
  * Audit Purchase Roadmap — sent to anthony@fourdots.io ~30-60s after
  * a Visibility Audit purchase, with the freshly-generated 90-Day
  * Roadmap PDF attached. This is the OPERATOR copy of the deliverable
