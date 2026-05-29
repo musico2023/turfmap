@@ -389,6 +389,23 @@ export async function POST(req: NextRequest) {
     email: body.email,
     businessName: body.businessName.trim(),
   });
+  // Provision portal access BEFORE sending the confirmation email.
+  // sendOrderConfirmation hands the buyer a /portal/<public_id> URL;
+  // without a client_users row that URL bounces them at the agency-
+  // portal sign-in page with a misleading "this email is not
+  // authorized" error. Yohann at Ainger Group Roofing (original
+  // cohort='cold_email' Stripe-checkout purchase) was the catalyst —
+  // he held the email + clicked months later, no client_users row
+  // existed, auth rejected him. Idempotent; non-fatal.
+  try {
+    await ensurePortalUser(supabase, client.id, body.email);
+  } catch (e) {
+    console.error(
+      '[orders/fulfill] ensurePortalUser pre-email threw (non-fatal)',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
   await sendOrderConfirmation({
     to: body.email,
     businessName: body.businessName.trim(),
@@ -708,18 +725,8 @@ export async function POST(req: NextRequest) {
           }
         });
 
-        // Ensure the buyer has portal access. Idempotent — a second
-        // run for the same email is a no-op. Non-fatal; Anthony can
-        // grant access later via the agency dashboard's
-        // ClientUsersManager if this fails.
-        try {
-          await ensurePortalUser(supabase, client.id, body.email);
-        } catch (e) {
-          console.error(
-            '[orders/fulfill] ensurePortalUser threw (non-fatal)',
-            e instanceof Error ? e.message : String(e)
-          );
-        }
+        // (Portal access already provisioned before sendOrderConfirmation
+        // above — applies to all paid tiers, not just audit.)
 
         if (shouldPitchLlm(fitBreakdown.score)) {
           // Fire the operator Slack notification for fit-4-and-up
