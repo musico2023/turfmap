@@ -13,28 +13,19 @@ import { Check, Gift, Loader2 } from 'lucide-react';
  * primary lime fill. The outer two CTAs are secondary outlines so the
  * eye lands on $499 first.
  *
- * Checkout flow per tier:
+ * All three tiers are intake-first now: clicking the CTA navigates
+ * to /intake?tier=<id>&from=home where the buyer fills business
+ * details, then hits Stripe Checkout, then auto-lands on
+ * /order/success (no second form). Mirrors the same flow used by
+ * /scan, /fourdots, /yourmap, /freescan landers.
  *
- *   TurfScan ($99)   → intake-first. Click navigates to /intake?tier=scan
- *   Audit ($499)       where the buyer fills 5 business details, THEN
- *                     hits Stripe Checkout, THEN auto-lands on
- *                     /order/success (no second form). Mirrors the
- *                     same migration applied to /scan, /fourdots,
- *                     /yourmap, /freescan — friction reduction at
- *                     the moment of highest motivation.
+ *   TurfScan ($99)   → /intake?tier=scan&from=home   (1 keyword)
+ *   Audit ($499)     → /intake?tier=audit&from=home  (1 keyword)
+ *   Strategy ($1.5k) → /intake?tier=strategy&from=home (3 keywords)
  *
- *   Strategy ($1.5k) → legacy Stripe-first. POSTs to /api/checkout/strategy,
- *                     server creates a Stripe Checkout session, buyer
- *                     pays first, then fills the intake form on
- *                     /order/success. Strategy needs 3 keywords + a
- *                     Cal.com booking handoff which the current intake-
- *                     first form doesn't yet support; will migrate when
- *                     a 3-keyword intake variant lands.
- *
- * Failure mode (legacy path): the API responds 503 + an error envelope
- * when STRIPE_SECRET_KEY or the per-tier price-id env var is unset.
- * The button surfaces that copy inline so the page doesn't silently
- * fail during the period before the Stripe products are created.
+ * The legacy POST /api/checkout/<tier> path is still wired for
+ * non-homepage entry points (subscription tiers, dev / fixture
+ * flows) but no PricingCards button uses it anymore.
  */
 
 type Tier = 'scan' | 'audit' | 'strategy';
@@ -149,43 +140,18 @@ export function PricingCards() {
 
 function PricingCard({ tier }: { tier: TierSpec }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const onCheckout = async () => {
-    // ── TurfScan + Audit: intake-first ────────────────────────────
-    // Navigate to /intake?tier=<scan|audit> — the form collects
-    // business details, then inits Stripe Checkout, then auto-
+  const onCheckout = () => {
+    // All three tiers route through the tier-aware /intake page.
+    // The form collects business details (1 keyword for scan/audit,
+    // 3 keywords for strategy), inits Stripe Checkout, then auto-
     // fulfills on /order/success. No POST here, no fetch error
-    // surface needed — this is a plain page navigation.
-    if (tier.id === 'scan' || tier.id === 'audit') {
-      setBusy(true);
-      // from=home pins the /intake page's back link to / so cancel/back
-      // returns the buyer to the homepage, not to the /scan lander.
-      window.location.href = `/intake?tier=${tier.id}&from=home`;
-      return;
-    }
-
-    // ── Strategy: legacy Stripe-first ─────────────────────────────
-    setError(null);
+    // surface needed — plain page navigation.
+    //
+    // from=home pins the /intake back link to / so cancel/back
+    // returns the buyer to the homepage instead of the /scan lander.
     setBusy(true);
-    try {
-      const res = await fetch(`/api/checkout/${tier.id}`, {
-        method: 'POST',
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        url?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.url) {
-        setError(data.error ?? `checkout unavailable (HTTP ${res.status})`);
-        setBusy(false);
-        return;
-      }
-      window.location.href = data.url;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setBusy(false);
-    }
+    window.location.href = `/intake?tier=${tier.id}&from=home`;
   };
 
   const popular = tier.popular === true;
@@ -299,12 +265,6 @@ function PricingCard({ tier }: { tier: TierSpec }) {
         {busy && <Loader2 size={14} className="animate-spin" />}
         {busy ? 'Redirecting…' : tier.cta}
       </button>
-
-      {error && (
-        <div className="text-[11px] text-red-400 font-mono mt-3 text-center leading-snug">
-          {error}
-        </div>
-      )}
     </div>
   );
 }

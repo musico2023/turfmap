@@ -47,16 +47,22 @@ export const maxDuration = 30;
 
 const Body = z.object({
   /** Tier the buyer is purchasing. Defaults to 'scan' so legacy
-   *  callers that don't send a tier (the pre-tier-aware /scan/intake
-   *  form) keep working. Audit ($499) and scan ($99) supported; the
-   *  strategy tier is intentionally not yet supported here (3-keyword
-   *  intake variant TBD). */
+   *  callers that don't send a tier keep working. Scan ($99) +
+   *  audit ($499) take 1 keyword; strategy ($1,497) takes 3
+   *  keywords (comparative scan). */
   tier: z
     .enum(INTAKE_TIERS as readonly [IntakeTier, ...IntakeTier[]])
     .default('scan'),
   businessName: z.string().min(2).max(200),
   address: z.string().min(4).max(400),
+  /** Primary keyword. Always present + always the first element of
+   *  the keywords[] array. Kept as a top-level field for back-compat
+   *  with any caller that still sends the singular form. */
   keyword: z.string().min(2).max(160),
+  /** Full keywords array — 1 entry for scan/audit, 3 entries for
+   *  strategy. Optional so back-compat callers that only send
+   *  `keyword` still work; when missing we fall back to [keyword]. */
+  keywords: z.array(z.string().min(2).max(160)).min(1).max(3).optional(),
   email: z.string().email(),
   phone: z.string().min(7).max(40),
   coupon: z.string().max(40).optional(),
@@ -138,6 +144,24 @@ export async function POST(req: Request) {
     );
   }
 
+  // Reconcile keyword(s) from the body. Strategy needs exactly 3;
+  // scan + audit need exactly 1. When the caller sent the keywords[]
+  // array we use it; otherwise we synthesize from the singular
+  // `keyword` field (back-compat for pre-strategy callers).
+  const submittedKeywords =
+    body.keywords && body.keywords.length > 0
+      ? body.keywords.map((k) => k.trim()).filter(Boolean)
+      : [body.keyword.trim()];
+  const expectedKeywordCount = body.tier === 'strategy' ? 3 : 1;
+  if (submittedKeywords.length !== expectedKeywordCount) {
+    return NextResponse.json(
+      {
+        error: `${body.tier} expects ${expectedKeywordCount} keyword(s); got ${submittedKeywords.length}`,
+      },
+      { status: 400 }
+    );
+  }
+
   // Resolve the coupon to Stripe's promotion_code id. NO default — the
   // upstream lander decides whether to send one (FOURDOTS50, MAPCHECK50,
   // VIP, etc.) or none (full $99 list). Soft-fails if lookup errors;
@@ -176,10 +200,18 @@ export async function POST(req: Request) {
     source: 'scan_intake',
     business_name: body.businessName.trim(),
     address: body.address.trim(),
-    keyword: body.keyword.trim(),
+    // `keyword` (singular) is the primary; we also stamp
+    // keyword_1/2/3 so /lib/stripe/session.ts can rebuild the full
+    // keywords[] array on the success page without re-querying
+    // Stripe. Same flat-string-map constraint Stripe metadata has.
+    keyword: submittedKeywords[0],
     intake_email: body.email.trim(),
     phone: body.phone.trim(),
   };
+  submittedKeywords.forEach((kw, i) => {
+    metadata[`keyword_${i + 1}`] = kw;
+  });
+  metadata.keyword_count = String(submittedKeywords.length);
   if (couponCode) metadata.coupon = couponCode;
   if (body.utm_source) metadata.utm_source = body.utm_source;
   if (body.utm_medium) metadata.utm_medium = body.utm_medium;

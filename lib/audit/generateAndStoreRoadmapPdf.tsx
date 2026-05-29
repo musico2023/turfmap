@@ -35,10 +35,17 @@
  */
 
 import { renderToBuffer } from '@react-pdf/renderer';
-import { generateRoadmap } from '@/lib/ai/roadmapGenerator';
+import {
+  generateRoadmap,
+  type RoadmapKeywordStats,
+} from '@/lib/ai/roadmapGenerator';
 import { patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { uploadRoadmapPdf, signedUrlForAuditFile } from '@/lib/audit/storage';
-import { RoadmapPdf, type RoadmapPdfData } from '@/components/pdf/RoadmapPdf';
+import {
+  RoadmapPdf,
+  type RoadmapPdfData,
+  type RoadmapPdfKeywordRow,
+} from '@/components/pdf/RoadmapPdf';
 import {
   formatMarket,
   loadCellPatternSummary,
@@ -49,6 +56,7 @@ import {
 } from './auditDataLoaders';
 import type {
   ClientRow,
+  LeadOrderRow,
   ScanRow,
   TrackedKeywordRow,
   VisibilityAuditRow,
@@ -105,6 +113,64 @@ export async function generateAndStoreRoadmapPdf(
     .eq('is_primary', true)
     .maybeSingle<TrackedKeywordRow>();
 
+  // ─── 1b. Detect tier — for strategy, fetch the comparative data ───
+  // The audit's lead_order tells us whether this is a 1-keyword
+  // (audit) or 3-keyword (strategy) deliverable. Strategy buyers get
+  // a cross-keyword landscape page in the PDF + a comparative
+  // diagnosis blurb from the AI.
+  const { data: leadOrder } = await supabase
+    .from('lead_orders')
+    .select('tier')
+    .eq('id', audit.lead_order_id)
+    .maybeSingle<Pick<LeadOrderRow, 'tier'>>();
+  const isStrategyTier = leadOrder?.tier === 'strategy';
+  const tierLabel =
+    leadOrder?.tier === 'strategy' ? 'Strategy Session' : 'Visibility Audit';
+
+  // ─── 1c. (Strategy only) Load secondary keywords + their scans ────
+  // tracked_keywords carries all 3 for strategy buyers (1 primary +
+  // 2 non-primary). For each non-primary, find the most recent
+  // matching scan (one-keyword-many-scans is theoretically possible
+  // for repeat scans; we want the latest). The scans tied to this
+  // client + matching the secondary keyword text are the right ones.
+  type SecondaryRow = {
+    keyword: string;
+    turfScore: number;
+    turfReach: number | null;
+    turfRank: number | null;
+  };
+  const secondaries: SecondaryRow[] = [];
+  if (isStrategyTier) {
+    const { data: otherKeywords } = await supabase
+      .from('tracked_keywords')
+      .select('*')
+      .eq('client_id', audit.client_id)
+      .eq('is_primary', false)
+      .order('created_at', { ascending: true });
+    for (const k of (otherKeywords ?? []) as TrackedKeywordRow[]) {
+      // Pick the freshest scan for this keyword. runScanForLocation
+      // stamps tracked_keyword_id on each scan row, so the lookup is
+      // index-friendly.
+      const { data: kScan } = await supabase
+        .from('scans')
+        .select('id, turf_score, turf_reach, turf_rank')
+        .eq('client_id', audit.client_id)
+        .eq('keyword_id', k.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<
+          Pick<ScanRow, 'id' | 'turf_score' | 'turf_reach' | 'turf_rank'>
+        >();
+      if (!kScan) continue;
+      secondaries.push({
+        keyword: k.keyword,
+        turfScore: kScan.turf_score ?? 0,
+        turfReach: kScan.turf_reach ?? null,
+        turfRank: kScan.turf_rank ?? null,
+      });
+    }
+  }
+
   // ─── 2. Aggregate the buyer-specific input summaries ───────────────
   const napFindingsSummary = await loadNapFindingsSummary(
     supabase,
@@ -121,6 +187,20 @@ export async function generateAndStoreRoadmapPdf(
   const trade = keyword?.keyword ?? client.business_name;
 
   // ─── 3. AI Roadmap generation (Claude) ─────────────────────────────
+  // Strategy buyers: pass the secondary keywords' stats so the
+  // diagnosis weaves in the cross-keyword pattern. The actions
+  // themselves still target the primary keyword (matching the
+  // single-keyword PDF + dashboard surfaces) — the comparative
+  // framing lives in the diagnosis blurb on the cover.
+  const aiSecondaries: RoadmapKeywordStats[] | null = isStrategyTier
+    ? secondaries.map((s) => ({
+        keyword: s.keyword,
+        turfScore: s.turfScore,
+        turfReach: s.turfReach,
+        turfRank: s.turfRank,
+      }))
+    : null;
+
   let roadmap: Awaited<ReturnType<typeof generateRoadmap>>;
   try {
     roadmap = await generateRoadmap({
@@ -134,6 +214,7 @@ export async function generateAndStoreRoadmapPdf(
       napFindingsSummary,
       competitorSummary,
       cellPatternSummary,
+      secondaryKeywords: aiSecondaries,
     });
   } catch (e) {
     return {
@@ -146,6 +227,32 @@ export async function generateAndStoreRoadmapPdf(
   const projectedTurfScore = startingTurfScore + roadmap.thirtyDayTargetLift;
 
   // ─── 4. PDF render ─────────────────────────────────────────────────
+  // Build the Strategy-tier keyword landscape table: primary first
+  // (annotated as such), then the secondaries with operator-facing
+  // notes computed from the score deltas. For audit/scan, leave the
+  // array empty so the PDF skips the landscape page entirely.
+  const keywordLandscape: RoadmapPdfKeywordRow[] = [];
+  if (isStrategyTier) {
+    keywordLandscape.push({
+      keyword: keyword?.keyword ?? trade,
+      turfScore: startingTurfScore,
+      turfReach: scan.turf_reach ?? null,
+      turfRank: scan.turf_rank ?? null,
+      note: 'Primary — the 90-day Roadmap on the following pages is framed around this keyword.',
+    });
+    // Sort secondaries by TurfScore descending so the strongest
+    // visibility lands first under the primary.
+    const sorted = [...secondaries].sort((a, b) => b.turfScore - a.turfScore);
+    for (const s of sorted) {
+      keywordLandscape.push({
+        keyword: s.keyword,
+        turfScore: s.turfScore,
+        turfReach: s.turfReach,
+        turfRank: s.turfRank,
+      });
+    }
+  }
+
   const pdfData: RoadmapPdfData = {
     businessName: client.business_name,
     trade,
@@ -167,6 +274,8 @@ export async function generateAndStoreRoadmapPdf(
     napFindings: [], // Phase-4 — structured rows ride the summary text today
     competitors: [], // ditto
     cells: await loadCellsForScan(supabase, audit.scan_id),
+    keywordLandscape,
+    tierLabel,
     ninetyDayTargetLift: roadmap.ninetyDayTargetLift,
   };
 

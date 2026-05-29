@@ -212,6 +212,19 @@ PRIORITY:
 
 Output the roadmap as structured JSON matching the schema.`;
 
+/** Per-keyword scan stats — used in the secondaryKeywords[] input
+ *  to feed the AI prompt comparative context for Strategy Session
+ *  ($1,497) buyers who paid for the 3-keyword analysis. */
+export type RoadmapKeywordStats = {
+  keyword: string;
+  /** TurfScore for this keyword's scan (0-100). */
+  turfScore: number;
+  /** TurfReach % (cells where buyer appears in pack, 0-100). */
+  turfReach: number | null;
+  /** TurfRank (avg pack position when present, 0-3). */
+  turfRank: number | null;
+};
+
 /** Inputs to the roadmap generator. All optional fields are nullable
  *  so the caller can pass partial data — the prompt teaches Claude
  *  to handle missing inputs gracefully. */
@@ -242,6 +255,13 @@ export type RoadmapInput = {
    *  visible across the 81-point grid. ("Dark cells concentrated
    *  in the SE quadrant; visible only within 1.2 mi of HQ"). */
   cellPatternSummary: string | null;
+  /** Strategy-tier comparative keywords (the 2nd + 3rd keyword
+   *  scans, alongside the primary). When present, the prompt is
+   *  instructed to weave the cross-keyword comparison into the
+   *  diagnosis blurb so the strategist call has the comparative
+   *  framing baked into the Roadmap. NULL / empty for scan + audit
+   *  tiers (single-keyword). */
+  secondaryKeywords?: RoadmapKeywordStats[] | null;
 };
 
 function buildUserPrompt(input: RoadmapInput): string {
@@ -271,6 +291,33 @@ function buildUserPrompt(input: RoadmapInput): string {
 
   if (input.competitorSummary) {
     parts.push('', 'TOP COMPETITORS:', input.competitorSummary);
+  }
+
+  // Strategy-tier comparative input: when the buyer paid for a
+  // 3-keyword scan we feed Claude the secondary keywords' stats so
+  // the diagnosis blurb references which service angle has the
+  // strongest opportunity vs. which is most contested. The roadmap
+  // actions themselves are still framed around the primary keyword
+  // (the buyer + strategist pick one to lean into on the call), but
+  // the diagnosis sets the comparative scene.
+  if (input.secondaryKeywords && input.secondaryKeywords.length > 0) {
+    parts.push('', 'COMPARATIVE KEYWORDS (Strategy-tier 3-keyword scan):');
+    parts.push(
+      `- Primary "${input.keyword}": TurfScore ${input.currentTurfScore}/100${
+        input.turfReach != null ? `, Reach ${input.turfReach.toFixed(0)}%` : ''
+      }${input.turfRank != null ? `, Rank ${input.turfRank.toFixed(2)}/3` : ''}`
+    );
+    for (const k of input.secondaryKeywords) {
+      parts.push(
+        `- "${k.keyword}": TurfScore ${k.turfScore}/100${
+          k.turfReach != null ? `, Reach ${k.turfReach.toFixed(0)}%` : ''
+        }${k.turfRank != null ? `, Rank ${k.turfRank.toFixed(2)}/3` : ''}`
+      );
+    }
+    parts.push(
+      '',
+      'In the DIAGNOSIS blurb (only), explicitly name the cross-keyword pattern: which of the three has the strongest visibility today, which is the biggest opportunity (largest gap between current TurfScore and a realistic 30-day target), and which is most contested. Keep the diagnosis to 3-4 sentences. The roadmap ACTIONS should still be framed for the primary keyword — the strategist call is where the buyer picks which keyword to lean into.'
+    );
   }
 
   parts.push(

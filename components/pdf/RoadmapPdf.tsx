@@ -650,6 +650,24 @@ export type RoadmapPdfCompetitor = {
   differential?: string;
 };
 
+/** Per-keyword scan summary for the Strategy Session ($1,497)
+ *  3-keyword comparative landscape page. Empty / absent on Audit +
+ *  Scan tiers (single-keyword roadmaps). */
+export type RoadmapPdfKeywordRow = {
+  keyword: string;
+  /** TurfScore on the scan for this keyword. */
+  turfScore: number;
+  /** TurfReach % (cells where buyer appears in pack). NULL when
+   *  scan stats aren't computed yet. */
+  turfReach: number | null;
+  /** TurfRank (avg pack position when present, 0-3). */
+  turfRank: number | null;
+  /** Brief operator-facing note rendered alongside the row — e.g.,
+   *  "Strongest current visibility" / "Largest opportunity gap" /
+   *  "Most contested". Optional; the row reads fine without it. */
+  note?: string;
+};
+
 /** One cell on the 9x9 grid. Mirrors the shape used by TurfReport.tsx
  *  so a future shared module could deduplicate. `rank` is null when
  *  the buyer doesn't appear in the local pack at all for that cell;
@@ -686,6 +704,15 @@ export type RoadmapPdfData = {
    *  12w) drive the bar chart on page 5; we recompute here from
    *  actions[] to stay decoupled from the upstream sum logic. */
   ninetyDayTargetLift: number;
+  /** Strategy-tier 3-keyword landscape. When non-empty, the PDF
+   *  inserts a "Keyword Landscape" page between the cover and the
+   *  TurfGap page that compares all three keywords' visibility
+   *  side-by-side. Empty / absent for Scan + Audit tiers. */
+  keywordLandscape?: RoadmapPdfKeywordRow[];
+  /** Human-readable tier label — drives the cover-page badge ("90-Day
+   *  Roadmap · Strategy Session" vs ". Visibility Audit"). Optional;
+   *  the existing rendering still works without it. */
+  tierLabel?: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -914,7 +941,9 @@ function PageCover({ data }: { data: RoadmapPdfData }) {
       <Header data={data} pageLabel="COVER" />
 
       <View style={styles.coverHero}>
-        <Text style={styles.coverEyebrow}>VISIBILITY AUDIT — 90-DAY ROADMAP</Text>
+        <Text style={styles.coverEyebrow}>
+          {(data.tierLabel ?? 'VISIBILITY AUDIT').toUpperCase()} — 90-DAY ROADMAP
+        </Text>
         {/* Line break after "don't." per the buyer-readability pass.
          *  The previous single-line title wrapped awkwardly at the
          *  page-margin breakpoint; explicit two-line layout keeps
@@ -1435,13 +1464,131 @@ function PageLlmSegue({ data }: { data: RoadmapPdfData }) {
 
 // ─── Public Document component ────────────────────────────────────────
 
+// ─── Page (optional): Strategy-tier 3-keyword landscape ──────────────
+//
+// Renders only when keywordLandscape is non-empty (Strategy Session
+// tier). Sits between the cover and the TurfGap page so the buyer +
+// strategist see the cross-keyword comparison FIRST, before drilling
+// into the primary keyword's roadmap details. Audit + scan tiers
+// skip this page entirely.
+
+function PageKeywordLandscape({ data }: { data: RoadmapPdfData }) {
+  const rows = data.keywordLandscape ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <Page size="LETTER" style={styles.page}>
+      <Header data={data} pageLabel="KEYWORD LANDSCAPE" />
+
+      <View style={styles.coverHero}>
+        <Text style={styles.coverEyebrow}>
+          KEYWORD LANDSCAPE — 3-WAY COMPARISON
+        </Text>
+        <Text style={styles.coverTitle}>
+          Three angles, one territory.
+        </Text>
+        <Text style={styles.coverSub}>
+          We scanned {data.businessName} against three keywords across
+          the same 81-point grid. The strategist call is where you
+          pick which one to lean into; the Roadmap that follows is
+          framed around the primary.
+        </Text>
+      </View>
+
+      {/* Per-keyword score rows — mirrors the cover's scoreRow
+       *  styling but stacks vertically so 3 keywords fit cleanly
+       *  with their TurfScore + Reach + Rank + operator note. */}
+      <View style={{ marginTop: 18, gap: 10 }}>
+        {rows.map((row, i) => {
+          const isPrimary = i === 0;
+          return (
+            <View
+              key={`${row.keyword}-${i}`}
+              style={[
+                isPrimary ? styles.scoreCellHi : styles.scoreCell,
+                { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 14 },
+              ]}
+            >
+              <View style={{ flex: 1.6 }}>
+                <Text style={styles.scoreLabel}>
+                  {isPrimary ? 'PRIMARY' : `ANGLE #${i + 1}`}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: C.text,
+                    fontWeight: 700,
+                    marginTop: 2,
+                  }}
+                >
+                  &ldquo;{row.keyword}&rdquo;
+                </Text>
+                {row.note ? (
+                  <Text
+                    style={{
+                      fontSize: 8,
+                      color: C.textMuted,
+                      marginTop: 3,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {row.note}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={styles.scoreLabel}>TURFSCORE</Text>
+                <Text
+                  style={isPrimary ? styles.scoreValueLime : styles.scoreValue}
+                >
+                  {row.turfScore}
+                </Text>
+              </View>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={styles.scoreLabel}>REACH</Text>
+                <Text style={styles.scoreValue}>
+                  {row.turfReach != null ? `${Math.round(row.turfReach)}%` : '—'}
+                </Text>
+              </View>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={styles.scoreLabel}>RANK</Text>
+                <Text style={styles.scoreValue}>
+                  {row.turfRank != null ? row.turfRank.toFixed(2) : '—'}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      <Text
+        style={{
+          fontSize: 9,
+          color: C.textMuted,
+          marginTop: 18,
+          lineHeight: 1.5,
+        }}
+      >
+        How to read this: the primary keyword is the one the strategist
+        call agenda + the 90-day Roadmap on the following pages are
+        framed around. The other two are kept here because the
+        cross-keyword comparison is itself a strategic input — they
+        show where the territory leaks differently per service angle,
+        and where the easiest win likely lives.
+      </Text>
+    </Page>
+  );
+}
+
 export function RoadmapPdf({ data }: { data: RoadmapPdfData }) {
+  const hasLandscape =
+    (data.keywordLandscape ?? []).length > 0;
   return (
     <Document
       title={`90-Day Roadmap — ${data.businessName}`}
       author="TurfMap.ai · Fourdots Digital"
     >
       <PageCover data={data} />
+      {hasLandscape ? <PageKeywordLandscape data={data} /> : null}
       <PageGap data={data} />
       <PageNap data={data} />
       <PageRoadmap data={data} />

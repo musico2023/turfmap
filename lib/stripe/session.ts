@@ -72,7 +72,13 @@ export type LoadedSession = {
   intake: {
     businessName: string;
     address: string;
+    /** Primary keyword — always present + always equal to keywords[0]. */
     keyword: string;
+    /** Full keywords list. One element for scan/audit; three for
+     *  strategy. Stamped on Stripe metadata as keyword_1, keyword_2,
+     *  keyword_3 + keyword_count so /order/success can pass the full
+     *  array to /api/orders/fulfill. */
+    keywords: string[];
     email: string;
     phone: string;
     /** Mapbox-picked latitude. When non-null, fulfill should USE
@@ -275,10 +281,28 @@ export async function loadCheckoutSession(
       // is populated — keeps null distinguishable from "all empty"
       // for downstream typecheck consumers.
       const hasComponents = Object.values(components).some((v) => v !== null);
+
+      // Rebuild keywords[] from keyword_1/2/3 + keyword_count. For
+      // back-compat with sessions stamped before strategy-tier
+      // support (keyword_1..3 absent), fall back to [keyword]. The
+      // count metadata field guards against under-populated arrays
+      // when only the singular field was stamped.
+      const declaredCount = Number(m.keyword_count ?? '1');
+      const numericCount = Number.isFinite(declaredCount)
+        ? Math.max(1, Math.min(3, Math.round(declaredCount)))
+        : 1;
+      const collected: string[] = [];
+      for (let i = 1; i <= numericCount; i++) {
+        const kw = m[`keyword_${i}`]?.trim();
+        if (kw) collected.push(kw);
+      }
+      const keywords = collected.length > 0 ? collected : [keyword];
+
       intake = {
         businessName,
         address,
         keyword,
+        keywords,
         email: intakeEmail,
         phone,
         latitude: hasGeo ? lat : null,

@@ -13,8 +13,15 @@
  * intake variant lands.
  */
 
-export const INTAKE_TIERS = ['scan', 'audit'] as const;
+export const INTAKE_TIERS = ['scan', 'audit', 'strategy'] as const;
 export type IntakeTier = (typeof INTAKE_TIERS)[number];
+
+/** How many keyword inputs the intake form renders for this tier.
+ *  Scan + audit collect 1; strategy collects 3 (comparative
+ *  scans across service variations). */
+export function keywordsRequiredForTier(tier: IntakeTier): number {
+  return tier === 'strategy' ? 3 : 1;
+}
 
 // ── Intake source ────────────────────────────────────────────────────
 //
@@ -98,6 +105,14 @@ export const INTAKE_TIER_CONFIGS: Record<IntakeTier, IntakeTierConfig> = {
     pageTitle: 'Tell us where to audit.',
     pageSubtitle:
       'Five fields up front — then payment, then your scan + the 90-day Roadmap.',
+  },
+  strategy: {
+    label: 'Strategy Session',
+    listCents: 149700,
+    priceEnvKey: 'NEXT_PUBLIC_STRIPE_PRICE_STRATEGY',
+    pageTitle: 'Tell us where to scan, three ways.',
+    pageSubtitle:
+      'Seven fields — three keywords so we can compare your visibility across service angles before the 90-minute strategy session.',
   },
 };
 

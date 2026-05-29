@@ -147,6 +147,10 @@ export function OrderSuccessForm({
     businessName: string;
     address: string;
     keyword: string;
+    /** Full keywords list — 1 for scan/audit, 3 for strategy.
+     *  Optional with fall-through to [keyword] for back-compat with
+     *  sessions stamped before strategy-tier support. */
+    keywords?: string[];
     email: string;
     phone: string;
     latitude: number | null;
@@ -293,7 +297,14 @@ export function OrderSuccessForm({
             sessionId,
             businessName: prefilledIntake.businessName,
             address: prefilledIntake.address,
-            keywords: [prefilledIntake.keyword],
+            // Use the full keywords[] array from intake (1 for
+            // scan/audit, 3 for strategy). Falls back to a single-
+            // element array for legacy intake-first sessions stamped
+            // before strategy-tier support.
+            keywords:
+              prefilledIntake.keywords && prefilledIntake.keywords.length > 0
+                ? prefilledIntake.keywords
+                : [prefilledIntake.keyword],
             email: prefilledIntake.email,
             phone: prefilledIntake.phone,
             // Mapbox-picked geo (when present) so fulfill skips

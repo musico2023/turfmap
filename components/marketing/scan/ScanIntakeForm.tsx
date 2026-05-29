@@ -32,9 +32,13 @@ import {
 
 export type ScanIntakeFormProps = {
   /** Which tier the buyer is purchasing. Drives the Stripe price the
-   *  init route picks + which page-level copy renders. Defaults to
-   *  'scan' so legacy callers that don't pass a tier still work. */
-  tier?: 'scan' | 'audit';
+   *  init route picks + the number of keyword inputs that render +
+   *  the page-level copy. Defaults to 'scan' so legacy callers that
+   *  don't pass a tier still work.
+   *
+   *  'strategy' renders THREE keyword inputs (the buyer is buying
+   *  the 3-keyword comparative scan), 'scan'/'audit' render one. */
+  tier?: 'scan' | 'audit' | 'strategy';
   // Attribution params forwarded from the upstream lander via /intake
   // URL → carried into the init endpoint → stamped onto Stripe metadata.
   // Each independently optional.
@@ -88,7 +92,23 @@ export function ScanIntakeForm({
   // entirely for picked addresses — that's the address path that
   // produced the Hendricks / Meadowview wrong-city matches before.
   const [selected, setSelected] = useState<AddressFields | null>(null);
-  const [keyword, setKeyword] = useState(prefillKeyword ?? '');
+  // Strategy = 3 keywords (comparative scan); scan + audit = 1.
+  // State is always a string[]; the first slot uses the prefill, the
+  // rest start blank. Length is fixed at mount-time based on tier so
+  // the field rendering stays stable across re-renders.
+  const keywordSlotCount = tier === 'strategy' ? 3 : 1;
+  const [keywords, setKeywords] = useState<string[]>(() => {
+    const arr = Array(keywordSlotCount).fill('');
+    arr[0] = prefillKeyword ?? '';
+    return arr;
+  });
+  const setKeywordAt = (idx: number, value: string) => {
+    setKeywords((prev) => {
+      const next = [...prev];
+      next[idx] = value;
+      return next;
+    });
+  };
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -126,6 +146,19 @@ export function ScanIntakeForm({
       return;
     }
 
+    // Strategy buyers need all 3 keyword slots filled. Scan + audit
+    // only need 1 (the required attribute on the input already gates,
+    // but we double-check here so a JS-tampered submit can't bypass).
+    const trimmedKeywords = keywords.map((k) => k.trim()).filter(Boolean);
+    if (trimmedKeywords.length !== keywordSlotCount) {
+      setError(
+        keywordSlotCount === 1
+          ? 'Keyword is required.'
+          : `All ${keywordSlotCount} keywords are required for the Strategy Session comparison.`
+      );
+      return;
+    }
+
     setLoading(true);
 
     // Meta InitiateCheckout — the brief's "Stripe-flow-starts" event.
@@ -159,7 +192,12 @@ export function ScanIntakeForm({
           tier,
           businessName: businessName.trim(),
           address: address.trim(),
-          keyword: keyword.trim(),
+          // Always send keywords as an array — server validates the
+          // count against the tier (1 for scan/audit, 3 for strategy).
+          // Also send `keyword` (first element) for back-compat with
+          // any caller that still inspects the singular field.
+          keyword: trimmedKeywords[0],
+          keywords: trimmedKeywords,
           email: email.trim(),
           phone: phone.trim(),
           coupon: coupon ?? undefined,
@@ -256,15 +294,62 @@ export function ScanIntakeForm({
           setError(null);
         }}
       />
-      <Field
-        label="Keyword to scan"
-        id="biz-keyword"
-        value={keyword}
-        onChange={setKeyword}
-        placeholder='e.g. "plumber toronto" or "ac repair calgary"'
-        required
-        hint="The search your highest-value customers actually type. Not your business name — what someone searching for what you do would enter."
-      />
+      {keywordSlotCount === 1 ? (
+        <Field
+          label="Keyword to scan"
+          id="biz-keyword"
+          value={keywords[0] ?? ''}
+          onChange={(v) => setKeywordAt(0, v)}
+          placeholder='e.g. "plumber toronto" or "ac repair calgary"'
+          required
+          hint="The search your highest-value customers actually type. Not your business name — what someone searching for what you do would enter."
+        />
+      ) : (
+        // Strategy: 3 keywords. We frame as a primary + two service
+        // angles so the buyer understands what each slot is for — the
+        // comparative analysis on the strategist call leans on
+        // contrasts between these three picks (which keyword has
+        // the most opportunity, which is most contested, etc.).
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-mono font-semibold mb-1.5">
+              Keywords to compare
+              <span className="ml-1 text-zinc-600" aria-hidden="true">
+                *
+              </span>
+            </label>
+            <p className="text-[11px] text-zinc-500 leading-relaxed mb-2">
+              Three searches your highest-value customers type. Pick
+              your primary first, then two adjacent service angles or
+              variations — we&apos;ll run all three in parallel and
+              show how your visibility differs between them.
+            </p>
+          </div>
+          {[0, 1, 2].map((i) => (
+            <Field
+              key={i}
+              label={
+                i === 0
+                  ? 'Primary keyword'
+                  : i === 1
+                    ? 'Service angle #2'
+                    : 'Service angle #3'
+              }
+              id={`biz-keyword-${i}`}
+              value={keywords[i] ?? ''}
+              onChange={(v) => setKeywordAt(i, v)}
+              placeholder={
+                i === 0
+                  ? '"plumber toronto"'
+                  : i === 1
+                    ? '"drain cleaning toronto"'
+                    : '"water heater repair toronto"'
+              }
+              required
+            />
+          ))}
+        </div>
+      )}
       <Field
         label="Email"
         id="biz-email"
