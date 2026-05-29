@@ -15,6 +15,7 @@ import { ChevronLeft, ExternalLink } from 'lucide-react';
 import { Header } from '@/components/turfmap/Header';
 import { InfoTooltip } from '@/components/turfmap/InfoTooltip';
 import { ClientSettingsForm } from '@/components/turfmap/ClientSettingsForm';
+import { BootstrapAuditCard } from '@/components/turfmap/BootstrapAuditCard';
 import { KeywordsManager } from '@/components/turfmap/KeywordsManager';
 import { LocationsManager } from '@/components/turfmap/LocationsManager';
 import { LocationSwitcher } from '@/components/turfmap/LocationSwitcher';
@@ -128,6 +129,49 @@ export default async function ClientSettingsPage({
   const isRecurring = client.billing_mode !== 'one_time';
   const showExports = canAccessExports(tierForGating);
 
+  // BootstrapAuditCard prep — agency-owner-only card on the General
+  // tab. Fetch the most recent visibility_audits row (if any) so the
+  // card can render in "Regenerate" mode + surface the current PDF
+  // URL. Also pull the freshest lead_order.email as a default for the
+  // operator's "buyer email" field. Both lookups soft-fail to null —
+  // the card handles missing data fine.
+  const showBootstrapAuditCard = isAgencyOwnerEmail(me.email);
+  let bootstrapExistingAudit: {
+    id: string;
+    roadmapPdfUrl: string | null;
+    strategistCallScheduledAt: string | null;
+  } | null = null;
+  let bootstrapDefaultEmail: string | null = null;
+  if (showBootstrapAuditCard) {
+    const { data: latestAudit } = await supabase
+      .from('visibility_audits')
+      .select('id, roadmap_pdf_url, strategist_call_scheduled_at')
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        id: string;
+        roadmap_pdf_url: string | null;
+        strategist_call_scheduled_at: string | null;
+      }>();
+    if (latestAudit) {
+      bootstrapExistingAudit = {
+        id: latestAudit.id,
+        roadmapPdfUrl: latestAudit.roadmap_pdf_url,
+        strategistCallScheduledAt: latestAudit.strategist_call_scheduled_at,
+      };
+    }
+    const { data: latestOrder } = await supabase
+      .from('lead_orders')
+      .select('email')
+      .eq('client_id', id)
+      .not('email', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ email: string }>();
+    bootstrapDefaultEmail = latestOrder?.email ?? null;
+  }
+
   // "Awaiting buyer payment setup" — the client was created via the
   // agency-side plan selector with a Stripe plan, but the buyer
   // hasn't yet completed Checkout (so stripe_subscription_id is
@@ -217,6 +261,18 @@ export default async function ClientSettingsPage({
                 Boolean(client.stripe_subscription_id)
               }
             />
+            {/* Operator-only — agency-owner-domain emails. Wraps the
+             *  /api/admin/bootstrap-comp-audit endpoint in a UI so a
+             *  Visibility Audit deliverable can be generated without
+             *  dropping into a terminal. */}
+            {showBootstrapAuditCard && (
+              <BootstrapAuditCard
+                clientId={client.id}
+                clientPublicId={client.public_id}
+                defaultEmail={bootstrapDefaultEmail}
+                existingAudit={bootstrapExistingAudit}
+              />
+            )}
           </div>
         )}
 
