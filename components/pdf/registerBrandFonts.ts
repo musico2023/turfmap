@@ -11,24 +11,24 @@
  *   `registered` flag below makes that idempotent so calling from
  *   multiple PDFs in the same process doesn't double-register.
  *
- * Font format choice:
- *   The Google Fonts repo ships Bricolage Grotesque as a single
- *   variable TTF that holds Light → ExtraBold along the wght axis.
- *   @react-pdf/renderer registers a variable TTF as one family + one
- *   "default" weight; when callers ask for fontWeight: 700, the
- *   renderer falls back to synthetic bold (slightly bolder glyph
- *   outline) rather than a true Bold cut. That looks fine in our
- *   PDF dark-mode brand. If we ever need true Bold differentiation,
- *   the path is to download a static Bold instance from
- *   fonts.google.com and register it as a second src here with
- *   { fontWeight: 700 }.
+ * Font format / weight strategy:
+ *   We register two static OTF instances from the official
+ *   Bricolage Grotesque distribution — Regular (wght 400) and Bold
+ *   (wght 700). @react-pdf/renderer routes fontWeight values to the
+ *   nearest registered weight, so the existing `fontWeight: 700`
+ *   style tokens in TurfReport / RoadmapPdf pick up the true Bold
+ *   cut rather than synthetic bolding. Total bundle is ~156KB
+ *   (smaller than the 408KB variable TTF that lived here previously).
  *
- * Where the TTF lives:
- *   public/fonts/BricolageGrotesque-Variable.ttf (committed to the
- *   repo; ~400KB). In a Vercel Fluid Compute deployment, public/
- *   ships with the function bundle and process.cwd() is the
- *   deployment root, so the fs.readFileSync below resolves at
- *   runtime in both local dev (`next dev`) and prod.
+ * Where the OTFs live:
+ *   public/fonts/BricolageGrotesque-Regular.otf
+ *   public/fonts/BricolageGrotesque-Bold.otf
+ *
+ *   In a Vercel Fluid Compute deployment, public/ doesn't ship in
+ *   the lambda bundle by default — next.config.ts's
+ *   outputFileTracingIncludes entry forces those files into the
+ *   PDF-generating routes' bundles so the path.join + fs read here
+ *   resolves at runtime in both `next dev` and prod.
  */
 
 import { Font } from '@react-pdf/renderer';
@@ -42,24 +42,26 @@ export function registerBrandFonts(): void {
   if (registered) return;
   // Resolve from process.cwd() so the path works in both `next dev`
   // (cwd = project root) and Vercel Fluid Compute (cwd = deployment
-  // root, with public/ shipped alongside the function).
-  // Font.register accepts a string path (or URL); the renderer
-  // reads the file on demand when laying out glyphs.
-  const fontPath = path.join(
-    process.cwd(),
-    'public',
-    'fonts',
-    'BricolageGrotesque-Variable.ttf'
-  );
+  // root). Font.register accepts a string path (or URL); the
+  // renderer reads the file on demand when laying out glyphs.
+  const fontsDir = path.join(process.cwd(), 'public', 'fonts');
   Font.register({
     family: BRAND_FONT_FAMILY,
-    src: fontPath,
+    fonts: [
+      {
+        src: path.join(fontsDir, 'BricolageGrotesque-Regular.otf'),
+        fontWeight: 400,
+      },
+      {
+        src: path.join(fontsDir, 'BricolageGrotesque-Bold.otf'),
+        fontWeight: 700,
+      },
+    ],
   });
   // Disable @react-pdf/renderer's hyphenation rules — they're
   // calibrated for English Latin-1 fallback fonts and produce odd
-  // breaks (e.g. "TurfMap" → "Turf-Map") with variable-axis
-  // typefaces. Empty array = no hyphenation, words break on whole
-  // tokens only.
+  // breaks (e.g. "TurfMap" → "Turf-Map") with this typeface. Empty
+  // array = no hyphenation, words break on whole tokens only.
   Font.registerHyphenationCallback((word) => [word]);
   registered = true;
 }
