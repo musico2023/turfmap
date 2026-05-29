@@ -75,7 +75,7 @@ export function PulseTrialEndingEmail({
         <strong>
           {scanCount} {scanWord}
         </strong>{' '}
-        for {businessName} so far.
+        for {businessName}{' '}so far.
         {currentTurfScore !== null ? (
           <>
             {' '}Your TurfScore is currently{' '}
@@ -110,8 +110,8 @@ export function PulseTrialEndingEmail({
 
       <PSmall>
         Cancellation takes effect at the end of your trial — you
-        keep Pulse access through {chargeDate} but your card
-        won&rsquo;t be charged. No questions, no email reply
+        keep Pulse access through {chargeDate}{' '}
+        but your card won&rsquo;t be charged. No questions, no email reply
         required.
       </PSmall>
     </EmailLayout>

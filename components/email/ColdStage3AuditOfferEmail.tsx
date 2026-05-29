@@ -127,8 +127,8 @@ export default function ColdStage3AuditOfferEmail({
         </Text>
 
         <Text className="text-zinc-200 text-base leading-relaxed mb-4">
-          I&apos;m building case studies in {tradeVertical} right
-          now, so for operators in this trade, I&apos;ll do the
+          I&apos;m building case studies in {tradeVertical}{' '}
+          right now, so for operators in this trade, I&apos;ll do the
           audit free in exchange for a 30-minute conversation about
           what we could do for your business afterward.
         </Text>

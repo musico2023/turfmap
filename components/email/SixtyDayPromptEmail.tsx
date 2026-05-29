@@ -45,8 +45,8 @@ export function SixtyDayPromptEmail(props: SixtyDayPromptEmailProps) {
       <H1>Your 60-day check-in.</H1>
 
       <P>
-        Quick update: it&rsquo;s been about {props.daysSinceCall} days
-        since we walked through your visibility roadmap for{' '}
+        Quick update: it&rsquo;s been about {props.daysSinceCall}{' '}
+        days since we walked through your visibility roadmap for{' '}
         <strong>{props.businessName}</strong>.
         {props.currentTurfScore != null
           ? ' Your 30-day re-scan completed — let&rsquo;s review where you are and tune the next 90 days.'

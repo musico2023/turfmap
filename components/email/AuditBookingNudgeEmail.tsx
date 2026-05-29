@@ -54,8 +54,8 @@ function copyForStage(stage: AuditBookingNudgeStage, businessName: string): Stag
       headline: 'Quick reminder: your audit walkthrough.',
       body: (
         <>
-          Your Visibility Audit for <strong>{businessName}</strong> is
-          paid for, but we still need a 30-minute slot on your
+          Your Visibility Audit for <strong>{businessName}</strong>{' '}
+          is paid for, but we still need a 30-minute slot on your
           calendar before the strategist walkthrough can run. Most
           buyers book within an hour — pick a time that works and
           we&apos;ll take it from there.
@@ -102,8 +102,9 @@ function copyForStage(stage: AuditBookingNudgeStage, businessName: string): Stag
     body: (
       <>
         I noticed your Visibility Audit for{' '}
-        <strong>{businessName}</strong> still doesn&apos;t have a
-        strategist call booked. This is the last automated nudge —
+        <strong>{businessName}</strong>{' '}
+        still doesn&apos;t have a strategist call booked. This is the
+        last automated nudge —
         if you don&apos;t pick a slot in the next day or two,
         I&apos;ll email you directly so we can sort out the
         deliverable, whether that means a call, an async walkthrough,

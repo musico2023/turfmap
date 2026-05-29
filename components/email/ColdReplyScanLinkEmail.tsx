@@ -81,8 +81,8 @@ export default function ColdReplyScanLinkEmail({
 
         <Text className="text-zinc-200 text-base leading-relaxed mb-4">
           It&apos;s a 9×9 grid across your service area showing where
-          you appear in Google&apos;s map pack for {trade} searches,
-          and which competitors are taking the cells you&apos;re
+          you appear in Google&apos;s map pack for {trade}{' '}
+          searches, and which competitors are taking the cells you&apos;re
           missing.
         </Text>
 
