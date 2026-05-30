@@ -36,9 +36,15 @@ export type ScanIntakeFormProps = {
    *  the page-level copy. Defaults to 'scan' so legacy callers that
    *  don't pass a tier still work.
    *
-   *  'strategy' renders THREE keyword inputs (the buyer is buying
-   *  the 3-keyword comparative scan), 'scan'/'audit' render one. */
-  tier?: 'scan' | 'audit' | 'strategy';
+   *  'strategy' + 'pulse_plus' render THREE keyword inputs (the
+   *  buyer is buying the 3-keyword comparative scan / 3-keyword
+   *  Pulse+ subscription). 'scan' / 'audit' / 'pulse' render one. */
+  tier?: 'scan' | 'audit' | 'strategy' | 'pulse' | 'pulse_plus';
+  /** Subscription billing cadence — required for pulse / pulse_plus,
+   *  ignored for one-shot tiers. Forwarded to the init endpoint so
+   *  it can resolve the correct Stripe Price + decide whether to
+   *  append the $99 TurfScan setup fee (monthly only). */
+  cadence?: 'monthly' | 'annual' | null;
   // Attribution params forwarded from the upstream lander via /intake
   // URL → carried into the init endpoint → stamped onto Stripe metadata.
   // Each independently optional.
@@ -69,6 +75,7 @@ export type ScanIntakeFormProps = {
 
 export function ScanIntakeForm({
   tier = 'scan',
+  cadence = null,
   coupon = null,
   utmSource,
   utmMedium,
@@ -92,11 +99,13 @@ export function ScanIntakeForm({
   // entirely for picked addresses — that's the address path that
   // produced the Hendricks / Meadowview wrong-city matches before.
   const [selected, setSelected] = useState<AddressFields | null>(null);
-  // Strategy = 3 keywords (comparative scan); scan + audit = 1.
-  // State is always a string[]; the first slot uses the prefill, the
-  // rest start blank. Length is fixed at mount-time based on tier so
-  // the field rendering stays stable across re-renders.
-  const keywordSlotCount = tier === 'strategy' ? 3 : 1;
+  // Strategy + Pulse+ = 3 keywords (comparative scan + 3-keyword
+  // subscription); scan / audit / pulse = 1. State is always a
+  // string[]; the first slot uses the prefill, the rest start blank.
+  // Length is fixed at mount-time based on tier so the field
+  // rendering stays stable across re-renders.
+  const keywordSlotCount =
+    tier === 'strategy' || tier === 'pulse_plus' ? 3 : 1;
   const [keywords, setKeywords] = useState<string[]>(() => {
     const arr = Array(keywordSlotCount).fill('');
     arr[0] = prefillKeyword ?? '';
@@ -146,15 +155,22 @@ export function ScanIntakeForm({
       return;
     }
 
-    // Strategy buyers need all 3 keyword slots filled. Scan + audit
-    // only need 1 (the required attribute on the input already gates,
-    // but we double-check here so a JS-tampered submit can't bypass).
+    // Strategy + Pulse+ buyers need all 3 keyword slots filled.
+    // Scan / audit / pulse only need 1 (the required attribute on
+    // the input already gates, but we double-check here so a
+    // JS-tampered submit can't bypass).
     const trimmedKeywords = keywords.map((k) => k.trim()).filter(Boolean);
     if (trimmedKeywords.length !== keywordSlotCount) {
+      const noun =
+        tier === 'strategy'
+          ? 'Strategy Session comparison'
+          : tier === 'pulse_plus'
+            ? 'Pulse+ 3-keyword subscription'
+            : 'comparison';
       setError(
         keywordSlotCount === 1
           ? 'Keyword is required.'
-          : `All ${keywordSlotCount} keywords are required for the Strategy Session comparison.`
+          : `All ${keywordSlotCount} keywords are required for the ${noun}.`
       );
       return;
     }
@@ -190,12 +206,17 @@ export function ScanIntakeForm({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           tier,
+          // Only send cadence when defined — subscription tiers
+          // depend on it; one-shot tiers ignore the field entirely
+          // server-side (the Zod schema defaults to 'monthly').
+          ...(cadence ? { cadence } : {}),
           businessName: businessName.trim(),
           address: address.trim(),
           // Always send keywords as an array — server validates the
-          // count against the tier (1 for scan/audit, 3 for strategy).
-          // Also send `keyword` (first element) for back-compat with
-          // any caller that still inspects the singular field.
+          // count against the tier (1 for scan/audit/pulse, 3 for
+          // strategy/pulse_plus). Also send `keyword` (first element)
+          // for back-compat with any caller that still inspects the
+          // singular field.
           keyword: trimmedKeywords[0],
           keywords: trimmedKeywords,
           email: email.trim(),

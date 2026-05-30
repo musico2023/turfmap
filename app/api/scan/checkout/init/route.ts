@@ -37,8 +37,12 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
 import {
+  INTAKE_CADENCES,
   INTAKE_TIERS,
   INTAKE_TIER_CONFIGS,
+  isSubscriptionIntakeTier,
+  resolveIntakePriceEnvKey,
+  type IntakeCadence,
   type IntakeTier,
 } from '@/lib/checkout/intakeTiers';
 
@@ -48,20 +52,28 @@ export const maxDuration = 30;
 const Body = z.object({
   /** Tier the buyer is purchasing. Defaults to 'scan' so legacy
    *  callers that don't send a tier keep working. Scan ($99) +
-   *  audit ($499) take 1 keyword; strategy ($1,497) takes 3
-   *  keywords (comparative scan). */
+   *  audit ($499) + pulse ($39/mo) take 1 keyword; strategy
+   *  ($1,497) + pulse_plus ($99/mo) take 3 keywords. */
   tier: z
     .enum(INTAKE_TIERS as readonly [IntakeTier, ...IntakeTier[]])
     .default('scan'),
+  /** Subscription billing cadence. Required (server-side) for
+   *  pulse / pulse_plus; ignored for one-shot tiers. Defaults to
+   *  'monthly' when omitted so subscription buyers from CTAs that
+   *  don't carry the toggle still reach Checkout. */
+  cadence: z
+    .enum(INTAKE_CADENCES as readonly [IntakeCadence, ...IntakeCadence[]])
+    .default('monthly'),
   businessName: z.string().min(2).max(200),
   address: z.string().min(4).max(400),
   /** Primary keyword. Always present + always the first element of
    *  the keywords[] array. Kept as a top-level field for back-compat
    *  with any caller that still sends the singular form. */
   keyword: z.string().min(2).max(160),
-  /** Full keywords array — 1 entry for scan/audit, 3 entries for
-   *  strategy. Optional so back-compat callers that only send
-   *  `keyword` still work; when missing we fall back to [keyword]. */
+  /** Full keywords array — 1 entry for scan/audit/pulse, 3 entries
+   *  for strategy/pulse_plus. Optional so back-compat callers that
+   *  only send `keyword` still work; when missing we fall back to
+   *  [keyword]. */
   keywords: z.array(z.string().min(2).max(160)).min(1).max(3).optional(),
   email: z.string().email(),
   phone: z.string().min(7).max(40),
@@ -130,29 +142,40 @@ export async function POST(req: Request) {
     return NextResponse.json(STRIPE_NOT_CONFIGURED_ERROR, { status: 503 });
   }
 
-  // Pick the Stripe price-id per tier. The tier config carries the
-  // env-key name so the existing scan price var (which both this route
-  // AND /api/checkout/[tier] read) doesn't need to be re-aliased.
+  // Pick the Stripe price-id per (tier, cadence). One-shot tiers
+  // ignore cadence and resolve their fixed price; subscription tiers
+  // (pulse / pulse_plus) pick by cadence. The helper returns null
+  // when neither shape covers the call — we surface a 503 either
+  // way so deploys with missing env vars fail loudly rather than
+  // silently dropping the buyer at Stripe with no price.
   const tierConfig = INTAKE_TIER_CONFIGS[body.tier];
-  const priceId = process.env[tierConfig.priceEnvKey];
-  if (!priceId) {
+  const isSubscription = isSubscriptionIntakeTier(body.tier);
+  const priceEnvKey = resolveIntakePriceEnvKey(body.tier, body.cadence);
+  const priceId = priceEnvKey ? process.env[priceEnvKey] : undefined;
+  if (!priceEnvKey || !priceId) {
     return NextResponse.json(
       {
-        error: `${body.tier} price id not configured (${tierConfig.priceEnvKey})`,
+        error: `${body.tier}${
+          isSubscription ? ` (${body.cadence})` : ''
+        } price id not configured${
+          priceEnvKey ? ` (${priceEnvKey})` : ''
+        }`,
       },
       { status: 503 }
     );
   }
 
-  // Reconcile keyword(s) from the body. Strategy needs exactly 3;
-  // scan + audit need exactly 1. When the caller sent the keywords[]
-  // array we use it; otherwise we synthesize from the singular
-  // `keyword` field (back-compat for pre-strategy callers).
+  // Reconcile keyword(s) from the body. Strategy + Pulse+ need
+  // exactly 3; scan / audit / pulse need exactly 1. When the caller
+  // sent the keywords[] array we use it; otherwise we synthesize
+  // from the singular `keyword` field (back-compat for pre-strategy
+  // callers).
   const submittedKeywords =
     body.keywords && body.keywords.length > 0
       ? body.keywords.map((k) => k.trim()).filter(Boolean)
       : [body.keyword.trim()];
-  const expectedKeywordCount = body.tier === 'strategy' ? 3 : 1;
+  const expectedKeywordCount =
+    body.tier === 'strategy' || body.tier === 'pulse_plus' ? 3 : 1;
   if (submittedKeywords.length !== expectedKeywordCount) {
     return NextResponse.json(
       {
@@ -208,6 +231,13 @@ export async function POST(req: Request) {
     intake_email: body.email.trim(),
     phone: body.phone.trim(),
   };
+  // Stamp cadence on subscription tiers so /order/success + the
+  // fulfill pipeline + the Stripe dashboard can tell monthly from
+  // annual without re-querying the Price object. Mirrors the same
+  // field stamped by /api/checkout/[tier]'s subscription path.
+  if (isSubscription) {
+    metadata.cadence = body.cadence;
+  }
   submittedKeywords.forEach((kw, i) => {
     metadata[`keyword_${i + 1}`] = kw;
   });
@@ -253,18 +283,51 @@ export async function POST(req: Request) {
 
   const hundredOff = isHundredPercentOffCoupon(couponCode);
 
+  // Build line items. Subscription tiers on MONTHLY cadence append a
+  // mandatory $99 TurfScan setup fee as a one-time line item — same
+  // pricing decision wired into /api/checkout/[tier] (see the comment
+  // block there for the year-1 revenue / margin rationale). Stripe
+  // supports mixed one-time + recurring line items in a single
+  // `mode: 'subscription'` session natively: first invoice bills both,
+  // subsequent invoices bill only the recurring price.
+  const lineItems: Array<{ price: string; quantity: number }> = [
+    { price: priceId, quantity: 1 },
+  ];
+  if (
+    isSubscription &&
+    tierConfig.requiresMonthlyScanSetup &&
+    body.cadence === 'monthly'
+  ) {
+    const scanPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_SCAN;
+    if (!scanPriceId) {
+      return NextResponse.json(
+        {
+          error:
+            'Checkout misconfigured: NEXT_PUBLIC_STRIPE_PRICE_SCAN is required for monthly Pulse/Pulse+ checkouts (mandatory $99 setup line item).',
+        },
+        { status: 503 }
+      );
+    }
+    lineItems.push({ price: scanPriceId, quantity: 1 });
+  }
+
   const baseParams: import('stripe').default.Checkout.SessionCreateParams = {
-    mode: 'payment',
+    mode: isSubscription ? 'subscription' : 'payment',
     payment_method_types: ['card'],
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: lineItems,
     customer_email: body.email.trim(),
-    customer_creation: 'always',
+    // customer_creation is invalid in subscription mode — Stripe
+    // always creates a customer for subs. Only set on one-time tiers
+    // (where 'always' powers the saved-card 1-click audit upgrade
+    // on /order/success).
+    ...(isSubscription ? {} : { customer_creation: 'always' as const }),
     // Off-session card save powers the 1-click audit upgrade on
-    // /order/success. SKIPPED on 100%-off coupons (VIP, COLDSCAN) —
-    // Stripe rejects setup_future_usage on a $0 PaymentIntent and the
-    // discounted upgrade is gated on amount_total > 0 anyway, so free
-    // buyers never use the off-session save.
-    ...(hundredOff
+    // /order/success. SKIPPED on subscription mode (Stripe saves
+    // the card by default for recurring billing) + on 100%-off
+    // coupons (VIP, COLDSCAN — Stripe rejects setup_future_usage
+    // on a $0 PaymentIntent, and the discounted upgrade is gated
+    // on amount_total > 0 anyway).
+    ...(isSubscription || hundredOff
       ? {}
       : {
           payment_intent_data: {
@@ -272,12 +335,14 @@ export async function POST(req: Request) {
           },
         }),
     success_url: `${origin}/order/success?tier=${body.tier}&session_id={CHECKOUT_SESSION_ID}`,
-    // Bounce back to /intake with the same tier/coupon/prospect/utm so
-    // a cancelled session lands on a pre-filled form ready to retry.
+    // Bounce back to /intake with the same tier/cadence/coupon/
+    // prospect/utm so a cancelled session lands on a pre-filled
+    // form ready to retry.
     cancel_url: (() => {
       const back = new URL(`${origin}/intake`);
       back.searchParams.set('tier', body.tier);
       back.searchParams.set('cancelled', '1');
+      if (isSubscription) back.searchParams.set('cadence', body.cadence);
       if (couponCode) back.searchParams.set('coupon', couponCode);
       if (body.prospect_id) back.searchParams.set('prospect_id', body.prospect_id);
       if (body.utm_source) back.searchParams.set('utm_source', body.utm_source);

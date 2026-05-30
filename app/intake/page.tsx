@@ -4,11 +4,15 @@ import { ArrowLeft, Crosshair, ShieldCheck, Zap, Clock } from 'lucide-react';
 import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
 import { finalPriceCents, lookupCoupon } from '@/lib/coupons/knownCoupons';
 import {
+  asIntakeCadence,
   asIntakeSource,
   asIntakeTier,
   DEFAULT_INTAKE_SOURCE,
   INTAKE_SOURCE_CONFIGS,
   INTAKE_TIER_CONFIGS,
+  isSubscriptionIntakeTier,
+  resolveIntakeListCents,
+  type IntakeCadence,
   type IntakeTier,
 } from '@/lib/checkout/intakeTiers';
 import { getServerSupabase } from '@/lib/supabase/server';
@@ -95,6 +99,14 @@ export default async function IntakePage({
     asIntakeTier(pickFirst(params.tier)) ?? 'scan';
   const tierConfig = INTAKE_TIER_CONFIGS[tier];
 
+  // Cadence resolution — only meaningful for subscription tiers
+  // (pulse / pulse_plus). Defaults to 'monthly' so a CTA without
+  // the toggle still lands somewhere sane. One-time tiers ignore it.
+  const isSubscription = isSubscriptionIntakeTier(tier);
+  const cadence: IntakeCadence | null = isSubscription
+    ? asIntakeCadence(pickFirst(params.cadence)) ?? 'monthly'
+    : null;
+
   const couponCode = pickFirst(params.coupon);
   const utmSource = pickFirst(params.utm_source);
   const utmMedium = pickFirst(params.utm_medium);
@@ -107,13 +119,21 @@ export default async function IntakePage({
   const cancelled = pickFirst(params.cancelled) === '1';
 
   // Coupon registry currently only registers scan-tier discounts. For
-  // audit we skip the lookup and use the list price — no audit coupons
-  // are wired yet. When that lands, swap the second arg to `tier`.
+  // audit / strategy / pulse / pulse_plus we skip the lookup and use
+  // the list price — no audit or subscription coupons are wired yet
+  // (Stripe-side promo codes still apply at Checkout via the init
+  // route's promotion_codes lookup). When tier-specific coupons land,
+  // swap the second arg to `tier`.
   const coupon =
     tier === 'scan' && couponCode
       ? lookupCoupon(couponCode, 'scan')
       : null;
-  const finalCents = coupon ? finalPriceCents(coupon) : tierConfig.listCents;
+  const tierListCents = cadence
+    ? resolveIntakeListCents(tier, cadence)
+    : tierConfig.listCents;
+  const finalCents = coupon
+    ? finalPriceCents(coupon)
+    : tierListCents;
 
   // Back-link is driven by an explicit ?from=<source> the upstream CTA
   // declares. Falls back to 'home' when missing so direct/bookmark
@@ -185,6 +205,7 @@ export default async function IntakePage({
 
           <ScanIntakeForm
             tier={tier}
+            cadence={cadence}
             coupon={couponCode}
             utmSource={utmSource}
             utmMedium={utmMedium}
@@ -213,7 +234,9 @@ export default async function IntakePage({
                 <span>
                   {tier === 'audit'
                     ? 'Scan + Roadmap delivered within 48h'
-                    : 'Scan fires in under a minute after payment'}
+                    : tier === 'pulse' || tier === 'pulse_plus'
+                      ? 'First scan fires in under a minute; weekly scans every Monday'
+                      : 'Scan fires in under a minute after payment'}
                 </span>
               </li>
               <li className="flex items-start gap-2">

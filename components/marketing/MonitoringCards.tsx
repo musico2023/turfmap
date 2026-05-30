@@ -297,24 +297,30 @@ function Card({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const onCheckout = async () => {
+  // CTA flow now goes through /intake (same intake-first pattern as
+  // scan/audit/strategy), instead of POSTing directly to the legacy
+  // Stripe-first /api/checkout/<tier> route. The intake page collects
+  // business details up-front, then POSTs /api/scan/checkout/init
+  // which forwards into Stripe Checkout with the cadence + setup-fee
+  // line item wired in. On return /order/success auto-fulfills using
+  // the stamped metadata — no second form fill required.
+  //
+  // We still gate inside a click handler (rather than an <a>/<Link>)
+  // so the busy state can show a spinner during the navigation and
+  // future analytics hooks have a single chokepoint. Errors are
+  // unlikely (it's just a redirect) but the error path stays as
+  // defense-in-depth — e.g. if a content-blocker breaks window
+  // navigation.
+  const onCheckout = () => {
     setError(null);
     setBusy(true);
     try {
-      const res = await fetch(
-        `/api/checkout/${tier.id}?cadence=${cadence}`,
-        { method: 'POST' }
-      );
-      const data = (await res.json().catch(() => ({}))) as {
-        url?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.url) {
-        setError(data.error ?? `checkout unavailable (HTTP ${res.status})`);
-        setBusy(false);
-        return;
-      }
-      window.location.href = data.url;
+      const params = new URLSearchParams({
+        tier: tier.id,
+        cadence,
+        from: 'pricing',
+      });
+      window.location.assign(`/intake?${params.toString()}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
