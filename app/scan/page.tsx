@@ -461,8 +461,7 @@ export default async function ScanLandingPage({
             What you get
           </div>
           <h2 className="font-display text-2xl md:text-4xl font-black leading-tight tracking-tight mb-8 text-zinc-50">
-            A 60-second scan, a personalized fix list, and a strategist-grade
-            PDF report.
+            A 60-second scan and a personalized fix list.
           </h2>
 
           {/* Four deliverables — stacked on mobile */}
