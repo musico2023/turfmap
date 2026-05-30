@@ -274,6 +274,146 @@ export async function updateSubscriptionPrice(args: {
 }
 
 /**
+ * Wrap a freshly-created Pulse+ monthly subscription in a Subscription
+ * Schedule that enforces the 3-month minimum commitment.
+ *
+ * Pricing decision (2026-05-17): Pulse+ on monthly billing requires
+ * a 3-month commitment. The Stripe-native primitive for this is
+ * Subscription Schedules:
+ * https://docs.stripe.com/billing/subscriptions/subscription-schedules
+ *
+ * Shape we install:
+ *   Phase 1 — 3 iterations (months) at the Pulse+ monthly Price.
+ *             Cancellation requested in months 1-2 still bills
+ *             through end of phase 1 — enforced downstream by
+ *             cancelAtPeriodEnd (which rejects with 'committed_phase').
+ *   Phase 2 — open-ended at the same Price. No iterations cap, so
+ *             the schedule continues indefinitely; the buyer can
+ *             cancel at any period end from month 4 onward.
+ *
+ * Gates / idempotency:
+ *   - Skip silently when the subscription already has a schedule
+ *     (re-firing this on customer.subscription.updated is the
+ *     defensive path — first call wraps, subsequent calls no-op).
+ *   - Skip when the subscription is not on the Pulse+ monthly price
+ *     (Pulse, Pulse+ annual, and one-time tiers don't need a
+ *     commitment wrap — annual already has a 12-month implicit lock).
+ *   - Returns a typed envelope so the webhook handler can log without
+ *     500-ing — Stripe would retry and we'd hit the
+ *     already-has-schedule path on the second try anyway.
+ */
+export async function ensurePulsePlusCommitmentSchedule(
+  subscription: import('stripe').default.Subscription
+): Promise<
+  | { ok: true; kind: 'created'; scheduleId: string }
+  | { ok: true; kind: 'skipped_already_scheduled' }
+  | { ok: true; kind: 'skipped_wrong_tier' }
+  | {
+      ok: false;
+      kind: 'stripe_not_configured' | 'remote_error' | 'no_items';
+      message: string;
+    }
+> {
+  const stripe = await getStripe();
+  if (!stripe) {
+    return {
+      ok: false,
+      kind: 'stripe_not_configured',
+      message: 'STRIPE_SECRET_KEY is not set',
+    };
+  }
+
+  // Idempotency: a sub that already has a schedule shouldn't be wrapped
+  // again. Stripe would reject the create call anyway, but failing fast
+  // here keeps the webhook log clean.
+  if (subscription.schedule) {
+    return { ok: true, kind: 'skipped_already_scheduled' };
+  }
+
+  // Gate: only Pulse+ monthly gets wrapped. Pulse (any cadence) and
+  // Pulse+ annual don't have the 3-month commitment policy — annual
+  // already has a 12-month implicit lock via the annual price.
+  const pulsePlusMonthlyPriceId =
+    process.env.NEXT_PUBLIC_STRIPE_PRICE_PULSEPLUS_MONTHLY;
+  if (!pulsePlusMonthlyPriceId) {
+    return {
+      ok: true,
+      // Treat a missing env var as "wrong tier" so we don't 500 the
+      // webhook in dev/preview environments without the Pulse+ Price
+      // wired. Production deploys should have the env set.
+      kind: 'skipped_wrong_tier',
+    };
+  }
+  const isPulsePlusMonthly = subscription.items.data.some((item) => {
+    const priceId = typeof item.price === 'string' ? item.price : item.price.id;
+    return priceId === pulsePlusMonthlyPriceId;
+  });
+  if (!isPulsePlusMonthly) {
+    return { ok: true, kind: 'skipped_wrong_tier' };
+  }
+
+  // Capture the subscription's existing items so phase 1 mirrors what
+  // Stripe already booked — preserves item ids + quantities, which
+  // includes the per-location $39/mo extras (if any) the buyer has
+  // configured. The recurring Pulse+ price is always among them; the
+  // one-time $99 TurfScan setup fee was an invoice item (not a
+  // subscription item) so it won't appear here.
+  const items = subscription.items.data.map((item) => {
+    const priceId = typeof item.price === 'string' ? item.price : item.price.id;
+    return { price: priceId, quantity: item.quantity ?? 1 };
+  });
+  if (items.length === 0) {
+    return {
+      ok: false,
+      kind: 'no_items',
+      message: `subscription ${subscription.id} has no items to mirror into the schedule`,
+    };
+  }
+
+  try {
+    // Step 1: create a Schedule from the live subscription. Stripe
+    // mirrors the current state as a single phase with the
+    // subscription's existing items + anchor.
+    const created = await stripe.subscriptionSchedules.create({
+      from_subscription: subscription.id,
+    });
+
+    // Step 2: rewrite the phase list to enforce the 3-month commitment.
+    // Phase 1 has duration { month, count: 3 } — the committed window.
+    // Phase 2 has no duration cap, so the schedule never naturally
+    // "ends" — end_behavior: 'release' is still set so that if a
+    // Stripe-side change ever does cause it to end, the subscription
+    // falls back to standard month-to-month management rather than
+    // being cancelled.
+    //
+    // proration_behavior: 'none' on the phase boundary avoids surprise
+    // charges when the buyer transitions phase 1 → phase 2 (same price,
+    // so no proration should fire, but explicit is safer).
+    const updated = await stripe.subscriptionSchedules.update(created.id, {
+      end_behavior: 'release',
+      phases: [
+        {
+          items,
+          duration: { interval: 'month', interval_count: 3 },
+          proration_behavior: 'none',
+        },
+        {
+          items,
+          proration_behavior: 'none',
+        },
+      ],
+    });
+    return { ok: true, kind: 'created', scheduleId: updated.id };
+  } catch (e) {
+    return {
+      ok: false,
+      kind: 'remote_error',
+      message: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
  * Schedule cancellation for the end of the current billing period.
  * No-op if already scheduled. Rejects if the subscription is still
  * in the Subscription Schedule's committed first phase — the route

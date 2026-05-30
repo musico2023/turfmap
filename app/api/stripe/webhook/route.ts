@@ -55,6 +55,7 @@ import { inferTradeFitFromKeyword } from '@/lib/audit/tradeClassifier';
 import { portalUrl } from '@/lib/urls';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
+import { ensurePulsePlusCommitmentSchedule } from '@/lib/stripe/subscription';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -115,6 +116,28 @@ export async function POST(req: Request) {
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription;
         await syncSubscription(supabase, sub);
+        // Wrap Pulse+ monthly subscriptions in a 3-month commitment
+        // Subscription Schedule. Idempotent — re-firing on .updated
+        // events no-ops once the schedule exists, which is also why
+        // we attach the helper to BOTH .created and .updated (a
+        // subscription that gets repaired post-creation should still
+        // pick up its schedule on the next sync). Fail-soft: log and
+        // continue if it errors — Stripe retries the whole webhook
+        // anyway, and the cancellation gate downstream is the real
+        // commitment enforcement.
+        try {
+          const wrap = await ensurePulsePlusCommitmentSchedule(sub);
+          if (!wrap.ok) {
+            console.warn(
+              `[stripe-webhook] Pulse+ commitment schedule wrap failed for ${sub.id}: ${wrap.message}`
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `[stripe-webhook] Pulse+ commitment schedule wrap threw for ${sub.id}:`,
+            e instanceof Error ? e.message : String(e)
+          );
+        }
         break;
       }
       case 'customer.subscription.deleted': {

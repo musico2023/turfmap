@@ -28,8 +28,9 @@ import { NextRequest, NextResponse } from 'next/server';
  * Stripe-native primitive for this is Subscription Schedules:
  * https://docs.stripe.com/billing/subscriptions/subscription-schedules
  *
- * The high-level pattern (to be wired alongside the live Stripe products
- * — not enabled by this commit because the price IDs don't exist yet):
+ * The wrap runs in the customer.subscription.{created,updated}
+ * webhook handler via `ensurePulsePlusCommitmentSchedule`
+ * (lib/stripe/subscription.ts):
  *
  *   1. The Pulse+ monthly Price ($99/mo, env above) stays as a normal
  *      recurring Price object in Stripe.
@@ -57,10 +58,10 @@ import { NextRequest, NextResponse } from 'next/server';
  *     Cancellation takes effect on that date." Disable immediate-cancel.
  *   - Phase 2 (month 4+): standard cancel-at-period-end flow.
  *
- * The conversion-to-schedule happens in the order-fulfill route (or in
- * a Stripe webhook handler on `customer.subscription.created`) once the
- * Pulse+ monthly checkout completes — not in this checkout-bootstrapper
- * route. This route just opens the checkout session.
+ * The Schedule is created from the customer.subscription.created
+ * webhook (not from this checkout-bootstrapper route). Idempotent
+ * via the wrap helper's `skipped_already_scheduled` short-circuit
+ * — re-firing on `customer.subscription.updated` no-ops.
  *
  * Success URL: /order/success?tier=<tier>&session_id={CHECKOUT_SESSION_ID}
  *   — the trailing template variable is interpolated by Stripe at
