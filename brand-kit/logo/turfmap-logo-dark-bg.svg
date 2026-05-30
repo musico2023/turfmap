@@ -1,0 +1,35 @@
+<svg width="800" height="200" viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Logo lockup for DARK backgrounds (slides, Slack dark mode, the
+       TurfMap product UI on #0a0a0a). Wordmark is white so it reads on
+       a dark surface; lime square + crosshair are unchanged so the
+       brand mark stays consistent with the light-bg lockup. -->
+
+  <!-- Lime square -->
+  <rect x="20" y="32" width="136" height="136" rx="28" fill="#c5ff3a"/>
+
+  <!-- Crosshair built from fills (not strokes) — matches turfmap-icon.svg.
+       Centered at (88, 100), scaled ~50% of the 136 box. -->
+  <circle cx="88" cy="100" r="32" fill="#000"/>
+  <circle cx="88" cy="100" r="25" fill="#c5ff3a"/>
+  <rect x="84.5" y="68"  width="7"  height="14" rx="3.5" fill="#000"/>
+  <rect x="84.5" y="118" width="7"  height="14" rx="3.5" fill="#000"/>
+  <rect x="68"   y="96.5" width="14" height="7" rx="3.5" fill="#000"/>
+  <rect x="118"  y="96.5" width="14" height="7" rx="3.5" fill="#000"/>
+
+  <!-- "TurfMap" wordmark — white for dark backgrounds. -->
+  <text x="190"
+        y="135"
+        font-family="'Bricolage Grotesque', Helvetica, Arial, sans-serif"
+        font-size="100"
+        font-weight="700"
+        letter-spacing="-2"
+        fill="#ffffff">TurfMap</text>
+
+  <!-- Lime TM superscript -->
+  <text x="615"
+        y="78"
+        font-family="'Bricolage Grotesque', Helvetica, Arial, sans-serif"
+        font-size="32"
+        font-weight="700"
+        fill="#c5ff3a">™</text>
+</svg>
