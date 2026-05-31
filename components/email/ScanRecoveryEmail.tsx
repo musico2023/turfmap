@@ -89,21 +89,24 @@ function copyForStage(
       body: (
         <>
           You started a TurfScan{forBusiness(biz)} but didn&apos;t
-          finish checkout — so the 81-point geo-grid scan never ran.
-          No charge was made.
+          finish checkout — so the 81-point geo-grid scan + your AI
+          Coach Fix List never ran. No charge was made.
           {kw ? (
             <>
               {' '}
               We still have your details ready to map{' '}
               <strong>{bizLabel}</strong> for{' '}
               <strong>&lsquo;{kw}&rsquo;</strong> across your whole
-              service area.
+              service area and turn the results into three prioritized
+              actions you can take this week.
             </>
           ) : (
             <>
               {' '}
               We still have your details ready — picking up where you
-              left off takes about a minute.
+              left off takes about a minute, and you&apos;ll get the
+              full scan plus the Fix List with three prioritized
+              actions.
             </>
           )}
         </>
@@ -111,8 +114,9 @@ function copyForStage(
       cta: 'Finish my scan →',
       footnote: (
         <>
-          The scan fires within a minute of payment, and you can
-          request a full refund within 24h with a one-line email.
+          The scan + Fix List land within a minute of payment, and
+          you can request a full refund within 24h with a one-line
+          email.
         </>
       ),
     };
@@ -136,14 +140,17 @@ function copyForStage(
           — or which competitors are eating your visibility in the
           neighborhoods that matter. The scan maps all 81 grid points
           so you can see exactly where you show up and where you
-          don&apos;t.
+          don&apos;t, and the AI Coach Fix List turns those gaps into
+          three prioritized actions named to your real audit data —
+          not generic advice.
         </>
       ),
       cta: 'Run my TurfScan →',
       footnote: (
         <>
           Your details are still saved — the link above drops you back
-          on a pre-filled form.
+          on a pre-filled form. Scan + Fix List both land within a
+          minute of payment.
         </>
       ),
     };
@@ -151,16 +158,17 @@ function copyForStage(
 
   // touch_3 — final, soft scarcity + personal hit-reply offer.
   return {
-    preview: `Last reminder about your TurfScan — ${bizLabel}`,
-    headline: 'Last reminder about your scan.',
+    preview: `Last reminder about your TurfScan + Fix List — ${bizLabel}`,
+    headline: 'Last reminder about your scan + Fix List.',
     body: (
       <>
         This is the last nudge about the TurfScan you started
         {forBusiness(biz)}. We&apos;ll hold your details for now, but
         we clear out incomplete checkouts after a while — after that
-        you&apos;d be starting from scratch. If something about the
-        checkout got in the way, just hit reply and tell me what
-        happened; I read every response.
+        you&apos;d be starting from scratch on both the 81-point map
+        and the three-action Fix List the AI Coach builds from it. If
+        something about the checkout got in the way, just hit reply
+        and tell me what happened; I read every response.
       </>
     ),
     cta: 'Finish my scan →',
