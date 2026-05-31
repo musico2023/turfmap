@@ -253,12 +253,28 @@ export async function POST(req: Request) {
 
   const hundredOff = isHundredPercentOffCoupon(couponCode);
 
+  // Shorten the Checkout session lifetime to 60 minutes (Stripe's
+  // default is 24h). This is what makes cart-abandonment recovery work:
+  // an unpaid session fires `checkout.session.expired` at this mark,
+  // ~1h after the buyer bailed, which the webhook turns into the first
+  // recovery email (touches 2 & 3 follow at +24h / +72h via Resend
+  // scheduled-send). 60 minutes is Stripe's documented minimum for
+  // `expires_at` (the API rejects anything under 30 min and caps at
+  // 24h). Tune here if the "touch 1 at ~1h" timing should change.
+  // Scoped to the scan-intake funnel only — no other checkout flow is
+  // affected.
+  const SESSION_TTL_MS = 60 * 60 * 1000;
+  const expiresAt = Math.floor((Date.now() + SESSION_TTL_MS) / 1000);
+
   const baseParams: import('stripe').default.Checkout.SessionCreateParams = {
     mode: 'payment',
     payment_method_types: ['card'],
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: body.email.trim(),
     customer_creation: 'always',
+    // Expire unpaid sessions after 60 min so the abandonment-recovery
+    // webhook fires promptly. See SESSION_TTL_MS note above.
+    expires_at: expiresAt,
     // Off-session card save powers the 1-click audit upgrade on
     // /order/success. SKIPPED on 100%-off coupons (VIP, COLDSCAN) —
     // Stripe rejects setup_future_usage on a $0 PaymentIntent and the

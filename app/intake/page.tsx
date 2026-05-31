@@ -106,6 +106,15 @@ export default async function IntakePage({
   const prospectId = pickFirst(params.prospect_id);
   const cancelled = pickFirst(params.cancelled) === '1';
 
+  // Cart-recovery resume prefill. The abandonment emails (see the
+  // checkout.session.expired webhook) deep-link here with the buyer's
+  // own business name + keyword in the query string so they land on a
+  // pre-filled form. These take precedence over the prospect-table
+  // prefill below — they're the buyer's actual intake input, not a
+  // cold-outreach guess.
+  const prefillBusinessParam = pickFirst(params.prefill_business);
+  const prefillKeywordParam = pickFirst(params.prefill_keyword);
+
   // Coupon registry currently only registers scan-tier discounts. For
   // audit we skip the lookup and use the list price — no audit coupons
   // are wired yet. When that lands, swap the second arg to `tier`.
@@ -195,8 +204,10 @@ export default async function IntakePage({
             fbclid={fbclid}
             prospectId={prospectId}
             finalCents={finalCents}
-            prefillBusinessName={prefill?.businessName ?? null}
-            prefillKeyword={prefill?.keyword ?? null}
+            prefillBusinessName={
+              prefillBusinessParam ?? prefill?.businessName ?? null
+            }
+            prefillKeyword={prefillKeywordParam ?? prefill?.keyword ?? null}
           />
 
           <div

@@ -669,3 +669,29 @@ export type CitationOrderRow = {
   created_at: string;
   updated_at: string;
 };
+
+// ─── Abandoned checkouts (cart recovery, migration 0034) ──────────────
+
+/** One row per expired-unpaid scan-funnel Stripe Checkout session.
+ *  Created idempotently by the `checkout.session.expired` webhook
+ *  handler, which fires the 3-touch recovery email sequence (touch 1
+ *  immediate, touches 2 & 3 queued via Resend scheduled-send). The
+ *  stored touch_*_email_id values let /api/orders/fulfill cancel the
+ *  pending scheduled touches if the buyer later recovers. See migration
+ *  0034 for the full rationale. */
+export type AbandonedCheckoutRow = {
+  id: string;
+  stripe_session_id: string;
+  email: string;
+  business_name: string | null;
+  keyword: string | null;
+  tier: string;
+  /** Resend email IDs for the +24h / +72h scheduled touches. NULL when
+   *  scheduling failed or RESEND_API_KEY wasn't set. */
+  touch_2_email_id: string | null;
+  touch_3_email_id: string | null;
+  /** Set when the buyer recovered (completed a later purchase) or an
+   *  operator resolved the row. Non-null = sequence terminal. */
+  recovered_at: string | null;
+  created_at: string;
+};

@@ -783,6 +783,62 @@ export async function sendAuditCallReminder(args: {
 }
 
 /**
+ * Scan cart-abandonment recovery email. Sent to buyers whose scan-
+ * funnel Stripe Checkout session expired unpaid (handled in the
+ * `checkout.session.expired` webhook).
+ *
+ * Three touches off the single expiry event:
+ *   - touch_1 sends immediately (scheduledAt omitted)
+ *   - touch_2 / touch_3 are queued via Resend scheduled-send by passing
+ *     `scheduledAt` = +24h / +72h — same scheduled-send mechanism as
+ *     sendAuditCallReminder (no sub-daily Vercel Cron, which Hobby tier
+ *     can't run).
+ *
+ * Returns `{ ok, id }` so the webhook can persist the scheduled touches'
+ * Resend IDs on abandoned_checkouts.touch_2_email_id / touch_3_email_id.
+ * /api/orders/fulfill cancels those IDs (cancelScheduledEmail) when the
+ * buyer recovers, so a buyer who comes back and pays never receives a
+ * later nag.
+ *
+ * Subject mirrors each touch's preview text so the buyer's inbox shows
+ * a coherent thread across the sequence.
+ */
+export async function sendScanRecovery(args: {
+  to: string;
+  businessName?: string | null;
+  keyword?: string | null;
+  resumeUrl: string;
+  stage: 'touch_1' | 'touch_2' | 'touch_3';
+  /** ISO 8601. When set, Resend schedules the send; when omitted, sends
+   *  immediately (touch 1). */
+  scheduledAt?: string;
+}): Promise<SendResult> {
+  const { ScanRecoveryEmail } = await import(
+    '@/components/email/ScanRecoveryEmail'
+  );
+  const html = await render(
+    ScanRecoveryEmail({
+      businessName: args.businessName,
+      keyword: args.keyword,
+      resumeUrl: args.resumeUrl,
+      stage: args.stage,
+    })
+  );
+  const biz = args.businessName?.trim() || 'your business';
+  const subjectByStage = {
+    touch_1: `You were one step away from your TurfMap — ${biz}`,
+    touch_2: `Your competitors are already on the map — ${biz}`,
+    touch_3: `Last reminder about your TurfScan — ${biz}`,
+  } as const;
+  return sendEmailWithId({
+    to: args.to,
+    subject: subjectByStage[args.stage],
+    html,
+    scheduledAt: args.scheduledAt,
+  });
+}
+
+/**
  * Strategist Prep email — to anthony@fourdots.io, 24h pre-call.
  * Carries signed URLs for the Roadmap PDF + Strategist Prep Notes
  * (markdown), plus an inline at-a-glance summary so Anthony can

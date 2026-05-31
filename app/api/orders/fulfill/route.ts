@@ -58,6 +58,7 @@ import {
   sendPulsePlusWelcome,
   sendAuditCallReminder,
   sendAuditPurchaseRoadmap,
+  cancelScheduledEmail,
 } from '@/lib/email/resend';
 import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
 
@@ -83,6 +84,7 @@ import {
   notifyTurfScanPurchase,
 } from '@/lib/audit/operatorSlack';
 import type {
+  AbandonedCheckoutRow,
   ClientLocationRow,
   ClientRow,
   TrackedKeywordRow,
@@ -411,6 +413,16 @@ export async function POST(req: NextRequest) {
       e instanceof Error ? e.message : String(e)
     );
   }
+
+  // Cart-abandonment recovery cancel. If this buyer previously
+  // abandoned a checkout, they have pending scheduled recovery touches
+  // (touch 2 at +24h, touch 3 at +72h — see the
+  // checkout.session.expired webhook handler). Now that they've paid,
+  // cancel those queued sends so a recovered buyer never gets nagged.
+  // Keyed by email since the recovered purchase is a brand-new session,
+  // unrelated to the expired one. Non-fatal — a stray recovery email is
+  // a minor annoyance, not worth failing fulfillment over.
+  await cancelPendingRecoveryEmails(supabase, body.email);
 
   await sendOrderConfirmation({
     to: body.email,
@@ -1079,6 +1091,82 @@ function errorForLoadSession(err: LoadSessionError): NextResponse {
         { error: `Stripe lookup failed: ${err.message}` },
         { status: 502 }
       );
+  }
+}
+
+/**
+ * Cancel any pending cart-recovery emails for a buyer who just paid.
+ *
+ * When a scan-funnel session expires unpaid, the
+ * checkout.session.expired webhook records an abandoned_checkouts row
+ * and queues touch 2 (+24h) + touch 3 (+72h) via Resend scheduled-send,
+ * storing their Resend IDs on the row. If the buyer comes back and
+ * completes a (new) purchase, those queued touches would fire after
+ * they've already paid — reading as a bug to the buyer. This cancels
+ * them and marks the row recovered.
+ *
+ * Keyed by email: the recovered purchase is a fresh Stripe session with
+ * no link to the expired one, so email is the only join. Matches all
+ * still-pending rows for the email (a buyer could have abandoned more
+ * than once). Entirely non-fatal — every failure path is logged and
+ * swallowed so a recovery-cleanup hiccup never blocks fulfillment.
+ */
+async function cancelPendingRecoveryEmails(
+  supabase: ReturnType<typeof getServerSupabase>,
+  email: string
+): Promise<void> {
+  try {
+    const { data: rows, error } = await supabase
+      .from('abandoned_checkouts')
+      .select('id, touch_2_email_id, touch_3_email_id')
+      .eq('email', email.trim())
+      .is('recovered_at', null);
+    if (error) {
+      console.error(
+        '[orders/fulfill] recovery cancel: lookup failed (non-fatal)',
+        error.message
+      );
+      return;
+    }
+    if (!rows || rows.length === 0) return;
+
+    for (const row of rows as Pick<
+      AbandonedCheckoutRow,
+      'id' | 'touch_2_email_id' | 'touch_3_email_id'
+    >[]) {
+      for (const id of [row.touch_2_email_id, row.touch_3_email_id]) {
+        if (!id) continue;
+        try {
+          await cancelScheduledEmail(id);
+        } catch (e) {
+          // cancelScheduledEmail already treats already-sent /
+          // already-cancelled as success; a throw here is a transport
+          // error. Log + continue — we still mark the row recovered so
+          // we don't retry forever.
+          console.error(
+            '[orders/fulfill] recovery cancel: cancelScheduledEmail threw (non-fatal)',
+            e instanceof Error ? e.message : String(e)
+          );
+        }
+      }
+    }
+
+    const { error: updateErr } = await supabase
+      .from('abandoned_checkouts')
+      .update({ recovered_at: new Date().toISOString() })
+      .eq('email', email.trim())
+      .is('recovered_at', null);
+    if (updateErr) {
+      console.error(
+        '[orders/fulfill] recovery cancel: mark-recovered failed (non-fatal)',
+        updateErr.message
+      );
+    }
+  } catch (e) {
+    console.error(
+      '[orders/fulfill] recovery cancel threw (non-fatal)',
+      e instanceof Error ? e.message : String(e)
+    );
   }
 }
 

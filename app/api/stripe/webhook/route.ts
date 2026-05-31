@@ -48,7 +48,11 @@ import { getStripe } from '@/lib/stripe/client';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { tierFromPriceId } from '@/lib/stripe/tierFromPrice';
 import { runScanForLocation } from '@/lib/scans/runScan';
-import { sendPulseTrialEnding, sendOrderConfirmation } from '@/lib/email/resend';
+import {
+  sendPulseTrialEnding,
+  sendOrderConfirmation,
+  sendScanRecovery,
+} from '@/lib/email/resend';
 import { fireMeasurementProtocolEvent } from '@/lib/analytics/measurementProtocol';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
 import { inferTradeFitFromKeyword } from '@/lib/audit/tradeClassifier';
@@ -158,6 +162,23 @@ export async function POST(req: Request) {
             : null;
         if (source === 'audit_upgrade') {
           await handleAuditUpgradeCompletion(supabase, session);
+        }
+        break;
+      }
+      case 'checkout.session.expired': {
+        // Cart-abandonment recovery. Fired when a scan-funnel Checkout
+        // session passes its 60-min expires_at unpaid (see
+        // /api/scan/checkout/init). Scoped to source='scan_intake' so
+        // only the funnel that opts into the 60-min TTL gets recovery
+        // emails. `expired` and `completed` are mutually exclusive for a
+        // session, so a buyer who paid can never land here.
+        const session = event.data.object as Stripe.Checkout.Session;
+        const source =
+          session.metadata && 'source' in session.metadata
+            ? String(session.metadata.source)
+            : null;
+        if (source === 'scan_intake') {
+          await handleAbandonedCheckout(supabase, session);
         }
         break;
       }
@@ -966,6 +987,180 @@ async function handleAuditUpgradeCompletion(
       console.error(
         '[audit-upgrade] order confirmation email failed (non-fatal)',
         e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+}
+
+// ─── Cart-abandonment recovery ────────────────────────────────────────
+//
+// Fired from checkout.session.expired when metadata.source =
+// 'scan_intake'. Sends a 3-touch recovery sequence to a buyer who
+// reached Stripe Checkout but never paid (the 60-min session expired):
+//
+//   touch 1 — immediate (this handler)
+//   touch 2 — +24h, queued via Resend scheduled-send
+//   touch 3 — +72h, queued via Resend scheduled-send
+//
+// The CTA in every touch is a resume link back to /intake with the
+// buyer's business name + keyword prefilled (Stripe sessions are
+// single-use, so we route them through a fresh pre-filled intake rather
+// than the dead expired session).
+//
+// Idempotency: an abandoned_checkouts row keyed UNIQUE on
+// stripe_session_id. We insert first; if the row already exists (Stripe
+// re-delivered the event) the insert no-ops and we return without
+// re-sending. The scheduled touch IDs are persisted so
+// /api/orders/fulfill can cancel them if the buyer later recovers.
+
+const RECOVERY_TOUCH_2_DELAY_MS = 24 * 60 * 60 * 1000;
+const RECOVERY_TOUCH_3_DELAY_MS = 72 * 60 * 60 * 1000;
+
+async function handleAbandonedCheckout(
+  supabase: ReturnType<typeof getServerSupabase>,
+  session: Stripe.Checkout.Session
+): Promise<void> {
+  const meta = (session.metadata ?? {}) as Record<string, string>;
+
+  // Buyer email: prefer the stamped intake_email, fall back to the
+  // session's customer_details (Stripe captures it on the hosted page
+  // even for abandoned sessions once the buyer typed it).
+  const email =
+    meta.intake_email?.trim() ||
+    session.customer_details?.email?.trim() ||
+    session.customer_email?.trim() ||
+    null;
+  if (!email) {
+    // No address to recover to — nothing actionable. Not an error.
+    console.warn(
+      '[cart-recovery] expired scan_intake session has no email',
+      session.id
+    );
+    return;
+  }
+
+  const businessName = meta.business_name?.trim() || null;
+  const keyword = meta.keyword?.trim() || null;
+  const tier = meta.tier?.trim() || 'scan';
+
+  // Idempotency gate: insert the row first. The UNIQUE constraint on
+  // stripe_session_id means a Stripe re-delivery hits onConflict and we
+  // bail before sending a second sequence. We check the returned row:
+  // when the insert was a no-op (already existed), `inserted` is empty.
+  const { data: inserted, error: insertErr } = await supabase
+    .from('abandoned_checkouts')
+    .upsert(
+      {
+        stripe_session_id: session.id,
+        email,
+        business_name: businessName,
+        keyword,
+        tier,
+      },
+      { onConflict: 'stripe_session_id', ignoreDuplicates: true }
+    )
+    .select('id')
+    .maybeSingle<{ id: string }>();
+
+  if (insertErr) {
+    // Surface as a 500 so Stripe retries — the insert is the
+    // idempotency anchor, so we must not send emails if we couldn't
+    // record the row (a retry would otherwise double-send).
+    throw new Error(`abandoned_checkouts insert failed: ${insertErr.message}`);
+  }
+  if (!inserted) {
+    // Row already existed — this is a duplicate delivery. Sequence
+    // already sent/queued. No-op.
+    return;
+  }
+
+  // Build the prefilled resume URL → /intake. We deliberately route
+  // through a fresh intake (not the expired Stripe session, which is
+  // single-use) with the buyer's details in the query string so the
+  // form lands pre-filled. Carry attribution through so a recovered
+  // purchase is still attributed to the original campaign.
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://turfmap.ai';
+  const resumeUrl = (() => {
+    const u = new URL(`${origin}/intake`);
+    u.searchParams.set('tier', tier);
+    u.searchParams.set('utm_source', 'cart_recovery');
+    u.searchParams.set('utm_medium', 'email');
+    if (businessName) u.searchParams.set('prefill_business', businessName);
+    if (keyword) u.searchParams.set('prefill_keyword', keyword);
+    if (meta.coupon) u.searchParams.set('coupon', meta.coupon);
+    if (meta.prospect_id) u.searchParams.set('prospect_id', meta.prospect_id);
+    return u.toString();
+  })();
+
+  // Touch 1 — immediate.
+  try {
+    await sendScanRecovery({
+      to: email,
+      businessName,
+      keyword,
+      resumeUrl,
+      stage: 'touch_1',
+    });
+  } catch (e) {
+    // Non-fatal: the row is recorded, the scheduled touches below are
+    // the more valuable recovery shots, and we don't want to 500 (which
+    // would make Stripe retry and — since the row now exists — skip the
+    // whole sequence on the retry).
+    console.error(
+      '[cart-recovery] touch_1 send failed (non-fatal)',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  // Touches 2 & 3 — queued via Resend scheduled-send. Persist the
+  // returned IDs so /api/orders/fulfill can cancel them on recovery.
+  const now = Date.now();
+  let touch2Id: string | null = null;
+  let touch3Id: string | null = null;
+  try {
+    const r2 = await sendScanRecovery({
+      to: email,
+      businessName,
+      keyword,
+      resumeUrl,
+      stage: 'touch_2',
+      scheduledAt: new Date(now + RECOVERY_TOUCH_2_DELAY_MS).toISOString(),
+    });
+    touch2Id = r2.id ?? null;
+  } catch (e) {
+    console.error(
+      '[cart-recovery] touch_2 schedule failed (non-fatal)',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+  try {
+    const r3 = await sendScanRecovery({
+      to: email,
+      businessName,
+      keyword,
+      resumeUrl,
+      stage: 'touch_3',
+      scheduledAt: new Date(now + RECOVERY_TOUCH_3_DELAY_MS).toISOString(),
+    });
+    touch3Id = r3.id ?? null;
+  } catch (e) {
+    console.error(
+      '[cart-recovery] touch_3 schedule failed (non-fatal)',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
+  if (touch2Id || touch3Id) {
+    const { error: updateErr } = await supabase
+      .from('abandoned_checkouts')
+      .update({ touch_2_email_id: touch2Id, touch_3_email_id: touch3Id })
+      .eq('stripe_session_id', session.id);
+    if (updateErr) {
+      // Non-fatal: the emails are queued regardless; we just lose the
+      // ability to cancel them on recovery. Log so it's visible.
+      console.error(
+        '[cart-recovery] failed to persist scheduled touch IDs',
+        updateErr.message
       );
     }
   }

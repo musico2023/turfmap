@@ -22,6 +22,10 @@ import {
 import { OrderConfirmationEmail } from '@/components/email/OrderConfirmationEmail';
 import { ScanReadyEmail } from '@/components/email/ScanReadyEmail';
 import { AuditCallReminderEmail } from '@/components/email/AuditCallReminderEmail';
+import {
+  ScanRecoveryEmail,
+  type ScanRecoveryStage,
+} from '@/components/email/ScanRecoveryEmail';
 import { AuditCallConfirmedEmail } from '@/components/email/AuditCallConfirmedEmail';
 import { PortalInviteEmail } from '@/components/email/PortalInviteEmail';
 import { PulsePlusWelcomeEmail } from '@/components/email/PulsePlusWelcomeEmail';
@@ -110,6 +114,29 @@ async function renderTemplate(
                 ? previewBookingUrlForTier(tier)
                 : null,
             auditPurchaseKind,
+          })
+        ),
+      };
+    }
+    case 'scan-recovery': {
+      const stage = (single(search.stage) ?? 'touch_1') as ScanRecoveryStage;
+      const sparse = single(search.sparse) === '1';
+      const businessName = sparse ? null : MOCK_BUSINESS;
+      const keyword = sparse ? null : 'emergency plumber';
+      const subjectByStage = {
+        touch_1: `You were one step away from your TurfMap — ${businessName ?? 'your business'}`,
+        touch_2: `Your competitors are already on the map — ${businessName ?? 'your business'}`,
+        touch_3: `Last reminder about your TurfScan — ${businessName ?? 'your business'}`,
+      } as const;
+      return {
+        subject: subjectByStage[stage],
+        html: await render(
+          ScanRecoveryEmail({
+            businessName,
+            keyword,
+            resumeUrl:
+              'https://turfmap.ai/intake?tier=scan&prefill_business=Sugar+Daddy+Doughnuts&prefill_keyword=emergency+plumber&utm_source=cart_recovery&utm_medium=email',
+            stage,
           })
         ),
       };
