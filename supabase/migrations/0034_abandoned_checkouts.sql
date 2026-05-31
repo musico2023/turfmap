@@ -71,3 +71,12 @@ create index if not exists abandoned_checkouts_email_pending_idx
 
 comment on table public.abandoned_checkouts is
   'Scan-funnel cart-abandonment recovery. One row per expired unpaid Stripe Checkout session; drives the 3-touch recovery email sequence. See migration 0034.';
+
+-- RLS: enabled with NO policies = deny-all to the anon/authenticated
+-- client SDKs. This table is written + read exclusively server-side
+-- (the checkout.session.expired webhook + /api/orders/fulfill) via the
+-- service-role client, which bypasses RLS. There is no buyer- or
+-- tenant-facing read path, and rows hold buyer emails + intake details,
+-- so locking it down is the right default — matches the RLS-on
+-- convention every other table in this project follows.
+alter table public.abandoned_checkouts enable row level security;
