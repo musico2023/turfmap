@@ -311,6 +311,24 @@ export async function POST(req: Request) {
     lineItems.push({ price: scanPriceId, quantity: 1 });
   }
 
+  // Shorten the Checkout session lifetime to 60 minutes (Stripe's
+  // default is 24h) on ONE-TIME scan-funnel checkouts. This is what
+  // makes cart-abandonment recovery work: an unpaid session fires
+  // `checkout.session.expired` at this mark, ~1h after the buyer
+  // bailed, which the webhook turns into the first recovery email
+  // (touches 2 & 3 follow at +24h / +72h via Resend scheduled-send).
+  // 60 minutes is Stripe's documented minimum for `expires_at` (the
+  // API rejects anything under 30 min and caps at 24h).
+  //
+  // GATED to non-subscription tiers because the ScanRecoveryEmail
+  // copy is scan/audit-funnel specific ("Finish my scan →"). A Pulse
+  // abandoner getting that email would read off-brand. If we want
+  // subscription-cart recovery later, that's a separate copy variant
+  // + the gate widens here.
+  const expiresAt = !isSubscription
+    ? Math.floor((Date.now() + 60 * 60 * 1000) / 1000)
+    : undefined;
+
   const baseParams: import('stripe').default.Checkout.SessionCreateParams = {
     mode: isSubscription ? 'subscription' : 'payment',
     payment_method_types: ['card'],
@@ -321,6 +339,8 @@ export async function POST(req: Request) {
     // (where 'always' powers the saved-card 1-click audit upgrade
     // on /order/success).
     ...(isSubscription ? {} : { customer_creation: 'always' as const }),
+    // Apply the 60-min TTL only when computed (non-subscription).
+    ...(expiresAt ? { expires_at: expiresAt } : {}),
     // Off-session card save powers the 1-click audit upgrade on
     // /order/success. SKIPPED on subscription mode (Stripe saves
     // the card by default for recurring billing) + on 100%-off

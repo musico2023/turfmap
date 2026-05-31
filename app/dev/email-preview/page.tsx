@@ -64,6 +64,21 @@ const TEMPLATES: TemplateLink[] = [
     ],
   },
   {
+    slug: 'scan-recovery',
+    name: 'Scan cart recovery',
+    blurb:
+      'Sent to buyers whose scan-funnel Stripe Checkout expired unpaid (checkout.session.expired). 3-touch sequence: touch 1 immediate, touch 2 +24h, touch 3 +72h. No discount — resume link only.',
+    variants: [
+      { label: 'Touch 1 (~1h)', query: 'stage=touch_1' },
+      { label: 'Touch 2 (+24h)', query: 'stage=touch_2' },
+      { label: 'Touch 3 (+72h, final)', query: 'stage=touch_3' },
+      {
+        label: 'Touch 1 — no keyword/business',
+        query: 'stage=touch_1&sparse=1',
+      },
+    ],
+  },
+  {
     slug: 'audit-call-reminder',
     name: 'Audit call reminder',
     blurb:
