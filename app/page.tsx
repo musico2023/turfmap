@@ -421,35 +421,37 @@ export default function MarketingLanding() {
                 number to the left. If you want to break it down,
                 your dashboard shows all three.
               </p>
-            </div>
-          </div>
 
-          {/* Closer CTA — funnel into the /score lead-magnet right
-           *  where the buyer just learned what a TurfScore IS.
-           *  Visually subordinate (lime-outline, not filled) so it
-           *  echoes the secondary CTA in the hero rather than
-           *  competing with the paid path. The ?from query param
-           *  distinguishes this click source from the hero CTA in
-           *  the analytics funnel — "score-block" vs the hero's
-           *  "home" — so we can see which placement converts. */}
-          <div className="mt-10 md:mt-12 flex flex-col items-center gap-2">
-            <LinkButton
-              variant="secondary"
-              size="lg"
-              href="/score?from=score-block"
-              rightIcon={<ArrowRight size={14} strokeWidth={2.5} />}
-              style={{
-                background: 'transparent',
-                borderColor: 'var(--color-lime)',
-                borderWidth: '2px',
-                color: 'var(--color-lime)',
-              }}
-            >
-              Get your free TurfScore
-            </LinkButton>
-            <p className="text-[11px] text-zinc-500 font-mono">
-              60 seconds · no credit card · your real audit data
-            </p>
+              {/* Inline CTA — funnels into the /score lead-magnet
+               *  right inside the right column, beneath the "How we
+               *  get there" detail block. Visually subordinate
+               *  (lime-outline, not filled) so it echoes the
+               *  secondary CTA in the hero rather than competing
+               *  with the paid Order path. The ?from query param
+               *  distinguishes this click source from the hero CTA
+               *  in the analytics funnel — "score-block" vs the
+               *  hero's "home" — so we can see which placement
+               *  converts. */}
+              <div className="mt-6 flex flex-col items-start gap-2">
+                <LinkButton
+                  variant="secondary"
+                  size="lg"
+                  href="/score?from=score-block"
+                  rightIcon={<ArrowRight size={14} strokeWidth={2.5} />}
+                  style={{
+                    background: 'transparent',
+                    borderColor: 'var(--color-lime)',
+                    borderWidth: '2px',
+                    color: 'var(--color-lime)',
+                  }}
+                >
+                  Get your free TurfScore
+                </LinkButton>
+                <p className="text-[11px] text-zinc-500 font-mono">
+                  60 seconds · no credit card · your real audit data
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </Section>
