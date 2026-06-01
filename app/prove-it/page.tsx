@@ -94,7 +94,10 @@ const TRADE_DISPLAY: Record<string, string> = {
   roofing: 'ROOFER',
   plumber: 'PLUMBER',
   plumbing: 'PLUMBER',
-  hvac: 'HVAC OPERATOR',
+  // HVAC renders as "HVAC PRO" to match the Meta creative copy.
+  // Aliased on `hvac-pro` for explicit URL clarity.
+  hvac: 'HVAC PRO',
+  'hvac-pro': 'HVAC PRO',
   painter: 'PAINTER',
   painting: 'PAINTER',
   electrician: 'ELECTRICIAN',
