@@ -29,6 +29,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { isDiscountedLeadSource } from '@/lib/score/leadSources';
 import type { ClientRow, ScanShareLinkRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -162,12 +163,10 @@ export async function POST(req: Request) {
       unlockLeadSource = meta.lead_source;
     }
   }
-  // The set of lead_source slugs that earn the discounted unlock.
-  // Pattern-matched explicitly (rather than "anything non-default")
-  // so an unrecognized value fails closed at $99.
-  const DISCOUNTED_LEAD_SOURCES = new Set(['free_score']);
-  const applyDiscount =
-    !!unlockLeadSource && DISCOUNTED_LEAD_SOURCES.has(unlockLeadSource);
+  // Discount eligibility comes from a shared helper so /share's UI
+  // display flag and this server-side coupon decision can't drift.
+  // See lib/score/leadSources.ts for the canonical set.
+  const applyDiscount = isDiscountedLeadSource(unlockLeadSource);
 
   // Resolve Stripe's promotion_code id for MAPCHECK50 when the cohort
   // qualifies. Soft-fails — if Stripe doesn't return a code, the

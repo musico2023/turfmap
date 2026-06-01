@@ -40,6 +40,7 @@ import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
+import { isDiscountedLeadSource } from '@/lib/score/leadSources';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import {
   HeatmapWithToggle,
@@ -228,16 +229,18 @@ export default async function PublicSharePage({
   const meta = scanLeadOrder?.stripe_metadata ?? null;
 
   // Preview-mode unlock pricing — driven by lead_source stamped at
-  // preview-init time. Cold-Meta /free-score buyers get the $49
-  // (MAPCHECK50) unlock; homepage /score visitors stay at $99 list.
-  // unlock-init reads the same field server-side to apply the Stripe
-  // promotion code; this UI flag just keeps the labels in sync.
-  // Unrecognized values fall back to $99 (fail-closed).
+  // preview-init time. Cold-Meta lander cohorts (/free-score,
+  // /prove-it) get the $49 MAPCHECK50 unlock; homepage /score
+  // visitors stay at $99 list. unlock-init reads the same field
+  // server-side to apply the Stripe promotion code; this UI flag
+  // just keeps the labels in sync. The shared helper in
+  // lib/score/leadSources.ts is the canonical eligibility check —
+  // unrecognized values fail closed to $99.
   const previewLeadSource =
     meta && typeof (meta as Record<string, unknown>)['lead_source'] === 'string'
       ? ((meta as Record<string, unknown>)['lead_source'] as string)
       : null;
-  const discountedUnlock = previewLeadSource === 'free_score';
+  const discountedUnlock = isDiscountedLeadSource(previewLeadSource);
   // Suppress the operator CTA footer for both the cold-email cohort
   // (their next-step pitch lives in the cold-stage3 email) AND the
   // /score lead-magnet preview cohort (their next-step is the
