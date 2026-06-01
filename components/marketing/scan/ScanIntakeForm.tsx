@@ -158,6 +158,39 @@ export function ScanIntakeForm({
       selected.street_address === trimmedAddress)
   );
 
+  // Lightweight "form looks filled" predicate — gates when the
+  // Turnstile widget is rendered in previewMode. We don't validate
+  // exhaustively here (server-side Zod is the source of truth), just
+  // check each field is plausibly populated so the widget doesn't
+  // appear until the buyer is ready to submit. Mirrors the spirit
+  // of HTML's `:valid` selector but doesn't depend on the browser's
+  // built-in form validation API (which behaves inconsistently
+  // across Safari/Firefox/Chrome).
+  const allFieldsLookFilled =
+    businessName.trim().length >= 2 &&
+    addressPicked &&
+    keywords.every((k) => k.trim().length >= 2) &&
+    email.includes('@') &&
+    email.length >= 5 &&
+    phone.trim().length >= 7;
+
+  // The Turnstile widget renders only when (a) we're in previewMode,
+  // (b) the site key is configured, and (c) every other field looks
+  // filled — so the buyer's first impression of the form is a clean
+  // 5-input panel without a bot-check waiting at the bottom. Once
+  // all fields are populated, the widget slots in and the submit
+  // button stays disabled until the token resolves.
+  const shouldRenderTurnstile =
+    previewMode && !!turnstileSiteKey && allFieldsLookFilled;
+
+  // Submit gate for previewMode: the existing addressPicked gate is
+  // augmented by "Turnstile has either passed (token present) OR is
+  // disabled by config (no site key set)". Outside previewMode this
+  // collapses to true (Turnstile isn't enabled for the paid flows
+  // since they're card-gated anyway).
+  const turnstileReady =
+    !previewMode || !turnstileSiteKey || !!turnstileToken;
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
@@ -450,13 +483,21 @@ export function ScanIntakeForm({
       />
 
       {/* Cloudflare Turnstile — bot-protection check on the free
-       *  /score flow. Only renders in previewMode (paid flows are
-       *  card-gated, which is a stronger filter). When
+       *  /score flow. Only renders in previewMode AND after every
+       *  field looks filled (allFieldsLookFilled gate above). This
+       *  keeps the initial form clean — visitors see 5 inputs +
+       *  the submit button, not a security widget sitting idle
+       *  waiting for them to fill the form. The widget slots in at
+       *  the moment the buyer is ready to submit, and the submit
+       *  button stays disabled until its token arrives. When
        *  NEXT_PUBLIC_TURNSTILE_SITEKEY isn't set, the widget
        *  short-circuits to nothing and the backend skips
        *  verification too. */}
-      {previewMode && turnstileSiteKey ? (
+      {shouldRenderTurnstile ? (
         <div className="pt-1">
+          <p className="text-[11px] uppercase tracking-[0.18em] font-mono text-zinc-500 mb-1.5">
+            Quick bot check
+          </p>
           <TurnstileWidget
             siteKey={turnstileSiteKey}
             onToken={setTurnstileToken}
@@ -479,11 +520,13 @@ export function ScanIntakeForm({
           }
           rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
           // Disabled until the buyer picks an address from the
-          // Mapbox dropdown. Avoids a click-then-error round-trip
-          // for the most common rejection reason. The submit handler
-          // still has its own gate as defense-in-depth (Enter key,
-          // JS-disabled native submit, etc.).
-          disabled={!addressPicked}
+          // Mapbox dropdown AND (in previewMode with Turnstile
+          // configured) the bot-check token has resolved. Avoids
+          // click-then-error round-trips on the two most common
+          // rejection reasons. The submit handler still has its
+          // own gates as defense-in-depth (Enter key, JS-disabled
+          // native submit, etc.).
+          disabled={!addressPicked || !turnstileReady}
         >
           {previewMode
             ? 'Get my free TurfScore →'
