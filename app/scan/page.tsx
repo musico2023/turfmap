@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import {
   Check,
-  Compass,
   Crosshair,
   Crown,
   ShieldCheck,
@@ -62,7 +61,7 @@ import { LoomWalkthrough } from '@/components/marketing/scan/LoomWalkthrough';
 export const metadata: Metadata = {
   title: 'Get your $49 TurfScan — TurfMap',
   description:
-    "See exactly where you rank across your service area. 81-point geo-grid scan + AI Coach fix list, delivered in under a minute. $99 → $49 with code MAPCHECK50.",
+    "Full 81-cell visibility map across your service area + named competitor analysis + AI Coach prioritized Fix List. Delivered in 60 seconds. $99 → $49 with code MAPCHECK50.",
   // Paid-traffic LP — not a canonical entry point. Don't compete
   // with / for brand keywords or bleed into organic results.
   robots: { index: false, follow: false },
@@ -460,33 +459,54 @@ export default async function ScanLandingPage({
           >
             What you get
           </div>
-          <h2 className="font-display text-2xl md:text-4xl font-black leading-tight tracking-tight mb-8 text-zinc-50">
-            A 60-second scan and a personalized fix list.
+          <h2 className="font-display text-2xl md:text-4xl font-black leading-tight tracking-tight mb-3 text-zinc-50">
+            Three things in your $49 TurfScan.
           </h2>
+          <p className="text-base md:text-lg text-zinc-400 leading-relaxed mb-8 max-w-xl">
+            Delivered to your inbox in 60 seconds. No subscription, no
+            upsell to unlock the actual deliverable.
+          </p>
 
-          {/* Four deliverables — stacked on mobile */}
-          <div className="space-y-4 mb-8">
+          {/* Three value pillars — the three things the buyer actually
+           *  walks away with. Restructure from the prior 4-card list:
+           *
+           *  Old:  81-cell scan / TurfReach+Rank+Score / AI Coach / PDF
+           *  New:  Full map+TurfScore / Competitor analysis / Fix List
+           *
+           *  Rationale: competitor analysis was missing entirely from
+           *  the deliverables list even though /share already reveals
+           *  named top-3 competitors with cell share. That's a real
+           *  $49-tier deliverable buyers should know about up front.
+           *  The TurfReach/TurfRank/TurfScore card was metric-led
+           *  (operator doesn't care about three abstract numbers);
+           *  rolled into the "full map" card where the score is THE
+           *  headline output. PDF demoted to an "also includes" line
+           *  — it's a side benefit, not a value pillar. */}
+          <div className="space-y-4 mb-6">
             <DeliverableCard
               icon={Target}
-              title="81-point geo-grid scan across your service area"
-              body="See every cell where you appear or disappear in Google's Map Pack."
-            />
-            <DeliverableCard
-              icon={Compass}
-              title="TurfReach + TurfRank + TurfScore metrics"
-              body="Three proprietary numbers that map directly to action."
-            />
-            <DeliverableCard
-              icon={Sparkles}
-              title="AI Coach Fix List"
-              body="Three prioritized actions, named directories, specific fixes — written from your real audit data."
+              title="The full 81-cell map + your TurfScore"
+              body="One scan = 81 real Google searches across your service area, plotted cell-by-cell. Your TurfScore (0–100) tells you in one number how visible you are across your whole territory. Quotable, trackable, real."
             />
             <DeliverableCard
               icon={Crown}
-              title="Branded PDF report"
-              body="Keep it, share it, hand it to a freelancer, or use it to evaluate marketing vendors."
+              title="Named competitor analysis"
+              body="See exactly which competing businesses are taking calls in your weak cells — by name. Top 3 dominators ranked by how much of your territory they own, with each one's average rank in the cells they appear in."
+            />
+            <DeliverableCard
+              icon={Sparkles}
+              title="AI Coach prioritized Fix List"
+              body="Three actions, ordered by impact, written from your real audit data. Named directories, named competitors, specific fixes — not generic SEO checklist advice."
             />
           </div>
+
+          {/* "Also includes" line — PDF demoted from a value pillar to
+           *  a footnote so the three big cards stay focused on what
+           *  buyers actually care about. */}
+          <p className="text-sm text-zinc-500 leading-relaxed mb-8 italic">
+            Also includes a branded PDF you can keep, share, or hand
+            to a freelancer or marketing vendor.
+          </p>
 
           {/* Dollar anchor — agency comp vs list vs final */}
           <div
@@ -960,7 +980,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What happens after I get my scan?',
-    a: 'You land directly on your scan dashboard — heatmap, TurfScore, and a prioritized fix list. We also email you a shareable link so you can pass it to a team member or freelancer. From there, you can implement the fix list yourself or book a strategist walkthrough if you want help interpreting the results.',
+    a: "You land directly on your scan dashboard with everything in your $49: the full 81-cell visibility map and your TurfScore, the named competitors taking calls in your weak cells, and the AI Coach Fix List with three prioritized actions. We also email you a shareable link so you can pass it to a team member or freelancer. From there, you can implement the fix list yourself or book a strategist walkthrough if you want help interpreting the results.",
   },
   {
     q: "What's the MAPCHECK50 code? Will it expire?",
