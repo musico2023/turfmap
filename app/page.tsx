@@ -19,7 +19,7 @@ import { PricingCards } from '@/components/marketing/PricingCards';
 import { MonitoringCards } from '@/components/marketing/MonitoringCards';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
-import { TurfScoreShowcase } from '@/components/marketing/TurfScoreShowcase';
+import { MapPackDemo } from '@/components/marketing/MapPackDemo';
 import { LinkButton } from '@/components/ui/Button';
 
 export const metadata: Metadata = {
@@ -103,7 +103,7 @@ export default function MarketingLanding() {
             about whether your service-area neighbors can find you.
           </>
         }
-        headerAside={<TurfScoreShowcase />}
+        headerAside={<MapPackDemo />}
       >
         {/* Mechanism callout — spells out the 81-cell scan in plain
          *  terms before the compare cards. Bordered + tinted so it
