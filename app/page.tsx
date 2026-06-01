@@ -329,13 +329,18 @@ export default function MarketingLanding() {
           />
           <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex items-center gap-2">
             <span style={{ color: 'var(--color-lime)' }}>·</span>
-            <span style={{ color: 'var(--color-lime)' }}>How we know</span> ·
-            three numbers we compute from your scan
+            <span style={{ color: 'var(--color-lime)' }}>The TurfScore</span> ·
+            one quotable number
           </div>
-          <p className="text-sm text-zinc-400 leading-relaxed max-w-3xl">
-            Every fix list is anchored in three computed metrics. They map
-            directly to specific actions — that&rsquo;s why the recommendations
-            above are prioritized the way they are.
+          <h3 className="font-display text-2xl md:text-3xl font-bold text-zinc-50 leading-tight tracking-tight mb-3">
+            Your TurfScore is the number.{' '}
+            <em className="text-zinc-300">The other two explain it.</em>
+          </h3>
+          <p className="text-sm md:text-base text-zinc-400 leading-relaxed max-w-3xl">
+            One score, 0–100, for how visible you are across your whole
+            territory. Quote it, track it, watch it climb. TurfReach and
+            TurfRank are how we calculate it — open them up if you want
+            the math.
           </p>
         </div>
 
@@ -453,12 +458,13 @@ export default function MarketingLanding() {
           category="One-time audits"
           body={
             <>
-              Get an audit. We scan your territory, diagnose what&rsquo;s
-              breaking your visibility, and walk you through what to fix
-              —{' '}
-              <strong className="font-semibold text-zinc-100">once</strong>
-              . Hand the report to your team, share it with a freelancer,
-              or use it to evaluate vendors.
+              <strong className="font-semibold text-zinc-100">
+                Start with one map. Decide the rest after you see it.
+              </strong>{' '}
+              Get an audit, diagnose what&rsquo;s breaking your
+              visibility, walk away with what to fix. Hand it to your
+              team, share it with a freelancer, or use it to evaluate
+              vendors — your call.
             </>
           }
           comparison={
@@ -501,16 +507,23 @@ export default function MarketingLanding() {
               Backed by the TurfScore Lift Promise.
             </span>{' '}
             <span className="text-zinc-400">
-              Every Visibility Audit and Strategy Session ships with a{' '}
+              Covers both the{' '}
               <strong className="font-semibold text-zinc-200">
-                minimum 10-point TurfScore lift in 90 days
+                Visibility Audit ($499)
               </strong>{' '}
-              — measured by the automated re-scan that&rsquo;s built
-              into your audit. Implement our recommendations within
-              14 days. If your TurfScore doesn&rsquo;t lift by at
-              least 10 points within 90 days,{' '}
+              and the{' '}
               <strong className="font-semibold text-zinc-200">
-                we refund your $499.
+                Strategy Session ($1,497)
+              </strong>
+              : implement our recommendations within 14 days, lift your
+              TurfScore by{' '}
+              <strong className="font-semibold text-zinc-200">
+                at least 10 points within 90 days
+              </strong>{' '}
+              — measured by the automated re-scan built into your
+              audit — or{' '}
+              <strong className="font-semibold text-zinc-200">
+                we refund your purchase in full.
               </strong>
             </span>
           </div>
@@ -534,8 +547,12 @@ export default function MarketingLanding() {
           category="Continuous monitoring"
           body={
             <>
-              Get a subscription. We track your visibility weekly, alert
-              you when it shifts, and (on Pulse+){' '}
+              <strong className="font-semibold text-zinc-100">
+                Want to watch it every week? Add monitoring after your
+                scan.
+              </strong>{' '}
+              We track your visibility weekly, alert you when it shifts,
+              and (on Pulse+){' '}
               <strong className="font-semibold text-zinc-100">
                 build and maintain citations
               </strong>{' '}
@@ -585,9 +602,23 @@ export default function MarketingLanding() {
           </PathFooterLink>
         </PathFooterNote>
 
-        <p className="text-xs text-zinc-600 font-mono mt-10 text-center">
-          All prices in USD. Refund policy: full refund within 24h if you
-          haven&rsquo;t received your scan yet.
+        {/* $99 TurfScan promise. Replaces the prior "full refund within
+         *  24h" line, which was effectively unreachable — the scan lands
+         *  in under a minute so the window shut before the buyer
+         *  finished reading the confirmation email. The new 7-day,
+         *  "show me something I didn't already know" framing matches
+         *  the actual deliverable (insight, not just the raw scan) and
+         *  gives the buyer a real exit window. */}
+        <p className="text-xs text-zinc-500 font-mono mt-10 text-center max-w-3xl mx-auto leading-relaxed">
+          <span className="text-zinc-300 font-semibold">
+            The $99 promise:
+          </span>{' '}
+          if your map doesn&rsquo;t show you something you didn&rsquo;t
+          already know, email us within 7 days and we&rsquo;ll refund
+          it — no back-and-forth.
+        </p>
+        <p className="text-[11px] text-zinc-700 font-mono mt-3 text-center">
+          All prices in USD.
         </p>
       </Section>
 
@@ -747,15 +778,17 @@ export default function MarketingLanding() {
                 q: "What if my TurfScore doesn't go up after the Visibility Audit?",
                 a: (
                   <>
-                    Every Visibility Audit ships with a{' '}
+                    The{' '}
                     <strong className="font-semibold text-zinc-200">
                       10-point TurfScore Lift Promise
-                    </strong>
-                    : implement our recommendations within 14 days,
-                    and if your TurfScore doesn&rsquo;t lift by at
-                    least 10 points within 90 days,{' '}
+                    </strong>{' '}
+                    covers both the Visibility Audit ($499) and the
+                    Strategy Session ($1,497). Implement our
+                    recommendations within 14 days, and if your
+                    TurfScore doesn&rsquo;t lift by at least 10 points
+                    within 90 days,{' '}
                     <strong className="font-semibold text-zinc-200">
-                      we refund your $499.
+                      we refund your purchase in full.
                     </strong>{' '}
                     The 60-day strategist check-in catches anything
                     the first roadmap missed and adjusts the plan

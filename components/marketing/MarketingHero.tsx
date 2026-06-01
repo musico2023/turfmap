@@ -152,20 +152,25 @@ export function MarketingHero() {
             Google Maps audit for local <RotatingLabel /> · from $99
           </div>
           <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.02] mb-4">
-            See exactly where you <em>win</em>{' '}— and where you{' '}
-            <em>don&rsquo;t.</em>
+            See how much of your city <em>can&rsquo;t find</em>{' '}your
+            business.
           </h1>
           {/* Positioning sub-headline — sits between H1 and the descriptive
            *  subhead. Italic to flag it as the strategic frame ("what is
            *  this product, in one line?") rather than a continuation of
            *  the description. */}
           <p className="font-display text-xl md:text-2xl text-zinc-300 italic leading-snug mb-8 max-w-xl">
-            The Google Maps audit you should run before spending another
-            dollar on local SEO. Most local businesses are invisible to{' '}
+            We run{' '}
             <strong className="font-semibold text-zinc-100">
-              two-thirds of the people
-            </strong>
-            {' '}searching for them.
+              81 real Google searches
+            </strong>{' '}
+            across your service area and show you, cell by cell, where
+            you show up — and where a competitor is taking the call.
+            Most local businesses are invisible to{' '}
+            <strong className="font-semibold text-zinc-100">
+              two-thirds
+            </strong>{' '}
+            of the people searching nearby.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <LinkButton
