@@ -36,6 +36,15 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Force dynamic rendering. The ScanIntakeForm client component
+// pulls in Mapbox's AddressAutofill, whose JS bundle references
+// `document` at module-evaluation time. Static prerender at build
+// time evaluates these modules with no `document` defined and
+// throws ReferenceError. /intake works because it uses await
+// for the prospect lookup, which Next.js infers as dynamic; /score
+// is otherwise fully static-eligible, so it needs the explicit flag.
+export const dynamic = 'force-dynamic';
+
 export default function ScoreLanderPage() {
   return (
     <div className="min-h-screen w-full text-white flex flex-col">
