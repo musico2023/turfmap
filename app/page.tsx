@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import {
   ArrowRight,
   Compass,
@@ -9,7 +8,6 @@ import {
   MapPin,
   ShieldCheck,
   Sparkles,
-  Target,
   Zap,
 } from 'lucide-react';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
@@ -20,6 +18,7 @@ import { MonitoringCards } from '@/components/marketing/MonitoringCards';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { MapPackDemo } from '@/components/marketing/MapPackDemo';
+import { TurfScoreShowcase } from '@/components/marketing/TurfScoreShowcase';
 import { LinkButton } from '@/components/ui/Button';
 
 export const metadata: Metadata = {
@@ -314,12 +313,19 @@ export default function MarketingLanding() {
           </div>
         </div>
 
-        {/* SECONDARY — the three score cards demoted as supporting
-         *  evidence ("how we know"). The thin lime accent line + extra
-         *  top margin signals the sub-section break: we're moving
-         *  from "what you'll get" to "the math behind it." Mirrors
-         *  the Path A/B divider treatment in Section 04 so the page's
-         *  visual vocabulary stays consistent. */}
+        {/* SECONDARY — TurfScore sub-section. Previously this was a
+         *  3-column grid of TurfReach / TurfRank / TurfScore cards —
+         *  fine for buyers who want the math but it diluted the
+         *  single-number message. Per user feedback: lead with the
+         *  TurfScore graphic (same one /score uses), demote
+         *  TurfReach + TurfRank to a one-line "here's how we get
+         *  there" mention below. Buyers who want the math can read
+         *  the inline definitions; everyone else just sees the score.
+         *
+         *  Thin lime accent line + extra top margin signals the
+         *  sub-section break, mirroring the Path A/B divider
+         *  treatment in Section 04 so the page's visual vocabulary
+         *  stays consistent. */}
         <div className="mt-16 md:mt-20 max-w-4xl">
           <div
             aria-hidden
@@ -335,85 +341,75 @@ export default function MarketingLanding() {
             one quotable number
           </div>
           <h3 className="font-display text-2xl md:text-3xl font-bold text-zinc-50 leading-tight tracking-tight mb-3">
-            Your TurfScore is the number.{' '}
-            <em className="text-zinc-300">The other two explain it.</em>
+            Your TurfScore is the number.
           </h3>
-          <p className="text-sm md:text-base text-zinc-400 leading-relaxed max-w-3xl">
-            One score, 0–100, for how visible you are across your whole
-            territory. Quote it, track it, watch it climb. TurfReach and
-            TurfRank are how we calculate it — open them up if you want
-            the math.
+          <p className="text-sm md:text-base text-zinc-400 leading-relaxed max-w-2xl mb-8">
+            One score, 0–100, for how visible you are across your
+            whole territory. Quote it, track it, watch it climb.
           </p>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
-          <ScoreCard
-            icon={Compass}
-            name="TurfReach"
-            tagline="How much of your area you cover"
-            range="0 – 100%"
-            description="The percentage of your 81 grid cells where you appear in the local 3-pack at all."
-            example={
-              <>
-                A TurfReach of <strong className="text-zinc-100">35%</strong>{' '}
-                means two-thirds of nearby searchers don&rsquo;t see you when
-                they search for your service.
-              </>
-            }
-            bands={[
-              { range: '< 20%', label: 'Invisible', color: '#ff4d4d' },
-              { range: '20–40%', label: 'Patchy', color: '#ff9f3a' },
-              { range: '40–60%', label: 'Solid', color: '#e8e54a' },
-              { range: '60–80%', label: 'Dominant', color: '#c5ff3a' },
-              { range: '80+%', label: 'Saturated', color: '#f5c842' },
-            ]}
-          />
-          <ScoreCard
-            icon={Crown}
-            name="TurfRank"
-            tagline="Where you sit when you do appear"
-            range="1.0 – 3.0"
-            description="The 3-pack has three slots. TurfRank is your average position across the cells where you actually appear. 3.0 = always #1, 1.0 = always #3."
-            example={
-              <>
-                TurfRank <strong className="text-zinc-100">1.4</strong>{' '}
-                means you&rsquo;re scraping the bottom of the pack —
-                usually #3, often beneath competitors who optimized
-                harder.
-              </>
-            }
-            bands={[
-              { range: '< 1.0', label: 'Edge of pack', color: '#ff4d4d' },
-              { range: '1.0–1.5', label: 'Bottom-pack', color: '#ff9f3a' },
-              { range: '1.5–2.0', label: 'Mid-pack', color: '#e8e54a' },
-              { range: '2.0–2.5', label: 'Top-pack', color: '#c5ff3a' },
-              { range: '2.5+', label: 'Position #1', color: '#f5c842' },
-            ]}
-          />
-          <ScoreCard
-            icon={Target}
-            name="TurfScore"
-            tagline="Composite visibility"
-            range="0 – 100"
-            description="Combines TurfReach and TurfRank into one number. The headline metric you can quote, track, and improve."
-            example={
-              <>
-                Most local businesses we scan land between{' '}
-                <strong className="text-zinc-100">30 and 55</strong>{' '}
-                before optimization. Above 60 is uncommon — it usually
-                means the Google Business Profile is well-tuned and the
-                citations are clean.
-              </>
-            }
-            bands={[
-              { range: '0–20', label: 'Invisible', color: '#ff4d4d' },
-              { range: '20–40', label: 'Patchy', color: '#ff9f3a' },
-              { range: '40–60', label: 'Solid', color: '#e8e54a' },
-              { range: '60–80', label: 'Dominant', color: '#c5ff3a' },
-              { range: '80+', label: 'Rare air', color: '#f5c842' },
-            ]}
-            highlight
-          />
+          {/* The headline graphic — same TurfScoreShowcase used on
+           *  /score, so the buyer's mental model is consistent
+           *  across the homepage and the lead-magnet lander. */}
+          <div className="max-w-2xl">
+            <TurfScoreShowcase />
+          </div>
+
+          {/* Optional "how we get there" detail strip for buyers
+           *  who want the math. Two compact rows naming TurfReach +
+           *  TurfRank in one line each — no big cards, no rank
+           *  bands, no per-metric color spectrums. They exist; if
+           *  you care, here's what they mean. */}
+          <div className="mt-8 max-w-2xl">
+            <div className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold text-zinc-500 mb-3">
+              How we get there
+            </div>
+            <ul className="space-y-2.5">
+              <li className="flex items-start gap-3 text-sm leading-snug">
+                <Compass
+                  size={14}
+                  className="flex-shrink-0 mt-0.5"
+                  style={{ color: 'var(--color-lime)' }}
+                />
+                <div>
+                  <span className="font-semibold text-zinc-100">
+                    TurfReach
+                  </span>{' '}
+                  <span className="text-zinc-500 font-mono text-[11px]">
+                    (0–100%)
+                  </span>{' '}
+                  <span className="text-zinc-400">
+                    — how much of your 81-cell territory you appear in
+                    at all.
+                  </span>
+                </div>
+              </li>
+              <li className="flex items-start gap-3 text-sm leading-snug">
+                <Crown
+                  size={14}
+                  className="flex-shrink-0 mt-0.5"
+                  style={{ color: 'var(--color-lime)' }}
+                />
+                <div>
+                  <span className="font-semibold text-zinc-100">
+                    TurfRank
+                  </span>{' '}
+                  <span className="text-zinc-500 font-mono text-[11px]">
+                    (1.0–3.0)
+                  </span>{' '}
+                  <span className="text-zinc-400">
+                    — your average position in the cells where you do
+                    appear. 3.0 = always #1, 1.0 = always #3.
+                  </span>
+                </div>
+              </li>
+            </ul>
+            <p className="text-[11px] text-zinc-600 leading-relaxed mt-3 italic">
+              The TurfScore combines reach + rank into the single
+              number above. If you want to break it down,
+              your dashboard shows all three.
+            </p>
+          </div>
         </div>
       </Section>
 
@@ -1176,83 +1172,6 @@ function CompareCard({
         </span>
       </div>
       <p className="text-zinc-300 leading-relaxed">{body}</p>
-    </div>
-  );
-}
-
-function ScoreCard({
-  icon: Icon,
-  name,
-  tagline,
-  range,
-  description,
-  example,
-  bands,
-  highlight = false,
-}: {
-  icon: typeof Compass;
-  name: string;
-  tagline: string;
-  range: string;
-  description: string;
-  example: React.ReactNode;
-  bands: { range: string; label: string; color: string }[];
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className="border rounded-lg p-6 flex flex-col"
-      style={{
-        background: highlight ? 'var(--color-card-glow)' : 'var(--color-bg)',
-        borderColor: highlight
-          ? 'var(--color-border-bright)'
-          : 'var(--color-border)',
-      }}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <Icon size={18} className="text-zinc-500" />
-        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600">
-          {range}
-        </span>
-      </div>
-      <div className="font-display text-2xl font-bold mb-1">
-        {name}
-        <span
-          className="text-xs align-top ml-0.5"
-          style={{ color: 'var(--color-lime)' }}
-        >
-          ™
-        </span>
-      </div>
-      <div className="text-xs text-zinc-400 mb-4">{tagline}</div>
-      <p className="text-sm text-zinc-300 leading-relaxed mb-3">{description}</p>
-      <p className="text-sm text-zinc-400 leading-relaxed mb-5">
-        <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-zinc-500 mr-2">
-          E.g.
-        </span>
-        {/* Explicit space character — Tailwind's mr-2 provides the
-         *  visual gap, but some clipboard / accessibility readers
-         *  collapse pure-margin spacing into "E.g.TurfRank". This
-         *  guarantees a real whitespace token between the eyebrow
-         *  and the example body. */}
-        {' '}
-        {example}
-      </p>
-      <div className="mt-auto pt-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
-        <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-2">
-          Bands
-        </div>
-        <div className="space-y-1">
-          {bands.map((b) => (
-            <div key={b.label} className="flex items-center justify-between text-xs">
-              <span className="font-mono text-zinc-600">{b.range}</span>
-              <span className="font-mono font-semibold" style={{ color: b.color }}>
-                {b.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
