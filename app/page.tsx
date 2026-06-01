@@ -326,7 +326,7 @@ export default function MarketingLanding() {
          *  sub-section break, mirroring the Path A/B divider
          *  treatment in Section 04 so the page's visual vocabulary
          *  stays consistent. */}
-        <div className="mt-16 md:mt-20 max-w-4xl">
+        <div className="mt-16 md:mt-20 max-w-6xl">
           <div
             aria-hidden
             className="h-[1px] w-16 mb-6"
@@ -348,67 +348,80 @@ export default function MarketingLanding() {
             whole territory. Quote it, track it, watch it climb.
           </p>
 
-          {/* The headline graphic — same TurfScoreShowcase used on
-           *  /score, so the buyer's mental model is consistent
-           *  across the homepage and the lead-magnet lander. */}
-          <div className="max-w-2xl">
-            <TurfScoreShowcase />
-          </div>
-
-          {/* Optional "how we get there" detail strip for buyers
-           *  who want the math. Two compact rows naming TurfReach +
-           *  TurfRank in one line each — no big cards, no rank
-           *  bands, no per-metric color spectrums. They exist; if
-           *  you care, here's what they mean. */}
-          <div className="mt-8 max-w-2xl">
-            <div className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold text-zinc-500 mb-3">
-              How we get there
+          {/* Two-column layout on desktop — graphic on the left,
+           *  "how we get there" detail strip on the right, vertically
+           *  centered against the graphic so the detail copy lives
+           *  beside the band spectrum (its natural visual anchor).
+           *  On mobile we stack: graphic first, then the detail strip
+           *  with its own top margin so the rhythm doesn't collapse.
+           *
+           *  Grid template: 3fr / 2fr feels right because the showcase
+           *  is naturally wider (5 band tiles in a row) and the detail
+           *  copy is short. We keep the gap generous so the two
+           *  columns read as related-but-separate. */}
+          <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8 md:gap-10 items-center">
+            {/* The headline graphic — same TurfScoreShowcase used on
+             *  /score, so the buyer's mental model is consistent
+             *  across the homepage and the lead-magnet lander. */}
+            <div className="max-w-2xl">
+              <TurfScoreShowcase />
             </div>
-            <ul className="space-y-2.5">
-              <li className="flex items-start gap-3 text-sm leading-snug">
-                <Compass
-                  size={14}
-                  className="flex-shrink-0 mt-0.5"
-                  style={{ color: 'var(--color-lime)' }}
-                />
-                <div>
-                  <span className="font-semibold text-zinc-100">
-                    TurfReach
-                  </span>{' '}
-                  <span className="text-zinc-500 font-mono text-[11px]">
-                    (0–100%)
-                  </span>{' '}
-                  <span className="text-zinc-400">
-                    — how much of your 81-cell territory you appear in
-                    at all.
-                  </span>
-                </div>
-              </li>
-              <li className="flex items-start gap-3 text-sm leading-snug">
-                <Crown
-                  size={14}
-                  className="flex-shrink-0 mt-0.5"
-                  style={{ color: 'var(--color-lime)' }}
-                />
-                <div>
-                  <span className="font-semibold text-zinc-100">
-                    TurfRank
-                  </span>{' '}
-                  <span className="text-zinc-500 font-mono text-[11px]">
-                    (1.0–3.0)
-                  </span>{' '}
-                  <span className="text-zinc-400">
-                    — your average position in the cells where you do
-                    appear. 3.0 = always #1, 1.0 = always #3.
-                  </span>
-                </div>
-              </li>
-            </ul>
-            <p className="text-[11px] text-zinc-600 leading-relaxed mt-3 italic">
-              The TurfScore combines reach + rank into the single
-              number above. If you want to break it down,
-              your dashboard shows all three.
-            </p>
+
+            {/* Optional "how we get there" detail strip for buyers
+             *  who want the math. Two compact rows naming TurfReach +
+             *  TurfRank in one line each — no big cards, no rank
+             *  bands, no per-metric color spectrums. They exist; if
+             *  you care, here's what they mean. */}
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold text-zinc-500 mb-3">
+                How we get there
+              </div>
+              <ul className="space-y-2.5">
+                <li className="flex items-start gap-3 text-sm leading-snug">
+                  <Compass
+                    size={14}
+                    className="flex-shrink-0 mt-0.5"
+                    style={{ color: 'var(--color-lime)' }}
+                  />
+                  <div>
+                    <span className="font-semibold text-zinc-100">
+                      TurfReach
+                    </span>{' '}
+                    <span className="text-zinc-500 font-mono text-[11px]">
+                      (0–100%)
+                    </span>{' '}
+                    <span className="text-zinc-400">
+                      — how much of your 81-cell territory you appear
+                      in at all.
+                    </span>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3 text-sm leading-snug">
+                  <Crown
+                    size={14}
+                    className="flex-shrink-0 mt-0.5"
+                    style={{ color: 'var(--color-lime)' }}
+                  />
+                  <div>
+                    <span className="font-semibold text-zinc-100">
+                      TurfRank
+                    </span>{' '}
+                    <span className="text-zinc-500 font-mono text-[11px]">
+                      (1.0–3.0)
+                    </span>{' '}
+                    <span className="text-zinc-400">
+                      — your average position in the cells where you
+                      do appear. 3.0 = always #1, 1.0 = always #3.
+                    </span>
+                  </div>
+                </li>
+              </ul>
+              <p className="text-[11px] text-zinc-600 leading-relaxed mt-3 italic">
+                The TurfScore combines reach + rank into the single
+                number to the left. If you want to break it down,
+                your dashboard shows all three.
+              </p>
+            </div>
           </div>
         </div>
       </Section>
