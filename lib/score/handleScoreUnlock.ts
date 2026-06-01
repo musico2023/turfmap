@@ -39,6 +39,7 @@ import type { getServerSupabase } from '@/lib/supabase/server';
 import { generateInsight } from '@/lib/ai-coach/generateInsight';
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
 import {
+  cancelScheduledEmail,
   sendOrderConfirmation,
   sendScanReady,
 } from '@/lib/email/resend';
@@ -204,6 +205,49 @@ export async function handleScoreUnlockCompletion(
     // Don't return — the lead_orders row is in, the unlock is partial
     // but recoverable from the operator side. Let the after()
     // side-effects still fire so the buyer at least gets emails.
+  }
+
+  // ─── 4b. Cancel pending unlock-drip emails ─────────────────────────
+  // The /api/score/preview-init route stamped Resend ids for the
+  // 24h + 72h scheduled touches on the preview lead_orders row.
+  // Read them off the preview lead_orders metadata (looked up by
+  // client_id, not session_id — the preview row predates this
+  // Stripe session) and cancel each. Best-effort: a cancellation
+  // failure shouldn't block the unlock from completing.
+  const { data: previewOrder } = await supabase
+    .from('lead_orders')
+    .select('id, stripe_metadata')
+    .eq('client_id', clientId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      stripe_metadata: Record<string, string> | null;
+    }>();
+  if (previewOrder?.stripe_metadata) {
+    const meta = previewOrder.stripe_metadata;
+    const pendingIds = [
+      meta.unlock_touch_2_email_id,
+      meta.unlock_touch_3_email_id,
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+    for (const id of pendingIds) {
+      try {
+        await cancelScheduledEmail(id);
+      } catch (e) {
+        console.warn(
+          '[score-unlock] cancelScheduledEmail threw for',
+          id,
+          e instanceof Error ? e.message : String(e)
+        );
+      }
+    }
+    // We deliberately DON'T flip the preview lead_orders row's
+    // status — LeadOrderStatus is 'pending' | 'fulfilled' | 'failed'
+    // and none of those captures "converted to paid via this other
+    // row." The preview row stays as-is for the conversion audit
+    // trail; the new fulfilled row (inserted in step 3) is the
+    // canonical post-unlock record.
   }
 
   // ─── 5. Provision portal access ─────────────────────────────────────

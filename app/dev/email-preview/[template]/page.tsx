@@ -26,6 +26,10 @@ import {
   ScanRecoveryEmail,
   type ScanRecoveryStage,
 } from '@/components/email/ScanRecoveryEmail';
+import {
+  ScoreUnlockNudgeEmail,
+  type ScoreUnlockNudgeStage,
+} from '@/components/email/ScoreUnlockNudgeEmail';
 import { AuditCallConfirmedEmail } from '@/components/email/AuditCallConfirmedEmail';
 import { PortalInviteEmail } from '@/components/email/PortalInviteEmail';
 import { PulsePlusWelcomeEmail } from '@/components/email/PulsePlusWelcomeEmail';
@@ -136,6 +140,33 @@ async function renderTemplate(
             keyword,
             resumeUrl:
               'https://turfmap.ai/intake?tier=scan&prefill_business=Sugar+Daddy+Doughnuts&prefill_keyword=emergency+plumber&utm_source=cart_recovery&utm_medium=email',
+            stage,
+          })
+        ),
+      };
+    }
+    case 'score-unlock-nudge': {
+      const stage = (single(search.stage) ??
+        'touch_1') as ScoreUnlockNudgeStage;
+      const sparse = single(search.sparse) === '1';
+      const businessName = sparse ? null : MOCK_BUSINESS;
+      const keyword = sparse ? null : 'emergency plumber';
+      const turfScore = sparse ? null : 38;
+      const turfBand = sparse ? null : 'Patchy';
+      const subjectByStage = {
+        touch_1: `Your TurfScore${turfScore != null ? ` is ${turfScore}/100` : ' is ready'} — ${businessName ?? 'your business'}`,
+        touch_2: `Your competitors are on the unlocked map — ${businessName ?? 'your business'}`,
+        touch_3: `Last reminder about your TurfScore — ${businessName ?? 'your business'}`,
+      } as const;
+      return {
+        subject: subjectByStage[stage],
+        html: await render(
+          ScoreUnlockNudgeEmail({
+            businessName,
+            keyword,
+            turfScore,
+            turfBand,
+            previewUrl: 'https://turfmap.ai/share/preview-demo?utm_source=score_drip',
             stage,
           })
         ),

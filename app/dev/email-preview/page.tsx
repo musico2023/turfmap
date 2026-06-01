@@ -79,6 +79,21 @@ const TEMPLATES: TemplateLink[] = [
     ],
   },
   {
+    slug: 'score-unlock-nudge',
+    name: 'Score unlock nudge',
+    blurb:
+      'Sent to /score lead-magnet visitors who got their free TurfScore but haven’t paid $99 to unlock the full map. 3-touch sequence: t1 immediate ("here’s your score"), t2 +24h (competitor frame), t3 +72h (final). Cancels on unlock.',
+    variants: [
+      { label: 'Touch 1 (immediate)', query: 'stage=touch_1' },
+      { label: 'Touch 2 (+24h)', query: 'stage=touch_2' },
+      { label: 'Touch 3 (+72h, final)', query: 'stage=touch_3' },
+      {
+        label: 'Touch 1 — no score/business (sparse)',
+        query: 'stage=touch_1&sparse=1',
+      },
+    ],
+  },
+  {
     slug: 'audit-call-reminder',
     name: 'Audit call reminder',
     blurb:

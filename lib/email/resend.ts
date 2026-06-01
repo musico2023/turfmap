@@ -839,6 +839,66 @@ export async function sendScanRecovery(args: {
 }
 
 /**
+ * sendScoreUnlockNudge — 3-touch drip for /score lead-magnet
+ * visitors who got a free TurfScore but haven't paid $99 to unlock.
+ *
+ * Touch 1 sends immediately from /api/score/preview-init; touches
+ * 2 and 3 are queued via Resend scheduled-send (24h and 72h after
+ * preview). Returns SendResult.id so the caller can store it on
+ * lead_orders.stripe_metadata for later cancellation when the
+ * buyer unlocks (handleScoreUnlockCompletion reads the ids back
+ * + calls cancelScheduledEmail).
+ *
+ * Mirrors sendScanRecovery's signature so the call sites are
+ * symmetric across the two abandonment funnels (cart-abandonment
+ * for paid-checkout abandoners; score-unlock for preview-stage
+ * abandoners). Same EmailLayout shell + visual rhythm across
+ * touches so the buyer's inbox feels consistent.
+ */
+export async function sendScoreUnlockNudge(args: {
+  to: string;
+  businessName?: string | null;
+  keyword?: string | null;
+  turfScore?: number | null;
+  turfBand?: string | null;
+  previewUrl: string;
+  stage: 'touch_1' | 'touch_2' | 'touch_3';
+  /** ISO 8601. When set, Resend schedules the send; when omitted,
+   *  sends immediately (touch 1). */
+  scheduledAt?: string;
+}): Promise<SendResult> {
+  const { ScoreUnlockNudgeEmail } = await import(
+    '@/components/email/ScoreUnlockNudgeEmail'
+  );
+  const html = await render(
+    ScoreUnlockNudgeEmail({
+      businessName: args.businessName,
+      keyword: args.keyword,
+      turfScore: args.turfScore,
+      turfBand: args.turfBand,
+      previewUrl: args.previewUrl,
+      stage: args.stage,
+    })
+  );
+  const biz = args.businessName?.trim() || 'your business';
+  const scoreFragment =
+    typeof args.turfScore === 'number' && Number.isFinite(args.turfScore)
+      ? ` is ${Math.round(args.turfScore)}/100`
+      : ' is ready';
+  const subjectByStage = {
+    touch_1: `Your TurfScore${scoreFragment} — ${biz}`,
+    touch_2: `Your competitors are on the unlocked map — ${biz}`,
+    touch_3: `Last reminder about your TurfScore — ${biz}`,
+  } as const;
+  return sendEmailWithId({
+    to: args.to,
+    subject: subjectByStage[args.stage],
+    html,
+    scheduledAt: args.scheduledAt,
+  });
+}
+
+/**
  * Strategist Prep email — to anthony@fourdots.io, 24h pre-call.
  * Carries signed URLs for the Roadmap PDF + Strategist Prep Notes
  * (markdown), plus an inline at-a-glance summary so Anthony can

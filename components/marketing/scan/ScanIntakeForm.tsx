@@ -8,6 +8,7 @@ import {
   AddressAutocomplete,
   type AddressFields,
 } from '@/components/turfmap/AddressAutocomplete';
+import { TurnstileWidget } from '@/components/security/TurnstileWidget';
 
 /**
  * Intake form for the /scan cold-Meta intake-first flow.
@@ -135,6 +136,14 @@ export function ScanIntakeForm({
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Cloudflare Turnstile token (preview mode only). Stays an empty
+  // string until the widget calls back with a solved challenge — or
+  // permanently empty if NEXT_PUBLIC_TURNSTILE_SITEKEY isn't
+  // configured (widget short-circuits, backend mirrors). Empty
+  // string is a valid send value; backend interprets it as
+  // "skipped" when the secret env var is also unset.
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITEKEY ?? '';
 
   // Submit is blocked while a Mapbox pick isn't locked in. The buyer
   // MUST select from the dropdown — free-text fallback (Nominatim
@@ -235,6 +244,13 @@ export function ScanIntakeForm({
           // depend on it; one-shot tiers ignore the field entirely
           // server-side (the Zod schema defaults to 'monthly').
           ...(cadence ? { cadence } : {}),
+          // Cloudflare Turnstile token (preview mode only). Backend
+          // skips verification when both sides are unconfigured;
+          // when site key IS set client-side, this carries the
+          // solved-challenge token to the server-side verifier.
+          ...(previewMode && turnstileToken
+            ? { turnstile_token: turnstileToken }
+            : {}),
           businessName: businessName.trim(),
           address: address.trim(),
           // Always send keywords as an array — server validates the
@@ -432,6 +448,21 @@ export function ScanIntakeForm({
         required
         hint="The number your business publishes on Google + directories. Not your personal cell."
       />
+
+      {/* Cloudflare Turnstile — bot-protection check on the free
+       *  /score flow. Only renders in previewMode (paid flows are
+       *  card-gated, which is a stronger filter). When
+       *  NEXT_PUBLIC_TURNSTILE_SITEKEY isn't set, the widget
+       *  short-circuits to nothing and the backend skips
+       *  verification too. */}
+      {previewMode && turnstileSiteKey ? (
+        <div className="pt-1">
+          <TurnstileWidget
+            siteKey={turnstileSiteKey}
+            onToken={setTurnstileToken}
+          />
+        </div>
+      ) : null}
 
       <div className="pt-2">
         <Button

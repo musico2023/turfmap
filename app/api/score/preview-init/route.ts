@@ -18,10 +18,13 @@
  *         reserved for future)
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { createPreviewClient } from '@/lib/score/createPreviewClient';
+import { sendScoreUnlockNudge } from '@/lib/email/resend';
+import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
+import { verifyTurnstileToken } from '@/lib/security/turnstile';
 
 export const runtime = 'nodejs';
 // Same ceiling as the paid scan-intake route — DFS + DB inserts +
@@ -55,6 +58,12 @@ const Body = z.object({
   utm_term: z.string().max(200).optional(),
   gclid: z.string().max(200).optional(),
   fbclid: z.string().max(200).optional(),
+  // Cloudflare Turnstile token from the frontend widget. Optional
+  // because the widget only renders when NEXT_PUBLIC_TURNSTILE_SITEKEY
+  // is set; the server-side verifier mirrors that and skips when
+  // TURNSTILE_SECRET_KEY is unset. Max length is the documented
+  // Cloudflare token ceiling (~2048 chars).
+  turnstile_token: z.string().max(4096).optional(),
 });
 
 const RATE_LIMIT_PER_EMAIL_PER_DAY = 1;
@@ -91,6 +100,23 @@ export async function POST(req: Request) {
   const supabase = getServerSupabase();
   const email = body.email.trim().toLowerCase();
   const ip = extractIp(req);
+
+  // ─── Cloudflare Turnstile verification ─────────────────────────────
+  // Skipped when TURNSTILE_SECRET_KEY isn't set (local dev / pre-
+  // setup deploy). Frontend widget also short-circuits when
+  // NEXT_PUBLIC_TURNSTILE_SITEKEY isn't set, so the two sides agree.
+  // Once BOTH env vars are set, every preview submission must carry
+  // a valid token or it's rejected with 403.
+  const turnstile = await verifyTurnstileToken({
+    token: body.turnstile_token,
+    remoteIp: ip || null,
+  });
+  if (!turnstile.ok) {
+    return NextResponse.json(
+      { error: turnstile.message, kind: turnstile.kind },
+      { status: 403 }
+    );
+  }
 
   // ─── Rate limit: email ─────────────────────────────────────────────
   // Per the SPEC: 1 per email per UTC day. We attempt the insert
@@ -192,6 +218,91 @@ export async function POST(req: Request) {
     })
     .or(`key.eq.email:${email},email.eq.${email}`)
     .eq('day', new Date().toISOString().slice(0, 10));
+
+  // ─── 3-touch unlock drip ─────────────────────────────────────────
+  // Fire touch 1 immediately so the buyer's inbox has the preview
+  // link in case they bounce from /share before saving the URL.
+  // Schedule touch 2 (+24h) and touch 3 (+72h) via Resend's
+  // scheduled-send API; store the returned Resend ids on the
+  // lead_orders.stripe_metadata so handleScoreUnlockCompletion can
+  // cancel pending touches the moment the buyer pays $99.
+  //
+  // All three sends are fire-and-forget in after() — the buyer's
+  // browser is already redirecting to /share, so failed/delayed
+  // sends don't block their UX. RESEND_API_KEY missing in dev =
+  // silent no-op (the resend helper logs but doesn't throw).
+  const band = getTurfScoreBand(result.turfScore);
+  const origin = new URL(req.url).origin;
+  const previewUrl = `${origin}/share/${result.shareId}?utm_source=score_drip`;
+  const now = Date.now();
+  const scheduledTouch2 = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+  const scheduledTouch3 = new Date(now + 72 * 60 * 60 * 1000).toISOString();
+
+  after(async () => {
+    const t1 = await sendScoreUnlockNudge({
+      to: email,
+      businessName: body.businessName.trim(),
+      keyword: body.keyword.trim(),
+      turfScore: result.turfScore,
+      turfBand: band?.label ?? null,
+      previewUrl,
+      stage: 'touch_1',
+    });
+    const t2 = await sendScoreUnlockNudge({
+      to: email,
+      businessName: body.businessName.trim(),
+      keyword: body.keyword.trim(),
+      turfScore: result.turfScore,
+      turfBand: band?.label ?? null,
+      previewUrl,
+      stage: 'touch_2',
+      scheduledAt: scheduledTouch2,
+    });
+    const t3 = await sendScoreUnlockNudge({
+      to: email,
+      businessName: body.businessName.trim(),
+      keyword: body.keyword.trim(),
+      turfScore: result.turfScore,
+      turfBand: band?.label ?? null,
+      previewUrl,
+      stage: 'touch_3',
+      scheduledAt: scheduledTouch3,
+    });
+
+    // Stamp the scheduled email ids on the lead_orders row so
+    // handleScoreUnlockCompletion can cancel them when the buyer
+    // pays. We look up the row by client_id (createPreviewClient
+    // inserted exactly one row with source='score_preview' just
+    // moments ago — UNIQUE-ish enough for this scope, and we
+    // safely no-op if Resend didn't return an id).
+    const metaPatch: Record<string, string> = {};
+    if (t1.id) metaPatch.unlock_touch_1_email_id = t1.id;
+    if (t2.id) metaPatch.unlock_touch_2_email_id = t2.id;
+    if (t3.id) metaPatch.unlock_touch_3_email_id = t3.id;
+    if (Object.keys(metaPatch).length === 0) return;
+
+    const { data: leadOrder } = await supabase
+      .from('lead_orders')
+      .select('id, stripe_metadata')
+      .eq('client_id', result.clientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        id: string;
+        stripe_metadata: Record<string, string> | null;
+      }>();
+    if (!leadOrder) return;
+
+    await supabase
+      .from('lead_orders')
+      .update({
+        stripe_metadata: {
+          ...(leadOrder.stripe_metadata ?? {}),
+          ...metaPatch,
+        },
+      })
+      .eq('id', leadOrder.id);
+  });
 
   return NextResponse.json({
     ok: true,
