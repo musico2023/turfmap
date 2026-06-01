@@ -19,6 +19,7 @@ import { PricingCards } from '@/components/marketing/PricingCards';
 import { MonitoringCards } from '@/components/marketing/MonitoringCards';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
+import { TurfScoreBullseye } from '@/components/marketing/TurfScoreBullseye';
 import { LinkButton } from '@/components/ui/Button';
 
 export const metadata: Metadata = {
@@ -138,6 +139,18 @@ export default function MarketingLanding() {
             by cell, where you rank #1, where you slip, and where you
             don&rsquo;t appear at all.
           </p>
+        </div>
+
+        {/* TurfScore bullseye + band legend. Anchors the "what the
+         *  scan produces" abstraction with a literal visual target —
+         *  outer red ring = Invisible, center gold + crosshair = Rare
+         *  air. The legend on the right explains each band's score
+         *  range + what landing there means in plain English. Sits
+         *  between the mechanism callout (what we do) and the compare
+         *  cards (why it beats one-number rank trackers) so the reader
+         *  sees: process → output → contrast. */}
+        <div className="mt-10 mb-10 max-w-4xl">
+          <TurfScoreBullseye />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8">
