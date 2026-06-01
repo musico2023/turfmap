@@ -125,6 +125,12 @@ export type ClientRow = {
    *  campaigns). Hides from agency listing + cron pipelines. Added
    *  in migration 0021. */
   is_outreach_lead: boolean;
+  /** TRUE for rows inserted by the /score lead-magnet preview flow
+   *  (createPreviewClient). Filtered out of operator dashboards,
+   *  weekly cron scans, and the per-buyer P&L. Flipped to FALSE by
+   *  the score_unlock webhook handler when the buyer pays $99 to
+   *  unlock. Added in migration 0037. */
+  is_preview: boolean;
   /** Per-client alert preferences (added in migration 0013). JSONB
    *  blob with the toggles + thresholds described in AlertPrefs. The
    *  schema sets defaults; loadClientAlertPrefs() in lib/alerts/prefs

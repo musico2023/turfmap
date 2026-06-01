@@ -186,29 +186,37 @@ export function MarketingHero() {
             >
               Order your TurfMap audit
             </LinkButton>
-            {/* Secondary CTA bumped one step brighter than the default
-             *  `secondary` variant so it reads as a real button on the
-             *  hero's bare-page surface (var(--color-bg) #0a0a0a). The
-             *  default secondary uses var(--color-card) #0d0d0d which
-             *  almost disappears against the hero. We bump the bg one
-             *  shade up + thicken the border + lighten its color so
-             *  the edge is legible — but keep the lime CTA visually
-             *  dominant (no background fill change, no font weight
-             *  bump). Other secondary CTAs across the site are sitting
-             *  on already-tinted card surfaces so they don't need the
-             *  override. */}
+            {/* /score lead-magnet — secondary lime-outline button.
+             *  Pre-pay alternative to the primary "Order audit" CTA:
+             *  free TurfScore + blurred map preview, unlock for $99
+             *  if they want the full deliverable. Visually subordinate
+             *  to the paid CTA (no fill, just outline) so it doesn't
+             *  compete for clicks on the paid path. */}
             <LinkButton
               variant="secondary"
               size="lg"
-              href="#section-02"
+              href="/score?from=home"
+              rightIcon={<ArrowRight size={14} strokeWidth={2.5} />}
               style={{
-                background: '#161616',
-                borderColor: '#3f3f46',
+                background: 'transparent',
+                borderColor: 'var(--color-lime)',
                 borderWidth: '2px',
+                color: 'var(--color-lime)',
               }}
             >
-              How it works
+              Get your free TurfScore
             </LinkButton>
+          </div>
+          {/* Tertiary text link — was the "How it works" secondary
+           *  button before the /score CTA took its slot. Demoted to
+           *  text so the two button CTAs above stay the focal pair. */}
+          <div className="mt-3">
+            <a
+              href="#section-02"
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors inline-flex items-center gap-1.5 font-mono uppercase tracking-wider"
+            >
+              How it works →
+            </a>
           </div>
           <div className="mt-7 flex items-center gap-5 text-xs text-zinc-500 font-mono">
             <span className="flex items-center gap-1.5">

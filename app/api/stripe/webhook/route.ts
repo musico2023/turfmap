@@ -60,6 +60,7 @@ import { portalUrl } from '@/lib/urls';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { ensurePulsePlusCommitmentSchedule } from '@/lib/stripe/subscription';
+import { handleScoreUnlockCompletion } from '@/lib/score/handleScoreUnlock';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -185,6 +186,15 @@ export async function POST(req: Request) {
             : null;
         if (source === 'audit_upgrade') {
           await handleAuditUpgradeCompletion(supabase, session);
+        } else if (source === 'score_unlock') {
+          // /score lead-magnet → $99 unlock. Flips client.is_preview=false,
+          // generates AI Coach in after(), provisions portal access, sends
+          // confirmation emails, inserts lead_orders row, fires operator
+          // Slack ping. The buyer's browser is concurrently redirecting
+          // to /order/success, which auto-fulfills against the same
+          // session — both paths are idempotent so whichever runs first
+          // wins and the other no-ops.
+          await handleScoreUnlockCompletion(supabase, session);
         }
         break;
       }

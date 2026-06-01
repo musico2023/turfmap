@@ -415,6 +415,9 @@ export default async function OrderSuccessPage({
               prefilledIntake={
                 sessionState?.kind === 'ok' ? sessionState.intake : null
               }
+              scoreUnlock={
+                sessionState?.kind === 'ok' ? sessionState.scoreUnlock : null
+              }
             />
           </Suspense>
         </div>
@@ -523,6 +526,17 @@ type SessionState =
           country_code: string | null;
         } | null;
       } | null;
+      /** Score-funnel unlock payload — non-null when the buyer
+       *  arrived via /score → $99 unlock. OrderSuccessForm uses
+       *  this to skip the intake form + auto-fulfill (the webhook
+       *  handler did the work) and render the post-success card
+       *  directly with a "View your scan" CTA to /share/<id>. */
+      scoreUnlock: {
+        shareId: string;
+        clientId: string;
+        scanId: string;
+        clientPublicId: string | null;
+      } | null;
     }
   | { kind: 'warning'; message: string };
 
@@ -579,8 +593,28 @@ async function validateAndRecordSession(
   // Session is valid — write/refresh the lead_orders row idempotently.
   // Failure here is non-fatal: log it, but render the page so the
   // buyer can still complete the form.
+  //
+  // For score_unlock sessions we SKIP ensureLeadOrder — the webhook
+  // handler is the source of truth for that row (it inserts with
+  // status='fulfilled' the moment Stripe fires the event). Calling
+  // ensureLeadOrder here would race the webhook + risk inserting a
+  // duplicate pending row.
   const supabase = getServerSupabase();
-  await ensureLeadOrder(supabase, result);
+  if (!result.scoreUnlock) {
+    await ensureLeadOrder(supabase, result);
+  }
+
+  // For score_unlock, resolve the client's public_id so OrderSuccessForm
+  // can render portal links + the "View your scan" CTA correctly.
+  let clientPublicId: string | null = null;
+  if (result.scoreUnlock) {
+    const { data: client } = await supabase
+      .from('clients')
+      .select('public_id')
+      .eq('id', result.scoreUnlock.clientId)
+      .maybeSingle<{ public_id: string | null }>();
+    clientPublicId = client?.public_id ?? null;
+  }
 
   return {
     kind: 'ok',
@@ -591,5 +625,13 @@ async function validateAndRecordSession(
     prospectId: result.prospectId,
     cohort: result.cohort,
     intake: result.intake,
+    scoreUnlock: result.scoreUnlock
+      ? {
+          shareId: result.scoreUnlock.shareId,
+          clientId: result.scoreUnlock.clientId,
+          scanId: result.scoreUnlock.scanId,
+          clientPublicId,
+        }
+      : null,
   };
 }

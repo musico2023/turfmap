@@ -31,6 +31,9 @@ export default async function AgencyHomePage() {
     // Hide outreach-enrichment rows — those back cold-lead share
     // links, not real billed clients, and would clutter this listing.
     .eq('is_outreach_lead', false)
+    // Hide /score lead-magnet preview rows — they haven't paid yet.
+    // Unlocking ($99) flips is_preview=false and the row appears here.
+    .eq('is_preview', false)
     // Alphabetical by business name. Postgres's default ordering is
     // case-sensitive (capital letters first); we lowercase client-side
     // below to keep "Pizzeria" and "pizzeria" adjacent regardless.

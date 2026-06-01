@@ -51,6 +51,11 @@ import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { ClientBrandMark } from '@/components/turfmap/ClientBrandMark';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
+import {
+  PreviewAICoachLock,
+  PreviewCompetitorLock,
+  PreviewHeatmapLock,
+} from '@/components/turfmap/PreviewLocks';
 
 export const dynamic = 'force-dynamic';
 
@@ -221,6 +226,11 @@ export default async function PublicSharePage({
     .limit(1)
     .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
   const meta = scanLeadOrder?.stripe_metadata ?? null;
+  // Suppress the operator CTA footer for both the cold-email cohort
+  // (their next-step pitch lives in the cold-stage3 email) AND the
+  // /score lead-magnet preview cohort (their next-step is the
+  // $99 unlock CTA already rendered inside the preview locks above
+  // — adding a second "Get in touch" CTA would compete with it).
   const isColdscanShare = Boolean(
     meta &&
       ((meta as Record<string, unknown>)['source'] === 'coldscan_free' ||
@@ -374,16 +384,30 @@ export default async function PublicSharePage({
               ))}
             </div>
           </div>
-          <HeatmapWithToggle
-            clientCells={cells}
-            clientName={client.business_name}
-            competitors={competitors.map(
-              (c): CompetitorView => ({
-                ...c,
-                cells: buildCompetitorCells(points, c.name),
-              })
-            )}
-          />
+          {client.is_preview ? (
+            <PreviewHeatmapLock
+              shareId={shareId}
+              clientCells={cells}
+              clientName={client.business_name}
+              competitors={competitors.map(
+                (c): CompetitorView => ({
+                  ...c,
+                  cells: buildCompetitorCells(points, c.name),
+                })
+              )}
+            />
+          ) : (
+            <HeatmapWithToggle
+              clientCells={cells}
+              clientName={client.business_name}
+              competitors={competitors.map(
+                (c): CompetitorView => ({
+                  ...c,
+                  cells: buildCompetitorCells(points, c.name),
+                })
+              )}
+            />
+          )}
         </div>
 
         <div className="lg:col-span-4 space-y-4">
@@ -426,16 +450,27 @@ export default async function PublicSharePage({
             />
           </div>
           {momentumValue !== null && <MomentumCard momentum={momentumValue} />}
-          <CompetitorTable competitors={competitors} />
+          {client.is_preview ? (
+            <PreviewCompetitorLock
+              shareId={shareId}
+              competitorCount={competitors.length}
+            />
+          ) : (
+            <CompetitorTable competitors={competitors} />
+          )}
         </div>
 
         <div className="lg:col-span-12">
-          <AICoach
-            scanId={scan.id}
-            shareId={shareId}
-            insight={insightRow ?? null}
-            scanComplete={Boolean(scan)}
-          />
+          {client.is_preview ? (
+            <PreviewAICoachLock shareId={shareId} />
+          ) : (
+            <AICoach
+              scanId={scan.id}
+              shareId={shareId}
+              insight={insightRow ?? null}
+              scanComplete={Boolean(scan)}
+            />
+          )}
         </div>
       </div>
 
@@ -458,7 +493,7 @@ export default async function PublicSharePage({
         }}
       >
         <div>
-          {!isColdscanShare && (
+          {!isColdscanShare && !client.is_preview && (
             <div className="font-display text-lg font-bold mb-1 text-zinc-100">
               {ctaText}
             </div>
@@ -473,7 +508,7 @@ export default async function PublicSharePage({
             TurfMap is proprietary technology of Fourdots Digital.
           </div>
         </div>
-        {!isColdscanShare && (
+        {!isColdscanShare && !client.is_preview && (
           <a
             href={ctaUrl}
             target="_blank"

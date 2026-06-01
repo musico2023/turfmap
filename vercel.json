@@ -48,6 +48,10 @@
     {
       "path": "/api/cron/instantly-poll-replies",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/gc-preview-clients",
+      "schedule": "0 4 * * *"
     }
   ]
 }

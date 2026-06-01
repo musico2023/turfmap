@@ -48,6 +48,7 @@ export function OrderSuccessForm({
   amountTotalCents,
   prefillKeyword,
   prefilledIntake,
+  scoreUnlock,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -163,6 +164,20 @@ export function OrderSuccessForm({
       country_code: string | null;
     } | null;
   } | null;
+  /**
+   * Score-funnel unlock payload — non-null when the buyer arrived
+   * via /score → $99 unlock. When set, the form skips intake +
+   * auto-fulfill entirely (the webhook handler did all the work)
+   * and renders the post-success card directly with a "View your
+   * scan" CTA to /share/<shareId>. clientPublicId powers the
+   * portal-link surfaces in the success card.
+   */
+  scoreUnlock: {
+    shareId: string;
+    clientId: string;
+    scanId: string;
+    clientPublicId: string | null;
+  } | null;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -221,9 +236,23 @@ export function OrderSuccessForm({
   // and `publicId` from that so the success card renders directly —
   // the buyer already filled the form on the original purchase, no
   // need to make them do it again. Runs once on mount.
+  //
+  // Same hydration applies to score_unlock buyers: the /score
+  // → $99 unlock has already had its work done by the webhook
+  // handler (client flipped to non-preview, AI Coach generation
+  // queued, emails sent). The form should render the success card
+  // immediately rather than show an intake form for data the buyer
+  // already entered on /score. The "View your scan" CTA in the
+  // success card uses scoreUnlock.shareId to deep-link the buyer
+  // straight to /share/<id> (which now renders in full mode).
   useEffect(() => {
     if (attachState && attachPublicId) {
       setPublicId(attachPublicId);
+      setDone(true);
+      return;
+    }
+    if (scoreUnlock) {
+      setPublicId(scoreUnlock.clientPublicId);
       setDone(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -282,6 +311,12 @@ export function OrderSuccessForm({
     if (!sessionId) return;
     if (intakeAutoFulfillRef.current) return;
     if (done) return;
+    // score_unlock buyers have no intake to auto-fulfill (the webhook
+    // handler did everything); the hydration effect above already
+    // flipped done=true. This guard is belt-and-suspenders so a
+    // future refactor that loses the done=true seed doesn't trigger
+    // a spurious fulfill POST with empty fields.
+    if (scoreUnlock) return;
     intakeAutoFulfillRef.current = true;
 
     let cancelled = false;
@@ -769,9 +804,17 @@ export function OrderSuccessForm({
                 </>
               )}
             </p>
-            {publicId && (
+            {/* Score-unlock buyers get the share-page CTA as primary —
+             *  the share IS the artifact they just paid to unlock,
+             *  and it carries the same heatmap + AI Coach (once
+             *  generation finishes) as the portal would. Portal access
+             *  exists for them too via ensurePortalUser, but the
+             *  immediate "I want to see my map" intent lands on the
+             *  share. Buyers without scoreUnlock fall back to the
+             *  existing portal CTA. */}
+            {scoreUnlock ? (
               <a
-                href={`/portal/${publicId}`}
+                href={`/share/${scoreUnlock.shareId}`}
                 className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-3 px-5 transition-all whitespace-nowrap hover:brightness-110"
                 style={{
                   background: 'var(--color-lime)',
@@ -779,8 +822,22 @@ export function OrderSuccessForm({
                   boxShadow: '0 6px 20px #c5ff3a40',
                 }}
               >
-                Open my TurfMap →
+                View my full TurfMap →
               </a>
+            ) : (
+              publicId && (
+                <a
+                  href={`/portal/${publicId}`}
+                  className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-3 px-5 transition-all whitespace-nowrap hover:brightness-110"
+                  style={{
+                    background: 'var(--color-lime)',
+                    color: 'black',
+                    boxShadow: '0 6px 20px #c5ff3a40',
+                  }}
+                >
+                  Open my TurfMap →
+                </a>
+              )
             )}
             {(tier === 'audit' || tier === 'strategy') && bookingUrl && (
               <CalEmbed

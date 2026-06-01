@@ -99,6 +99,22 @@ export type LoadedSession = {
       country_code: string | null;
     } | null;
   } | null;
+  /**
+   * Score-funnel unlock payload — populated when
+   * /api/score/unlock-init stamped score_unlock metadata on this
+   * session. Non-null iff metadata.source === 'score_unlock'.
+   *
+   * When present, /order/success skips the intake form + the
+   * auto-fulfill flow entirely (the webhook handler already did
+   * the work) and renders the post-success card directly with a
+   * prominent "View your scan" link to /share/<shareId>. NULL for
+   * every other entry path.
+   */
+  scoreUnlock: {
+    shareId: string;
+    clientId: string;
+    scanId: string;
+  } | null;
 };
 
 /** Errors callers should distinguish: we want a clean way to know
@@ -312,6 +328,26 @@ export async function loadCheckoutSession(
     }
   }
 
+  // ─── Score-funnel unlock payload ─────────────────────────────────
+  // Stamped by /api/score/unlock-init on the Stripe Checkout session.
+  // When present, /order/success skips the form + auto-fulfill and
+  // renders the post-success card directly (the webhook handler
+  // already did the actual work).
+  let scoreUnlock: LoadedSession['scoreUnlock'] = null;
+  if (metaSource === 'score_unlock' && session.metadata) {
+    const m = session.metadata as Record<string, string | undefined>;
+    const shareId = m.share_id?.trim();
+    const unlockClientId = m.client_id?.trim();
+    const scanId = m.scan_id?.trim();
+    if (shareId && unlockClientId && scanId) {
+      scoreUnlock = {
+        shareId,
+        clientId: unlockClientId,
+        scanId,
+      };
+    }
+  }
+
   return {
     sessionId,
     tier: tierRaw,
@@ -327,5 +363,6 @@ export async function loadCheckoutSession(
     utmSource,
     utmContent,
     intake,
+    scoreUnlock,
   };
 }

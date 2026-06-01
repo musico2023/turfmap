@@ -71,6 +71,13 @@ export type ScanIntakeFormProps = {
   prefillBusinessName?: string | null;
   /** Pre-filled keyword from prospects.trade. */
   prefillKeyword?: string | null;
+  /** When true, the form acts as the /score lead-magnet preview
+   *  entry. POSTs to /api/score/preview-init instead of
+   *  /api/scan/checkout/init, swaps the button copy + helper text
+   *  for the free-score frame, and redirects directly to /share/<id>
+   *  instead of Stripe Checkout. Always 1 keyword regardless of
+   *  `tier`. */
+  previewMode?: boolean;
 };
 
 export function ScanIntakeForm({
@@ -88,6 +95,7 @@ export function ScanIntakeForm({
   finalCents = null,
   prefillBusinessName = null,
   prefillKeyword = null,
+  previewMode = false,
 }: ScanIntakeFormProps) {
   const [businessName, setBusinessName] = useState(prefillBusinessName ?? '');
   const [address, setAddress] = useState('');
@@ -100,12 +108,17 @@ export function ScanIntakeForm({
   // produced the Hendricks / Meadowview wrong-city matches before.
   const [selected, setSelected] = useState<AddressFields | null>(null);
   // Strategy + Pulse+ = 3 keywords (comparative scan + 3-keyword
-  // subscription); scan / audit / pulse = 1. State is always a
+  // subscription); scan / audit / pulse = 1. Preview mode always
+  // collects 1 — the free score targets one primary keyword, the
+  // tier dimension only matters post-unlock. State is always a
   // string[]; the first slot uses the prefill, the rest start blank.
-  // Length is fixed at mount-time based on tier so the field
-  // rendering stays stable across re-renders.
-  const keywordSlotCount =
-    tier === 'strategy' || tier === 'pulse_plus' ? 3 : 1;
+  // Length is fixed at mount-time so field rendering stays stable
+  // across re-renders.
+  const keywordSlotCount = previewMode
+    ? 1
+    : tier === 'strategy' || tier === 'pulse_plus'
+      ? 3
+      : 1;
   const [keywords, setKeywords] = useState<string[]>(() => {
     const arr = Array(keywordSlotCount).fill('');
     arr[0] = prefillKeyword ?? '';
@@ -177,31 +190,43 @@ export function ScanIntakeForm({
 
     setLoading(true);
 
-    // Meta InitiateCheckout — the brief's "Stripe-flow-starts" event.
-    // Moved from the lander CTA click to the intake-form submit since
-    // that's where the actual Stripe Checkout flow begins. Value is
-    // the actual paid amount (post-coupon), so VIP $0 buyers don't
-    // get counted as paid conversions in Meta.
-    const valueDollars =
-      finalCents != null ? finalCents / 100 : 49;
-    trackMetaEvent('InitiateCheckout', {
-      currency: 'USD',
-      value: valueDollars,
-      content_name: 'TurfScan',
-      content_category: 'scan_intake_submit',
-      coupon: coupon ?? undefined,
-      utm_source: utmSource ?? undefined,
-      utm_medium: utmMedium ?? undefined,
-      utm_campaign: utmCampaign ?? undefined,
-    });
+    // Meta event — different shape per mode. Paid intake fires
+    // InitiateCheckout (the Stripe-flow-starts signal); preview
+    // mode fires Lead (the brief's lead-magnet conversion signal).
+    if (previewMode) {
+      trackMetaEvent('Lead', {
+        content_name: 'TurfScore Free Preview',
+        content_category: 'score_preview_submit',
+        utm_source: utmSource ?? undefined,
+        utm_medium: utmMedium ?? undefined,
+        utm_campaign: utmCampaign ?? undefined,
+      });
+    } else {
+      const valueDollars =
+        finalCents != null ? finalCents / 100 : 49;
+      trackMetaEvent('InitiateCheckout', {
+        currency: 'USD',
+        value: valueDollars,
+        content_name: 'TurfScan',
+        content_category: 'scan_intake_submit',
+        coupon: coupon ?? undefined,
+        utm_source: utmSource ?? undefined,
+        utm_medium: utmMedium ?? undefined,
+        utm_campaign: utmCampaign ?? undefined,
+      });
+    }
 
     try {
       // Forward the Mapbox pick — guaranteed non-null by the
       // addressPicked gate above. lat/lng + structured components
-      // flow end-to-end so /api/orders/fulfill skips Nominatim
-      // entirely.
+      // flow end-to-end so the downstream route skips Nominatim
+      // entirely (whether that's /api/orders/fulfill on the paid
+      // path, or createPreviewClient on the preview path).
       const picked = selected;
-      const res = await fetch('/api/scan/checkout/init', {
+      const endpoint = previewMode
+        ? '/api/score/preview-init'
+        : '/api/scan/checkout/init';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -243,24 +268,38 @@ export function ScanIntakeForm({
             : undefined,
         }),
       });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
+      // Paid path returns { url } (Stripe Checkout URL); preview
+      // path returns { share_url } (the in-app /share/<id> route).
+      // Both are absolute or root-relative URLs the browser can
+      // hard-navigate to.
+      const data = (await res.json()) as {
+        url?: string;
+        share_url?: string;
+        error?: string;
+      };
+      const destination = previewMode ? data.share_url : data.url;
+      if (!res.ok || !destination) {
         setError(
           data.error ??
-            "We couldn't open Stripe Checkout. Try again, or email hello@turfmap.ai."
+            (previewMode
+              ? "We couldn't run your free scan right now. Try again, or email hello@turfmap.ai."
+              : "We couldn't open Stripe Checkout. Try again, or email hello@turfmap.ai.")
         );
         setLoading(false);
         return;
       }
-      // Hard navigation — Stripe Checkout is a different origin so
-      // router.push won't help us.
-      window.location.assign(data.url);
+      // Hard navigation — Stripe Checkout is cross-origin, and even
+      // the in-app share-page redirect benefits from a full nav so
+      // the server component renders fresh with the new scan.
+      window.location.assign(destination);
     } catch (err) {
       setLoading(false);
       setError(
         err instanceof Error
           ? `Network error: ${err.message}`
-          : "We couldn't reach Stripe. Try again, or email hello@turfmap.ai."
+          : previewMode
+            ? "We couldn't reach our scan service. Try again, or email hello@turfmap.ai."
+            : "We couldn't reach Stripe. Try again, or email hello@turfmap.ai."
       );
     }
   };
@@ -401,9 +440,11 @@ export function ScanIntakeForm({
           size="lg"
           loading={loading}
           loadingLabel={
-            finalCents === 0
-              ? 'Confirming your free scan…'
-              : 'Opening secure checkout…'
+            previewMode
+              ? 'Running your free scan…'
+              : finalCents === 0
+                ? 'Confirming your free scan…'
+                : 'Opening secure checkout…'
           }
           rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
           // Disabled until the buyer picks an address from the
@@ -413,15 +454,22 @@ export function ScanIntakeForm({
           // JS-disabled native submit, etc.).
           disabled={!addressPicked}
         >
-          {finalCents === 0
-            ? 'Continue — free with code'
-            : finalCents != null
-              ? `Continue to secure checkout — $${finalCents / 100}`
-              : 'Continue to secure checkout'}
+          {previewMode
+            ? 'Get my free TurfScore →'
+            : finalCents === 0
+              ? 'Continue — free with code'
+              : finalCents != null
+                ? `Continue to secure checkout — $${finalCents / 100}`
+                : 'Continue to secure checkout'}
         </Button>
         <p className="mt-3 text-xs text-zinc-500 leading-relaxed flex items-center gap-1.5">
           <Lock size={11} className="text-zinc-600" />
-          {finalCents === 0 ? (
+          {previewMode ? (
+            <>
+              No card. No charge. We&rsquo;ll run the 81-point scan and
+              show you your TurfScore in under a minute.
+            </>
+          ) : finalCents === 0 ? (
             <>
               {coupon ?? 'Discount'} applied — no card charged. Scan fires the
               moment we confirm.
