@@ -90,8 +90,7 @@ export default function ScoreLanderPage() {
           </h1>
           <p className="text-base md:text-lg text-zinc-400 leading-relaxed mb-6">
             One number, 0–100, for how visible you are across your service
-            area. The full map and Fix List unlock for $99 — but the score
-            is yours either way.
+            area.
           </p>
 
           {/* Visual anchor — gives the buyer something concrete to look
