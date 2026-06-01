@@ -36,6 +36,53 @@ import {
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { UnlockShareButton } from './UnlockShareButton';
 
+// ─── Unlock price / cohort plumbing ────────────────────────────────────
+//
+// Cold-Meta /free-score buyers see the unlock at $49 (MAPCHECK50 auto-
+// applied by unlock-init). Homepage /score buyers see $99. The
+// `discountedUnlock` flag flows from the /share page server component
+// (which reads lead_orders.stripe_metadata.lead_source) down to each
+// lock so the copy stays in sync with the price Stripe will actually
+// charge.
+//
+// Centralized here so we don't drift between the three lock components.
+
+const PRICE_LIST_TEXT = '$99';
+const PRICE_FREE_SCORE_TEXT = '$49';
+
+type DiscountState = {
+  /** Display price for "One-time $XX." footers + button labels. */
+  priceText: string;
+  /** Long-form "$99 → $49 with MAPCHECK50" framing when discounted;
+   *  the bare "One-time $99. No subscription." footer when not. */
+  footerText: string;
+  /** Default UnlockShareButton label override. Discounted state spells
+   *  out the saving so the click feels like claiming a discount, not
+   *  paying list. */
+  buttonLabel: string;
+  /** Variant for the AI Coach lock — the inline secondary CTA gets a
+   *  tighter label since it sits inside a smaller card. */
+  buttonLabelTight: string;
+};
+
+function resolveDiscount(discountedUnlock: boolean): DiscountState {
+  if (discountedUnlock) {
+    return {
+      priceText: PRICE_FREE_SCORE_TEXT,
+      footerText:
+        '$99 → $49 with MAPCHECK50 auto-applied. One-time, no subscription.',
+      buttonLabel: 'Unlock the full map — $49',
+      buttonLabelTight: 'Unlock the Fix List — $49',
+    };
+  }
+  return {
+    priceText: PRICE_LIST_TEXT,
+    footerText: 'One-time $99. No subscription.',
+    buttonLabel: 'Unlock the full map — $99',
+    buttonLabelTight: 'Unlock the Fix List — $99',
+  };
+}
+
 // ─── Heatmap lock ──────────────────────────────────────────────────────
 
 export type PreviewHeatmapLockProps = {
@@ -43,6 +90,10 @@ export type PreviewHeatmapLockProps = {
   clientCells: HeatmapCell[];
   clientName: string;
   competitors: CompetitorView[];
+  /** When true, render labels + footer with the discounted ($49)
+   *  price. Driven upstream by lead_orders.stripe_metadata.lead_source
+   *  === 'free_score'. */
+  discountedUnlock?: boolean;
 };
 
 /**
@@ -65,7 +116,9 @@ export function PreviewHeatmapLock({
   clientCells,
   clientName,
   competitors,
+  discountedUnlock = false,
 }: PreviewHeatmapLockProps) {
+  const discount = resolveDiscount(discountedUnlock);
   return (
     <div className="relative">
       {/* Real heatmap, just blurred + desaturated. The wrapper's
@@ -116,9 +169,9 @@ export function PreviewHeatmapLock({
             calls in your weak zones.
           </p>
         </div>
-        <UnlockShareButton shareId={shareId} />
+        <UnlockShareButton shareId={shareId} label={discount.buttonLabel} />
         <p className="text-[11px] text-zinc-500 font-mono">
-          One-time $99. No subscription.
+          {discount.footerText}
         </p>
       </div>
     </div>
@@ -129,6 +182,8 @@ export function PreviewHeatmapLock({
 
 export type PreviewAICoachLockProps = {
   shareId: string;
+  /** See PreviewHeatmapLockProps.discountedUnlock. */
+  discountedUnlock?: boolean;
 };
 
 /**
@@ -137,7 +192,11 @@ export type PreviewAICoachLockProps = {
  * so the unlock UX feels like flipping a switch on the same panel
  * rather than swapping a different thing in.
  */
-export function PreviewAICoachLock({ shareId }: PreviewAICoachLockProps) {
+export function PreviewAICoachLock({
+  shareId,
+  discountedUnlock = false,
+}: PreviewAICoachLockProps) {
+  const discount = resolveDiscount(discountedUnlock);
   return (
     <div
       id="ai-coach"
@@ -193,7 +252,7 @@ export function PreviewAICoachLock({ shareId }: PreviewAICoachLockProps) {
           </p>
           <UnlockShareButton
             shareId={shareId}
-            label="Unlock the Fix List — $99"
+            label={discount.buttonLabelTight}
           />
         </div>
       </div>
@@ -221,6 +280,8 @@ export type PreviewCompetitorLockProps = {
   /** Total number of distinct competitor brands captured across the
    *  81 cells. Used in the "+ N more" upsell line below the top 3. */
   totalCompetitorCount: number;
+  /** See PreviewHeatmapLockProps.discountedUnlock. */
+  discountedUnlock?: boolean;
 };
 
 /**
@@ -240,9 +301,11 @@ export function PreviewCompetitorLock({
   shareId,
   topCompetitors,
   totalCompetitorCount,
+  discountedUnlock = false,
 }: PreviewCompetitorLockProps) {
   const visible = topCompetitors.slice(0, 3);
   const moreCount = Math.max(0, totalCompetitorCount - visible.length);
+  const discount = resolveDiscount(discountedUnlock);
   return (
     <div
       className="rounded-lg border p-5"
@@ -318,7 +381,11 @@ export function PreviewCompetitorLock({
           )}
         </p>
       </div>
-      <UnlockShareButton shareId={shareId} variant="ghost" />
+      <UnlockShareButton
+        shareId={shareId}
+        variant="ghost"
+        label={discount.buttonLabel}
+      />
     </div>
   );
 }

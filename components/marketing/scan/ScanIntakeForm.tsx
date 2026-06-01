@@ -80,6 +80,14 @@ export type ScanIntakeFormProps = {
    *  instead of Stripe Checkout. Always 1 keyword regardless of
    *  `tier`. */
   previewMode?: boolean;
+  /** Lander-level identifier — forwarded to /api/score/preview-init
+   *  in the POST body as `lead_source`, then stamped on the
+   *  lead_orders row so unlock-init can decide whether to discount
+   *  the unlock. Known slugs:
+   *    - 'score'       → homepage's free-TurfScore CTA → $99 unlock
+   *    - 'free_score'  → cold-Meta /free-score lander → $49 unlock
+   *  Ignored outside previewMode. */
+  leadSource?: string | null;
 };
 
 export function ScanIntakeForm({
@@ -98,6 +106,7 @@ export function ScanIntakeForm({
   prefillBusinessName = null,
   prefillKeyword = null,
   previewMode = false,
+  leadSource = null,
 }: ScanIntakeFormProps) {
   const [businessName, setBusinessName] = useState(prefillBusinessName ?? '');
   const [address, setAddress] = useState('');
@@ -285,6 +294,11 @@ export function ScanIntakeForm({
           ...(previewMode && turnstileToken
             ? { turnstile_token: turnstileToken }
             : {}),
+          // Lander identifier — only forwarded in previewMode, where
+          // unlock-init reads it to decide $99 vs $49 (MAPCHECK50).
+          // Paid intake doesn't need it (the upstream lander already
+          // picked the coupon).
+          ...(previewMode && leadSource ? { lead_source: leadSource } : {}),
           businessName: businessName.trim(),
           address: address.trim(),
           // Always send keywords as an array — server validates the

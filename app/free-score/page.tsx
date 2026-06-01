@@ -222,6 +222,11 @@ export default async function ScanFreeLanderPage({
           <div id="free-score-form" className="scroll-mt-20">
             <ScanIntakeForm
               previewMode
+              // leadSource='free_score' is the signal unlock-init reads
+              // to apply MAPCHECK50 — buyers landing from this Meta
+              // lander get the discounted $49 unlock on /share, not
+              // the $99 list price homepage /score visitors see.
+              leadSource="free_score"
               utmSource={utmSource}
               utmMedium={utmMedium}
               utmCampaign={utmCampaign}

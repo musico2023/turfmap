@@ -64,6 +64,26 @@ export type CreatePreviewClientInput = {
     postcode?: string | null;
     country_code?: string | null;
   } | null;
+  /** Lander-level identifier used for downstream price differentiation.
+   *  Stamped on `lead_orders.stripe_metadata.lead_source`. Known values:
+   *    - 'score'       → homepage's free-TurfScore CTA. Unlock = $99.
+   *    - 'free_score'  → cold-Meta /free-score lander. Unlock = $49
+   *                       (MAPCHECK50 auto-applied by unlock-init).
+   *    - undefined     → defaults to 'score' behaviour in unlock-init.
+   *  Adding a new lander? Pick a stable slug and document it here. */
+  leadSource?: string | null;
+  /** Attribution payload forwarded from the upstream lander. Captured
+   *  to `lead_orders.stripe_metadata.attribution_*` for funnel
+   *  reporting and downstream Conversion API dedup. */
+  attribution?: {
+    utm_source?: string | null;
+    utm_medium?: string | null;
+    utm_campaign?: string | null;
+    utm_content?: string | null;
+    utm_term?: string | null;
+    gclid?: string | null;
+    fbclid?: string | null;
+  } | null;
 };
 
 export type CreatePreviewClientResult =
@@ -226,6 +246,25 @@ export async function createPreviewClient(
     keyword: keywordText,
     phone,
   };
+  // Stamp the lander identifier so unlock-init can decide whether
+  // to auto-apply MAPCHECK50 ($49 Meta-cohort price) vs leave the
+  // unlock at $99 (homepage /score traffic).
+  if (input.leadSource) {
+    stripeMetadata.lead_source = input.leadSource;
+  }
+  // Stamp attribution for downstream funnel reporting + Meta CAPI
+  // dedup. Skip falsy fields so the metadata stays compact (Stripe
+  // has a 500-char value cap and a 50-key cap per object).
+  if (input.attribution) {
+    const a = input.attribution;
+    if (a.utm_source) stripeMetadata.attribution_utm_source = a.utm_source;
+    if (a.utm_medium) stripeMetadata.attribution_utm_medium = a.utm_medium;
+    if (a.utm_campaign) stripeMetadata.attribution_utm_campaign = a.utm_campaign;
+    if (a.utm_content) stripeMetadata.attribution_utm_content = a.utm_content;
+    if (a.utm_term) stripeMetadata.attribution_utm_term = a.utm_term;
+    if (a.gclid) stripeMetadata.attribution_gclid = a.gclid;
+    if (a.fbclid) stripeMetadata.attribution_fbclid = a.fbclid;
+  }
   const { error: orderErr } = await supabase.from('lead_orders').insert({
     stripe_session_id: null,
     tier: 'scan',

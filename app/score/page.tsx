@@ -103,8 +103,14 @@ export default function ScoreLanderPage() {
            *  forces 1 keyword regardless of tier, swaps the button copy
            *  + helper text to the free-score frame, and POSTs to
            *  /api/score/preview-init instead of the Stripe-checkout
-           *  init route. */}
-          <ScanIntakeForm previewMode />
+           *  init route.
+           *
+           *  leadSource='score' tags this as homepage CTA traffic.
+           *  unlock-init reads this and keeps the unlock at the $99
+           *  list price (no MAPCHECK50 discount). The cold-Meta
+           *  lander at /free-score sends 'free_score' instead and
+           *  gets the discount. */}
+          <ScanIntakeForm previewMode leadSource="score" />
 
           {/* What's included / what's locked — honest disclosure so
            *  the buyer isn't surprised when they land on the blurred

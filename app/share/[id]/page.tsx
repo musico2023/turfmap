@@ -226,6 +226,18 @@ export default async function PublicSharePage({
     .limit(1)
     .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
   const meta = scanLeadOrder?.stripe_metadata ?? null;
+
+  // Preview-mode unlock pricing — driven by lead_source stamped at
+  // preview-init time. Cold-Meta /free-score buyers get the $49
+  // (MAPCHECK50) unlock; homepage /score visitors stay at $99 list.
+  // unlock-init reads the same field server-side to apply the Stripe
+  // promotion code; this UI flag just keeps the labels in sync.
+  // Unrecognized values fall back to $99 (fail-closed).
+  const previewLeadSource =
+    meta && typeof (meta as Record<string, unknown>)['lead_source'] === 'string'
+      ? ((meta as Record<string, unknown>)['lead_source'] as string)
+      : null;
+  const discountedUnlock = previewLeadSource === 'free_score';
   // Suppress the operator CTA footer for both the cold-email cohort
   // (their next-step pitch lives in the cold-stage3 email) AND the
   // /score lead-magnet preview cohort (their next-step is the
@@ -395,6 +407,7 @@ export default async function PublicSharePage({
                   cells: buildCompetitorCells(points, c.name),
                 })
               )}
+              discountedUnlock={discountedUnlock}
             />
           ) : (
             <HeatmapWithToggle
@@ -459,6 +472,7 @@ export default async function PublicSharePage({
                 amr: Number.isFinite(c.amr) ? c.amr : null,
               }))}
               totalCompetitorCount={competitors.length}
+              discountedUnlock={discountedUnlock}
             />
           ) : (
             <CompetitorTable competitors={competitors} />
@@ -467,7 +481,10 @@ export default async function PublicSharePage({
 
         <div className="lg:col-span-12">
           {client.is_preview ? (
-            <PreviewAICoachLock shareId={shareId} />
+            <PreviewAICoachLock
+              shareId={shareId}
+              discountedUnlock={discountedUnlock}
+            />
           ) : (
             <AICoach
               scanId={scan.id}

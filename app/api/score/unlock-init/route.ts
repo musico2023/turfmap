@@ -137,6 +137,65 @@ export async function POST(req: Request) {
     );
   }
 
+  // ─── 3a. Resolve cohort-conditional discount ────────────────────────
+  // Cold-Meta /free-score buyers get MAPCHECK50 ($99 → $49) auto-
+  // applied here on the unlock — the lander promised them a $49
+  // unlock so we honor it without making them type the code.
+  // Homepage /score buyers stay at $99 list (no discount).
+  //
+  // The lead_source signal lives in the original lead_orders row that
+  // createPreviewClient inserted at preview time. We look it up via
+  // the client_id; that row has source='score_preview' and a
+  // lead_source key under stripe_metadata.
+  let unlockLeadSource: string | null = null;
+  {
+    const { data: leadOrder } = await supabase
+      .from('lead_orders')
+      .select('stripe_metadata')
+      .eq('client_id', client.id)
+      .eq('tier', 'scan')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
+    const meta = leadOrder?.stripe_metadata ?? null;
+    if (meta && typeof meta.lead_source === 'string') {
+      unlockLeadSource = meta.lead_source;
+    }
+  }
+  // The set of lead_source slugs that earn the discounted unlock.
+  // Pattern-matched explicitly (rather than "anything non-default")
+  // so an unrecognized value fails closed at $99.
+  const DISCOUNTED_LEAD_SOURCES = new Set(['free_score']);
+  const applyDiscount =
+    !!unlockLeadSource && DISCOUNTED_LEAD_SOURCES.has(unlockLeadSource);
+
+  // Resolve Stripe's promotion_code id for MAPCHECK50 when the cohort
+  // qualifies. Soft-fails — if Stripe doesn't return a code, the
+  // buyer still gets to Checkout at list ($99) rather than being
+  // blocked. We surface the failure in the server logs.
+  let discounts: Array<{ promotion_code: string }> | undefined;
+  if (applyDiscount) {
+    try {
+      const promos = await stripe.promotionCodes.list({
+        code: 'MAPCHECK50',
+        active: true,
+        limit: 1,
+      });
+      if (promos.data[0]?.id) {
+        discounts = [{ promotion_code: promos.data[0].id }];
+      } else {
+        console.warn(
+          '[score/unlock-init] MAPCHECK50 promotion code not found in Stripe — falling back to list price.'
+        );
+      }
+    } catch (e) {
+      console.warn(
+        '[score/unlock-init] MAPCHECK50 lookup failed:',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   const url = new URL(req.url);
   const origin = req.headers.get('origin') ?? url.origin;
 
@@ -171,6 +230,11 @@ export async function POST(req: Request) {
       },
       success_url: `${origin}/order/success?tier=scan&session_id={CHECKOUT_SESSION_ID}&unlocked=1`,
       cancel_url: `${origin}/share/${share.id}?unlock_cancelled=1`,
+      // Apply MAPCHECK50 ($99 → $49) when the original preview came
+      // from the cold-Meta /free-score lander. Pre-applied here so the
+      // buyer never has to type the code — they came from a lander
+      // that promised them $49.
+      ...(discounts ? { discounts } : {}),
       metadata: {
         source: 'score_unlock',
         share_id: share.id,
@@ -178,6 +242,12 @@ export async function POST(req: Request) {
         scan_id: scan.id,
         business_name: client.business_name,
         tier: 'scan',
+        // Propagate the lander identifier so handleScoreUnlockCompletion
+        // and any downstream attribution reporting can see which
+        // funnel converted. 'unknown' when the original preview row
+        // is missing the metadata (defensive against pre-migration data).
+        unlock_lead_source: unlockLeadSource ?? 'unknown',
+        ...(discounts ? { applied_coupon: 'MAPCHECK50' } : {}),
       },
     });
     if (!session.url) {

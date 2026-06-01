@@ -58,6 +58,13 @@ const Body = z.object({
   utm_term: z.string().max(200).optional(),
   gclid: z.string().max(200).optional(),
   fbclid: z.string().max(200).optional(),
+  // Lander-level identifier — drives the unlock-price decision in
+  // unlock-init. Known values today: 'score' (homepage CTA → $99) and
+  // 'free_score' (cold-Meta lander → $49 MAPCHECK50). Free-text so
+  // future landers can introduce their own slugs without a schema
+  // migration; unlock-init pattern-matches against the known set and
+  // falls back to $99 on unrecognized values (fail-closed).
+  lead_source: z.string().max(64).optional(),
   // Cloudflare Turnstile token from the frontend widget. Optional
   // because the widget only renders when NEXT_PUBLIC_TURNSTILE_SITEKEY
   // is set; the server-side verifier mirrors that and skips when
@@ -196,6 +203,16 @@ export async function POST(req: Request) {
     latitude: body.latitude,
     longitude: body.longitude,
     components: body.components ?? null,
+    leadSource: body.lead_source ?? null,
+    attribution: {
+      utm_source: body.utm_source ?? null,
+      utm_medium: body.utm_medium ?? null,
+      utm_campaign: body.utm_campaign ?? null,
+      utm_content: body.utm_content ?? null,
+      utm_term: body.utm_term ?? null,
+      gclid: body.gclid ?? null,
+      fbclid: body.fbclid ?? null,
+    },
   });
 
   if (!result.ok) {
