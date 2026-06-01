@@ -9,11 +9,13 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  TrendingUp,
   Zap,
 } from 'lucide-react';
 import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
 import { HeatmapGrid, type HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { MetaPixelScrollDepth } from '@/components/marketing/scan/MetaPixel';
+import { LoomWalkthrough } from '@/components/marketing/scan/LoomWalkthrough';
 
 /**
  * Cold-Meta paid-traffic landing page (/free-score).
@@ -183,10 +185,19 @@ export default async function ScanFreeLanderPage({
       </nav>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 01 — Hero (form inline, loss-framing matched to Meta creative)  */}
+      {/* 01 — Hero (CTA + explainer Loom — form lives at the bottom)     */}
       {/* ═══════════════════════════════════════════════════════════════ */}
+      {/*
+       *  Restructured Dec 2026 to mirror /scan's lander cadence: hero
+       *  explains the pitch + offers a Loom walkthrough; the form is
+       *  pushed to its own section near the bottom of the page. The
+       *  primary CTA is a scroll anchor down to that form section
+       *  rather than a Stripe-checkout button, since /free-score is
+       *  the free-TurfScore lead-magnet funnel (the $49 unlock fires
+       *  later on /share).
+       */}
       <section className="px-5 md:px-8 pt-8 pb-10 md:pt-14 md:pb-16">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto text-center md:text-left">
           {/* Eyebrow */}
           <div
             className="text-[11px] uppercase tracking-[0.22em] font-mono font-semibold mb-5"
@@ -206,50 +217,162 @@ export default async function ScanFreeLanderPage({
             <span style={{ color: 'var(--color-lime)' }}>competitor</span>.
           </h1>
 
-          {/* Subhead */}
-          <p className="text-base md:text-lg text-zinc-300 leading-relaxed mb-7 max-w-xl">
+          {/* Subhead — frames the deliverable (TurfScore) up front so
+           *  the buyer knows what they're getting. The detailed
+           *  TurfScore explainer lives in its own section below. */}
+          <p className="text-base md:text-lg text-zinc-300 leading-relaxed mb-6 max-w-xl mx-auto md:mx-0">
             Most local businesses are invisible in{' '}
             <strong className="font-bold text-zinc-100">two-thirds</strong>{' '}
             of their service area.{' '}
             <span className="block mt-3">
-              See where you actually rank — block by block. Real Google
-              data, 81 cells, your TurfScore in 60 seconds.
+              Your free TurfScore (0–100) tells you exactly how visible
+              you are across your whole service area — block by block,
+              with named competitors taking your calls.
             </span>
           </p>
 
-          {/* Inline form — anchor id lets the final-CTA scroll-up
-           *  button target it. */}
-          <div id="free-score-form" className="scroll-mt-20">
-            <ScanIntakeForm
-              previewMode
-              // leadSource='free_score' is the signal unlock-init reads
-              // to apply MAPCHECK50 — buyers landing from this Meta
-              // lander get the discounted $49 unlock on /share, not
-              // the $99 list price homepage /score visitors see.
-              leadSource="free_score"
-              utmSource={utmSource}
-              utmMedium={utmMedium}
-              utmCampaign={utmCampaign}
-              utmContent={utmContent}
-              utmTerm={utmTerm}
-              gclid={gclid}
-              fbclid={fbclid}
-            />
-          </div>
+          {/* Primary CTA — scrolls down to the form section near the
+           *  bottom. Lime fill matches the paid lander's primary
+           *  button so the visual hierarchy is consistent across
+           *  /scan and /free-score. */}
+          <a
+            href="#free-score-form"
+            className="inline-flex items-center gap-2 px-7 py-3.5 rounded-md font-display font-bold text-base md:text-lg transition-all"
+            style={{
+              background: 'var(--color-lime)',
+              color: '#000',
+              boxShadow: '0 0 32px #c5ff3a55',
+            }}
+          >
+            Get my free TurfScore
+            <ArrowDown size={16} className="rotate-180" strokeWidth={2.75} />
+          </a>
 
-          {/* Trust microcopy below the form */}
-          <p className="text-xs text-zinc-500 mt-5 leading-relaxed text-center md:text-left">
+          {/* Trust strip — three short items, comma + middle-dot
+           *  separated. Mirrors the /scan hero's trust line. */}
+          <p className="text-xs text-zinc-500 mt-5 leading-relaxed">
             60-second delivery
             <span className="text-zinc-700 mx-2">·</span>
             No credit card
             <span className="text-zinc-700 mx-2">·</span>
             Real Google data, not estimates
           </p>
+
+          {/* Optional walkthrough — same component /scan uses. The
+           *  thumbnail is click-to-play (Loom iframe mounts only on
+           *  tap so first-paint stays cheap). Sized under the primary
+           *  CTA's prominence so a buyer who's already decided
+           *  doesn't feel pulled into a detour. */}
+          <LoomWalkthrough />
+        </div>
+      </section>
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* 02 — TurfScore intro + value drive                              */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/*
+       *  Explains what the deliverable IS before the buyer sees the
+       *  visual proof. Most local-services operators have never had
+       *  a single visibility metric — they have rank for 1 keyword
+       *  from 1 location. The TurfScore is the answer to "what does
+       *  my whole map look like, expressed as one number I can quote,
+       *  track, and improve?"
+       *
+       *  Three value pillars (Quotable / Trackable / Actionable) map
+       *  to the three operator jobs the metric does: report it to a
+       *  partner / measure it over time / target the cells dragging
+       *  it down. */}
+      <section
+        className="px-5 md:px-8 py-10 md:py-16 border-t"
+        style={{
+          borderColor: 'var(--color-border)',
+          background:
+            'linear-gradient(180deg, transparent 0%, var(--color-card) 100%)',
+        }}
+      >
+        <div className="max-w-2xl mx-auto">
+          <div
+            className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold mb-4"
+            style={{ color: 'var(--color-lime)' }}
+          >
+            The TurfScore · one quotable number
+          </div>
+          <h2 className="font-display text-2xl md:text-4xl font-black leading-[1.05] tracking-tight mb-5 text-zinc-50">
+            One score, 0–100, for how visible you are across your{' '}
+            <em className="text-zinc-300">whole</em> service area.
+          </h2>
+          <p className="text-base md:text-lg text-zinc-300 leading-relaxed mb-7 max-w-xl">
+            Local-services operators have always had rank for{' '}
+            <strong className="font-semibold text-zinc-100">
+              one keyword
+            </strong>{' '}
+            from{' '}
+            <strong className="font-semibold text-zinc-100">
+              one location
+            </strong>
+            . That number tells you almost nothing about where your
+            real customers can find you. The TurfScore is different —
+            it&rsquo;s a composite of 81 real Google searches across
+            your service area, rolled into one quotable number you can
+            actually track and improve.
+          </p>
+
+          {/* Three value pillars — same Quotable/Trackable/Actionable
+           *  triad we use in /score's marketing copy, here in a
+           *  three-up card layout so the value is scannable. */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-7">
+            <ValuePillar
+              icon={Target}
+              label="Quotable"
+              body="One 0–100 number. Drop it in a board deck, share it with a partner, hand it to a vendor."
+            />
+            <ValuePillar
+              icon={TrendingUp}
+              label="Trackable"
+              body="Re-scan in 30 days. See the score climb as you optimize. Real proof your local SEO is working."
+            />
+            <ValuePillar
+              icon={Sparkles}
+              label="Actionable"
+              body="The score tells you where you stand. The AI Coach Fix List tells you what to do about it."
+            />
+          </div>
+
+          {/* Where your score will land — band spectrum. Lifted from
+           *  /score's TurfScoreShowcase visual treatment so the
+           *  vocabulary stays consistent across both lead-magnet
+           *  landers, but rendered inline here as a compact 5-band
+           *  strip rather than the full bullseye graphic. */}
+          <div
+            className="rounded-lg border p-5"
+            style={{
+              background: 'var(--color-card)',
+              borderColor: 'var(--color-border-bright)',
+            }}
+          >
+            <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3">
+              Where your score will land
+            </div>
+            <div className="grid grid-cols-5 gap-1.5 mb-3">
+              <ScoreBand range="0–20" label="Invisible" color="#ff4d4d" />
+              <ScoreBand range="20–40" label="Patchy" color="#ff9f3a" />
+              <ScoreBand range="40–60" label="Solid" color="#e8e54a" />
+              <ScoreBand range="60–80" label="Dominant" color="#c5ff3a" />
+              <ScoreBand range="80+" label="Rare air" color="#f5c842" />
+            </div>
+            <p className="text-xs md:text-sm text-zinc-400 leading-relaxed mt-3">
+              Most local businesses we scan land between{' '}
+              <strong className="text-zinc-100">30 and 55</strong>{' '}
+              before optimization. Above 60 is uncommon — it usually
+              means the Google Business Profile is well-tuned and the
+              citations are clean.
+            </p>
+          </div>
         </div>
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════
-       * 02 — Visual proof: THEM vs YOU split heatmap
+       * 03 — Visual proof: THEM vs YOU split heatmap
        *
        * Direct visual match to Meta creative #1. Two 9×9 grids side
        * by side (stacked on mobile), labelled THEM (mostly lime —
@@ -371,7 +494,41 @@ export default async function ScanFreeLanderPage({
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 03 — Top 3 truth (matches Meta creative #3)                     */}
+      {/* 04 — Testimonial (mirrors /scan's section 02.5 placement)       */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      <section
+        className="px-5 md:px-8 py-10 md:py-14 border-t"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div className="max-w-2xl mx-auto">
+          <div
+            className="rounded-lg p-6 md:p-8 border relative"
+            style={{
+              background: 'var(--color-card)',
+              borderColor: 'rgba(197, 255, 58, 0.35)',
+              boxShadow: '0 0 30px #c5ff3a14',
+            }}
+          >
+            <div
+              className="font-display text-5xl md:text-6xl font-black leading-none absolute -top-1 left-5 md:left-7 select-none"
+              style={{ color: 'var(--color-lime)' }}
+              aria-hidden="true"
+            >
+              &ldquo;
+            </div>
+            <blockquote className="text-base md:text-lg text-zinc-50 leading-relaxed pt-4 md:pt-5">
+              TurfMap caught a GBP category mismatch we&rsquo;d missed
+              for 18 months. Fixed it the same day.
+            </blockquote>
+            <p className="mt-4 text-xs font-mono text-zinc-500 leading-relaxed">
+              — Painting operator, Greater Toronto Area
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* 05 — Top 3 truth (matches Meta creative #3)                     */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <section
         className="px-5 md:px-8 py-10 md:py-16 border-t"
@@ -570,41 +727,7 @@ export default async function ScanFreeLanderPage({
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 05 — Testimonial (reused from /scan)                            */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <section
-        className="px-5 md:px-8 py-10 md:py-14 border-t"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        <div className="max-w-2xl mx-auto">
-          <div
-            className="rounded-lg p-6 md:p-8 border relative"
-            style={{
-              background: 'var(--color-card)',
-              borderColor: 'rgba(197, 255, 58, 0.35)',
-              boxShadow: '0 0 30px #c5ff3a14',
-            }}
-          >
-            <div
-              className="font-display text-5xl md:text-6xl font-black leading-none absolute -top-1 left-5 md:left-7 select-none"
-              style={{ color: 'var(--color-lime)' }}
-              aria-hidden="true"
-            >
-              &ldquo;
-            </div>
-            <blockquote className="text-base md:text-lg text-zinc-50 leading-relaxed pt-4 md:pt-5">
-              TurfMap caught a GBP category mismatch we&rsquo;d missed
-              for 18 months. Fixed it the same day.
-            </blockquote>
-            <p className="mt-4 text-xs font-mono text-zinc-500 leading-relaxed">
-              — Painting operator, Greater Toronto Area
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 06 — Trust strip                                                */}
+      {/* 07 — Trust strip                                                */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <section
         className="px-5 md:px-8 py-8 border-y"
@@ -630,45 +753,74 @@ export default async function ScanFreeLanderPage({
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 07 — Final CTA (scroll back to top form)                        */}
+      {/* 07 — Form section (the actual conversion event)                 */}
       {/* ═══════════════════════════════════════════════════════════════ */}
+      {/*
+       *  The form sits near the bottom of the page rather than in the
+       *  hero. Hero-level CTAs above (and a final CTA further up the
+       *  page) all anchor-scroll buyers to #free-score-form here.
+       *
+       *  Two-part framing inside this section:
+       *    1. A small "Find out what your map looks like" headline +
+       *       worst-case / best-case framer (lifted from the prior
+       *       final-CTA section copy).
+       *    2. The actual ScanIntakeForm in previewMode with
+       *       leadSource='free_score' so the downstream /share unlock
+       *       auto-applies MAPCHECK50.
+       */}
       <section
-        className="px-5 md:px-8 py-12 md:py-20 border-t"
+        id="free-score-form"
+        className="px-5 md:px-8 py-12 md:py-20 border-t scroll-mt-20"
         style={{
           borderColor: 'var(--color-border-bright)',
           background:
             'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)',
         }}
       >
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="font-display text-3xl md:text-5xl font-black leading-tight tracking-tight mb-5 text-zinc-50">
-            Find out what your map looks like.
-          </h2>
-          <p className="text-base md:text-lg text-zinc-300 leading-relaxed mb-7 max-w-xl mx-auto">
-            <strong className="font-semibold text-zinc-50">
-              Worst case:
-            </strong>{' '}
-            you confirm what you suspect.{' '}
-            <strong className="font-semibold text-zinc-50">
-              Best case:
-            </strong>{' '}
-            you see exactly which neighborhoods to fix first — and
-            which competitors to beat to do it.
-          </p>
-          <a
-            href="#free-score-form"
-            className="inline-flex items-center gap-2 px-7 py-3.5 rounded-md font-bold text-base md:text-lg transition-all"
-            style={{
-              background: 'var(--color-lime)',
-              color: '#000',
-              boxShadow: '0 0 32px #c5ff3a55',
-            }}
-          >
-            Run my free TurfScore
-            <ArrowDown size={16} className="rotate-180" strokeWidth={2.75} />
-          </a>
-          <p className="mt-4 text-xs font-mono text-zinc-500">
-            60 seconds · no credit card · your real Google data
+        <div className="max-w-2xl mx-auto">
+          <div className="text-center md:text-left mb-7">
+            <div
+              className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold mb-3"
+              style={{ color: 'var(--color-lime)' }}
+            >
+              Your turn · free TurfScore · 60 seconds
+            </div>
+            <h2 className="font-display text-3xl md:text-5xl font-black leading-tight tracking-tight mb-4 text-zinc-50">
+              Find out what your map looks like.
+            </h2>
+            <p className="text-base md:text-lg text-zinc-300 leading-relaxed max-w-xl mx-auto md:mx-0">
+              <strong className="font-semibold text-zinc-50">
+                Worst case:
+              </strong>{' '}
+              you confirm what you suspect.{' '}
+              <strong className="font-semibold text-zinc-50">
+                Best case:
+              </strong>{' '}
+              you see exactly which neighborhoods to fix first — and
+              which competitors to beat to do it.
+            </p>
+          </div>
+
+          {/* The form. leadSource='free_score' tags the preview client
+           *  for the MAPCHECK50 unlock discount on /share. */}
+          <ScanIntakeForm
+            previewMode
+            leadSource="free_score"
+            utmSource={utmSource}
+            utmMedium={utmMedium}
+            utmCampaign={utmCampaign}
+            utmContent={utmContent}
+            utmTerm={utmTerm}
+            gclid={gclid}
+            fbclid={fbclid}
+          />
+
+          <p className="mt-5 text-xs text-zinc-500 leading-relaxed text-center md:text-left">
+            60-second delivery
+            <span className="text-zinc-700 mx-2">·</span>
+            No credit card
+            <span className="text-zinc-700 mx-2">·</span>
+            Real Google data, not estimates
           </p>
         </div>
       </section>
@@ -728,6 +880,70 @@ function TrustItem({
         </div>
       </div>
       <p className="text-sm text-zinc-400 leading-relaxed">{children}</p>
+    </div>
+  );
+}
+
+/** Three-up "Quotable / Trackable / Actionable" value-driver card in
+ *  the TurfScore intro section. Compact icon + label + body row. */
+function ValuePillar({
+  icon: Icon,
+  label,
+  body,
+}: {
+  icon: typeof Target;
+  label: string;
+  body: string;
+}) {
+  return (
+    <div
+      className="rounded-lg border p-4 md:p-5"
+      style={{
+        background: 'var(--color-card)',
+        borderColor: 'var(--color-border)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Icon
+          size={16}
+          style={{ color: 'var(--color-lime)' }}
+          strokeWidth={2.5}
+        />
+        <div className="text-[10px] uppercase tracking-[0.22em] font-mono font-bold text-zinc-200">
+          {label}
+        </div>
+      </div>
+      <p className="text-xs md:text-sm text-zinc-400 leading-relaxed">
+        {body}
+      </p>
+    </div>
+  );
+}
+
+/** Single band tile in the "Where your score will land" 5-band strip.
+ *  Color is the band's accent; range + label sit stacked beneath. */
+function ScoreBand({
+  range,
+  label,
+  color,
+}: {
+  range: string;
+  label: string;
+  color: string;
+}) {
+  return (
+    <div className="flex flex-col items-center text-center">
+      <div
+        className="w-full h-2 rounded-sm mb-1.5"
+        style={{ background: color }}
+        aria-hidden
+      />
+      <div className="text-[9px] md:text-[10px] uppercase tracking-wider font-mono font-bold text-zinc-200 leading-tight">
+        {label}
+      </div>
+      <div className="text-[9px] font-mono text-zinc-500 leading-tight mt-0.5">
+        {range}
+      </div>
     </div>
   );
 }

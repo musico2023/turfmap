@@ -545,7 +545,7 @@ export function ScanIntakeForm({
           disabled={!addressPicked || !turnstileReady}
         >
           {previewMode
-            ? 'Get my free TurfScore →'
+            ? 'Get my free TurfScore'
             : finalCents === 0
               ? 'Continue — free with code'
               : finalCents != null
