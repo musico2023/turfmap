@@ -453,7 +453,12 @@ export default async function PublicSharePage({
           {client.is_preview ? (
             <PreviewCompetitorLock
               shareId={shareId}
-              competitorCount={competitors.length}
+              topCompetitors={competitors.slice(0, 3).map((c) => ({
+                name: c.name,
+                top3Pct: c.top3Pct,
+                amr: Number.isFinite(c.amr) ? c.amr : null,
+              }))}
+              totalCompetitorCount={competitors.length}
             />
           ) : (
             <CompetitorTable competitors={competitors} />

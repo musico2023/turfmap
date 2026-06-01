@@ -205,19 +205,44 @@ export function PreviewAICoachLock({ shareId }: PreviewAICoachLockProps) {
 
 export type PreviewCompetitorLockProps = {
   shareId: string;
-  competitorCount: number;
+  /** Pre-aggregated top competitors from aggregateCompetitors().
+   *  When non-empty, we reveal the top 3 names + their territory
+   *  share so the buyer has something concrete + named to anchor
+   *  on. The cell-by-cell breakdown (which cells each competitor
+   *  owns) stays behind the unlock. */
+  topCompetitors: Array<{
+    name: string;
+    /** Share of cells the competitor appeared in (0–100). */
+    top3Pct: number;
+    /** Average rank at the cells where they appeared (1.0–3.0).
+     *  Null when the upstream aggregation didn't compute it (rare). */
+    amr: number | null;
+  }>;
+  /** Total number of distinct competitor brands captured across the
+   *  81 cells. Used in the "+ N more" upsell line below the top 3. */
+  totalCompetitorCount: number;
 };
 
 /**
- * Replaces the CompetitorTable with a single-line tease + ghost
- * unlock link. Goes in the sidebar slot where the table normally
- * sits. Keeps the section heading visible above so the buyer knows
- * what's behind the lock.
+ * Sidebar-slot competitor surface for preview mode. Reveals the top
+ * 3 dominators by territory share — names + share-of-cells. Keeps
+ * the cell-by-cell breakdown (which cell each competitor sits at
+ * which rank in) locked behind the $99 unlock.
+ *
+ * Rationale for the reveal: showing JUST a count ("12 competitors
+ * are dominating you") was abstract and didn't anchor anything. Top
+ * 3 names with their territory share make the score tangible — the
+ * buyer can recognize Miami Chiropractic & Wellness, look it up, and
+ * see why the unlock matters. The cell-level breakdown is the actual
+ * deliverable the $99 unlocks.
  */
 export function PreviewCompetitorLock({
   shareId,
-  competitorCount,
+  topCompetitors,
+  totalCompetitorCount,
 }: PreviewCompetitorLockProps) {
+  const visible = topCompetitors.slice(0, 3);
+  const moreCount = Math.max(0, totalCompetitorCount - visible.length);
   return (
     <div
       className="rounded-lg border p-5"
@@ -229,18 +254,68 @@ export function PreviewCompetitorLock({
       <div className="flex items-center gap-2 mb-3">
         <Crown size={14} style={{ color: 'var(--color-lime)' }} />
         <h4 className="text-xs uppercase tracking-[0.18em] font-mono font-semibold text-zinc-300">
-          Top competitors
+          Top competitors in your territory
         </h4>
       </div>
-      <div className="flex items-start gap-3 mb-3">
+
+      {visible.length > 0 ? (
+        <ol className="space-y-2.5 mb-4">
+          {visible.map((c, i) => (
+            <li
+              key={c.name}
+              className="flex items-baseline gap-3 text-sm leading-tight"
+            >
+              <span
+                className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 flex-shrink-0 w-5"
+                aria-hidden
+              >
+                #{i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-zinc-100 truncate">
+                  {c.name}
+                </div>
+                <div className="text-[11px] text-zinc-500 font-mono mt-0.5">
+                  <span style={{ color: 'var(--color-lime)' }}>
+                    {c.top3Pct}%
+                  </span>{' '}
+                  of cells
+                  {typeof c.amr === 'number' && Number.isFinite(c.amr) ? (
+                    <>
+                      {' · '}avg rank {c.amr.toFixed(1)}
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-sm text-zinc-400 leading-relaxed mb-4">
+          No dominant competitors surfaced for this keyword — your
+          map looks clear, but the full unlock includes lower-traffic
+          brands that may still be eating your visibility.
+        </p>
+      )}
+
+      <div className="flex items-start gap-3 mb-3 pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
         <Lock size={14} className="text-zinc-500 flex-shrink-0 mt-0.5" />
         <p className="text-sm text-zinc-400 leading-relaxed">
-          <strong className="text-zinc-200">
-            {competitorCount > 0 ? competitorCount : 'Several'}
-          </strong>{' '}
-          competitors are dominating cells where you don&rsquo;t
-          appear. The full report names them and shows you which
-          neighborhoods they own.
+          {moreCount > 0 ? (
+            <>
+              <strong className="text-zinc-200">
+                +{moreCount} more competitor{moreCount === 1 ? '' : 's'}
+              </strong>{' '}
+              named in the unlocked report — plus which cells each one
+              owns and where you can flip the script.
+            </>
+          ) : (
+            <>
+              Unlock the full report to see exactly{' '}
+              <strong className="text-zinc-200">which cells</strong>{' '}
+              each competitor owns and where you can flip the script.
+            </>
+          )}
         </p>
       </div>
       <UnlockShareButton shareId={shareId} variant="ghost" />
