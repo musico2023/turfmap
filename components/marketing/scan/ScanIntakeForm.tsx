@@ -9,6 +9,7 @@ import {
   type AddressFields,
 } from '@/components/turfmap/AddressAutocomplete';
 import { TurnstileWidget } from '@/components/security/TurnstileWidget';
+import { ScanProgress } from '@/components/turfmap/ScanProgress';
 
 /**
  * Intake form for the /scan cold-Meta intake-first flow.
@@ -354,6 +355,7 @@ export function ScanIntakeForm({
   };
 
   return (
+    <>
     <form onSubmit={onSubmit} className="space-y-4">
       <Field
         label="Business name"
@@ -573,6 +575,33 @@ export function ScanIntakeForm({
         )}
       </div>
     </form>
+    {/* Full-screen scan-progress overlay — previewMode only.
+     *  The preview-init scan runs synchronously for 30-90s; without
+     *  this overlay the buyer stares at a near-static "Running your
+     *  free scan…" button label and the page reads as frozen. The
+     *  overlay renders the same ScanProgress component the cold-
+     *  email COLDSCAN flow uses, with rotating status phrases
+     *  ("Mapping 81 search points…" → "Querying the local 3-pack
+     *  at each grid point…" → "Almost there…") so the buyer sees
+     *  visible motion + understands roughly what the system is
+     *  doing while it works.
+     *
+     *  Paid flows (intake → Stripe Checkout redirect) don't get
+     *  this overlay — their loading state is short (~2-3s to open
+     *  Stripe) and the existing button label suffices. */}
+    {previewMode && loading && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center px-6"
+        style={{ background: 'rgba(10, 10, 10, 0.94)' }}
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div className="max-w-md w-full">
+          <ScanProgress />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
