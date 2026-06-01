@@ -1,7 +1,42 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { AddressAutofill } from '@mapbox/search-js-react';
+import nextDynamic from 'next/dynamic';
+
+// Mapbox's search-js-react package references `document` and `window`
+// at module-evaluation time (their bundle initializes a global SDK
+// singleton when imported). A plain `import { AddressAutofill }`
+// pulls that module into the SSR bundle and crashes any server-
+// rendered page that imports this file with `ReferenceError:
+// document is not defined`.
+//
+// next/dynamic with `ssr: false` defers the import to the client,
+// so the SSR pass never evaluates the Mapbox module. The
+// `loading: () => null` keeps the layout shape stable while the
+// client chunk hydrates (the parent component already renders a
+// plain <input> fallback when `mounted=false` for the first paint
+// — see the !mounted gate below).
+//
+// next/dynamic only works inside Client Components; this file has
+// `'use client'` at the top, so we're safe.
+const AddressAutofill = nextDynamic(
+  () =>
+    import('@mapbox/search-js-react').then(
+      (m) => m.AddressAutofill as unknown as React.ComponentType<{
+        accessToken: string;
+        theme?: typeof TURFMAP_DARK_THEME;
+        options?: { country: string; language: string };
+        onRetrieve?: (res: {
+          features?: Array<{
+            properties?: Record<string, unknown>;
+            geometry?: { coordinates?: [number, number] };
+          }>;
+        }) => void;
+        children: React.ReactNode;
+      }>
+    ),
+  { ssr: false, loading: () => null }
+);
 
 /**
  * TurfMap-matching dark theme for Mapbox suggestion dropdowns.
