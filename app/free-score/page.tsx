@@ -16,6 +16,7 @@ import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
 import { HeatmapGrid, type HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { MetaPixelScrollDepth } from '@/components/marketing/scan/MetaPixel';
 import { LoomWalkthrough } from '@/components/marketing/scan/LoomWalkthrough';
+import { StickyFreeScoreBar } from '@/components/marketing/scan/StickyFreeScoreBar';
 
 /**
  * Cold-Meta paid-traffic landing page (/free-score).
@@ -161,6 +162,14 @@ export default async function ScanFreeLanderPage({
       {/* Meta pixel engagement signal — fires at 50% scroll depth. */}
       <MetaPixelScrollDepth percent={50} event="ViewContent" />
 
+      {/* Mobile-only sticky bottom bar — slides up once the hero CTA
+       *  scrolls off-screen, slides back down once the form section
+       *  enters view. Sentinel ids are referenced below. */}
+      <StickyFreeScoreBar
+        heroSentinelId="free-score-sticky-sentinel"
+        formAnchorId="free-score-form"
+      />
+
       {/* ─── Top nav strip ───────────────────────────────────────────
        *  Brand mark only. No sign-in link — /free-score is a cold-Meta
        *  paid lander; existing customers don't arrive here, and an
@@ -247,6 +256,14 @@ export default async function ScanFreeLanderPage({
             Get my free TurfScore
             <ArrowDown size={16} className="rotate-180" strokeWidth={2.75} />
           </a>
+
+          {/* Hero-CTA sentinel — IntersectionObserver target the
+           *  StickyFreeScoreBar uses to detect "the buyer scrolled
+           *  past the hero CTA, time to surface the sticky." Zero-
+           *  height div sits flush against the CTA so the sticky
+           *  appears the moment the button itself leaves the
+           *  viewport. */}
+          <div id="free-score-sticky-sentinel" aria-hidden="true" />
 
           {/* Trust strip — three short items, comma + middle-dot
            *  separated. Mirrors the /scan hero's trust line. */}
@@ -858,6 +875,11 @@ export default async function ScanFreeLanderPage({
           </span>
         </div>
       </footer>
+
+      {/* Bottom safe-area for the sticky bar — keeps the footer
+       *  visible above the sticky when it re-appears past the form
+       *  section. ~80px ≥ sticky height + iOS home indicator. */}
+      <div className="h-20 md:hidden" />
     </div>
   );
 }

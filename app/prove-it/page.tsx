@@ -16,6 +16,7 @@ import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
 import { HeatmapGrid, type HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { MetaPixelScrollDepth } from '@/components/marketing/scan/MetaPixel';
 import { LoomWalkthrough } from '@/components/marketing/scan/LoomWalkthrough';
+import { StickyFreeScoreBar } from '@/components/marketing/scan/StickyFreeScoreBar';
 
 /**
  * Cold-Meta paid-traffic landing page (/prove-it).
@@ -188,6 +189,18 @@ export default async function ProveItLanderPage({
       {/* Meta pixel engagement signal — fires at 50% scroll depth. */}
       <MetaPixelScrollDepth percent={50} event="ViewContent" />
 
+      {/* Mobile-only sticky bottom bar — slides up once the hero CTA
+       *  scrolls off-screen, slides back down once the form section
+       *  enters view. Sentinel ids are referenced below.
+       *
+       *  Label override: "Run my proof" keeps the dare-axis vocabulary
+       *  consistent with the hero's "Run my proof — free" button. */}
+      <StickyFreeScoreBar
+        heroSentinelId="prove-it-sticky-sentinel"
+        formAnchorId="prove-it-form"
+        buttonLabel="Run my proof"
+      />
+
       {/* ─── Top nav strip ─────────────────────────────────────────── */}
       <nav
         className="border-b px-4 md:px-6 py-3 flex items-center"
@@ -288,6 +301,12 @@ export default async function ProveItLanderPage({
             Run my proof — free
             <ArrowDown size={16} className="rotate-180" strokeWidth={2.75} />
           </a>
+
+          {/* Hero-CTA sentinel — IntersectionObserver target for
+           *  StickyFreeScoreBar. Zero-height div flush against the
+           *  CTA so the sticky appears the moment the button itself
+           *  leaves the viewport. */}
+          <div id="prove-it-sticky-sentinel" aria-hidden="true" />
 
           <p className="text-xs text-zinc-500 mt-5 leading-relaxed">
             60-second delivery
@@ -835,6 +854,11 @@ export default async function ProveItLanderPage({
           </span>
         </div>
       </footer>
+
+      {/* Bottom safe-area for the sticky bar — keeps the footer
+       *  visible above the sticky when it re-appears past the form
+       *  section. ~80px ≥ sticky height + iOS home indicator. */}
+      <div className="h-20 md:hidden" />
     </div>
   );
 }
