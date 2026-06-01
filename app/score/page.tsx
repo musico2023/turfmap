@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, Crosshair, Lock, Sparkles, Zap } from 'lucide-react';
 import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
+import { TurfScoreShowcase } from '@/components/marketing/TurfScoreShowcase';
 
 /**
  * /score — public TurfScore lead-magnet lander.
@@ -92,6 +93,12 @@ export default function ScoreLanderPage() {
             area. The full map and Fix List unlock for $99 — but the score
             is yours either way.
           </p>
+
+          {/* Visual anchor — gives the buyer something concrete to look
+           *  at while they read the form below. Score numerals stay at
+           *  "??" placeholder (no fake demo data), but the band
+           *  spectrum makes the 0-100 scale immediately graspable. */}
+          <TurfScoreShowcase />
 
           {/* Form — reuses ScanIntakeForm in previewMode. previewMode
            *  forces 1 keyword regardless of tier, swaps the button copy
