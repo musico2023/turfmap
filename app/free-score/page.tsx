@@ -16,10 +16,10 @@ import { HeatmapGrid, type HeatmapCell } from '@/components/turfmap/HeatmapGrid'
 import { MetaPixelScrollDepth } from '@/components/marketing/scan/MetaPixel';
 
 /**
- * Cold-Meta paid-traffic landing page (/scan/free).
+ * Cold-Meta paid-traffic landing page (/free-score).
  *
  * Sister page to /scan. /scan sells the $49 TurfScan up front to
- * cold Meta clicks. /scan/free leads with the FREE TurfScore as the
+ * cold Meta clicks. /free-score leads with the FREE TurfScore as the
  * entry point — buyer fills the form, the scan runs free, they land
  * on /share/<id> with a blurred map + their TurfScore + the top-3
  * named competitors visible. The $49 unlock CTA fires there.
@@ -50,12 +50,12 @@ import { MetaPixelScrollDepth } from '@/components/marketing/scan/MetaPixel';
  * framing, not gentle product education.
  *
  * URL contract:
- *   /scan/free                          — bare visit; defaults below
- *   /scan/free?utm_source=meta&utm_*=…  — Meta-ad attribution;
+ *   /free-score                          — bare visit; defaults below
+ *   /free-score?utm_source=meta&utm_*=…  — Meta-ad attribution;
  *                                          forwarded to the preview-
  *                                          init endpoint and stamped
  *                                          on the resulting client.
- *   /scan/free?fbclid=…                 — auto-appended by Meta on
+ *   /free-score?fbclid=…                 — auto-appended by Meta on
  *                                          ad clicks; carries through
  *                                          for Conversion API dedup.
  *
@@ -160,7 +160,7 @@ export default async function ScanFreeLanderPage({
       <MetaPixelScrollDepth percent={50} event="ViewContent" />
 
       {/* ─── Top nav strip ───────────────────────────────────────────
-       *  Brand mark only. No sign-in link — /scan/free is a cold-Meta
+       *  Brand mark only. No sign-in link — /free-score is a cold-Meta
        *  paid lander; existing customers don't arrive here, and an
        *  exit affordance pulls focus away from the single free-scan
        *  decision. */}
@@ -219,7 +219,7 @@ export default async function ScanFreeLanderPage({
 
           {/* Inline form — anchor id lets the final-CTA scroll-up
            *  button target it. */}
-          <div id="scan-free-form" className="scroll-mt-20">
+          <div id="free-score-form" className="scroll-mt-20">
             <ScanIntakeForm
               previewMode
               utmSource={utmSource}
@@ -350,7 +350,7 @@ export default async function ScanFreeLanderPage({
           {/* Scroll-up to form CTA */}
           <div className="mt-7 text-center">
             <a
-              href="#scan-free-form"
+              href="#free-score-form"
               className="inline-flex items-center gap-2 px-5 py-3 rounded-md font-semibold text-sm transition-all"
               style={{
                 background: 'var(--color-lime)',
@@ -651,7 +651,7 @@ export default async function ScanFreeLanderPage({
             which competitors to beat to do it.
           </p>
           <a
-            href="#scan-free-form"
+            href="#free-score-form"
             className="inline-flex items-center gap-2 px-7 py-3.5 rounded-md font-bold text-base md:text-lg transition-all"
             style={{
               background: 'var(--color-lime)',
