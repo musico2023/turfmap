@@ -151,7 +151,12 @@ export function MarketingHero() {
             <span style={{ color: 'var(--color-lime)' }}>●</span>{' '}
             Google Maps audit for local <RotatingLabel /> · from $99
           </div>
-          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.02] mb-4">
+          {/* Type scale dropped one tier (was 5xl/6xl/7xl) after the
+           *  H1 copy got longer — the prior scale wrapped to 4 lines on
+           *  desktop and pushed everything else below the fold. 4xl/
+           *  5xl/6xl keeps the headline weight without crowding the
+           *  sub-line + CTAs. */}
+          <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] mb-4">
             See how much of your city <em>can&rsquo;t find</em>{' '}your
             business.
           </h1>
