@@ -60,19 +60,41 @@ function pixelId(): string | null {
  * client). If the loader hasn't initialized yet, fbq queues the call
  * for replay on initialization. If NEXT_PUBLIC_META_PIXEL_ID is
  * unset, this is a no-op.
+ *
+ * Pass `eventID` when you ALSO send the same logical event through
+ * the server-side Conversions API (lib/marketing/metaCapi) — Facebook
+ * dedupes the pixel + CAPI pair via event_name + event_id within a
+ * ~48-hour window. Generate the id ONCE (crypto.randomUUID()) and
+ * pass it to both surfaces.
  */
 export function trackMetaEvent(
   event: string,
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
+  options?: { eventID?: string }
 ): void {
   if (typeof window === 'undefined') return;
   if (!pixelId()) return;
   if (typeof window.fbq !== 'function') return;
-  if (params) {
+  if (params && options?.eventID) {
+    window.fbq('track', event, params, { eventID: options.eventID });
+  } else if (params) {
     window.fbq('track', event, params);
+  } else if (options?.eventID) {
+    window.fbq('track', event, {}, { eventID: options.eventID });
   } else {
     window.fbq('track', event);
   }
+}
+
+/** Read a cookie value by name. Returns null if the cookie doesn't
+ *  exist or if running on the server. Used to forward _fbp/_fbc to
+ *  the server for CAPI matching. */
+export function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=([^;]*)`)
+  );
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 /**

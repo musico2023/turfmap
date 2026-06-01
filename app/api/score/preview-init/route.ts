@@ -25,6 +25,10 @@ import { createPreviewClient } from '@/lib/score/createPreviewClient';
 import { sendScoreUnlockNudge } from '@/lib/email/resend';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { verifyTurnstileToken } from '@/lib/security/turnstile';
+import {
+  sendMetaCapiEvent,
+  buildFbcFromFbclid,
+} from '@/lib/marketing/metaCapi';
 
 export const runtime = 'nodejs';
 // Same ceiling as the paid scan-intake route — DFS + DB inserts +
@@ -71,6 +75,22 @@ const Body = z.object({
   // TURNSTILE_SECRET_KEY is unset. Max length is the documented
   // Cloudflare token ceiling (~2048 chars).
   turnstile_token: z.string().max(4096).optional(),
+  // Meta CAPI dedup id — client-generated UUID (crypto.randomUUID()
+  // in the form). The client-side Pixel fires the SAME event_id, so
+  // Facebook dedupes the two events.
+  meta_event_id: z.string().max(120).optional(),
+  // _fbp browser cookie value, read client-side from document.cookie.
+  // Format: 'fb.<idx>.<creationTime>.<random>'. Forwarded raw for
+  // CAPI user_data matching.
+  fbp_cookie: z.string().max(200).optional(),
+  // _fbc browser cookie value, set when an fbclid URL param is
+  // present. Format: 'fb.<idx>.<creationTime>.<fbclid>'. We
+  // reconstruct from raw fbclid if the cookie wasn't readable
+  // client-side.
+  fbc_cookie: z.string().max(400).optional(),
+  // Source URL of the conversion (e.g. 'https://turfmap.ai/free-score').
+  // Improves CAPI attribution match rate when present.
+  event_source_url: z.string().url().max(1000).optional(),
 });
 
 const RATE_LIMIT_PER_EMAIL_PER_DAY = 1;
@@ -320,6 +340,77 @@ export async function POST(req: Request) {
       })
       .eq('id', leadOrder.id);
   });
+
+  // ─── Meta Conversions API — server-side Lead event ────────────────
+  // Fired in addition to the client-side fbq('track', 'Lead') call so
+  // Facebook can attribute the scan even when the Pixel is blocked
+  // (iOS 14+ ATT opt-outs, ad blockers, browser tracking-prevention).
+  // Both events share the same meta_event_id, so Facebook dedupes the
+  // pair within ~48h.
+  //
+  // No-op when META_CAPI_ACCESS_TOKEN isn't set — same posture as
+  // the email drip and the Turnstile verifier: silent skip in dev,
+  // active in prod once the env var is wired.
+  //
+  // Wrapped in after() so the response isn't blocked on the
+  // graph.facebook.com round-trip (~200-500ms).
+  if (body.meta_event_id) {
+    const userAgent = req.headers.get('user-agent');
+    // Reconstruct the _fbc cookie from a raw fbclid if the client
+    // didn't forward the cookie value (cookie was cleared between
+    // page load + form submit, or the user pasted the URL directly).
+    const fbc =
+      body.fbc_cookie ??
+      (body.fbclid ? buildFbcFromFbclid(body.fbclid) : null);
+    const capiEventId = body.meta_event_id;
+    const capiEmail = email;
+    const capiPhone = body.phone;
+    const capiIp = ip || null;
+    const capiUserAgent = userAgent;
+    const capiFbp = body.fbp_cookie ?? null;
+    const capiFbc = fbc;
+    const capiEventSourceUrl = body.event_source_url ?? null;
+    // Lander identifier in custom_data lets Meta's reporting split
+    // CAPI Leads by ad set / creative angle without us needing a
+    // custom conversion definition per lander.
+    const capiLeadSource = body.lead_source ?? null;
+    const capiTurfScore = result.turfScore;
+
+    after(async () => {
+      const customData: Record<string, string | number | boolean> = {
+        content_name: 'TurfScore Free Preview',
+        content_category: 'score_preview_submit',
+      };
+      if (capiLeadSource) customData.lead_source = capiLeadSource;
+      if (typeof capiTurfScore === 'number' && Number.isFinite(capiTurfScore)) {
+        customData.turf_score = capiTurfScore;
+      }
+
+      const result = await sendMetaCapiEvent({
+        event: 'Lead',
+        eventId: capiEventId,
+        eventSourceUrl: capiEventSourceUrl,
+        userData: {
+          email: capiEmail,
+          phone: capiPhone,
+          ip: capiIp,
+          userAgent: capiUserAgent,
+          fbp: capiFbp,
+          fbc: capiFbc,
+        },
+        customData,
+      });
+      if (!result.ok && result.reason !== 'not_configured') {
+        // Surface non-config failures in server logs so a misconfigured
+        // access token or a graph API outage doesn't disappear silently.
+        console.warn(
+          '[score/preview-init] Meta CAPI Lead failed:',
+          result.reason,
+          result.message
+        );
+      }
+    });
+  }
 
   return NextResponse.json({
     ok: true,

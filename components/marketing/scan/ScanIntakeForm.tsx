@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ArrowRight, AlertCircle, Lock, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
+import { trackMetaEvent, readCookie } from '@/components/marketing/scan/MetaPixel';
 import {
   AddressAutocomplete,
   type AddressFields,
@@ -242,18 +242,34 @@ export function ScanIntakeForm({
 
     setLoading(true);
 
-    // Meta event — different shape per mode. Paid intake fires
-    // InitiateCheckout (the Stripe-flow-starts signal); preview
-    // mode fires Lead (the brief's lead-magnet conversion signal).
-    if (previewMode) {
-      trackMetaEvent('Lead', {
-        content_name: 'TurfScore Free Preview',
-        content_category: 'score_preview_submit',
-        utm_source: utmSource ?? undefined,
-        utm_medium: utmMedium ?? undefined,
-        utm_campaign: utmCampaign ?? undefined,
-      });
-    } else {
+    // Meta CAPI dedup id — generated once here, sent to BOTH the
+    // server (so /api/score/preview-init fires Lead via CAPI) and to
+    // the client-side fbq call below. Facebook dedupes the pair on
+    // event_name + event_id, so both surfaces can fire safely without
+    // double-counting in attribution.
+    //
+    // crypto.randomUUID requires a secure context — all our landers
+    // are served HTTPS in prod and localhost is allow-listed by
+    // browsers, so this is safe. Fallback to Date.now()+random would
+    // weaken dedup so we just skip the eventId on rare unsupported
+    // browsers (Facebook then counts pixel-only).
+    const metaEventId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : undefined;
+
+    // _fbp + _fbc cookies (set by the Meta pixel). Sent server-side so
+    // CAPI's user_data match-quality stays high. Both can be null —
+    // CAPI tolerates partial user_data and Facebook still tries to
+    // match on email/phone/IP.
+    const fbpCookie = readCookie('_fbp');
+    const fbcCookie = readCookie('_fbc');
+
+    // Paid intake fires InitiateCheckout on submit (intent signal).
+    // Preview mode defers the Lead event to the success branch
+    // (post-fetch) so a failed scan doesn't orphan a Lead event in
+    // Facebook attribution.
+    if (!previewMode) {
       const valueDollars =
         finalCents != null ? finalCents / 100 : 49;
       trackMetaEvent('InitiateCheckout', {
@@ -299,6 +315,18 @@ export function ScanIntakeForm({
           // Paid intake doesn't need it (the upstream lander already
           // picked the coupon).
           ...(previewMode && leadSource ? { lead_source: leadSource } : {}),
+          // Meta CAPI dedup payload — preview path only. Server uses
+          // these to fire a deduped Lead event via the Conversions
+          // API so Facebook sees the conversion even when the pixel
+          // is blocked (iOS 14+ ATT, ad blockers, etc.).
+          ...(previewMode && metaEventId
+            ? { meta_event_id: metaEventId }
+            : {}),
+          ...(previewMode && fbpCookie ? { fbp_cookie: fbpCookie } : {}),
+          ...(previewMode && fbcCookie ? { fbc_cookie: fbcCookie } : {}),
+          ...(previewMode && typeof window !== 'undefined'
+            ? { event_source_url: window.location.href }
+            : {}),
           businessName: businessName.trim(),
           address: address.trim(),
           // Always send keywords as an array — server validates the
@@ -351,6 +379,25 @@ export function ScanIntakeForm({
         );
         setLoading(false);
         return;
+      }
+      // Preview-mode success — fire the client-side Lead event NOW
+      // (post-success, so a failed scan doesn't orphan an attribution
+      // signal). Tagged with the same metaEventId we sent to the
+      // server, so Facebook dedupes against the CAPI Lead the server
+      // just kicked off in after().
+      if (previewMode) {
+        trackMetaEvent(
+          'Lead',
+          {
+            content_name: 'TurfScore Free Preview',
+            content_category: 'score_preview_submit',
+            utm_source: utmSource ?? undefined,
+            utm_medium: utmMedium ?? undefined,
+            utm_campaign: utmCampaign ?? undefined,
+            ...(leadSource ? { lead_source: leadSource } : {}),
+          },
+          metaEventId ? { eventID: metaEventId } : undefined
+        );
       }
       // Hard navigation — Stripe Checkout is cross-origin, and even
       // the in-app share-page redirect benefits from a full nav so
