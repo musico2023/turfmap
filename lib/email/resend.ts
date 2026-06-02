@@ -866,6 +866,10 @@ export async function sendScoreUnlockNudge(args: {
   /** ISO 8601. When set, Resend schedules the send; when omitted,
    *  sends immediately (touch 1). */
   scheduledAt?: string;
+  /** Lander slug forwarded into the email template so price strings
+   *  match what unlock-init will actually charge (Meta cohorts see
+   *  $49 + MAPCHECK50; everyone else sees $99 list). */
+  leadSource?: string | null;
 }): Promise<SendResult> {
   const { ScoreUnlockNudgeEmail } = await import(
     '@/components/email/ScoreUnlockNudgeEmail'
@@ -878,6 +882,7 @@ export async function sendScoreUnlockNudge(args: {
       turfBand: args.turfBand,
       previewUrl: args.previewUrl,
       stage: args.stage,
+      leadSource: args.leadSource,
     })
   );
   const biz = args.businessName?.trim() || 'your business';

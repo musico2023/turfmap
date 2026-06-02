@@ -28,6 +28,7 @@ import {
   PSmall,
   PrimaryButton,
 } from './EmailLayout';
+import { isDiscountedLeadSource } from '@/lib/score/leadSources';
 
 export type ScoreUnlockNudgeStage = 'touch_1' | 'touch_2' | 'touch_3';
 
@@ -53,6 +54,14 @@ export type ScoreUnlockNudgeEmailProps = {
   /** Which touch this email represents. Drives every variable copy
    *  surface (preview / headline / body / CTA / footnote). */
   stage: ScoreUnlockNudgeStage;
+  /** Lander identifier (e.g. 'free_score', 'prove_it', 'score'). When
+   *  the slug qualifies for the Meta-cohort discount (see
+   *  lib/score/leadSources.ts), the email renders "$49 with code
+   *  MAPCHECK50" wherever the price is named, instead of the $99 list
+   *  price. Keeps the email price in sync with what unlock-init will
+   *  actually charge — otherwise the buyer sees "$99" in the inbox
+   *  and "$49" when they click through, which torches trust + CTR. */
+  leadSource?: string | null;
 };
 
 type StageCopy = {
@@ -77,7 +86,8 @@ function copyForStage(
   businessName?: string | null,
   keyword?: string | null,
   turfScore?: number | null,
-  turfBand?: string | null
+  turfBand?: string | null,
+  leadSource?: string | null
 ): StageCopy {
   const biz = businessName?.trim() || null;
   const kw = keyword?.trim() || null;
@@ -87,6 +97,16 @@ function copyForStage(
       ? String(Math.round(turfScore))
       : null;
   const bandText = turfBand?.trim() || null;
+
+  // Discount-aware price strings. The Meta-cohort landers (free_score,
+  // prove_it) get MAPCHECK50 auto-applied on /share unlock, so we
+  // surface the discounted $49 here too. Homepage /score traffic +
+  // unknown sources see the $99 list price.
+  const discounted = isDiscountedLeadSource(leadSource);
+  // Inline price for sentences ("…unlock for $49 with code MAPCHECK50.").
+  const priceInline = discounted ? '$49 with code MAPCHECK50' : '$99';
+  // CTA-button suffix ("Unlock the full map — $49 →").
+  const priceCta = discounted ? '$49' : '$99';
 
   if (stage === 'touch_1') {
     return {
@@ -118,7 +138,8 @@ function copyForStage(
           ) : null}{' '}
           Your map preview is live — open it to see where you appear
           and where you don&apos;t. The full cell-by-cell map,
-          competitor breakdown, and AI Coach Fix List unlock for $99.
+          competitor breakdown, and AI Coach Fix List unlock for{' '}
+          <strong>{priceInline}</strong>.
         </>
       ),
       cta: 'Open my TurfScore →',
@@ -157,8 +178,15 @@ function copyForStage(
           <strong>{bizLabel}</strong>.
         </>
       ),
-      cta: 'Unlock the full map — $99 →',
-      footnote: (
+      cta: `Unlock the full map — ${priceCta} →`,
+      footnote: discounted ? (
+        <>
+          One-time charge, no subscription. Code{' '}
+          <strong>MAPCHECK50</strong> auto-applied at checkout. Full
+          refund within 7 days if the unlocked report doesn&rsquo;t
+          show you something you didn&rsquo;t already know.
+        </>
+      ) : (
         <>
           One-time charge, no subscription. Full refund within 7 days
           if the unlocked report doesn&rsquo;t show you something you
@@ -169,6 +197,9 @@ function copyForStage(
   }
 
   // touch_3 — final, soft scarcity + personal hit-reply offer.
+  // No explicit price in the body (kept conversational), but the
+  // discounted footnote nudges the MAPCHECK50 affordance one more
+  // time for Meta-cohort buyers.
   return {
     preview: `Last reminder about your TurfScore — ${bizLabel}`,
     headline: 'Last reminder about your unlock.',
@@ -194,7 +225,13 @@ function copyForStage(
       </>
     ),
     cta: 'Unlock my full map →',
-    footnote: (
+    footnote: discounted ? (
+      <>
+        — Anthony, TurfMap. Your <strong>MAPCHECK50</strong> code is
+        still good — unlock pulls down to $49 at checkout. Reply
+        anytime, a real person sees it.
+      </>
+    ) : (
       <>— Anthony, TurfMap. Reply anytime — a real person sees it.</>
     ),
   };
@@ -207,13 +244,15 @@ export function ScoreUnlockNudgeEmail({
   turfBand,
   previewUrl,
   stage,
+  leadSource,
 }: ScoreUnlockNudgeEmailProps) {
   const copy = copyForStage(
     stage,
     businessName,
     keyword,
     turfScore,
-    turfBand
+    turfBand,
+    leadSource
   );
   return (
     <EmailLayout preview={copy.preview}>

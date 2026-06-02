@@ -275,6 +275,11 @@ export async function POST(req: Request) {
   const scheduledTouch2 = new Date(now + 24 * 60 * 60 * 1000).toISOString();
   const scheduledTouch3 = new Date(now + 72 * 60 * 60 * 1000).toISOString();
 
+  // Forward the lander slug into every drip touch so the email's
+  // price strings match what unlock-init will charge (Meta cohorts
+  // see $49 + MAPCHECK50; everyone else sees $99 list).
+  const dripLeadSource = body.lead_source ?? null;
+
   after(async () => {
     const t1 = await sendScoreUnlockNudge({
       to: email,
@@ -284,6 +289,7 @@ export async function POST(req: Request) {
       turfBand: band?.label ?? null,
       previewUrl,
       stage: 'touch_1',
+      leadSource: dripLeadSource,
     });
     const t2 = await sendScoreUnlockNudge({
       to: email,
@@ -294,6 +300,7 @@ export async function POST(req: Request) {
       previewUrl,
       stage: 'touch_2',
       scheduledAt: scheduledTouch2,
+      leadSource: dripLeadSource,
     });
     const t3 = await sendScoreUnlockNudge({
       to: email,
@@ -304,6 +311,7 @@ export async function POST(req: Request) {
       previewUrl,
       stage: 'touch_3',
       scheduledAt: scheduledTouch3,
+      leadSource: dripLeadSource,
     });
 
     // Stamp the scheduled email ids on the lead_orders row so
