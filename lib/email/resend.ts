@@ -150,8 +150,15 @@ type SendArgs = {
 
 /** Result of a send attempt. `ok` is the success flag the existing
  *  callers already use; `id` is the Resend email ID (used to cancel
- *  scheduled sends — see `cancelScheduledEmail`). */
-export type SendResult = { ok: boolean; id?: string };
+ *  scheduled sends — see `cancelScheduledEmail`); `error` carries
+ *  Resend's failure reason when `ok` is false (e.g. "address on
+ *  suppression list" — useful for admin / diagnostic routes that
+ *  need to surface why a send was rejected). */
+export type SendResult = {
+  ok: boolean;
+  id?: string;
+  error?: string;
+};
 
 /**
  * Low-level send. Use the higher-level functions below for typed
@@ -164,7 +171,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
     console.warn(
       `[resend] RESEND_API_KEY not set — skipping send to "${args.to}" (subject: "${args.subject}")`
     );
-    return { ok: false };
+    return { ok: false, error: 'RESEND_API_KEY not set' };
   }
 
   try {
@@ -188,7 +195,14 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
         `[resend] send failed to "${args.to}" (subject: "${args.subject}"):`,
         error
       );
-      return { ok: false };
+      // Propagate the Resend error reason to the caller so admin
+      // surfaces can surface "name on suppression list" / "invalid
+      // recipient" etc. directly instead of forcing a Vercel-logs
+      // dive on every failure.
+      const errObj = error as { name?: string; message?: string };
+      const errMsg =
+        errObj.message ?? errObj.name ?? JSON.stringify(error).slice(0, 300);
+      return { ok: false, error: errMsg };
     }
     return { ok: true, id: data?.id };
   } catch (e) {
@@ -196,7 +210,10 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
       `[resend] send threw to "${args.to}" (subject: "${args.subject}"):`,
       e instanceof Error ? e.message : String(e)
     );
-    return { ok: false };
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 }
 

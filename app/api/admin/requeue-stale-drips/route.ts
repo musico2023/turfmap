@@ -73,25 +73,25 @@ type LeadOrderRow = {
   created_at: string;
 };
 
+type TouchResult = {
+  old_id: string | null;
+  scheduled_for: string;
+  in_past: boolean;
+  cancelled: boolean;
+  new_id: string | null;
+  /** Resend error message when the new send failed. Surfaces
+   *  reasons like "Recipient is on suppression list" without
+   *  forcing a Vercel-logs dive. */
+  error?: string;
+};
+
 type RowResult = {
   email: string;
   business_name: string | null;
   lead_source: string;
   turf_score: number | null;
-  t2: {
-    old_id: string | null;
-    scheduled_for: string;
-    in_past: boolean;
-    cancelled: boolean;
-    new_id: string | null;
-  };
-  t3: {
-    old_id: string | null;
-    scheduled_for: string;
-    in_past: boolean;
-    cancelled: boolean;
-    new_id: string | null;
-  };
+  t2: TouchResult;
+  t3: TouchResult;
   metadata_updated: boolean;
 };
 
@@ -255,6 +255,7 @@ export async function POST(req: Request) {
         leadSource,
       });
       result.t2.new_id = t2.id ?? null;
+      if (!t2.ok && t2.error) result.t2.error = t2.error;
     }
 
     // ─── Re-queue touch 3 ─────────────────────────────────────────────
@@ -271,6 +272,7 @@ export async function POST(req: Request) {
         leadSource,
       });
       result.t3.new_id = t3.id ?? null;
+      if (!t3.ok && t3.error) result.t3.error = t3.error;
     }
 
     // ─── Stamp new IDs on lead_orders.stripe_metadata ────────────────
