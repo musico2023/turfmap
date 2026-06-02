@@ -48,6 +48,17 @@ import { isDiscountedLeadSource } from '@/lib/score/leadSources';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+/** Resend's default API rate limit is 5 req/sec. The remediation
+ *  fires up to 4 calls per row (cancel T2 + send T2 + cancel T3 +
+ *  send T3) and we may have 4+ rows — that's >16 calls if run flat
+ *  out, well over the limit. A 250ms throttle keeps us at ~4 calls/sec,
+ *  comfortably under the cap with headroom for clock jitter. */
+const RESEND_THROTTLE_MS = 250;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const PRICE_FIX_DEPLOYED_AT = new Date('2026-06-01T22:30:00Z');
 
 function isAuthorized(req: Request): boolean {
@@ -234,15 +245,24 @@ export async function POST(req: Request) {
     }
 
     // ─── Cancel old IDs (Resend treats "not found" / "already sent" as ok)
+    //
+    // Every Resend call is preceded by a throttle wait to stay under
+    // the 5 req/sec limit. Resend's API returns 429 with the message
+    // "Too many requests..." when exceeded and the new schedule
+    // silently drops, which is what bit us on the first remediation
+    // pass (Hect T3 + Real Flowers T3 lost their replacements).
     if (oldT2) {
+      await sleep(RESEND_THROTTLE_MS);
       result.t2.cancelled = await cancelScheduledEmail(oldT2);
     }
     if (oldT3) {
+      await sleep(RESEND_THROTTLE_MS);
       result.t3.cancelled = await cancelScheduledEmail(oldT3);
     }
 
     // ─── Re-queue touch 2 ─────────────────────────────────────────────
     if (!t2InPast) {
+      await sleep(RESEND_THROTTLE_MS);
       const t2 = await sendScoreUnlockNudge({
         to: row.email,
         businessName: client.business_name,
@@ -260,6 +280,7 @@ export async function POST(req: Request) {
 
     // ─── Re-queue touch 3 ─────────────────────────────────────────────
     if (!t3InPast) {
+      await sleep(RESEND_THROTTLE_MS);
       const t3 = await sendScoreUnlockNudge({
         to: row.email,
         businessName: client.business_name,
