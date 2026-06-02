@@ -32,6 +32,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { runLiveLocalPackScan } from '@/lib/dataforseo/client';
+import { cleanCompetitorName } from '@/lib/dataforseo/cleanCompetitorName';
 import { generateGridCoordinates } from '@/lib/dataforseo/grid';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
@@ -166,7 +167,12 @@ export async function runScanForLocation(
     rank: r.rank,
     business_found: r.businessFound,
     competitors: r.items.slice(0, 3).map((it) => ({
-      name: it.title ?? null,
+      // DFS occasionally suffixes Google UI labels onto title strings
+      // (e.g. "My Ad Center" — the small (i) badge on Local Pack
+      // rows). cleanCompetitorName strips known trailing labels +
+      // normalizes whitespace so the value we persist matches what
+      // the operator sees in the alert/email/dashboard.
+      name: it.title ? cleanCompetitorName(it.title) : null,
       domain: it.domain ?? null,
       rank_group: it.rank_group ?? null,
       rank_absolute: it.rank_absolute ?? null,

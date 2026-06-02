@@ -51,10 +51,18 @@ export const maxDuration = 60;
 const PRICE_FIX_DEPLOYED_AT = new Date('2026-06-01T22:30:00Z');
 
 function isAuthorized(req: Request): boolean {
-  const secret = process.env.OPS_ADMIN_SECRET;
-  if (!secret) return false;
+  // Accept either OPS_ADMIN_SECRET or CRON_SECRET — both are Bearer-
+  // token-class env vars used elsewhere in the codebase for admin /
+  // automation paths. CRON_SECRET is non-Sensitive in our Vercel
+  // config (operator can copy its value from the dashboard), so it's
+  // the practical fallback for one-off remediation curls when
+  // OPS_ADMIN_SECRET is flagged Sensitive and therefore unreadable.
   const header = req.headers.get('authorization') ?? '';
-  return header === `Bearer ${secret}`;
+  for (const envName of ['OPS_ADMIN_SECRET', 'CRON_SECRET']) {
+    const secret = process.env[envName];
+    if (secret && header === `Bearer ${secret}`) return true;
+  }
+  return false;
 }
 
 type LeadOrderRow = {

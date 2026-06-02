@@ -38,6 +38,8 @@
  * own business by name pattern.
  */
 
+import { cleanCompetitorName } from '@/lib/dataforseo/cleanCompetitorName';
+
 export type RawCompetitor = {
   name?: string | null;
   rank_group?: number | null;
@@ -80,11 +82,18 @@ export function aggregateCompetitors(
     const cellBest = new Map<string, number>();
     for (const c of list) {
       if (!c?.name) continue;
-      if (excludeNamePattern && excludeNamePattern.test(c.name)) continue;
+      // Strip Google UI labels (e.g. trailing "My Ad Center") that DFS
+      // occasionally suffixes onto business names. Sanitizing on
+      // READ as well as on write lets scan_points rows persisted
+      // before the write-side fix display cleanly through alerts +
+      // dashboard + Coach without a backfill.
+      const name = cleanCompetitorName(c.name);
+      if (!name) continue;
+      if (excludeNamePattern && excludeNamePattern.test(name)) continue;
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
-      const prev = cellBest.get(c.name);
-      if (prev === undefined || rank < prev) cellBest.set(c.name, rank);
+      const prev = cellBest.get(name);
+      if (prev === undefined || rank < prev) cellBest.set(name, rank);
     }
     for (const [name, rank] of cellBest.entries()) {
       const ranks = stats.get(name) ?? [];

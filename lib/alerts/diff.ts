@@ -9,6 +9,7 @@
  * detection logic without mocking Supabase.
  */
 
+import { cleanCompetitorName } from '@/lib/dataforseo/cleanCompetitorName';
 import type {
   AlertPrefs,
   CitationDirectoryEntry,
@@ -252,7 +253,14 @@ export function extractCompetitorNames(
       | undefined;
     if (!arr) continue;
     for (const c of arr) {
-      if (c?.name) set.add(c.name.trim());
+      if (!c?.name) continue;
+      // Sanitize on read — handles scan_points rows persisted with
+      // dirty names (e.g. trailing "My Ad Center") before the
+      // write-side fix in runScan.ts shipped. Without this the
+      // dirty name appears in the diff vs the clean name from
+      // newer scans and triggers spurious "new competitor" alerts.
+      const cleaned = cleanCompetitorName(c.name);
+      if (cleaned) set.add(cleaned);
     }
   }
   return Array.from(set);
