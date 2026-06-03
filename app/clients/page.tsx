@@ -5,6 +5,10 @@ import { Header } from '@/components/turfmap/Header';
 import { SignOutButton } from '@/components/turfmap/SignOutButton';
 import { ClientRoster } from '@/components/turfmap/ClientRoster';
 import {
+  StuckProspectsAlert,
+  type StuckProspect,
+} from '@/components/turfmap/StuckProspectsAlert';
+import {
   isAgencyOwnerEmail,
   requireAgencyUserOrRedirect,
 } from '@/lib/auth/agency';
@@ -39,6 +43,29 @@ export default async function AgencyHomePage() {
     // below to keep "Pizzeria" and "pizzeria" adjacent regardless.
     .order('business_name', { ascending: true });
 
+  // Stuck-Stage-3 alert query — mirrors the cron's gate logic in
+  // app/api/cron/cold-stage3/route.ts EXCEPT instead of requiring
+  // email + first_name to be present (the cron's hard-skip condition),
+  // we require at least ONE of them to be NULL. That's the operator
+  // bucket: prospects who would otherwise get Stage 3 but can't
+  // because their data is incomplete. Keep filters in sync with the
+  // cron when those change.
+  const { data: stuckRaw } = await supabase
+    .from('prospects')
+    .select(
+      'id, business_name, trade, city, email, first_name, preview_score, scan_engaged_at'
+    )
+    .eq('cohort', 'cold_email_q2_2026')
+    .not('converted_at', 'is', null)
+    .not('scan_engaged_at', 'is', null)
+    .is('stage_3_sent_at', null)
+    .is('stage_3_disabled_at', null)
+    .is('unsubscribed_at', null)
+    .or('email.is.null,first_name.is.null')
+    .order('scan_engaged_at', { ascending: false })
+    .limit(50);
+  const stuck = (stuckRaw ?? []) as StuckProspect[];
+
   const list = ((clients ?? []) as ClientRow[]).slice().sort((a, b) =>
     a.business_name.localeCompare(b.business_name, undefined, {
       sensitivity: 'base',
@@ -66,6 +93,12 @@ export default async function AgencyHomePage() {
             Add client
           </LinkButton>
         </div>
+
+        {/* Cold-cohort stuck-prospect alert — sits above the client
+         *  roster so it's the first thing the agency owner sees on
+         *  login when there's a Stage-3-blocked prospect that needs
+         *  attention. Self-hides when stuck.length === 0. */}
+        <StuckProspectsAlert stuck={stuck} />
 
         {list.length === 0 ? (
           <EmptyState />
