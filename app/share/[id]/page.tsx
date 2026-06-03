@@ -501,6 +501,19 @@ export default async function PublicSharePage({
           {client.is_preview && (
             <PreviewBandInterpretation bandLabel={band.label} />
           )}
+          {/* Preview-cohort only: dollar-anchor ROI card. Translates
+           *  reach % into a missed-cell count + multiplies the
+           *  trade's industry-average job value against the unlock
+           *  price. Defensible framing — coverage-multiplier on a
+           *  single recovered customer, not monthly-lead-volume
+           *  fantasy math. */}
+          {client.is_preview && (
+            <PreviewROIAnchor
+              reach={reach}
+              keyword={keyword?.keyword ?? null}
+              unlockPriceUsd={discountedUnlock ? 49 : 99}
+            />
+          )}
           <div className="grid grid-cols-2 gap-4">
             <StatCard
               label="TurfReach™"
@@ -718,6 +731,170 @@ function bandInterpretationFor(band: string): {
           'specific to your business, named to your real data — not generic SEO advice.',
       };
   }
+}
+
+/** Preview-cohort dollar-anchor card.
+ *
+ *  Stacks under the band interpretation. Two jobs:
+ *
+ *    1. Translate "reach 56%" into something the buyer's gut
+ *       recognizes — number of neighborhoods where their
+ *       competitor is taking the call.
+ *    2. Anchor the $49 unlock against a defensible job-value
+ *       comparison. Framing is intentionally "one recovered
+ *       customer covers the unlock Nx over" instead of
+ *       "you're losing $X/mo" — the former needs only the
+ *       trade's industry-average job value, the latter would
+ *       require monthly-lead-volume assumptions that vary
+ *       wildly by market and torch credibility on inspection.
+ *
+ *  Trade matching is keyword-based and conservative — unknown
+ *  keywords fall back to a generic "service call" with a modest
+ *  job value. Per-trade $/job numbers below are anchored to
+ *  HomeAdvisor + Angi + BLS averages, then rounded conservative.
+ *  Future iteration: pull from a server-side trade lookup table
+ *  the operator can edit.
+ */
+function PreviewROIAnchor({
+  reach,
+  keyword,
+  unlockPriceUsd,
+}: {
+  reach: number;
+  keyword: string | null;
+  unlockPriceUsd: number;
+}) {
+  const econ = inferTradeEconomics(keyword);
+  const missedCells = Math.max(0, 81 - Math.round((reach / 100) * 81));
+  // Coverage ratio of the unlock price by ONE recovered customer.
+  // Integer-floored so the number doesn't read inflated. < 1 means
+  // a single recovered customer doesn't fully cover the unlock —
+  // handled below with different framing for low-ticket trades.
+  const coverageMultiplier = Math.floor(econ.avgJobUSD / unlockPriceUsd);
+  const tradeJobLabel = econ.unitLabel; // 'job' | 'appointment' | 'order'
+
+  return (
+    <div
+      className="rounded-lg border p-4 text-sm leading-relaxed"
+      style={{
+        background: 'var(--color-card)',
+        borderColor: 'var(--color-border)',
+      }}
+    >
+      <div className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold text-zinc-500 mb-2">
+        What the unlock is worth
+      </div>
+      <p className="text-zinc-300">
+        Industry average:{' '}
+        <strong className="text-zinc-100">
+          ~${econ.avgJobUSD.toLocaleString()}/{tradeJobLabel}
+        </strong>{' '}
+        for {econ.tradeLabel}.
+      </p>
+      <p className="text-zinc-300 mt-2">
+        {coverageMultiplier >= 2 ? (
+          <>
+            <span style={{ color: 'var(--color-lime)' }}>→</span> One
+            recovered customer covers the{' '}
+            <strong className="text-zinc-100">${unlockPriceUsd}</strong>{' '}
+            unlock{' '}
+            <strong className="text-zinc-100">
+              {coverageMultiplier}× over
+            </strong>
+            .
+          </>
+        ) : (
+          <>
+            <span style={{ color: 'var(--color-lime)' }}>→</span> A handful
+            of recovered customers per month covers the{' '}
+            <strong className="text-zinc-100">${unlockPriceUsd}</strong>{' '}
+            unlock — and the Fix List is reusable forever.
+          </>
+        )}
+      </p>
+      {missedCells > 0 && (
+        <p className="text-zinc-400 mt-2">
+          You&rsquo;re missing in{' '}
+          <strong className="text-zinc-100">{missedCells} of 81</strong>{' '}
+          neighborhoods. The Fix List shows the highest-leverage cells
+          to start with.
+        </p>
+      )}
+      <p className="text-[10px] text-zinc-600 leading-relaxed mt-3 italic">
+        Industry averages — your real numbers depend on margin, close
+        rate, and market.
+      </p>
+    </div>
+  );
+}
+
+/** Keyword → industry-average economics. Matches against common
+ *  trade tokens with conservative defaults. */
+function inferTradeEconomics(keyword: string | null): {
+  tradeLabel: string;
+  unitLabel: 'job' | 'appointment' | 'order' | 'service call';
+  avgJobUSD: number;
+} {
+  if (!keyword) {
+    return { tradeLabel: 'this service', unitLabel: 'service call', avgJobUSD: 350 };
+  }
+  const k = keyword.toLowerCase();
+  if (/roof/.test(k)) {
+    return { tradeLabel: 'roofing', unitLabel: 'job', avgJobUSD: 8000 };
+  }
+  if (/hvac|furnace|ac repair|air condition|heating|cooling/.test(k)) {
+    return { tradeLabel: 'HVAC', unitLabel: 'service call', avgJobUSD: 450 };
+  }
+  if (/plumb|drain|leak|water heater/.test(k)) {
+    return { tradeLabel: 'plumbing', unitLabel: 'service call', avgJobUSD: 450 };
+  }
+  if (/electric/.test(k)) {
+    return { tradeLabel: 'electrical work', unitLabel: 'job', avgJobUSD: 350 };
+  }
+  if (/paint/.test(k)) {
+    return { tradeLabel: 'painting', unitLabel: 'job', avgJobUSD: 1500 };
+  }
+  if (/drywall/.test(k)) {
+    return { tradeLabel: 'drywall work', unitLabel: 'job', avgJobUSD: 600 };
+  }
+  if (/landscap|lawn|tree|garden|hardscape/.test(k)) {
+    return { tradeLabel: 'landscaping', unitLabel: 'job', avgJobUSD: 500 };
+  }
+  if (/pest|exterm|rodent/.test(k)) {
+    return { tradeLabel: 'pest control', unitLabel: 'service call', avgJobUSD: 300 };
+  }
+  if (/garage door/.test(k)) {
+    return { tradeLabel: 'garage door work', unitLabel: 'service call', avgJobUSD: 400 };
+  }
+  if (/locksmith/.test(k)) {
+    return { tradeLabel: 'locksmith work', unitLabel: 'service call', avgJobUSD: 200 };
+  }
+  if (/clean|maid|janitor/.test(k)) {
+    return { tradeLabel: 'cleaning', unitLabel: 'job', avgJobUSD: 200 };
+  }
+  if (/remodel|renovation|contractor|construction/.test(k)) {
+    return { tradeLabel: 'remodeling', unitLabel: 'job', avgJobUSD: 5000 };
+  }
+  if (/chiro|wellness|massage|physio|therap/.test(k)) {
+    return { tradeLabel: 'wellness care', unitLabel: 'appointment', avgJobUSD: 200 };
+  }
+  if (/dentist|dental|ortho/.test(k)) {
+    return { tradeLabel: 'dental care', unitLabel: 'appointment', avgJobUSD: 500 };
+  }
+  if (/lawyer|attorney|legal/.test(k)) {
+    return { tradeLabel: 'legal services', unitLabel: 'job', avgJobUSD: 1500 };
+  }
+  if (/salon|barber|hair|nail|spa/.test(k)) {
+    return { tradeLabel: 'salon services', unitLabel: 'appointment', avgJobUSD: 80 };
+  }
+  if (/florist|flower/.test(k)) {
+    return { tradeLabel: 'floral orders', unitLabel: 'order', avgJobUSD: 90 };
+  }
+  if (/restaurant|food|cafe|bakery|deli/.test(k)) {
+    return { tradeLabel: 'food orders', unitLabel: 'order', avgJobUSD: 35 };
+  }
+  // Generic fallback — keeps the page coherent even on unusual keywords.
+  return { tradeLabel: 'this service', unitLabel: 'service call', avgJobUSD: 350 };
 }
 
 /** Preview-cohort testimonial card. Lives between the heatmap +
