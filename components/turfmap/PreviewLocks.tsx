@@ -56,30 +56,49 @@ type DiscountState = {
   /** Long-form "$99 → $49 with MAPCHECK50" framing when discounted;
    *  the bare "One-time $99. No subscription." footer when not. */
   footerText: string;
-  /** Default UnlockShareButton label override. Discounted state spells
-   *  out the saving so the click feels like claiming a discount, not
-   *  paying list. */
+  /** Default UnlockShareButton label override.
+   *
+   *  Phrasing standardized across all three locks ("Unlock everything")
+   *  so the buyer can't mis-read three "$49" buttons as three
+   *  separate $49 purchases. ONE price gets the full bundle: heatmap +
+   *  named competitors + AI Coach Fix List. Discounted-state version
+   *  spells out the saving so the click feels like claiming a
+   *  discount, not paying list. */
   buttonLabel: string;
-  /** Variant for the AI Coach lock — the inline secondary CTA gets a
-   *  tighter label since it sits inside a smaller card. */
-  buttonLabelTight: string;
+  /** Inline "what's in the unlock" disclosure line, rendered next to
+   *  every CTA so the bundle reality is obvious. Without this each
+   *  lock card reads like its own paywall — buyers think "$49 for the
+   *  map AND another $49 for the Fix List." Same string across all
+   *  three locks for consistency. */
+  bundleLine: string;
+  /** Risk-reversal microcopy below each unlock button. Inherits the
+   *  same money-back promise as the touch-2 drip email so the buyer
+   *  sees the same guarantee on the page they're converting on. */
+  refundLine: string;
 };
 
 function resolveDiscount(discountedUnlock: boolean): DiscountState {
+  const sharedBundleLine =
+    'One purchase unlocks all three: full 81-cell map · named competitors · AI Coach Fix List.';
+  const sharedRefundLine =
+    'Full refund within 7 days if the unlocked report doesn’t show you something you didn’t already know.';
+
   if (discountedUnlock) {
     return {
       priceText: PRICE_FREE_SCORE_TEXT,
       footerText:
         '$99 → $49 with MAPCHECK50 auto-applied. One-time, no subscription.',
-      buttonLabel: 'Unlock the full map — $49',
-      buttonLabelTight: 'Unlock the Fix List — $49',
+      buttonLabel: 'Unlock everything — $49',
+      bundleLine: sharedBundleLine,
+      refundLine: sharedRefundLine,
     };
   }
   return {
     priceText: PRICE_LIST_TEXT,
     footerText: 'One-time $99. No subscription.',
-    buttonLabel: 'Unlock the full map — $99',
-    buttonLabelTight: 'Unlock the Fix List — $99',
+    buttonLabel: 'Unlock everything — $99',
+    bundleLine: sharedBundleLine,
+    refundLine: sharedRefundLine,
   };
 }
 
@@ -166,12 +185,22 @@ export function PreviewHeatmapLock({
           <p className="text-sm text-zinc-300 leading-relaxed">
             Unlock to see exactly which cells you&rsquo;re winning,
             losing, and missing — plus the named competitors taking
-            calls in your weak zones.
+            calls in your weak zones <strong className="text-zinc-100">and</strong>{' '}
+            your AI Coach Fix List.
           </p>
         </div>
         <UnlockShareButton shareId={shareId} label={discount.buttonLabel} />
-        <p className="text-[11px] text-zinc-500 font-mono">
+        {/* Bundle-clarity line — same string across all three locks
+         *  so a buyer scrolling can't mistake the three locked
+         *  surfaces for three separate paywalls. */}
+        <p className="text-[11px] text-zinc-200 leading-relaxed text-center max-w-sm">
+          {discount.bundleLine}
+        </p>
+        <p className="text-[11px] text-zinc-500 font-mono text-center">
           {discount.footerText}
+        </p>
+        <p className="text-[11px] text-zinc-500 leading-relaxed text-center max-w-sm italic">
+          {discount.refundLine}
         </p>
       </div>
     </div>
@@ -248,12 +277,21 @@ export function PreviewAICoachLock({
           <p className="text-sm text-zinc-300 leading-relaxed max-w-md mx-auto mb-4">
             Your <strong className="text-zinc-100">three prioritized
             actions</strong> are ready — specific fixes named to your
-            real data, ordered by impact. Unlock to see them.
+            real data, ordered by impact. They unlock together with
+            your full map and named competitors.
           </p>
           <UnlockShareButton
             shareId={shareId}
-            label={discount.buttonLabelTight}
+            label={discount.buttonLabel}
           />
+          {/* Same bundle disclosure + refund line as the heatmap
+           *  lock so the buyer sees consistent terms on every CTA. */}
+          <p className="text-[11px] text-zinc-200 leading-relaxed max-w-md mx-auto mt-4">
+            {discount.bundleLine}
+          </p>
+          <p className="text-[11px] text-zinc-500 leading-relaxed max-w-md mx-auto mt-2 italic">
+            {discount.refundLine}
+          </p>
         </div>
       </div>
     </div>
@@ -386,6 +424,11 @@ export function PreviewCompetitorLock({
         variant="ghost"
         label={discount.buttonLabel}
       />
+      {/* Bundle disclosure — keeps the sidebar CTA framing
+       *  consistent with the heatmap + AI Coach locks. */}
+      <p className="text-[10px] text-zinc-500 leading-relaxed mt-2">
+        {discount.bundleLine}
+      </p>
     </div>
   );
 }

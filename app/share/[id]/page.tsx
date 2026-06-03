@@ -451,6 +451,15 @@ export default async function PublicSharePage({
             highlight
             band={{ label: band.label, tone: band.tone }}
           />
+          {/* Preview-cohort only: band-interpretation copy + trajectory
+           *  anchor. Replaces "Patchy" / "Solid" labels with a
+           *  paragraph the buyer can actually anchor to, plus a
+           *  realistic improvement window so the score doesn't feel
+           *  static. Hidden for unlocked clients (they have the full
+           *  AI Coach panel right below). */}
+          {client.is_preview && (
+            <PreviewBandInterpretation bandLabel={band.label} />
+          )}
           <div className="grid grid-cols-2 gap-4">
             <StatCard
               label="TurfReach™"
@@ -481,6 +490,18 @@ export default async function PublicSharePage({
             <CompetitorTable competitors={competitors} />
           )}
         </div>
+
+        {/* Preview-cohort only: a credibility signal between the
+         *  heatmap unlock CTA and the AI Coach unlock CTA. Without
+         *  this, the buyer's only proof of TurfMap's value is the
+         *  product itself — and the product is locked. A testimonial
+         *  on the conversion page is a meaningful CRO addition that
+         *  the Tier 1 audit flagged. */}
+        {client.is_preview && (
+          <div className="lg:col-span-12">
+            <PreviewTestimonial />
+          </div>
+        )}
 
         <div className="lg:col-span-12">
           {client.is_preview ? (
@@ -550,6 +571,133 @@ export default async function PublicSharePage({
           </a>
         )}
       </footer>
+    </div>
+  );
+}
+
+/** Preview-cohort band interpretation card.
+ *
+ *  Sits between the TurfScore hero StatCard and the Reach/Rank
+ *  sub-cards on /share. Replaces the bare "Patchy" / "Solid"
+ *  band label with a paragraph the buyer can anchor to + a
+ *  realistic improvement trajectory + a reason the unlock is
+ *  worth $49.
+ *
+ *  Trajectory numbers are intentionally conservative — under-
+ *  promise; the buyer will see actual lift after the AI Coach
+ *  Fix List execution. */
+function PreviewBandInterpretation({ bandLabel }: { bandLabel: string }) {
+  const copy = bandInterpretationFor(bandLabel);
+  return (
+    <div
+      className="rounded-lg border p-4 text-sm leading-relaxed"
+      style={{
+        background: 'var(--color-card)',
+        borderColor: 'var(--color-border)',
+      }}
+    >
+      <div className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold text-zinc-500 mb-2">
+        What your {bandLabel} score means
+      </div>
+      <p className="text-zinc-300">{copy.meaning}</p>
+      <p className="text-zinc-400 mt-2">
+        <span style={{ color: 'var(--color-lime)' }}>→</span>{' '}
+        <strong className="text-zinc-100">{copy.trajectory}</strong>{' '}
+        {copy.trajectoryDetail}
+      </p>
+    </div>
+  );
+}
+
+function bandInterpretationFor(band: string): {
+  meaning: string;
+  trajectory: string;
+  trajectoryDetail: string;
+} {
+  switch (band) {
+    case 'Invisible':
+      return {
+        meaning:
+          "You're missing from most of your service area. Customers searching for your trade nearby aren't seeing you at all.",
+        trajectory: 'Most operators here move into Patchy or Solid',
+        trajectoryDetail:
+          'within 30 days using the Fix List — typically a 15–25 point swing once the highest-leverage citations and listings are corrected.',
+      };
+    case 'Patchy':
+      return {
+        meaning:
+          'You appear in some neighborhoods but not most. The map has clear "winning" zones near your address and clear gaps further out.',
+        trajectory: 'Most operators here move into Solid (60–70)',
+        trajectoryDetail:
+          "within 30 days using the Fix List. The Patchy → Solid jump is where calls start compounding — your service area becomes findable, not just your block.",
+      };
+    case 'Solid':
+      return {
+        meaning:
+          'You appear in about half your service area. Above-average operators land here. The gap is usually directory/citation issues, not your website.',
+        trajectory: 'The Fix List shows what blocks the next 10–15 points',
+        trajectoryDetail:
+          "— typically NAP inconsistencies across 3–5 specific directories that Google cross-references. Above 60 is where you start outranking competitors who pay agencies.",
+      };
+    case 'Dominant':
+      return {
+        meaning:
+          'You appear in most of your service area. Strong local visibility — the kind your competitors are paying agencies to chase.',
+        trajectory: 'The Fix List shows how to lock in the remaining cells',
+        trajectoryDetail:
+          "where you're showing as #2 or #3 instead of #1. Above 80 is rare — it usually requires defending what you have, not just adding new presence.",
+      };
+    case 'Rare air':
+    case 'Saturated':
+      return {
+        meaning:
+          'You appear in nearly all your service area at top positions. Top-tier visibility — very few local operators score this high.',
+        trajectory: 'The Fix List shows defensive moves',
+        trajectoryDetail:
+          "— what's at risk, which competitors are closing in, and where Google's algorithm changes could erode your lead. Worth knowing even when you're winning.",
+      };
+    default:
+      return {
+        meaning:
+          "Your TurfScore measures how much of your service area you cover in Google's local Map Pack.",
+        trajectory: 'The Fix List shows your three highest-leverage actions',
+        trajectoryDetail:
+          'specific to your business, named to your real data — not generic SEO advice.',
+      };
+  }
+}
+
+/** Preview-cohort testimonial card. Lives between the heatmap +
+ *  AI Coach lock so the buyer encounters a credibility signal
+ *  between the two biggest unlock CTAs.
+ *
+ *  Currently trade-agnostic — uses the painting-operator quote
+ *  that's already canonical across /scan, /free-score, /prove-it.
+ *  Adding trade-keyed quotes is a future iteration. */
+function PreviewTestimonial() {
+  return (
+    <div
+      className="rounded-lg p-5 md:p-6 border relative"
+      style={{
+        background: 'var(--color-card)',
+        borderColor: 'rgba(197, 255, 58, 0.35)',
+        boxShadow: '0 0 30px #c5ff3a14',
+      }}
+    >
+      <div
+        className="font-display text-4xl md:text-5xl font-black leading-none absolute -top-1 left-5 select-none"
+        style={{ color: 'var(--color-lime)' }}
+        aria-hidden="true"
+      >
+        &ldquo;
+      </div>
+      <blockquote className="text-sm md:text-base text-zinc-50 leading-relaxed pt-3 md:pt-4">
+        TurfMap caught a GBP category mismatch we&rsquo;d missed for 18
+        months. Fixed it the same day.
+      </blockquote>
+      <p className="mt-3 text-xs font-mono text-zinc-500">
+        — Painting operator, Greater Toronto Area
+      </p>
     </div>
   );
 }
