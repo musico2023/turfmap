@@ -400,16 +400,18 @@ export default async function PublicSharePage({
             </div>
           </div>
           {client.is_preview ? (
+            // ⚠ SECURITY: do NOT pass `cells` or `competitors` here.
+            // Anything in the lock component's props ends up in the
+            // browser-side React tree and is readable via DevTools,
+            // bypassing the visual blur. The PreviewHeatmapLock
+            // renders a band-keyed decoy heatmap internally — the
+            // buyer's real cell-by-cell rankings + competitor
+            // names are NOT shipped to the browser until they
+            // unlock. See the "Heatmap lock" header comment in
+            // PreviewLocks.tsx for the full rationale.
             <PreviewHeatmapLock
               shareId={shareId}
-              clientCells={cells}
-              clientName={client.business_name}
-              competitors={competitors.map(
-                (c): CompetitorView => ({
-                  ...c,
-                  cells: buildCompetitorCells(points, c.name),
-                })
-              )}
+              bandLabel={band.label}
               discountedUnlock={discountedUnlock}
             />
           ) : (

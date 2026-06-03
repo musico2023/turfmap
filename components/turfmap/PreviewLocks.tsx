@@ -5,12 +5,15 @@
  * Three locks replace the three "money" surfaces a paid buyer would
  * see:
  *
- *   - PreviewHeatmapLock    wraps the live HeatmapWithToggle in a
- *                            CSS blur + lock overlay. Map is
- *                            visually present (the buyer sees the
- *                            shape of the heatmap and gets a sense
- *                            of where the hot/cold zones cluster)
- *                            but the cell-level detail is unreadable.
+ *   - PreviewHeatmapLock    renders a SERVER-GENERATED DECOY heatmap
+ *                            under a lock overlay. The buyer's real
+ *                            cell-by-cell rankings + competitor
+ *                            per-cell data are NEVER shipped to the
+ *                            browser for preview clients — the
+ *                            payload is safe against DevTools "strip
+ *                            the blur" inspection. See the decoy
+ *                            generator + "Heatmap lock" header
+ *                            comment for the full rationale.
  *
  *   - PreviewAICoachLock     replaces the full AICoach panel with a
  *                            same-sized teaser. Same glow + lime
@@ -18,10 +21,12 @@
  *                            the unlock feels like turning the lights
  *                            on, not a different product appearing.
  *
- *   - PreviewCompetitorLock  replaces the CompetitorTable with a
- *                            single-line tease ("X competitors are
- *                            named in your full report") + ghost
- *                            unlock link.
+ *   - PreviewCompetitorLock  replaces the CompetitorTable with the
+ *                            intentionally-revealed top-3 competitor
+ *                            names (+ cell share + avg rank) and a
+ *                            count of how many more sit behind the
+ *                            unlock. Cell-by-cell rankings stay
+ *                            server-side.
  *
  * Reused across both first-time previewers AND visitors hitting an
  * already-unlocked share again (in that case is_preview=false and
@@ -29,12 +34,92 @@
  */
 
 import { Lock, Sparkles, Crown } from 'lucide-react';
-import {
-  HeatmapWithToggle,
-  type CompetitorView,
-} from '@/components/turfmap/HeatmapWithToggle';
-import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
+import { HeatmapGrid, type HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import { UnlockShareButton } from './UnlockShareButton';
+
+// ─── Decoy heatmap (server-rendered, no real data) ────────────────────
+//
+// Previously the heatmap lock rendered the buyer's REAL cell-by-cell
+// ranking data + every competitor's per-cell ranking and hid them
+// with a CSS blur. That was bypassable in ~10 seconds with browser
+// DevTools — strip the `filter: blur(...)` style and the entire
+// unlocked product was readable in the DOM.
+//
+// Fix: don't ship the locked data to the browser at all. The buyer
+// sees a band-keyed deterministic decoy heatmap. It looks like a
+// real heatmap (uses the same HeatmapGrid component), but the
+// 81-cell array driving it is pseudorandom data generated from the
+// band label alone — no real rank, no competitor names, no
+// per-cell payload. Even unblurred via DevTools, the buyer reads
+// canned filler instead of their actual map.
+//
+// The distributions per band roughly match what a buyer in that
+// band might expect to see (Invisible = mostly null, Patchy =
+// sparse mid-ranks, Dominant = mostly rank-1) — convincing enough
+// that the lock card doesn't read as "obviously fake," not so
+// convincing that the buyer mistakes it for their own data.
+
+type BandKey =
+  | 'Invisible'
+  | 'Patchy'
+  | 'Solid'
+  | 'Dominant'
+  | 'Rare air'
+  | 'Saturated';
+
+const BAND_DISTRIBUTIONS: Record<
+  BandKey,
+  { rank1: number; rank2: number; rank3: number /* null = remainder */ }
+> = {
+  Invisible: { rank1: 0.0, rank2: 0.02, rank3: 0.05 },
+  Patchy: { rank1: 0.08, rank2: 0.12, rank3: 0.18 },
+  Solid: { rank1: 0.22, rank2: 0.18, rank3: 0.12 },
+  Dominant: { rank1: 0.45, rank2: 0.2, rank3: 0.1 },
+  'Rare air': { rank1: 0.7, rank2: 0.15, rank3: 0.05 },
+  Saturated: { rank1: 0.7, rank2: 0.15, rank3: 0.05 },
+};
+
+/** Cheap, stable string hash — sufficient to seed the LCG below
+ *  without pulling in crypto. We only need determinism, not
+ *  cryptographic uniformity. */
+function hashSeed(input: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Build a deterministic 81-cell decoy heatmap pattern from the band
+ *  label. Same band always produces the same pattern — so the page
+ *  doesn't visually shift on every render and the decoy stays
+ *  consistent within a single browser session. */
+function buildDecoyHeatmapCells(bandLabel: string | null): HeatmapCell[] {
+  const key = (bandLabel ?? 'Patchy') as BandKey;
+  const dist = BAND_DISTRIBUTIONS[key] ?? BAND_DISTRIBUTIONS.Patchy;
+  // Linear congruential generator seeded by the band string —
+  // deterministic + no crypto.random / Date.now (which break
+  // server/client hydration parity in Next.js Server Components).
+  let state = hashSeed(key);
+  function nextRand(): number {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  }
+  const cells: HeatmapCell[] = [];
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const r = nextRand();
+      let rank: 1 | 2 | 3 | null;
+      if (r < dist.rank1) rank = 1;
+      else if (r < dist.rank1 + dist.rank2) rank = 2;
+      else if (r < dist.rank1 + dist.rank2 + dist.rank3) rank = 3;
+      else rank = null;
+      cells.push({ x, y, rank });
+    }
+  }
+  return cells;
+}
 
 // ─── Unlock price / cohort plumbing ────────────────────────────────────
 //
@@ -106,43 +191,50 @@ function resolveDiscount(discountedUnlock: boolean): DiscountState {
 
 export type PreviewHeatmapLockProps = {
   shareId: string;
-  clientCells: HeatmapCell[];
-  clientName: string;
-  competitors: CompetitorView[];
   /** When true, render labels + footer with the discounted ($49)
    *  price. Driven upstream by lead_orders.stripe_metadata.lead_source
    *  === 'free_score'. */
   discountedUnlock?: boolean;
+  /** Band label drives the decoy heatmap density (Patchy = sparse,
+   *  Dominant = dense, etc.). Server passes
+   *  `getTurfScoreBand(score).label`. */
+  bandLabel?: string | null;
 };
 
 /**
- * Renders the real HeatmapWithToggle underneath, but with a CSS
- * blur + dark overlay + centered lock chip on top. The blur is
- * heavy enough that cell-level ranks are unreadable, but light
- * enough that the buyer perceives the shape (where the hot zones
- * cluster) — which makes the unlock feel like getting a known
- * good thing into focus, not a surprise.
+ * Renders a SERVER-GENERATED DECOY heatmap underneath a lock
+ * overlay. No real cell data, no competitor names, no per-cell
+ * rankings ever ship to the browser for preview-cohort buyers —
+ * the page payload is safe against DevTools "strip the blur"
+ * inspection.
  *
- * The HeatmapWithToggle is interactive (you can flip between the
- * client's view and a competitor's view) — we intentionally render
- * the toggle BENEATH the overlay (pointer-events:none on the
- * overlay container, but pointer-events:auto on the unlock chip
- * subtree). The blurred map still responds to hover etc. without
- * exposing readable detail.
+ * Pre-fix this card rendered the real HeatmapWithToggle (with full
+ * cell + competitor payload) and hid it with CSS. Anthony caught
+ * the leak in prod — popping DevTools and removing the blur filter
+ * revealed the entire unlocked product. The decoy approach trades
+ * a small amount of "this is your real map shape" fidelity for
+ * complete inspect-element resistance.
+ *
+ * The blur is still applied for visual continuity (the post-unlock
+ * map appears in the same spot, sharp), but even an unblurred
+ * decoy is just band-keyed pseudorandom data — useless to a
+ * scraper, indistinguishable enough from a real map at a glance to
+ * a buyer reading the lock chip.
  */
 export function PreviewHeatmapLock({
   shareId,
-  clientCells,
-  clientName,
-  competitors,
   discountedUnlock = false,
+  bandLabel,
 }: PreviewHeatmapLockProps) {
   const discount = resolveDiscount(discountedUnlock);
+  const decoyCells = buildDecoyHeatmapCells(bandLabel ?? null);
   return (
     <div className="relative">
-      {/* Real heatmap, just blurred + desaturated. The wrapper's
-       *  pointer-events:none keeps clicks from reaching the toggle
-       *  underneath — they all fall through to the unlock CTA above. */}
+      {/* Decoy heatmap — server-generated from the band label, no
+       *  real cell data. Blurred + desaturated like the original
+       *  for visual continuity; even un-blurred via DevTools it
+       *  reveals only canned filler. pointer-events:none keeps
+       *  clicks falling through to the unlock CTA above. */}
       <div
         className="relative"
         style={{
@@ -152,11 +244,7 @@ export function PreviewHeatmapLock({
         }}
         aria-hidden
       >
-        <HeatmapWithToggle
-          clientCells={clientCells}
-          clientName={clientName}
-          competitors={competitors}
-        />
+        <HeatmapGrid cells={decoyCells} />
       </div>
 
       {/* Lock overlay — dark gradient so the unlock chip pops, with
