@@ -58,6 +58,11 @@ import {
   PreviewHeatmapLock,
 } from '@/components/turfmap/PreviewLocks';
 import { ShareCountdownBanner } from '@/components/turfmap/ShareCountdownBanner';
+import {
+  StickyShareUnlockBar,
+  SHARE_HERO_SENTINEL_ID,
+  SHARE_FINAL_SENTINEL_ID,
+} from '@/components/turfmap/StickyShareUnlockBar';
 
 export const dynamic = 'force-dynamic';
 
@@ -272,6 +277,20 @@ export default async function PublicSharePage({
         />
       )}
 
+      {/* Mobile-only sticky bottom unlock bar — companion to the top
+       *  countdown banner. Top banner = urgency + countdown. Bottom
+       *  bar = thumb-friendly always-available tap target. Visible
+       *  only when the buyer is mid-page between the heatmap unlock
+       *  CTA and the AI Coach unlock CTA (both sentinels off-screen);
+       *  hides when either inline CTA enters view to avoid two
+       *  competing "Unlock" buttons in the same viewport. */}
+      {client.is_preview && (
+        <StickyShareUnlockBar
+          shareId={shareId}
+          discountedUnlock={discountedUnlock}
+        />
+      )}
+
       {/* Branded header — not white-labeled because the audience hasn't
           signed up yet. TurfMap-branded so the tool gets the credit. */}
       <header
@@ -440,6 +459,12 @@ export default async function PublicSharePage({
               )}
             />
           )}
+          {/* Sentinel sentinel for StickyShareUnlockBar's hero
+           *  observer. While this is in view, the heatmap unlock CTA
+           *  is still visible and the bottom sticky stays hidden. */}
+          {client.is_preview && (
+            <div id={SHARE_HERO_SENTINEL_ID} aria-hidden="true" />
+          )}
         </div>
 
         <div className="lg:col-span-4 space-y-4">
@@ -520,6 +545,13 @@ export default async function PublicSharePage({
         )}
 
         <div className="lg:col-span-12">
+          {/* Final sentinel for StickyShareUnlockBar. When this
+           *  scrolls into view, the AI Coach lock's inline CTA is
+           *  active and the bottom sticky hides to avoid double-CTA
+           *  in viewport. */}
+          {client.is_preview && (
+            <div id={SHARE_FINAL_SENTINEL_ID} aria-hidden="true" />
+          )}
           {client.is_preview ? (
             <PreviewAICoachLock
               shareId={shareId}
@@ -587,6 +619,11 @@ export default async function PublicSharePage({
           </a>
         )}
       </footer>
+
+      {/* Bottom safe-area for StickyShareUnlockBar — keeps the
+       *  footer above the sticky on mobile preview-cohort viewports.
+       *  ~80px ≥ sticky height + iOS home-indicator inset. */}
+      {client.is_preview && <div className="h-20 md:hidden" />}
     </div>
   );
 }

@@ -176,7 +176,10 @@ export function ShareCountdownBanner({
               {expired ? (
                 <>— email <span className="font-mono">hello@turfmap.ai</span> if you still want $49</>
               ) : (
-                <>— locks in <span className="text-zinc-100 font-semibold">$49</span> for life</>
+                <>
+                  — <span className="text-zinc-100 font-semibold">$50 off</span>{' '}
+                  <span className="line-through text-zinc-500">$99</span> today only
+                </>
               )}
             </span>
           </div>
