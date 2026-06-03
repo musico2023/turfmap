@@ -732,10 +732,10 @@ export default async function ScanFreeLanderPage({
                 />
                 <span>
                   <strong className="font-semibold text-zinc-100">
-                    Branded PDF report
+                    30-day Pulse trial offered
                   </strong>{' '}
-                  — keep it, share it, or hand it to a freelancer or
-                  marketing vendor.
+                  — optional weekly re-scans + Slack alerts to track
+                  your TurfScore as the Fix List moves the needle.
                 </span>
               </li>
             </ul>

@@ -144,7 +144,7 @@ export default function ScoreLanderPage() {
                   <li>· Full 81-cell heatmap, sharp</li>
                   <li>· Competitor breakdown by cell</li>
                   <li>· AI Coach Fix List (3 actions)</li>
-                  <li>· 90-day Roadmap PDF</li>
+                  <li>· 30-day Pulse trial offered</li>
                 </ul>
               </div>
             </div>

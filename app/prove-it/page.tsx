@@ -719,9 +719,10 @@ export default async function ProveItLanderPage({
                 />
                 <span>
                   <strong className="font-semibold text-zinc-100">
-                    Branded PDF report
+                    30-day Pulse trial offered
                   </strong>{' '}
-                  — keep it, share it, or hand it to a freelancer.
+                  — optional weekly re-scans + Slack alerts to track
+                  your TurfScore as the Fix List moves the needle.
                 </span>
               </li>
             </ul>
