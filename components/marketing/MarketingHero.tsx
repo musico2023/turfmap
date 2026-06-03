@@ -156,9 +156,20 @@ export function MarketingHero() {
            *  desktop and pushed everything else below the fold. 4xl/
            *  5xl/6xl keeps the headline weight without crowding the
            *  sub-line + CTAs. */}
+          {/* H1 — red/lime accent treatment mirrors /free-score's
+           *  hero color logic:
+           *    RED   = the locus of the loss (the territory)
+           *    LIME  = the asset / entity at stake (the business)
+           *    WHITE = neutral framing
+           *  Inline styles (not Tailwind class tokens) so the exact
+           *  brand hex/var matches the /free-score pattern without
+           *  routing through Tailwind's safelist. */}
           <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] mb-4">
-            See how much of your city <em>can&rsquo;t find</em>{' '}your
-            business.
+            See how much of{' '}
+            <span style={{ color: '#ff4d4d' }}>your city</span>{' '}
+            <em>can&rsquo;t find</em>{' '}
+            <span style={{ color: 'var(--color-lime)' }}>your business</span>
+            .
           </h1>
           {/* Positioning sub-headline — sits between H1 and the descriptive
            *  subhead. Italic to flag it as the strategic frame ("what is

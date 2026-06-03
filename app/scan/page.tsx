@@ -166,10 +166,21 @@ export default async function ScanLandingPage({
             Google Maps audit · 60 seconds · $49 with code MAPCHECK50
           </div>
 
-          {/* H1 — 32-36px on mobile per brief */}
+          {/* H1 — 32-36px on mobile per brief.
+           *  Red/lime accent treatment mirrors /free-score's hero
+           *  color logic:
+           *    LIME = the entity currently winning the value
+           *           (the competitors taking the calls)
+           *    RED  = what's being lost (your traffic)
+           *    WHITE = neutral framing
+           *  Inline styles so the exact brand hex/var matches the
+           *  /free-score pattern without Tailwind safelist
+           *  ceremony. */}
           <h1 className="font-display text-[32px] md:text-5xl font-black leading-[1.1] tracking-tight mb-5 text-zinc-50">
-            Find every Google Maps cell where your competitors are stealing
-            your traffic.
+            Find every Google Maps cell where your{' '}
+            <span style={{ color: 'var(--color-lime)' }}>competitors</span>{' '}
+            are stealing{' '}
+            <span style={{ color: '#ff4d4d' }}>your traffic</span>.
           </h1>
 
           {/* Subhead — two short sentences, "two-thirds" bold-emphasized */}
