@@ -57,6 +57,7 @@ import {
   PreviewCompetitorLock,
   PreviewHeatmapLock,
 } from '@/components/turfmap/PreviewLocks';
+import { ShareCountdownBanner } from '@/components/turfmap/ShareCountdownBanner';
 
 export const dynamic = 'force-dynamic';
 
@@ -258,6 +259,19 @@ export default async function PublicSharePage({
 
   return (
     <div className="min-h-screen w-full text-white">
+      {/* MAPCHECK50 24h countdown — sticky top, lime accent, with an
+       *  inline unlock CTA so the buyer's first scroll cue + first
+       *  conversion path are the same band. Renders only for
+       *  preview-cohort Meta buyers (discountedUnlock=true).
+       *  Component is a no-op when discountedUnlock is false so it's
+       *  safe to mount unconditionally. */}
+      {client.is_preview && (
+        <ShareCountdownBanner
+          shareId={shareId}
+          discountedUnlock={discountedUnlock}
+        />
+      )}
+
       {/* Branded header — not white-labeled because the audience hasn't
           signed up yet. TurfMap-branded so the tool gets the credit. */}
       <header
