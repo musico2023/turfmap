@@ -587,6 +587,7 @@ export default async function ClientDashboardPage({
             scanId={latestScan?.id ?? null}
             insight={insightRow ?? null}
             scanComplete={Boolean(latestScan)}
+            allowRegenerate
           />
         </div>
 

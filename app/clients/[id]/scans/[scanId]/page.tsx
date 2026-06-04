@@ -323,6 +323,7 @@ export default async function PerScanPage({
             scanId={scan.id}
             insight={insightRow ?? null}
             scanComplete={scan.status === 'complete'}
+            allowRegenerate
           />
         </div>
       </div>

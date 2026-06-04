@@ -9,6 +9,7 @@
 
 import { Sparkles, TrendingUp } from 'lucide-react';
 import { AICoachGenerateButton } from './AICoachGenerateButton';
+import { AICoachRegenerateButton } from './AICoachRegenerateButton';
 
 export type AICoachAction = {
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
@@ -31,6 +32,11 @@ export type AICoachProps = {
    *  /share/<id> have no Supabase auth and this is their path to
    *  trigger AI Coach generation themselves. */
   shareId?: string;
+  /** Show the agency-side Regenerate button when an insight already
+   *  exists. Defaults to false — only the agency console + portal
+   *  surfaces should opt in (NOT /share/[id], where regenerate would
+   *  expose paid Claude calls to anonymous traffic). */
+  allowRegenerate?: boolean;
 };
 
 export function AICoach({
@@ -38,6 +44,7 @@ export function AICoach({
   insight,
   scanComplete,
   shareId,
+  allowRegenerate = false,
 }: AICoachProps) {
   return (
     <div
@@ -78,6 +85,9 @@ export function AICoach({
         </div>
         {scanComplete && !insight && scanId && (
           <AICoachGenerateButton scanId={scanId} shareId={shareId} />
+        )}
+        {scanComplete && insight && scanId && allowRegenerate && (
+          <AICoachRegenerateButton scanId={scanId} />
         )}
       </div>
 
