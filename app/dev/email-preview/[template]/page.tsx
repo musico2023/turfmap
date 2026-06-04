@@ -163,8 +163,8 @@ async function renderTemplate(
       // masked rows. Keep in sync with the dispatcher.
       const subjectByStage = {
         touch_1: `Your TurfScore${turfScore != null ? ` is ${turfScore}/100` : ' is ready'} — ${businessName ?? 'your business'}`,
-        touch_2: `The names behind the masked rows — ${businessName ?? 'your business'}`,
-        touch_3: `Last reminder — including the names — ${businessName ?? 'your business'}`,
+        touch_2: `Find out who's outranking you — ${businessName ?? 'your business'}`,
+        touch_3: `Last call to find out who's outranking you — ${businessName ?? 'your business'}`,
       } as const;
       return {
         subject: subjectByStage[stage],

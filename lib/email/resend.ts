@@ -916,8 +916,8 @@ export async function sendScoreUnlockNudge(args: {
   // preview-init, before they navigate to /share).
   const subjectByStage = {
     touch_1: `Your TurfScore${scoreFragment} — ${biz}`,
-    touch_2: `The names behind the masked rows — ${biz}`,
-    touch_3: `Last reminder — including the names — ${biz}`,
+    touch_2: `Find out who's outranking you — ${biz}`,
+    touch_3: `Last call to find out who's outranking you — ${biz}`,
   } as const;
   return sendEmailWithId({
     to: args.to,

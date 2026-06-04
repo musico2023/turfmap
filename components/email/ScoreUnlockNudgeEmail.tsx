@@ -137,12 +137,13 @@ function copyForStage(
             </>
           ) : null}{' '}
           Your map preview is live — open it to see where you appear
-          and where you don&apos;t. You&rsquo;ll also see the{' '}
-          <strong>top 3 competitors outranking you</strong> with
-          their territory share, but their names are{' '}
-          <em>masked</em> until you unlock. The full 81-cell map,{' '}
-          <strong>the names behind those masked rows</strong>, and
-          your AI Coach Fix List all unlock together for{' '}
+          and where you don&apos;t. You&rsquo;ll see the{' '}
+          <strong>top 3 competitors outranking you</strong> with the
+          territory each one holds, but{' '}
+          <strong>you won&rsquo;t see who they are</strong> until you
+          unlock. The full 81-cell map,{' '}
+          <strong>the names of the competitors taking your calls</strong>,
+          and your AI Coach Fix List all unlock together for{' '}
           <strong>{priceInline}</strong>.
         </>
       ),
@@ -158,8 +159,8 @@ function copyForStage(
 
   if (stage === 'touch_2') {
     return {
-      preview: `The names behind the masked rows — ${bizLabel}`,
-      headline: 'Three competitors. Three masked rows.',
+      preview: `Find out who's outranking you — ${bizLabel}`,
+      headline: "Find out who's outranking you.",
       body: (
         <>
           You saw{' '}
@@ -173,20 +174,20 @@ function copyForStage(
           ) : (
             <>your TurfScore </>
           )}
-          yesterday — plus three locked rows showing the territory
-          share of the operators outranking{' '}
-          <strong>{bizLabel}</strong>. You saw HOW dominant they are.
-          You haven&rsquo;t seen{' '}
-          <strong>who they are</strong>.
+          yesterday — plus three competitors taking calls in the
+          neighborhoods where{' '}
+          <strong>{bizLabel}</strong> is invisible. You saw{' '}
+          <strong>how much territory</strong> each one holds. You
+          haven&rsquo;t seen <strong>their names</strong>.
           <br />
           <br />
           The unlock reveals all three by name, shows you exactly
-          which cells each one owns, and ships your AI Coach Fix List
-          — three prioritized actions written from your real audit
-          data, not generic SEO advice.
+          which cells each one is winning, and ships your AI Coach
+          Fix List — three prioritized actions written from your real
+          audit data, not generic SEO advice.
         </>
       ),
-      cta: `Reveal the names — ${priceCta} →`,
+      cta: `See who they are — ${priceCta} →`,
       footnote: discounted ? (
         <>
           One-time charge, no subscription. Code{' '}
@@ -209,7 +210,7 @@ function copyForStage(
   // discounted footnote nudges the MAPCHECK50 affordance one more
   // time for Meta-cohort buyers.
   return {
-    preview: `Last reminder — including the names — ${bizLabel}`,
+    preview: `Last call to find out who's outranking you — ${bizLabel}`,
     headline: 'Last reminder about your unlock.',
     body: (
       <>
@@ -222,11 +223,11 @@ function copyForStage(
               {scoreText}/100
               {bandText ? ` (${bandText})` : ''}
             </strong>{' '}
-            — the unlock shows you exactly which cells to work on
-            first AND{' '}
-            <strong>the names of the operators currently
+            — the unlock shows you{' '}
+            <strong>the names of the competitors currently
             outranking you</strong>{' '}
-            (still masked in your preview).
+            (still hidden in your preview) plus the exact cells to
+            work on first.
           </>
         ) : null}{' '}
         Your preview link stays live for now, but I&rsquo;d hate for
