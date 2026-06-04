@@ -72,6 +72,11 @@ type StageCopy = {
   footnote: React.ReactNode;
 };
 
+// Returns " for <strong>{Business}</strong>" with a leading space.
+// Trailing space deliberately NOT added — call sites use this either
+// before " just finished." (own leading space) or before "." (no
+// space needed). A trailing space here would render "for Sgb ."
+// with an awkward gap before punctuation.
 function forBusiness(businessName?: string | null): React.ReactNode {
   return businessName ? (
     <>
@@ -138,9 +143,9 @@ function copyForStage(
           ) : null}{' '}
           Your map preview is live — open it to see where you appear
           and where you don&apos;t. You&rsquo;ll see the{' '}
-          <strong>top 3 competitors outranking you</strong> with the
+          <strong>top 3 competitors outranking you</strong>{' '}with the
           territory each one holds, but{' '}
-          <strong>you won&rsquo;t see who they are</strong> until you
+          <strong>you won&rsquo;t see who they are</strong>{' '}until you
           unlock. The full 81-cell map,{' '}
           <strong>the names of the competitors taking your calls</strong>,
           and your AI Coach Fix List all unlock together for{' '}
@@ -176,9 +181,9 @@ function copyForStage(
           )}
           yesterday — plus three competitors taking calls in the
           neighborhoods where{' '}
-          <strong>{bizLabel}</strong> is invisible. You saw{' '}
-          <strong>how much territory</strong> each one holds. You
-          haven&rsquo;t seen <strong>their names</strong>.
+          <strong>{bizLabel}</strong>{' '}is invisible. You saw{' '}
+          <strong>how much territory</strong>{' '}each one holds. You
+          haven&rsquo;t seen{' '}<strong>their names</strong>.
           <br />
           <br />
           The unlock reveals all three by name, shows you exactly
