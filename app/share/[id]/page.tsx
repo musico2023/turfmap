@@ -40,6 +40,7 @@ import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
+import { cleanCompetitorName } from '@/lib/dataforseo/cleanCompetitorName';
 import { isDiscountedLeadSource } from '@/lib/score/leadSources';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
 import {
@@ -168,6 +169,27 @@ export default async function PublicSharePage({
   const competitors = aggregateCompetitors(points, points.length || 1, {
     excludeNamePattern: ownNamePattern,
   });
+
+  // ─── Preview-cohort competitor gating ───────────────────────────────
+  //
+  // Per the §4 "load-bearing requirement" of the re-gate ticket:
+  // competitor NAMES must be withheld server-side from the preview
+  // payload — never just CSS-hidden. The PreviewCompetitorLock
+  // receives masked rows (real cell_share + avg_rank, name=null) so
+  // a buyer with DevTools open finds nothing but stats and lock chrome
+  // in the network response / DOM. Names render only when
+  // is_preview=false (post-unlock).
+  //
+  // leaderShare ("preferred definition" from §5.2): the share of the
+  // buyer's 81 cells where the top competitor outranks them — i.e.
+  // dominance in the buyer's weak zones. Real number from the scan,
+  // never a placeholder. Returns null on the rare case where the
+  // leader can't be matched against any cell (no data → fallback
+  // hero copy renders).
+  const previewLeaderShare =
+    client.is_preview && competitors.length > 0
+      ? computeLeaderShare(competitors[0].name, points)
+      : null;
 
   const { data: insightRow } = await supabase
     .from('ai_insights')
@@ -530,15 +552,22 @@ export default async function PublicSharePage({
           </div>
           {momentumValue !== null && <MomentumCard momentum={momentumValue} />}
           {client.is_preview ? (
+            // ⚠ SECURITY: names are stripped server-side here. The
+            //   preview payload that hydrates the client component
+            //   carries top3Pct + amr (real stats — the "proof") but
+            //   `name: null` so DevTools / network-tab inspection
+            //   yields no identifying competitor data pre-unlock. See
+            //   the re-gate ticket §4 for the load-bearing requirement.
             <PreviewCompetitorLock
               shareId={shareId}
               topCompetitors={competitors.slice(0, 3).map((c) => ({
-                name: c.name,
+                name: null,
                 top3Pct: c.top3Pct,
                 amr: Number.isFinite(c.amr) ? c.amr : null,
               }))}
               totalCompetitorCount={competitors.length}
               discountedUnlock={discountedUnlock}
+              leaderShare={previewLeaderShare}
             />
           ) : (
             <CompetitorTable competitors={competitors} />
@@ -639,6 +668,62 @@ export default async function PublicSharePage({
       {client.is_preview && <div className="h-20 md:hidden" />}
     </div>
   );
+}
+
+/** Compute the share of cells where `leaderName` outranks the buyer.
+ *
+ *  "Outranks" means the leader appears in the 3-pack at a numerically
+ *  lower (better) rank than the buyer in the same cell — including
+ *  every cell where the buyer is invisible (rank = null) and the
+ *  leader is rank 1/2/3.
+ *
+ *  Server-side only. Pure read over scan_points data already loaded
+ *  for the heatmap render — no extra DB hit. Returns null when the
+ *  leader can't be matched against any cell (no points or no
+ *  competitor entries) so the calling site can fall back to non-%
+ *  copy instead of inventing a number.
+ *
+ *  Name matching uses cleanCompetitorName() so the comparison against
+ *  the aggregator's cleaned-name output is symmetric with the
+ *  per-cell raw names that DFS sometimes suffixes (My Ad Center etc.). */
+function computeLeaderShare(
+  leaderName: string,
+  points: Array<
+    Pick<
+      ScanPointRow,
+      'grid_x' | 'grid_y' | 'rank' | 'business_found' | 'competitors'
+    >
+  >
+): number | null {
+  const totalCells = points.length;
+  if (totalCells === 0) return null;
+  let outranks = 0;
+  let matchedAnyCell = false;
+  for (const p of points) {
+    const operatorRank = p.rank; // null = buyer not in 3-pack at this cell
+    const compEntries = (p.competitors ?? []) as Array<{
+      name?: string | null;
+      rank_group?: number | null;
+      rank_absolute?: number | null;
+    }>;
+    const match = compEntries.find(
+      (c) => c?.name && cleanCompetitorName(c.name) === leaderName
+    );
+    if (!match) continue;
+    matchedAnyCell = true;
+    const leaderRank =
+      match.rank_group ?? match.rank_absolute ?? null;
+    if (leaderRank === null || leaderRank > 3) continue;
+    if (operatorRank === null || leaderRank < operatorRank) {
+      outranks++;
+    }
+  }
+  // If the leader never appeared in any per-cell payload (shouldn't
+  // happen given aggregateCompetitors derived from the same points,
+  // but defensive against future shape drift), return null so the
+  // hero falls back to non-% copy.
+  if (!matchedAnyCell) return null;
+  return Math.round((outranks / totalCells) * 100);
 }
 
 /** Preview-cohort band interpretation card.

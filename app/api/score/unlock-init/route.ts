@@ -246,6 +246,12 @@ export async function POST(req: Request) {
         // funnel converted. 'unknown' when the original preview row
         // is missing the metadata (defensive against pre-migration data).
         unlock_lead_source: unlockLeadSource ?? 'unknown',
+        // Tag which /share UI variant this buyer converted from. The
+        // re-gate ticket §10 asked for a marker so future-version
+        // unlocks can be split in SQL without depending on guess-by-
+        // timestamp. Hardcoded to the current shipped variant since
+        // we're not running A/B; bump the slug when /share changes.
+        share_variant: 'v2_competitor_names_locked',
         ...(discounts ? { applied_coupon: 'MAPCHECK50' } : {}),
       },
     });

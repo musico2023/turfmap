@@ -391,12 +391,18 @@ export function PreviewAICoachLock({
 export type PreviewCompetitorLockProps = {
   shareId: string;
   /** Pre-aggregated top competitors from aggregateCompetitors().
-   *  When non-empty, we reveal the top 3 names + their territory
-   *  share so the buyer has something concrete + named to anchor
-   *  on. The cell-by-cell breakdown (which cells each competitor
-   *  owns) stays behind the unlock. */
+   *  In PREVIEW MODE the `name` field is stripped server-side by the
+   *  /share page (set to null in the payload that hydrates this
+   *  component) — see the §4 load-bearing requirement of the re-gate
+   *  ticket. Stats (top3Pct + amr) remain real and visible: they're
+   *  the "proof the data is real," the names are the product. Once
+   *  the buyer unlocks, this same component is no longer rendered —
+   *  the unlocked path uses CompetitorTable with full names. */
   topCompetitors: Array<{
-    name: string;
+    /** Real cleaned business name in full mode; NULL in preview
+     *  mode (server-side stripped). When null we render a masked
+     *  "Competitor #N" label. */
+    name: string | null;
     /** Share of cells the competitor appeared in (0–100). */
     top3Pct: number;
     /** Average rank at the cells where they appeared (1.0–3.0).
@@ -408,30 +414,51 @@ export type PreviewCompetitorLockProps = {
   totalCompetitorCount: number;
   /** See PreviewHeatmapLockProps.discountedUnlock. */
   discountedUnlock?: boolean;
+  /** Server-computed share (0–100) of the buyer's 81 cells where
+   *  the #1 competitor outranks them. Drives the hero alarm line.
+   *  Null when the leader can't be matched against any cell (no
+   *  data) or when leaderShare === 0 — caller renders fallback copy
+   *  in either case. Never a placeholder; always derived from the
+   *  buyer's real scan_points data. */
+  leaderShare?: number | null;
 };
 
 /**
- * Sidebar-slot competitor surface for preview mode. Reveals the top
- * 3 dominators by territory share — names + share-of-cells. Keeps
- * the cell-by-cell breakdown (which cell each competitor sits at
- * which rank in) locked behind the $99 unlock.
+ * Sidebar-slot competitor surface for preview mode. Reveals real
+ * cell_share + avg_rank STATS for the top 3 dominators but masks
+ * their names — the dominance/proof is visible (so the buyer can see
+ * the data is real); the identities unlock with the $49 purchase.
  *
- * Rationale for the reveal: showing JUST a count ("12 competitors
- * are dominating you") was abstract and didn't anchor anything. Top
- * 3 names with their territory share make the score tangible — the
- * buyer can recognize Miami Chiropractic & Wellness, look it up, and
- * see why the unlock matters. The cell-level breakdown is the actual
- * deliverable the $99 unlocks.
+ * Hero line: "The #1 operator in your market holds X% of the
+ * neighborhoods where you're invisible — and they're not the only
+ * one outranking you." Uses real leaderShare; falls back to non-%
+ * copy when the value can't be computed.
+ *
+ * Originally this card REVEALED the top-3 names for free (the
+ * "strongest single piece of free value"), but the re-gate ticket
+ * concluded that handing over the names defuses exactly the
+ * curiosity that drives the $49 unlock. Now: stats prove the data
+ * is real, names are the payoff.
  */
 export function PreviewCompetitorLock({
   shareId,
   topCompetitors,
   totalCompetitorCount,
   discountedUnlock = false,
+  leaderShare = null,
 }: PreviewCompetitorLockProps) {
   const visible = topCompetitors.slice(0, 3);
   const moreCount = Math.max(0, totalCompetitorCount - visible.length);
   const discount = resolveDiscount(discountedUnlock);
+  // Hero alarm line gating per ticket §6 fallback rule:
+  //   leaderShare null OR 0 → render fallback hero (no % line).
+  //   leaderShare positive → render the templated alarm with the
+  //     real %.
+  const showLeaderShareHero =
+    typeof leaderShare === 'number' &&
+    Number.isFinite(leaderShare) &&
+    leaderShare > 0;
+
   return (
     <div
       className="rounded-lg border p-5"
@@ -443,41 +470,83 @@ export function PreviewCompetitorLock({
       <div className="flex items-center gap-2 mb-3">
         <Crown size={14} style={{ color: 'var(--color-lime)' }} />
         <h4 className="text-xs uppercase tracking-[0.18em] font-mono font-semibold text-zinc-300">
-          Top competitors in your territory
+          Competitor intel
         </h4>
       </div>
 
+      {/* Hero alarm line — the emotional anchor that the masked rows
+       *  below pay off. Uses real leaderShare, falls back to a
+       *  count-led line when the metric can't be computed. */}
+      {visible.length > 0 && (
+        <p className="text-sm text-zinc-200 leading-relaxed mb-4">
+          {showLeaderShareHero ? (
+            <>
+              The #1 operator in your market holds{' '}
+              <strong
+                className="font-bold"
+                style={{ color: 'var(--color-warn)' }}
+              >
+                {leaderShare}%
+              </strong>{' '}
+              of the neighborhoods where you&rsquo;re invisible — and
+              they&rsquo;re not the only one outranking you.
+            </>
+          ) : (
+            <>
+              Three competitors are outranking you in the
+              neighborhoods where you&rsquo;re invisible. Unlock to
+              see who.
+            </>
+          )}
+        </p>
+      )}
+
       {visible.length > 0 ? (
         <ol className="space-y-2.5 mb-4">
-          {visible.map((c, i) => (
-            <li
-              key={c.name}
-              className="flex items-baseline gap-3 text-sm leading-tight"
-            >
-              <span
-                className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 flex-shrink-0 w-5"
-                aria-hidden
+          {visible.map((c, i) => {
+            const isMasked = c.name === null;
+            const displayName = isMasked
+              ? `Competitor #${i + 1}`
+              : c.name;
+            return (
+              <li
+                key={i}
+                className="flex items-baseline gap-3 text-sm leading-tight"
               >
-                #{i + 1}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-zinc-100 truncate">
-                  {c.name}
+                <span
+                  className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 flex-shrink-0 w-5"
+                  aria-hidden
+                >
+                  #{i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-zinc-100 truncate flex items-center gap-1.5">
+                    {isMasked && (
+                      <Lock
+                        size={12}
+                        className="text-zinc-500 flex-shrink-0"
+                        aria-hidden
+                      />
+                    )}
+                    <span className={isMasked ? 'text-zinc-300' : ''}>
+                      {displayName}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 font-mono mt-0.5">
+                    <span style={{ color: 'var(--color-lime)' }}>
+                      {c.top3Pct}%
+                    </span>{' '}
+                    cell share
+                    {typeof c.amr === 'number' && Number.isFinite(c.amr) ? (
+                      <>
+                        {' · '}avg rank #{c.amr.toFixed(1)}
+                      </>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="text-[11px] text-zinc-500 font-mono mt-0.5">
-                  <span style={{ color: 'var(--color-lime)' }}>
-                    {c.top3Pct}%
-                  </span>{' '}
-                  of cells
-                  {typeof c.amr === 'number' && Number.isFinite(c.amr) ? (
-                    <>
-                      {' · '}avg rank {c.amr.toFixed(1)}
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <p className="text-sm text-zinc-400 leading-relaxed mb-4">
@@ -487,26 +556,23 @@ export function PreviewCompetitorLock({
         </p>
       )}
 
-      <div className="flex items-start gap-3 mb-3 pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
-        <Lock size={14} className="text-zinc-500 flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-zinc-400 leading-relaxed">
-          {moreCount > 0 ? (
-            <>
-              <strong className="text-zinc-200">
-                +{moreCount} more competitor{moreCount === 1 ? '' : 's'}
-              </strong>{' '}
-              named in the unlocked report — plus which cells each one
-              owns and where you can flip the script.
-            </>
-          ) : (
-            <>
-              Unlock the full report to see exactly{' '}
-              <strong className="text-zinc-200">which cells</strong>{' '}
-              each competitor owns and where you can flip the script.
-            </>
-          )}
-        </p>
-      </div>
+      {moreCount > 0 && (
+        <div
+          className="flex items-start gap-3 mb-3 pt-3 border-t"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <Lock size={14} className="text-zinc-500 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-zinc-400 leading-relaxed">
+            <strong className="text-zinc-200">
+              +{moreCount} more competitor
+              {moreCount === 1 ? '' : 's'}
+            </strong>{' '}
+            named in the unlocked report — plus which cells each one
+            owns and where you can flip the script.
+          </p>
+        </div>
+      )}
+
       <UnlockShareButton
         shareId={shareId}
         variant="ghost"
