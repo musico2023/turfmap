@@ -907,10 +907,17 @@ export async function sendScoreUnlockNudge(args: {
     typeof args.turfScore === 'number' && Number.isFinite(args.turfScore)
       ? ` is ${Math.round(args.turfScore)}/100`
       : ' is ready';
+  // Subjects re-tuned post-re-gate (the /share preview now masks
+  // competitor names — they're the unlock payoff, not a free reveal).
+  // Touch 2's subject leads on the identity curiosity hook; touch 3
+  // calls back to the same masked rows one last time. Touch 1 stays
+  // score-led since the buyer hasn't yet seen the masked-name UI at
+  // the moment touch 1 hits the inbox (it fires immediately on
+  // preview-init, before they navigate to /share).
   const subjectByStage = {
     touch_1: `Your TurfScore${scoreFragment} — ${biz}`,
-    touch_2: `Your competitors are on the unlocked map — ${biz}`,
-    touch_3: `Last reminder about your TurfScore — ${biz}`,
+    touch_2: `The names behind the masked rows — ${biz}`,
+    touch_3: `Last reminder — including the names — ${biz}`,
   } as const;
   return sendEmailWithId({
     to: args.to,

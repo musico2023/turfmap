@@ -158,10 +158,13 @@ async function renderTemplate(
       // variant so the preview tab opens to the homepage-/score
       // shape buyers see by default.
       const leadSource = single(search.lead_source) ?? null;
+      // Subjects mirror lib/email/resend.ts after the re-gate update.
+      // Touch 2 leads on the identity hook; touch 3 calls back to the
+      // masked rows. Keep in sync with the dispatcher.
       const subjectByStage = {
         touch_1: `Your TurfScore${turfScore != null ? ` is ${turfScore}/100` : ' is ready'} — ${businessName ?? 'your business'}`,
-        touch_2: `Your competitors are on the unlocked map — ${businessName ?? 'your business'}`,
-        touch_3: `Last reminder about your TurfScore — ${businessName ?? 'your business'}`,
+        touch_2: `The names behind the masked rows — ${businessName ?? 'your business'}`,
+        touch_3: `Last reminder — including the names — ${businessName ?? 'your business'}`,
       } as const;
       return {
         subject: subjectByStage[stage],
