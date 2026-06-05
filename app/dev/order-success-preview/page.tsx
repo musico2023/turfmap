@@ -35,7 +35,25 @@ export const dynamic = 'force-dynamic';
 export default async function OrderSuccessPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reopen?: string; extended?: string }>;
+  searchParams: Promise<{
+    reopen?: string;
+    extended?: string;
+    /** Simulate the buyer having accepted the audit upgrade —
+     *  passes isAuditUpgrade=true to OrderSuccessForm, which:
+     *  (a) hides the AuditUpgradePanel (step 1)
+     *  (b) shows the audit-purchased banner (with "Book your
+     *      strategist call" button)
+     *  (c) progresses to the Pulse step (or, if also ?skipPulse=1,
+     *      straight to the success card with heatmap CTA).
+     *  Use this to QA the post-audit-accept state without going
+     *  through the real Stripe charge (which would fail against
+     *  the mock session_id). */
+    accepted?: string;
+    /** When set alongside ?accepted=audit, simulates the buyer also
+     *  skipping Pulse — drops the preview directly into step 3
+     *  (banner + success card with heatmap CTA). */
+    skipPulse?: string;
+  }>;
 }) {
   const me = await requireAgencyUserOrRedirect('/dev/order-success-preview');
   if (!isAgencyOwnerEmail(me.email)) notFound();
@@ -52,6 +70,7 @@ export default async function OrderSuccessPreviewPage({
         : null;
   const extendedTrial =
     params.extended === '1' && reopenTarget === 'pulse';
+  const auditAccepted = params.accepted === 'audit';
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -68,12 +87,21 @@ export default async function OrderSuccessPreviewPage({
           <div className="font-semibold text-zinc-100 mb-1">
             Preview: score_unlock /order/success layout
           </div>
-          <div className="text-zinc-400">
-            This is the new two-block layout — success card on top, audit
-            upsell panel inlined below. Mock props are hydrated so this
-            renders without a real Stripe session. Clicking the inline
-            confirm or share CTAs will fail (mock data) — purely visual
-            QA.
+          <div className="text-zinc-400 leading-relaxed">
+            Mock props are hydrated so this renders without a real
+            Stripe session. Toggle states via URL params:
+            <br />
+            <span className="font-mono text-zinc-300">?</span> (no params)
+            — Step 1: AuditUpgradePanel alone (default arrival state)
+            <br />
+            <span className="font-mono text-zinc-300">?accepted=audit</span> —
+            Step 2: audit-purchased banner + PulseAttachPanel (post-1-click-accept)
+            <br />
+            <span className="font-mono text-zinc-300">?accepted=audit&amp;skipPulse=1</span> —
+            Step 3: banner + success card with "View my full TurfMap"
+            <br />
+            <span className="font-mono text-zinc-300">?reopen=pulse&amp;extended=1</span> —
+            recovery-email landing in 60-day extended trial mode
           </div>
         </div>
 
@@ -82,11 +110,19 @@ export default async function OrderSuccessPreviewPage({
           sessionId="cs_preview_score_unlock_mock"
           keywordCount={1}
           prefillEmail="justinenns@gmail.com"
-          stripeCustomerId="cus_preview_mock"
+          // Null stripeCustomerId disqualifies the Pulse step (it
+          // requires a customer to attach a subscription against),
+          // which makes the sequenced flow short-circuit straight to
+          // step 3 (success card). Use ?skipPulse=1 with ?accepted=audit
+          // to see the final-step layout: banner + heatmap CTA, no
+          // Pulse panel between them.
+          stripeCustomerId={
+            params.skipPulse === '1' ? null : 'cus_preview_mock'
+          }
           attachState={null}
           attachPublicId={null}
           attachOnboardingStep={null}
-          isAuditUpgrade={false}
+          isAuditUpgrade={auditAccepted}
           // Saved card means the 1-click inline confirm button renders
           // (vs the fallback "Add the Roadmap →" Stripe Checkout redirect).
           // Set to null instead to see the fallback variant.
