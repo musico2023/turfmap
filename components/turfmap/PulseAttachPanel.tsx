@@ -191,7 +191,7 @@ export function PulseAttachPanel({
       {/* Three-bullet feature row — what they actually get during the
        *  trial. Compact icons + one-line bodies so the panel doesn't
        *  bloat the success page. */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
         <FeatureItem icon={Calendar} label="Weekly scans">
           Map auto-refreshes every Monday morning.
         </FeatureItem>
@@ -201,6 +201,40 @@ export function PulseAttachPanel({
         <FeatureItem icon={TrendingUp} label="Refreshed playbook">
           AI Coach revisits your fix list each week.
         </FeatureItem>
+      </div>
+
+      {/* Cost-savings anchor. Universal framing — a standalone
+       *  TurfScan is $49 regardless of which tier the buyer just
+       *  purchased, so the math holds for score_unlock, scan, audit,
+       *  and strategy buyers alike. Positions Pulse as "less per
+       *  scan than one-off" rather than "new monthly expense" —
+       *  reframes the $39/mo as a quantity discount, not an upsell.
+       *  Subtle treatment (mono price strikethrough + lime accent
+       *  on the per-scan number) so it reads as math, not marketing. */}
+      <div
+        className="rounded-md border px-4 py-3 mb-6 flex items-start gap-3"
+        style={{
+          background: 'rgba(197, 255, 58, 0.04)',
+          borderColor: 'rgba(197, 255, 58, 0.18)',
+        }}
+      >
+        <div
+          className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold whitespace-nowrap mt-0.5"
+          style={{ color: 'var(--color-lime)' }}
+        >
+          The math
+        </div>
+        <div className="text-xs leading-relaxed text-zinc-300">
+          A one-off TurfScan is{' '}
+          <span className="font-mono text-zinc-100">$49</span> each.
+          Pulse runs <strong className="text-zinc-100">4 scans</strong>{' '}
+          + weekly AI Coach refresh for{' '}
+          <span className="font-mono text-zinc-100">$39/mo</span> —{' '}
+          <strong style={{ color: 'var(--color-lime)' }}>
+            under $10 per scan
+          </strong>
+          , billed monthly instead of per-scan.
+        </div>
       </div>
 
       {/* Primary CTA + post-trial price reminder, then the skip link.
