@@ -863,6 +863,45 @@ export function OrderSuccessForm({
             )}
           </div>
         )}
+
+        {/* Score-unlock-only audit upsell. Standalone TurfScan buyers
+         *  see the AuditUpgradePanel via the pre-intake gate (below,
+         *  ~L897). Score_unlock buyers bypass that gate because the
+         *  mount-time useEffect hydrates done=true from the scoreUnlock
+         *  prop to skip the intake form they already filled on
+         *  /prove-it. Without this inline panel they'd never see the
+         *  audit upsell at all — losing the highest-intent moment of
+         *  the session. Placed BELOW the success card so the "View
+         *  my full TurfMap" CTA reads first (immediate intent honored),
+         *  then the upsell pitches once they've registered the win.
+         *  See CertaPro Calgary / Justin Enns incident 2026-06-04. */}
+        {scoreUnlock &&
+          sessionId &&
+          upgradeChoice === 'pending' &&
+          !isAuditUpgrade &&
+          !inlineUpgradeAccepted && (
+            <div className="mt-6">
+              <AuditUpgradePanel
+                source="order_success"
+                sessionId={sessionId}
+                savedCard={savedCard}
+                onSkip={() => setUpgradeChoice('skipped')}
+                onInlineConfirmSuccess={() => {
+                  setInlineUpgradeAccepted(true);
+                  void import('@/components/marketing/scan/MetaPixel').then(
+                    ({ trackMetaEvent }) => {
+                      trackMetaEvent('Purchase', {
+                        currency: 'USD',
+                        value: 197,
+                        content_name: 'Visibility Audit',
+                        content_category: 'upgrade',
+                      });
+                    }
+                  );
+                }}
+              />
+            </div>
+          )}
         </>
       </>
     );
