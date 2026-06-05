@@ -284,15 +284,42 @@ export async function handleScoreUnlockCompletion(
     // canonical post-unlock record.
   }
 
-  // ─── 5. Provision portal access ─────────────────────────────────────
-  // Same flow as /api/orders/fulfill — idempotent on the
-  // (client_id, email) UNIQUE in client_users.
-  try {
-    await ensurePortalUser(supabase, clientId, email);
-  } catch (e) {
-    console.warn(
-      '[score-unlock] ensurePortalUser threw (non-fatal):',
-      e instanceof Error ? e.message : String(e)
+  // ─── 5. Provision portal access (DUAL-EMAIL) ───────────────────────
+  // Stripe captures the buyer's payment-method email at Checkout
+  // (e.g. justinenns@gmail.com — the personal address they're logged
+  // into Stripe with). The buyer originally filled the /free-score
+  // or /prove-it form with a DIFFERENT email (jenns@certapro.com —
+  // their work address). When those two differ — which they almost
+  // always do for B2B buyers — the buyer's mental model says "I
+  // signed up with my work email, that should be my login." Without
+  // dual-provisioning, they hit the portal login form, type the work
+  // email, get a silent rejection, and email support confused.
+  //
+  // Fix: provision BOTH emails as client_users members so either
+  // address signs them in. ensurePortalUser is idempotent on
+  // (client_id, email) UNIQUE — same-email re-calls no-op.
+  //
+  // See: CertaPro Calgary / Justin Enns incident 2026-06-04 — second
+  // post-unlock buyer to hit this exact confusion path.
+  const portalEmails = new Set<string>([email.trim().toLowerCase()]);
+  const previewFormEmail = await loadPreviewFormEmail(supabase, clientId);
+  if (previewFormEmail) {
+    portalEmails.add(previewFormEmail.trim().toLowerCase());
+  }
+  for (const portalEmail of portalEmails) {
+    try {
+      await ensurePortalUser(supabase, clientId, portalEmail);
+    } catch (e) {
+      console.warn(
+        `[score-unlock] ensurePortalUser threw for ${portalEmail} (non-fatal):`,
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+  if (portalEmails.size > 1) {
+    console.info(
+      `[score-unlock] dual-provisioned portal access for ${clientId}:`,
+      [...portalEmails].join(', ')
     );
   }
 
@@ -347,7 +374,25 @@ export async function handleScoreUnlockCompletion(
     }
 
     try {
-      const shareUrl = `${APP_ORIGIN}/share/${shareId}`;
+      // ONE-CLICK SIGN-IN. Replaces the previous /share/<id> CTA so
+      // the buyer doesn't have to type any email at a login form —
+      // they click the email button, land on /portal/<slug> already
+      // authenticated. Falls back to /portal/<slug> (login form) if
+      // admin.generateLink fails — that path still works because of
+      // the dual-email provisioning above.
+      //
+      // The /share/<id> page would only render the legacy share view
+      // (no portal features), so even with no auth we'd rather send
+      // the buyer to their portal. public_id is always present on a
+      // real client row — we loaded it back in step 2.
+      const oneClickUrl = client.public_id
+        ? (await buildOneClickPortalUrl(
+            supabase,
+            email,
+            client.public_id,
+            APP_ORIGIN
+          )) ?? `${APP_ORIGIN}/portal/${client.public_id}`
+        : `${APP_ORIGIN}/share/${shareId}`;
       // The scan rows already carry the computed score family —
       // sendScanReady takes a `metrics` blob, not loose fields.
       const reach =
@@ -367,7 +412,7 @@ export async function handleScoreUnlockCompletion(
       await sendScanReady({
         to: email,
         businessName: client.business_name,
-        dashboardUrl: shareUrl,
+        dashboardUrl: oneClickUrl,
         metrics,
       });
     } catch (e) {
@@ -418,4 +463,106 @@ async function loadPreviewEmail(
     .limit(1)
     .maybeSingle<{ email: string | null }>();
   return data?.email ?? null;
+}
+
+/**
+ * Pull the email the buyer originally typed into the /free-score
+ * or /prove-it form. Filtered to the `source='score_preview'` row
+ * specifically — by the time the dual-provision step runs, this
+ * client also has a `source='score_unlock'` (fulfilled) row whose
+ * email is the Stripe-payment email, NOT the form email.
+ *
+ * Returns null when no preview row exists (a possible state on
+ * legacy data or a webhook-retry race). Callers should treat null
+ * as "nothing extra to provision" rather than an error.
+ */
+async function loadPreviewFormEmail(
+  supabase: ReturnType<typeof getServerSupabase>,
+  clientId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('lead_orders')
+    .select('email, stripe_metadata')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: true })
+    .limit(20)
+    .returns<
+      Array<{
+        email: string | null;
+        stripe_metadata: Record<string, unknown> | null;
+      }>
+    >();
+  for (const row of data ?? []) {
+    const source =
+      typeof row.stripe_metadata?.source === 'string'
+        ? row.stripe_metadata.source
+        : null;
+    if (source === 'score_preview' && row.email) {
+      return row.email;
+    }
+  }
+  return null;
+}
+
+/**
+ * Generate a deep-link sign-in URL that signs the buyer into their
+ * portal in one click — no email form, no "which email do I use"
+ * guesswork. Wraps Supabase admin.generateLink under the same
+ * /auth/callback?token_hash=... shape that lib/auth/sendMagicLink
+ * uses, so the existing auth-callback handler verifies + redirects
+ * to `next` exactly as it does for normal magic-link sign-ins.
+ *
+ * Default token expiry is OTP_EXPIRY (1 hour on stock Supabase).
+ * After expiry, the buyer's click lands on /auth/callback which
+ * either shows an "expired link" error or punts them to the
+ * standard /portal/<slug>/login form. The dual-email provisioning
+ * (step 5) is what makes that fallback graceful — they can sign
+ * in with EITHER address they remember.
+ *
+ * Returns null on any failure (admin call error, missing token).
+ * Caller falls back to the bare /portal/<slug> URL — the login form
+ * still works, just less magical.
+ */
+async function buildOneClickPortalUrl(
+  supabase: ReturnType<typeof getServerSupabase>,
+  email: string,
+  publicId: string,
+  origin: string
+): Promise<string | null> {
+  try {
+    const next = `/portal/${publicId}`;
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+      options: {
+        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
+      },
+    });
+    if (error) {
+      console.warn(
+        '[score-unlock] admin.generateLink failed (falling back to /portal):',
+        error.message
+      );
+      return null;
+    }
+    const hashedToken = data?.properties?.hashed_token;
+    if (!hashedToken) {
+      console.warn(
+        '[score-unlock] admin.generateLink returned no hashed_token (falling back to /portal)'
+      );
+      return null;
+    }
+    const params = new URLSearchParams({
+      token_hash: hashedToken,
+      type: 'magiclink',
+      next,
+    });
+    return `${origin}/auth/callback?${params.toString()}`;
+  } catch (e) {
+    console.warn(
+      '[score-unlock] buildOneClickPortalUrl threw:',
+      e instanceof Error ? e.message : String(e)
+    );
+    return null;
+  }
 }
