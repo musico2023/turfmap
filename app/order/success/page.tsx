@@ -8,6 +8,7 @@ import { MetaPixelTrack } from '@/components/marketing/scan/MetaPixel';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { loadCheckoutSession } from '@/lib/stripe/session';
 import { getStripe } from '@/lib/stripe/client';
+import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import {
   ensureLeadOrder,
   keywordCountForTier,
@@ -614,6 +615,13 @@ type SessionState =
          *  CAPI fire failed or the metadata column isn't present
          *  (legacy unlock rows). */
         metaPurchaseEventId: string | null;
+        /** Cal.com strategist-booking URL pre-resolved server-side
+         *  for the audit upgrade. Shown as a "Book your strategist
+         *  call →" CTA when the buyer accepts the audit upgrade
+         *  (1-click inline OR Stripe-redirect return). Null when
+         *  CAL_COM_AUDIT_URL isn't set or required inputs are
+         *  missing — button silently hides. */
+        auditBookingUrl: string | null;
       } | null;
       /** Audit-upgrade redirect-path Meta CAPI event_id. Stamped on
        *  the ORIGINAL scan lead_orders row by
@@ -709,13 +717,28 @@ async function validateAndRecordSession(
   // (which is for the original $49 unlock) — both can coexist on the
   // same lead_orders row if the buyer first unlocked then upgraded.
   let metaAuditUpgradeEventId: string | null = null;
+  // Pre-compute the Cal.com audit-strategist booking URL for
+  // score_unlock + audit-upgrade buyers. The URL is deterministic
+  // from (tier, email, businessName) so we resolve it server-side
+  // and pass it down — saves the client component a fetch + means
+  // the button can render the instant inlineUpgradeAccepted flips.
+  // null when client/business_name/email aren't all available
+  // (defensive; the audit booking button won't render then).
+  let scoreUnlockAuditBookingUrl: string | null = null;
   if (result.scoreUnlock) {
     const { data: client } = await supabase
       .from('clients')
-      .select('public_id')
+      .select('public_id, business_name')
       .eq('id', result.scoreUnlock.clientId)
-      .maybeSingle<{ public_id: string | null }>();
+      .maybeSingle<{ public_id: string | null; business_name: string | null }>();
     clientPublicId = client?.public_id ?? null;
+    if (client?.business_name && result.customerEmail) {
+      scoreUnlockAuditBookingUrl = calcomBookingUrlForTier({
+        tier: 'audit',
+        email: result.customerEmail,
+        businessName: client.business_name,
+      });
+    }
 
     const { data: unlockRow } = await supabase
       .from('lead_orders')
@@ -760,6 +783,7 @@ async function validateAndRecordSession(
           scanId: result.scoreUnlock.scanId,
           clientPublicId,
           metaPurchaseEventId,
+          auditBookingUrl: scoreUnlockAuditBookingUrl,
         }
       : null,
     metaAuditUpgradeEventId,

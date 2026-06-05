@@ -179,6 +179,13 @@ export function OrderSuccessForm({
     clientId: string;
     scanId: string;
     clientPublicId: string | null;
+    /** Cal.com strategist-booking URL pre-resolved server-side from
+     *  (tier='audit', buyer email, business name). When the buyer
+     *  accepts the audit upgrade (inline 1-click or redirect), this
+     *  powers the "Book your strategist call →" button in the
+     *  audit-purchased banner. Null = CAL_COM_AUDIT_URL missing or
+     *  inputs unavailable; button hides. */
+    auditBookingUrl: string | null;
   } | null;
   /** Score_unlock-only. When the buyer clicked a recovery-drip email
    *  CTA, the URL carries ?reopen=audit|pulse. We use that as a one-
@@ -797,28 +804,46 @@ export function OrderSuccessForm({
          *  (isAuditUpgrade || inlineUpgradeAccepted). */}
         {scoreUnlock && (isAuditUpgrade || inlineUpgradeAccepted) && (
           <div
-            className="border rounded-md px-4 py-3 mb-5 flex items-start gap-2.5"
+            className="border rounded-md px-4 py-4 mb-5"
             style={{
               background: 'var(--color-card-glow)',
               borderColor: 'var(--color-border-bright)',
             }}
           >
-            <Check
-              size={16}
-              strokeWidth={2.75}
-              className="flex-shrink-0 mt-0.5"
-              style={{ color: 'var(--color-lime)' }}
-            />
-            <div className="leading-relaxed text-sm">
-              <div className="font-semibold text-zinc-100 mb-0.5">
-                Visibility Audit upgrade purchased — $197
-              </div>
-              <div className="text-xs text-zinc-400">
-                Your strategist call link is in your inbox. Book it
-                anytime in the next 5 business days to get the most
-                out of your audit.
+            <div className="flex items-start gap-2.5 mb-3">
+              <Check
+                size={16}
+                strokeWidth={2.75}
+                className="flex-shrink-0 mt-0.5"
+                style={{ color: 'var(--color-lime)' }}
+              />
+              <div className="leading-relaxed text-sm">
+                <div className="font-semibold text-zinc-100 mb-0.5">
+                  Visibility Audit upgrade purchased — $197
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {scoreUnlock.auditBookingUrl
+                    ? 'Book your strategist call now to walk through your audit + your 90-Day Roadmap.'
+                    : 'Your strategist will email separately within 2 business days with the diagnosis.'}
+                </div>
               </div>
             </div>
+            {scoreUnlock.auditBookingUrl && (
+              <a
+                href={scoreUnlock.auditBookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-2.5 px-4 transition-all whitespace-nowrap hover:brightness-110"
+                style={{
+                  background: 'var(--color-lime)',
+                  color: 'black',
+                  boxShadow: '0 4px 14px #c5ff3a30',
+                }}
+              >
+                Book your strategist call
+                <ArrowRight size={14} strokeWidth={2.5} />
+              </a>
+            )}
           </div>
         )}
 

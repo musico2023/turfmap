@@ -101,6 +101,11 @@ export default async function OrderSuccessPreviewPage({
             clientId: 'b44f0873-3086-465c-91c6-f4ef47d1dcec',
             scanId: '1423bdfd-62da-4285-af15-e37432688a38',
             clientPublicId: 'e06855db63',
+            // Mock Cal.com booking URL — preview only. Real flow
+            // resolves this server-side via calcomBookingUrlForTier
+            // using the buyer's actual email + business_name.
+            auditBookingUrl:
+              'https://cal.com/turfmap/visibility-audit-walkthrough?email=preview%40example.com&name=Mock+Business',
           }}
           reopenTarget={reopenTarget}
           extendedTrial={extendedTrial}
