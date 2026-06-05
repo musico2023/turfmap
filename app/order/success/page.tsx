@@ -283,12 +283,29 @@ export default async function OrderSuccessPage({
   // Meta Pixel Purchase event — fires once per successful render via
   // MetaPixelTrack's mount-effect. Gates on paid scans (amount > 0) so
   // VIP / coldscan_free $0 conversions don't get counted as purchases
-  // in Meta. Audit-upgrade returns fire a separate Purchase with the
-  // Visibility Audit content_name + $197 value so cold-Meta and
-  // cold-email Purchase events are distinguishable in Events Manager.
+  // in Meta.
+  //
+  // Three Purchase variants, each with a distinct content_category so
+  // Events Manager can slice by funnel:
+  //   - 'upgrade'         — \$197 audit upgrade redirect return path
+  //   - 'score_unlock'    — /free-score or /prove-it Meta-cohort \$49
+  //                         unlock. Carries a server-side CAPI
+  //                         event_id stamped by handleScoreUnlock so
+  //                         the client+server pair dedups to ONE
+  //                         conversion in Meta.
+  //   - 'lander_checkout' — /scan/intake direct \$99 / \$49 checkout.
+  //                         No server-side CAPI yet for this path.
+  //
+  // The score_unlock branch reads its event_id from sessionState; the
+  // server-rendered eventID is what makes the dedup possible. Without
+  // it the same purchase would count twice (server CAPI + client pixel
+  // = 2 events for 1 conversion).
+  const scoreUnlockState =
+    sessionState?.kind === 'ok' ? sessionState.scoreUnlock : null;
   const metaPixelPurchaseEvent: {
     enabled: boolean;
     params?: Record<string, unknown>;
+    eventID?: string | null;
   } = isAuditUpgrade
     ? {
         enabled: true,
@@ -299,17 +316,31 @@ export default async function OrderSuccessPage({
           content_category: 'upgrade',
         },
       }
-    : tier === 'scan' && paidAmountCents != null && paidAmountCents > 0
+    : scoreUnlockState &&
+        tier === 'scan' &&
+        paidAmountCents != null &&
+        paidAmountCents > 0
       ? {
           enabled: true,
           params: {
             currency: 'USD',
             value: paidAmountCents / 100,
             content_name: 'TurfScan',
-            content_category: 'lander_checkout',
+            content_category: 'score_unlock',
           },
+          eventID: scoreUnlockState.metaPurchaseEventId,
         }
-      : { enabled: false };
+      : tier === 'scan' && paidAmountCents != null && paidAmountCents > 0
+        ? {
+            enabled: true,
+            params: {
+              currency: 'USD',
+              value: paidAmountCents / 100,
+              content_name: 'TurfScan',
+              content_category: 'lander_checkout',
+            },
+          }
+        : { enabled: false };
 
   return (
     <div className="min-h-screen w-full text-white flex flex-col">
@@ -317,6 +348,7 @@ export default async function OrderSuccessPage({
         event="Purchase"
         enabled={metaPixelPurchaseEvent.enabled}
         params={metaPixelPurchaseEvent.params}
+        eventID={metaPixelPurchaseEvent.eventID}
       />
       <header
         className="border-b px-6 md:px-12 py-5"
@@ -564,6 +596,14 @@ type SessionState =
         clientId: string;
         scanId: string;
         clientPublicId: string | null;
+        /** Meta CAPI event_id stamped by handleScoreUnlock on this
+         *  buyer's score_unlock lead_orders row. Passed to the
+         *  client-side MetaPixelTrack so fbq fires with the same id —
+         *  Meta dedupes the (event_name, event_id) pair so the
+         *  conversion counts once instead of twice. Null when the
+         *  CAPI fire failed or the metadata column isn't present
+         *  (legacy unlock rows). */
+        metaPurchaseEventId: string | null;
       } | null;
     }
   | { kind: 'warning'; message: string };
@@ -635,6 +675,11 @@ async function validateAndRecordSession(
   // For score_unlock, resolve the client's public_id so OrderSuccessForm
   // can render portal links + the "View your scan" CTA correctly.
   let clientPublicId: string | null = null;
+  // Also pull the Meta CAPI event_id stamped by handleScoreUnlock so
+  // the client-side Pixel can fire with the same id (dedup). Looked
+  // up by Stripe session_id (the canonical key for this score_unlock
+  // lead_orders row).
+  let metaPurchaseEventId: string | null = null;
   if (result.scoreUnlock) {
     const { data: client } = await supabase
       .from('clients')
@@ -642,6 +687,16 @@ async function validateAndRecordSession(
       .eq('id', result.scoreUnlock.clientId)
       .maybeSingle<{ public_id: string | null }>();
     clientPublicId = client?.public_id ?? null;
+
+    const { data: unlockRow } = await supabase
+      .from('lead_orders')
+      .select('stripe_metadata')
+      .eq('stripe_session_id', sessionId)
+      .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
+    const candidate = unlockRow?.stripe_metadata?.meta_purchase_event_id;
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      metaPurchaseEventId = candidate;
+    }
   }
 
   return {
@@ -659,6 +714,7 @@ async function validateAndRecordSession(
           clientId: result.scoreUnlock.clientId,
           scanId: result.scoreUnlock.scanId,
           clientPublicId,
+          metaPurchaseEventId,
         }
       : null,
   };

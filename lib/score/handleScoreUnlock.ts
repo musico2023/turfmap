@@ -47,6 +47,11 @@ import {
 } from '@/lib/email/resend';
 import { notifyTurfScanPurchase } from '@/lib/audit/operatorSlack';
 import { portalUrl } from '@/lib/urls';
+import {
+  sendMetaCapiEvent,
+  buildFbcFromFbclid,
+} from '@/lib/marketing/metaCapi';
+import { randomUUID } from 'crypto';
 import type {
   ClientRow,
   LeadOrderRow,
@@ -420,6 +425,157 @@ export async function handleScoreUnlockCompletion(
     } catch (e) {
       console.warn(
         '[score-unlock] sendScanReady threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+
+    // 6c-pre. Meta CAPI Purchase event. Server-side firing means
+    // ad-blockers + iOS Safari ITP can't suppress the conversion —
+    // client-side fbq alone misses ~30-50% of real purchases. We
+    // dedup against the client-side Pixel that /order/success fires
+    // by stamping the same event_id on both sides; Meta matches the
+    // pair by (event_name, event_id) within ~48h and counts ONE
+    // conversion.
+    //
+    // The preview lead_orders row (source='score_preview') carries
+    // the attribution data we captured at /prove-it form submission:
+    // fbclid, utm_*, lead_source. We reuse those here so Meta can
+    // match the Purchase back to the ad set that originally drove
+    // the click — without it, Meta sees "purchase from unknown
+    // origin" and conversion attribution suffers.
+    //
+    // event_id is also written back to the score_unlock lead_orders
+    // row's stripe_metadata so /order/success's MetaPixelTrack can
+    // pass the same id to fbq for dedup. WITHOUT the dedup, every
+    // converted buyer would count as 2 purchases in Events Manager.
+    const metaEventId = randomUUID();
+    let metaCapiPurchasePayload: {
+      ok: true;
+      payload: Parameters<typeof sendMetaCapiEvent>[0];
+    } | null = null;
+    try {
+      // Pull attribution off the original /prove-it preview row.
+      // Best-effort: missing fields just mean weaker match quality,
+      // not a fatal error. The score_unlock lead_orders row would
+      // also work but it has fewer attribution fields than the
+      // preview row.
+      const { data: previewMetaRow } = await supabase
+        .from('lead_orders')
+        .select('email, stripe_metadata')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: true })
+        .limit(10)
+        .returns<
+          Array<{
+            email: string | null;
+            stripe_metadata: Record<string, unknown> | null;
+          }>
+        >();
+      const previewRow =
+        (previewMetaRow ?? []).find(
+          (r) => r.stripe_metadata?.source === 'score_preview'
+        ) ?? null;
+      const previewMeta = previewRow?.stripe_metadata ?? null;
+      const previewPhone =
+        previewMeta && typeof previewMeta.phone === 'string'
+          ? previewMeta.phone
+          : null;
+      const fbclidFromAttribution =
+        previewMeta && typeof previewMeta.attribution_fbclid === 'string'
+          ? previewMeta.attribution_fbclid
+          : null;
+      const leadSourceFromAttribution =
+        previewMeta && typeof previewMeta.lead_source === 'string'
+          ? previewMeta.lead_source
+          : null;
+      const fbc = fbclidFromAttribution
+        ? buildFbcFromFbclid(fbclidFromAttribution)
+        : null;
+
+      const purchaseValueCents = session.amount_total ?? 4900;
+      const customData: Record<string, string | number | boolean> = {
+        content_name: 'TurfScan',
+        // 'score_unlock' makes this distinguishable from regular
+        // /scan/intake direct-checkout purchases in Events Manager.
+        // Filter by content_category='score_unlock' to slice
+        // /free-score + /prove-it conversion volume specifically.
+        content_category: 'score_unlock',
+        value: purchaseValueCents / 100,
+        currency: 'USD',
+      };
+      if (leadSourceFromAttribution) {
+        customData.lead_source = leadSourceFromAttribution;
+      }
+      // /share/<id> is the natural "where did this purchase happen"
+      // URL — the buyer clicked Unlock from that surface.
+      const eventSourceUrl = `${APP_ORIGIN}/share/${shareId}`;
+
+      metaCapiPurchasePayload = {
+        ok: true,
+        payload: {
+          event: 'Purchase',
+          eventId: metaEventId,
+          eventSourceUrl,
+          userData: {
+            email,
+            phone: previewPhone,
+            fbc,
+            // fbp can't be reconstructed without the cookie — Meta
+            // accepts the event without it, just at lower match
+            // quality. /order/success-side client pixel WILL have
+            // fbp and we'll send a deduped event from there too
+            // (which provides the cookie-based match), so server-
+            // side absence is acceptable.
+          },
+          customData,
+        },
+      };
+
+      const result = await sendMetaCapiEvent(metaCapiPurchasePayload.payload);
+      if (!result.ok && result.reason !== 'not_configured') {
+        console.warn(
+          '[score-unlock] Meta CAPI Purchase failed:',
+          result.reason,
+          result.message
+        );
+      }
+    } catch (e) {
+      console.warn(
+        '[score-unlock] Meta CAPI Purchase threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+
+    // Stamp event_id + attribution onto the score_unlock lead_orders
+    // row so /order/success's MetaPixelTrack can fire the matching
+    // client-side event with the same id (deduped server↔client).
+    try {
+      const { data: scoreUnlockOrderForMeta } = await supabase
+        .from('lead_orders')
+        .select('id, stripe_metadata')
+        .eq('stripe_session_id', session.id)
+        .maybeSingle<{
+          id: string;
+          stripe_metadata: Record<string, string> | null;
+        }>();
+      if (scoreUnlockOrderForMeta) {
+        await supabase
+          .from('lead_orders')
+          .update({
+            stripe_metadata: {
+              ...(scoreUnlockOrderForMeta.stripe_metadata ?? {}),
+              meta_purchase_event_id: metaEventId,
+              meta_purchase_value_cents: String(session.amount_total ?? 4900),
+              meta_purchase_capi_fired: metaCapiPurchasePayload
+                ? 'true'
+                : 'false',
+            },
+          })
+          .eq('id', scoreUnlockOrderForMeta.id);
+      }
+    } catch (e) {
+      console.warn(
+        '[score-unlock] meta_purchase_event_id stamp failed:',
         e instanceof Error ? e.message : String(e)
       );
     }

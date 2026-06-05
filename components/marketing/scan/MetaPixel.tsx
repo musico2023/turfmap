@@ -150,16 +150,23 @@ export function MetaPixelTrack({
   /** When false, the event won't fire. Use to gate Purchase on the
    *  Stripe session being valid + amount > 0. */
   enabled = true,
+  /** When set, fires fbq with this event_id so Meta can dedup
+   *  against a server-side CAPI event carrying the same id. Critical
+   *  for events where we ALSO fire CAPI (Purchase, Lead) — without
+   *  it, Meta counts each event twice and inflates conversion volume.
+   *  See lib/marketing/metaCapi.ts for the CAPI-side. */
+  eventID,
 }: {
   event: string;
   params?: Record<string, unknown>;
   enabled?: boolean;
+  eventID?: string | null;
 }) {
   useEffect(() => {
     if (!enabled) return;
-    trackMetaEvent(event, params);
+    trackMetaEvent(event, params, eventID ? { eventID } : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, event, JSON.stringify(params)]);
+  }, [enabled, event, JSON.stringify(params), eventID]);
   return null;
 }
 
