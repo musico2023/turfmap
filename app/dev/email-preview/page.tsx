@@ -94,6 +94,35 @@ const TEMPLATES: TemplateLink[] = [
     ],
   },
   {
+    slug: 'audit-upgrade-recovery',
+    name: 'Audit upgrade recovery',
+    blurb:
+      'Score_unlock recovery drip — sent to buyers who paid the $49 unlock but skipped the $197 audit upgrade on /order/success. 3 touches inside the natural 24h audit-discount window: t1 +1h, t2 +8h, t3 +22h. Cancels on audit conversion.',
+    variants: [
+      { label: 'Touch 1 (+1h, "$302 on the table")', query: 'stage=touch_1' },
+      { label: 'Touch 2 (+8h, "16h left")', query: 'stage=touch_2' },
+      { label: 'Touch 3 (+22h, final 2h)', query: 'stage=touch_3' },
+      {
+        label: 'Touch 1 — no business name (sparse)',
+        query: 'stage=touch_1&sparse=1',
+      },
+    ],
+  },
+  {
+    slug: 'pulse-recovery',
+    name: 'Pulse recovery (extended trial)',
+    blurb:
+      'Score_unlock recovery drip — sent to buyers who didn\'t activate the free Pulse trial on /order/success. 2 touches with a 72h extended-trial offer (60 days free vs the standard 30): t1 +48h, t2 +5d. Cancels on Pulse subscription created.',
+    variants: [
+      { label: 'Touch 1 (+48h, "60-day trial offer")', query: 'stage=touch_1' },
+      { label: 'Touch 2 (+5d, final hour)', query: 'stage=touch_2' },
+      {
+        label: 'Touch 1 — no business name (sparse)',
+        query: 'stage=touch_1&sparse=1',
+      },
+    ],
+  },
+  {
     slug: 'audit-call-reminder',
     name: 'Audit call reminder',
     blurb:

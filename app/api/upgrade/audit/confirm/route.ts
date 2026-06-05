@@ -395,6 +395,25 @@ export async function POST(req: Request) {
     );
   }
 
+  // Cancel any pending audit-recovery emails for this client. The
+  // upgrade just converted — sending "you skipped the upgrade"
+  // emails after this would be ridiculous and damage trust. Pulse
+  // recovery is left alone (different lane, independent decision).
+  // Fail-soft: cancellation errors don't roll back the purchase.
+  if (client?.id) {
+    try {
+      const { cancelUpsellRecoveryEmails } = await import(
+        '@/lib/score/cancelUpsellRecoveryEmails'
+      );
+      await cancelUpsellRecoveryEmails(supabase, client.id, 'audit');
+    } catch (e) {
+      console.warn(
+        '[upgrade/confirm] cancelUpsellRecoveryEmails(audit) threw',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
   // Pending-intake path: stop here, /api/orders/fulfill picks up
   // the rest when the buyer submits the scan intake form.
   if (isPendingIntake || !client || !originalScan) {

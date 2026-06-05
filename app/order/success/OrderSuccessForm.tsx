@@ -49,6 +49,8 @@ export function OrderSuccessForm({
   prefillKeyword,
   prefilledIntake,
   scoreUnlock,
+  reopenTarget,
+  extendedTrial,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -178,6 +180,19 @@ export function OrderSuccessForm({
     scanId: string;
     clientPublicId: string | null;
   } | null;
+  /** Score_unlock-only. When the buyer clicked a recovery-drip email
+   *  CTA, the URL carries ?reopen=audit|pulse. We use that as a one-
+   *  shot signal on mount to reset the matching upgradeChoice /
+   *  pulseChoice back to 'pending' so the panel re-renders for the
+   *  buyer to re-decide. Null on a normal /order/success render. */
+  reopenTarget?: 'audit' | 'pulse' | null;
+  /** Score_unlock-only. When true (only paired with reopenTarget=
+   *  'pulse'), the Pulse recovery's extended-trial offer is honored:
+   *  the panel renders 60-day language and the Pulse-attach checkout
+   *  call passes extendedTrial:true so Stripe sets
+   *  trial_period_days:60. Default false keeps the standard 30-day
+   *  trial behavior. */
+  extendedTrial?: boolean;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -267,6 +282,26 @@ export function OrderSuccessForm({
     if (scoreUnlock) {
       setPublicId(scoreUnlock.clientPublicId);
       setDone(true);
+      // Recovery-email click rehydration. When the URL carries
+      // ?reopen=audit or ?reopen=pulse, reset the matching upgrade-
+      // choice state back to 'pending' so the corresponding panel
+      // re-renders. The component would otherwise keep its initial
+      // 'pending' state on a fresh render anyway, but in case the
+      // buyer revisits with the recovery URL inside the same browser
+      // session (e.g. opened in a still-running tab), this forces a
+      // re-decision. Inline-accepted / isAuditUpgrade flags are NOT
+      // overridden — if the buyer already converted, they shouldn't
+      // see the panel even via the recovery link.
+      if (reopenTarget === 'audit') {
+        setUpgradeChoice('pending');
+      } else if (reopenTarget === 'pulse') {
+        // Pulse recovery resets pulseChoice AND skips the audit step
+        // entirely — they're here for the Pulse trial, not the audit.
+        // Set upgradeChoice='skipped' so the sequenced gate falls
+        // straight to the Pulse panel.
+        setUpgradeChoice('skipped');
+        setPulseChoice('pending');
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -780,6 +815,12 @@ export function OrderSuccessForm({
               originalSessionId={sessionId}
               onSkip={() => setPulseChoice('skipped')}
               skipLabel="Skip — see my heatmap"
+              // Honor the Pulse-recovery extended-trial flag. Only
+              // ever true when the buyer arrived via the recovery
+              // email's deep-link (?reopen=pulse&extended=1). Panel
+              // renders 60-day language + the activation call passes
+              // extendedTrial:true to /api/checkout/pulse-attach.
+              extendedTrial={extendedTrial}
             />
           )}
 

@@ -32,9 +32,26 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-export default async function OrderSuccessPreviewPage() {
+export default async function OrderSuccessPreviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reopen?: string; extended?: string }>;
+}) {
   const me = await requireAgencyUserOrRedirect('/dev/order-success-preview');
   if (!isAgencyOwnerEmail(me.email)) notFound();
+
+  // Recovery-flow simulation. ?reopen=audit shows the audit step (the
+  // default initial state anyway). ?reopen=pulse&extended=1 jumps the
+  // sequence to the Pulse step in extended-trial mode (60-day offer).
+  const params = await searchParams;
+  const reopenTarget: 'audit' | 'pulse' | null =
+    params.reopen === 'audit'
+      ? 'audit'
+      : params.reopen === 'pulse'
+        ? 'pulse'
+        : null;
+  const extendedTrial =
+    params.extended === '1' && reopenTarget === 'pulse';
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -85,6 +102,8 @@ export default async function OrderSuccessPreviewPage() {
             scanId: '1423bdfd-62da-4285-af15-e37432688a38',
             clientPublicId: 'e06855db63',
           }}
+          reopenTarget={reopenTarget}
+          extendedTrial={extendedTrial}
         />
       </div>
     </div>

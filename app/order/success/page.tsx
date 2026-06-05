@@ -53,6 +53,23 @@ export default async function OrderSuccessPage({
      *  scan already counted"). When absent, falls back to default
      *  tier-label copy. */
     upgrade?: string;
+    /** Set to 'audit' or 'pulse' when the buyer clicked a recovery-
+     *  drip email's CTA. Tells OrderSuccessForm to reset the matching
+     *  upgrade choice back to 'pending' on mount, re-rendering the
+     *  relevant panel for the buyer to re-decide. Without this, the
+     *  earlier client-side skip would persist (if they ever revisited
+     *  the page in the same session) — but in practice the recovery
+     *  email lands in a fresh browser session anyway, so this is
+     *  mostly about ensuring the panel doesn't get hidden by some
+     *  future state machine change. The score_unlock branch reads
+     *  this param specifically. */
+    reopen?: string;
+    /** When '1' alongside reopen=pulse, signals that this is the
+     *  Pulse-recovery extended-trial flow (60-day trial vs the
+     *  standard 30). OrderSuccessForm passes through to
+     *  PulseAttachPanel which forwards extendedTrial:true on the
+     *  /api/checkout/pulse-attach call. */
+    extended?: string;
   }>;
 }) {
   const {
@@ -60,8 +77,17 @@ export default async function OrderSuccessPage({
     session_id: sessionId,
     attach: attachParam,
     upgrade: upgradeParam,
+    reopen: reopenParam,
+    extended: extendedParam,
   } = await searchParams;
   const isAuditUpgrade = upgradeParam === 'audit';
+  const reopenTarget: 'audit' | 'pulse' | null =
+    reopenParam === 'audit'
+      ? 'audit'
+      : reopenParam === 'pulse'
+        ? 'pulse'
+        : null;
+  const extendedTrial = extendedParam === '1' && reopenTarget === 'pulse';
 
   // ─── Stripe session validation + lead_orders idempotent insert ──────
   // Pulled into a helper so the rest of the render logic doesn't
@@ -418,6 +444,8 @@ export default async function OrderSuccessPage({
               scoreUnlock={
                 sessionState?.kind === 'ok' ? sessionState.scoreUnlock : null
               }
+              reopenTarget={reopenTarget}
+              extendedTrial={extendedTrial}
             />
           </Suspense>
         </div>

@@ -59,6 +59,14 @@ const BodySchema = z.object({
   publicId: z.string().min(1),
   stripeCustomerId: z.string().min(1).startsWith('cus_'),
   originalSessionId: z.string().min(1).startsWith('cs_'),
+  /** When true, doubles the trial to 60 days (vs the standard 30).
+   *  Fired by the PulseRecoveryEmail recovery flow — the email's
+   *  CTA URL carries ?extended=1, which the /order/success page
+   *  reads + passes through to PulseAttachPanel, which then sets
+   *  this flag on the checkout call. Cost to us: ~$0.24/month per
+   *  client in DataForSEO scan fees × 1 extra month = pennies. Cost
+   *  to the buyer: $0. Conversion lift: meaningful enough to ship. */
+  extendedTrial: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -215,11 +223,16 @@ export async function POST(req: NextRequest) {
       payment_method_collection: 'always',
       line_items: [{ price: priceId, quantity: 1 }],
       subscription_data: {
-        trial_period_days: 30,
+        // Extended-trial recovery flow doubles the standard 30 days.
+        // Stamped on metadata too so we can slice trial→paid
+        // conversion by trial duration in Stripe analytics.
+        trial_period_days: body.extendedTrial ? 60 : 30,
         metadata: {
           client_id: client.id,
           attach_source: 'order_success',
           original_tier: client.tier ?? 'unknown',
+          trial_duration_days: body.extendedTrial ? '60' : '30',
+          ...(body.extendedTrial ? { recovery_flow: 'pulse_recovery' } : {}),
         },
       },
       // Surface the offer language + cancellation reassurance in the
@@ -227,8 +240,9 @@ export async function POST(req: NextRequest) {
       // capture see exactly what the buyer agreed to.
       custom_text: {
         submit: {
-          message:
-            'No charge today. $39/mo starts in 30 days. Cancel anytime before then to pay nothing.',
+          message: body.extendedTrial
+            ? 'No charge today. $39/mo starts in 60 days. Cancel anytime before then to pay nothing.'
+            : 'No charge today. $39/mo starts in 30 days. Cancel anytime before then to pay nothing.',
         },
       },
       // Round-trip the ORIGINAL one-time session_id so the success

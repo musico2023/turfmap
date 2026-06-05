@@ -39,6 +39,16 @@ export type PulseAttachPanelProps = {
    *  parent intercepts skip and reveals a heatmap-CTA card next,
    *  override to e.g. "Skip — see my heatmap →" for accuracy. */
   skipLabel?: string;
+  /** When true, panel renders the EXTENDED trial offer — 60 days
+   *  free instead of the standard 30. Used by the Pulse-recovery
+   *  email's deep-link flow (?reopen=pulse&extended=1 on
+   *  /order/success). The Activate button POSTs to /api/checkout/
+   *  pulse-attach with extendedTrial:true, which sets Stripe's
+   *  trial_period_days:60 — so the offer is actually honored at
+   *  checkout, not just in the panel copy. Default false keeps
+   *  standalone TurfScan + cold-checkout buyers on the 30-day
+   *  baseline. */
+  extendedTrial?: boolean;
 };
 
 /**
@@ -65,7 +75,12 @@ export function PulseAttachPanel({
   originalSessionId,
   onSkip,
   skipLabel,
+  extendedTrial = false,
 }: PulseAttachPanelProps) {
+  // Single source of truth for trial-duration copy. Numerals stay in
+  // one place so we don't get day-count drift between the headline,
+  // the body, the math callout, and the post-CTA reassurance line.
+  const trialDays = extendedTrial ? 60 : 30;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,6 +134,10 @@ export function PulseAttachPanel({
           publicId,
           stripeCustomerId,
           originalSessionId,
+          // Forward the extended-trial flag — the route sets
+          // Stripe's trial_period_days:60 when true. Default 30
+          // for standalone scan + cold-checkout buyers.
+          extendedTrial,
         }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
@@ -164,28 +183,40 @@ export function PulseAttachPanel({
       }}
     >
       {/* Eyebrow — frames the trial as ready-to-claim, not an upsell.
-       *  The "Free 30-day trial" + "$39/mo after" is also visible
-       *  inline below the headline so the post-trial price is never
-       *  hidden. */}
-      <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex items-center gap-2">
+       *  Recovery-flow buyers get an additional "EXTENDED OFFER" badge
+       *  so the doubled trial duration is the first visual signal. */}
+      <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3 flex flex-wrap items-center gap-2">
         <Sparkles size={11} style={{ color: 'var(--color-lime)' }} />
         <span style={{ color: 'var(--color-lime)' }}>
-          Included with your purchase
+          {extendedTrial
+            ? 'Extended offer — 60-day trial'
+            : 'Included with your purchase'}
         </span>
         <span className="text-zinc-600">·</span>
-        <span>30-day Pulse trial</span>
+        <span>{trialDays}-day Pulse trial</span>
+        {extendedTrial && (
+          <>
+            <span className="text-zinc-700">·</span>
+            <span
+              className="px-2 py-0.5 rounded-sm text-black"
+              style={{ background: 'var(--color-lime)' }}
+            >
+              2x trial
+            </span>
+          </>
+        )}
       </div>
 
       <h3 className="font-display text-2xl md:text-3xl font-bold leading-tight mb-3 text-white">
         Your <span style={{ color: 'var(--color-lime)' }}>free</span>{' '}
-        30-day Pulse trial is ready.
+        {trialDays}-day Pulse trial is ready.
       </h3>
 
       <p className="text-base md:text-lg text-zinc-300 leading-relaxed mb-5 max-w-2xl">
         We&rsquo;ll re-scan you every Monday, alert you when your{' '}
         TurfScore moves, and refresh your AI Coach playbook each week.{' '}
         <strong className="font-semibold text-white">
-          After 30 days, $39/mo. Cancel anytime.
+          After {trialDays} days, $39/mo. Cancel anytime.
         </strong>
       </p>
 
@@ -260,7 +291,11 @@ export function PulseAttachPanel({
             boxShadow: '0 6px 20px #c5ff3a40',
           }}
         >
-          {loading ? 'Opening secure checkout…' : 'Activate free trial'}
+          {loading
+            ? 'Opening secure checkout…'
+            : extendedTrial
+              ? 'Activate 60-day trial'
+              : 'Activate free trial'}
         </Button>
         <div className="flex flex-col gap-1 text-xs leading-relaxed">
           <span className="flex items-center gap-1.5">
@@ -270,15 +305,20 @@ export function PulseAttachPanel({
               style={{ color: 'var(--color-lime)' }}
             />
             <span className="text-zinc-300">
-              <strong className="text-white">Free for 30 days</strong>,
-              then{' '}
+              <strong className="text-white">
+                Free for {trialDays} days
+              </strong>
+              , then{' '}
               <strong className="text-white font-semibold">$39/mo</strong>
               . Cancel anytime.
             </span>
           </span>
           <span className="text-zinc-500">
-            Card on file. <strong className="text-zinc-300">
-            No charge until day 31</strong>.
+            Card on file.{' '}
+            <strong className="text-zinc-300">
+              No charge until day {trialDays + 1}
+            </strong>
+            .
           </span>
         </div>
       </div>

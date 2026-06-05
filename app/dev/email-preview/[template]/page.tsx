@@ -415,6 +415,71 @@ async function renderTemplate(
           return { subject: '', html: '' };
       }
     }
+    case 'audit-upgrade-recovery': {
+      const { AuditUpgradeRecoveryEmail } = await import(
+        '@/components/email/AuditUpgradeRecoveryEmail'
+      );
+      const stage =
+        (single(search.stage) ?? 'touch_1') as
+          | 'touch_1'
+          | 'touch_2'
+          | 'touch_3';
+      const sparse = single(search.sparse) === '1';
+      const businessName = sparse ? null : MOCK_BUSINESS;
+      const turfScore = sparse ? null : 20;
+      // Hours-remaining mirrors what handleScoreUnlock would bake in
+      // at each touch's scheduled compose time.
+      const hoursByStage = { touch_1: 23, touch_2: 16, touch_3: 2 } as const;
+      const cutoffTimeLabel =
+        stage === 'touch_3' ? '3:42 PM EDT today' : null;
+      const safeHours = hoursByStage[stage];
+      const subjectByStage = {
+        touch_1: `Your audit upgrade is still here — save $302 (${businessName ?? 'your business'})`,
+        touch_2: `${safeHours} hours left to save $302 on your audit`,
+        touch_3: `Final ${safeHours}h: $302 audit discount expires`,
+      } as const;
+      return {
+        subject: subjectByStage[stage],
+        html: await render(
+          AuditUpgradeRecoveryEmail({
+            businessName,
+            turfScore,
+            reopenUrl:
+              'https://turfmap.ai/order/success?tier=scan&session_id=cs_preview&reopen=audit',
+            stage,
+            hoursRemaining: safeHours,
+            cutoffTimeLabel,
+          })
+        ),
+      };
+    }
+    case 'pulse-recovery': {
+      const { PulseRecoveryEmail } = await import(
+        '@/components/email/PulseRecoveryEmail'
+      );
+      const stage =
+        (single(search.stage) ?? 'touch_1') as 'touch_1' | 'touch_2';
+      const sparse = single(search.sparse) === '1';
+      const businessName = sparse ? null : MOCK_BUSINESS;
+      const hoursByStage = { touch_1: 24, touch_2: 1 } as const;
+      const safeHours = hoursByStage[stage];
+      const subjectByStage = {
+        touch_1: `60-day Pulse trial (vs the standard 30) — ${businessName ?? 'your business'}`,
+        touch_2: `Final ${safeHours}h: your 60-day Pulse trial expires`,
+      } as const;
+      return {
+        subject: subjectByStage[stage],
+        html: await render(
+          PulseRecoveryEmail({
+            businessName,
+            reopenUrl:
+              'https://turfmap.ai/order/success?tier=scan&session_id=cs_preview&reopen=pulse&extended=1',
+            stage,
+            hoursRemaining: safeHours,
+          })
+        ),
+      };
+    }
     case 'delivery-alert': {
       const count = Number(single(search.count) ?? '4');
       const clients = Array.from({ length: Math.max(1, Math.min(count, 8)) }, (_, i) => ({

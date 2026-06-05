@@ -143,6 +143,36 @@ export async function POST(req: Request) {
             e instanceof Error ? e.message : String(e)
           );
         }
+        // Pulse trial subscription created — cancel the Pulse-recovery
+        // drip for this client so we don't keep nudging them to do the
+        // thing they just did. Only fires on .created (the first time
+        // the subscription exists); .updated would re-trigger noisy
+        // (and idempotent-but-pointless) cancellations on every status
+        // tick. attach_source is stamped by pulse-attach on
+        // subscription_data.metadata; absence means this wasn't a
+        // pulse-attach origin (could be a self-serve subscribe, agency-
+        // managed, etc.) and there's no recovery drip to cancel.
+        if (event.type === 'customer.subscription.created') {
+          const attachSource = sub.metadata?.attach_source;
+          const subClientId = sub.metadata?.client_id;
+          if (attachSource === 'order_success' && subClientId) {
+            try {
+              const { cancelUpsellRecoveryEmails } = await import(
+                '@/lib/score/cancelUpsellRecoveryEmails'
+              );
+              await cancelUpsellRecoveryEmails(
+                supabase,
+                subClientId,
+                'pulse'
+              );
+            } catch (e) {
+              console.warn(
+                `[stripe-webhook] cancelUpsellRecoveryEmails(pulse) threw for ${sub.id}:`,
+                e instanceof Error ? e.message : String(e)
+              );
+            }
+          }
+        }
         break;
       }
       case 'customer.subscription.deleted': {
@@ -186,6 +216,38 @@ export async function POST(req: Request) {
             : null;
         if (source === 'audit_upgrade') {
           await handleAuditUpgradeCompletion(supabase, session);
+          // Cancel the audit-recovery drip for this client — the
+          // buyer just converted via the Stripe Checkout redirect
+          // path. Same cancellation that /api/upgrade/audit/confirm
+          // fires for the 1-click inline path. Lookup by client_id
+          // pulled off the session metadata (handleAuditUpgrade-
+          // Completion is the authority on which client_id this
+          // session belongs to; metadata.client_id is set at
+          // create-session time but may be missing when the buyer
+          // upgrades pre-intake — that path has no audit-recovery
+          // drip to cancel anyway since the score_unlock client row
+          // exists by then).
+          const auditClientId =
+            session.metadata && 'client_id' in session.metadata
+              ? String(session.metadata.client_id ?? '')
+              : '';
+          if (auditClientId) {
+            try {
+              const { cancelUpsellRecoveryEmails } = await import(
+                '@/lib/score/cancelUpsellRecoveryEmails'
+              );
+              await cancelUpsellRecoveryEmails(
+                supabase,
+                auditClientId,
+                'audit'
+              );
+            } catch (e) {
+              console.warn(
+                `[stripe-webhook] cancelUpsellRecoveryEmails(audit) threw for ${session.id}:`,
+                e instanceof Error ? e.message : String(e)
+              );
+            }
+          }
         } else if (source === 'score_unlock') {
           // /score lead-magnet → $99 unlock. Flips client.is_preview=false,
           // generates AI Coach in after(), provisions portal access, sends
