@@ -605,7 +605,17 @@ export function OrderSuccessForm({
       publicId &&
       sessionId &&
       stripeCustomerId &&
-      !isWarmCohort;
+      !isWarmCohort &&
+      // Score_unlock buyers go through the sequenced upsell flow
+      // above (audit → pulse → success card). If they've already
+      // decided on Pulse (skipped or accepted), they MUST NOT see
+      // the legacy attach-panel layout here — that would re-render
+      // the PulseAttachPanel below the success card, which is the
+      // exact "two CTAs competing" anti-pattern the sequenced flow
+      // was built to eliminate. Standalone TurfScan buyers (no
+      // scoreUnlock) keep their original behavior — attach panel +
+      // success card coexistence is correct for them.
+      !scoreUnlock;
 
     // Compact celebration vs full success card. When the attach panel
     // is the focal point of the page (most one-time-tier success
