@@ -204,13 +204,13 @@ export function PulseAttachPanel({
       </div>
 
       {/* Cost-savings anchor. Universal framing — a standalone
-       *  TurfScan is $49 regardless of which tier the buyer just
+       *  TurfScan is $99 list regardless of which tier the buyer just
        *  purchased, so the math holds for score_unlock, scan, audit,
-       *  and strategy buyers alike. Positions Pulse as "less per
-       *  scan than one-off" rather than "new monthly expense" —
+       *  and strategy buyers alike. Positions Pulse as "10x cheaper
+       *  per scan than one-off" rather than "new monthly expense" —
        *  reframes the $39/mo as a quantity discount, not an upsell.
-       *  Subtle treatment (mono price strikethrough + lime accent
-       *  on the per-scan number) so it reads as math, not marketing. */}
+       *  Subtle treatment (mono numerals + lime accent on the
+       *  per-scan punchline) so it reads as arithmetic, not marketing. */}
       <div
         className="rounded-md border px-4 py-3 mb-6 flex items-start gap-3"
         style={{
@@ -226,9 +226,9 @@ export function PulseAttachPanel({
         </div>
         <div className="text-xs leading-relaxed text-zinc-300">
           A one-off TurfScan is{' '}
-          <span className="font-mono text-zinc-100">$49</span> each.
-          Pulse runs <strong className="text-zinc-100">4 scans</strong>{' '}
-          + weekly AI Coach refresh for{' '}
+          <span className="font-mono text-zinc-100">$99</span>. Pulse
+          runs <strong className="text-zinc-100">4 scans</strong> +
+          weekly AI Coach refresh for{' '}
           <span className="font-mono text-zinc-100">$39/mo</span> —{' '}
           <strong style={{ color: 'var(--color-lime)' }}>
             under $10 per scan
