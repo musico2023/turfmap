@@ -182,29 +182,63 @@ export async function handleScoreUnlockCompletion(
   }
 
   // ─── 4. Flip client to "real paid scan buyer" state ────────────────
-  // is_preview=false unhides it everywhere. billing_mode + tier match
-  // the standard scan-buyer posture. status='active' so it appears
-  // in the operator dashboard. stripe_customer_id captures the
-  // Stripe link so future audit-upgrade Checkouts can pre-bind it.
+  // is_preview=false unhides it everywhere. billing_mode='one_time'
+  // marks the buyer as a one-shot purchase (vs an agency-managed
+  // subscription). status='active' so it appears in the operator
+  // dashboard. stripe_customer_id captures the Stripe link so future
+  // audit-upgrade Checkouts can pre-bind it.
+  //
+  // We deliberately do NOT touch `tier`. The clients.tier column has
+  // a CHECK constraint that allows only 'pulse' or 'pulse_plus' —
+  // those are subscription-tier markers (Pulse = monthly tracking,
+  // Pulse+ = monthly tracking + citations). A one-time score_unlock
+  // buyer has no subscription, so tier stays NULL (its default for
+  // preview-clients). Writing 'scan' here used to silently violate
+  // clients_tier_check, abort the entire UPDATE, and leave is_preview
+  // stuck at true — which left every paid buyer in a half-broken
+  // portal state. See JE/CertaPro Calgary incident 2026-06-04.
   const { error: clientUpdateErr } = await supabase
     .from('clients')
     .update({
       is_preview: false,
       billing_mode: 'one_time',
-      tier: 'scan',
       status: 'active',
       ...(stripeCustomerId ? { stripe_customer_id: stripeCustomerId } : {}),
     })
     .eq('id', clientId);
   if (clientUpdateErr) {
+    // This used to be swallowed with a console.error and the handler
+    // would continue — emails shipped to a buyer whose client row
+    // was still in preview state, producing a half-broken portal.
+    // Now we surface to Slack so the operator can hand-fix the row
+    // before the buyer notices. We still don't `return` (the order
+    // is recorded, the buyer should still get their emails) but the
+    // alert is loud enough to act on.
     console.error(
       '[score-unlock] client update failed',
       clientId,
       clientUpdateErr.message
     );
-    // Don't return — the lead_orders row is in, the unlock is partial
-    // but recoverable from the operator side. Let the after()
-    // side-effects still fire so the buyer at least gets emails.
+    try {
+      const { postOperatorSlack } = await import('@/lib/audit/operatorSlack');
+      await postOperatorSlack({
+        text:
+          `:rotating_light: *score_unlock: clients UPDATE failed* — manual fix needed.\n` +
+          `client_id=\`${clientId}\` (${client.business_name})\n` +
+          `Buyer paid + lead_orders fulfilled, but is_preview stayed true.\n` +
+          `Error: \`${clientUpdateErr.message}\`\n` +
+          `Hand-fix: \`UPDATE clients SET is_preview=false, billing_mode='one_time', status='active'${
+            stripeCustomerId
+              ? `, stripe_customer_id='${stripeCustomerId}'`
+              : ''
+          } WHERE id='${clientId}';\``,
+      });
+    } catch (slackErr) {
+      console.error(
+        '[score-unlock] operator Slack alert also failed',
+        slackErr instanceof Error ? slackErr.message : String(slackErr)
+      );
+    }
   }
 
   // ─── 4b. Cancel pending unlock-drip emails ─────────────────────────
