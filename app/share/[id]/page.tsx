@@ -521,7 +521,10 @@ export default async function PublicSharePage({
            *  static. Hidden for unlocked clients (they have the full
            *  AI Coach panel right below). */}
           {client.is_preview && (
-            <PreviewBandInterpretation bandLabel={band.label} />
+            <PreviewBandInterpretation
+              bandLabel={band.label}
+              score={score}
+            />
           )}
           {/* Preview-cohort only: dollar-anchor ROI card. Translates
            *  reach % into a missed-cell count + multiplies the
@@ -737,27 +740,75 @@ function computeLeaderShare(
  *  Trajectory numbers are intentionally conservative — under-
  *  promise; the buyer will see actual lift after the AI Coach
  *  Fix List execution. */
-function PreviewBandInterpretation({ bandLabel }: { bandLabel: string }) {
-  const copy = bandInterpretationFor(bandLabel);
+function PreviewBandInterpretation({
+  bandLabel,
+  score,
+}: {
+  bandLabel: string;
+  score: number;
+}) {
+  // Score=0 is a distinct conversion surface from the general
+  // Invisible band (1-19). At 0 the buyer's first reaction is
+  // shame / "is this thing broken?" — both kill conversion. The
+  // zero-state copy explicitly normalizes it ("we see this more
+  // often than you think") and reframes the unlock as foundational
+  // fixes, not "performance optimization." 1-19 scorers see the
+  // standard Invisible copy (they at least registered somewhere).
+  const isZeroScore = score === 0;
+  const copy = isZeroScore
+    ? zeroScoreInterpretation()
+    : bandInterpretationFor(bandLabel);
   return (
     <div
       className="rounded-lg border p-4 text-sm leading-relaxed"
       style={{
-        background: 'var(--color-card)',
-        borderColor: 'var(--color-border)',
+        background: isZeroScore
+          ? 'rgba(197, 255, 58, 0.04)'
+          : 'var(--color-card)',
+        borderColor: isZeroScore
+          ? 'rgba(197, 255, 58, 0.25)'
+          : 'var(--color-border)',
       }}
     >
-      <div className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold text-zinc-500 mb-2">
-        What your {bandLabel} score means
+      <div
+        className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold mb-2"
+        style={{
+          color: isZeroScore ? 'var(--color-lime)' : 'var(--color-text-muted)',
+        }}
+      >
+        {isZeroScore
+          ? 'What a 0 score actually means'
+          : `What your ${bandLabel} score means`}
       </div>
-      <p className="text-zinc-300">{copy.meaning}</p>
-      <p className="text-zinc-400 mt-2">
+      <p className="text-zinc-200">{copy.meaning}</p>
+      <p className="text-zinc-300 mt-2">
         <span style={{ color: 'var(--color-lime)' }}>→</span>{' '}
-        <strong className="text-zinc-100">{copy.trajectory}</strong>{' '}
+        <strong className="text-white">{copy.trajectory}</strong>{' '}
         {copy.trajectoryDetail}
       </p>
     </div>
   );
+}
+
+/** Score=0 reassurance + foundational-fix framing. Separate from
+ *  the Invisible band copy because 0 = "Google has no map-pack
+ *  signal for this business at all" is a categorically different
+ *  problem from 1-19 (registering, just not strongly). At 0 the
+ *  buyer needs to know (a) it's not just them, (b) the path forward
+ *  is concrete and short. */
+function zeroScoreInterpretation(): {
+  meaning: string;
+  trajectory: string;
+  trajectoryDetail: string;
+} {
+  return {
+    meaning:
+      "We see this more often than you think — usually it's missing or mismatched citations across the directories Google cross-references, an unverified Google Business Profile, or a NAP that doesn't match between your website and your Map listing. None of it requires a rebuild.",
+    trajectory:
+      'Get the foundational fixes needed to start ranking in your territory',
+    trajectoryDetail:
+      "— the Fix List shows the exact directories to claim, the NAP corrections that unlock map-pack indexing, and the Google Business Profile signals Google needs before it'll show you for local searches at all.",
+  };
 }
 
 function bandInterpretationFor(band: string): {
