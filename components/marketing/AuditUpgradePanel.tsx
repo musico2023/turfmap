@@ -60,7 +60,7 @@ export type AuditUpgradePanelProps = {
   onSkip?: () => void;
   /** Order-success only. The buyer's saved Stripe card (from the
    *  original scan purchase). When present, panel renders a
-   *  no-redirect "Confirm \$197 charge to **** 4242" button that
+   *  no-redirect "Upgrade now" button (charges the saved card) that
    *  fires /api/upgrade/audit/confirm. When null, falls back to
    *  Stripe Checkout redirect via /create-session. */
   savedCard?: { brand: string; last4: string } | null;
@@ -346,7 +346,7 @@ export function AuditUpgradePanel({
               ? 'Processing payment…'
               : 'Opening checkout…'
             : savedCard
-              ? 'Confirm $197 charge'
+              ? 'Upgrade now'
               : 'Add the Roadmap → $197'}
           {!busy && <ArrowRight size={14} strokeWidth={2.5} />}
         </button>
