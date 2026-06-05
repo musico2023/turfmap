@@ -15,7 +15,8 @@ export type PulseAttachPanelProps = {
   /** Existing client public_id from the just-completed fulfillment.
    *  Used by /api/checkout/pulse-attach to validate the (publicId,
    *  stripeCustomerId) pair against the clients table. Also used as
-   *  the destination for the "Skip" link (→ /portal/<publicId>). */
+   *  the default destination for the "Skip" link (→ /portal/<publicId>)
+   *  when onSkip is not provided. */
   publicId: string;
   /** Stripe Customer id captured during the original one-time
    *  checkout. We pre-bind this on the new subscription session so
@@ -26,6 +27,18 @@ export type PulseAttachPanelProps = {
    *  API uses this to craft a success_url that returns the buyer back
    *  to /order/success with their original session intact. */
   originalSessionId: string;
+  /** Optional handler for the "Skip" affordance. When provided, the
+   *  skip control becomes a button that calls this callback (no
+   *  navigation away) — used by the score_unlock sequenced flow on
+   *  /order/success to reveal the next step (success card with
+   *  heatmap CTA) on the same page. When absent, skip behaves as
+   *  before: anchor link to /portal/<publicId>. */
+  onSkip?: () => void;
+  /** Label override for the skip control. Defaults to "Skip — open my
+   *  TurfMap →" (correct when skip navigates to the portal). When the
+   *  parent intercepts skip and reveals a heatmap-CTA card next,
+   *  override to e.g. "Skip — see my heatmap →" for accuracy. */
+  skipLabel?: string;
 };
 
 /**
@@ -50,6 +63,8 @@ export function PulseAttachPanel({
   publicId,
   stripeCustomerId,
   originalSessionId,
+  onSkip,
+  skipLabel,
 }: PulseAttachPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,8 +137,22 @@ export function PulseAttachPanel({
   const handleSkip = () => {
     fireGa('attach_panel_skipped');
     // Native navigation — the <a href> below will follow on its own,
-    // we just fire the event as the buyer leaves.
+    // we just fire the event as the buyer leaves. When onSkip is
+    // provided (sequenced score_unlock flow), the parent has its
+    // own click handler that preventDefaults and calls onSkip — we
+    // still fire the GA event from this shared path so analytics
+    // is consistent across both behaviors.
   };
+
+  const handleSkipClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    handleSkip();
+    if (onSkip) {
+      e.preventDefault();
+      onSkip();
+    }
+  };
+
+  const resolvedSkipLabel = skipLabel ?? 'Skip — open my TurfMap';
 
   return (
     <div
@@ -217,10 +246,10 @@ export function PulseAttachPanel({
       <div className="mt-5 pt-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
         <a
           href={`/portal/${publicId}`}
-          onClick={handleSkip}
+          onClick={handleSkipClick}
           className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors inline-flex items-center gap-1"
         >
-          Skip — open my TurfMap{' '}
+          {resolvedSkipLabel}{' '}
           <ArrowRight size={11} strokeWidth={2} />
         </a>
       </div>

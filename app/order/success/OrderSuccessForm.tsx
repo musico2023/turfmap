@@ -229,6 +229,19 @@ export function OrderSuccessForm({
    *  intake form. Distinct from upgradeChoice='skipped' (which
    *  means the buyer declined the upgrade). */
   const [inlineUpgradeAccepted, setInlineUpgradeAccepted] = useState(false);
+  /** Score_unlock-only sequenced flow: tracks whether the buyer has
+   *  decided about the Pulse trial. 'pending' = the PulseAttachPanel
+   *  is the current step (rendered alone). 'skipped' = buyer dismissed,
+   *  reveal the success card with the heatmap CTA. Standalone TurfScan
+   *  buyers don't use this — they go through the original
+   *  showAttachPanel layout that already coexists Pulse + success card.
+   *
+   *  Only mutated by score_unlock paths. Standalone buyers' PulseAttachPanel
+   *  doesn't receive an onSkip handler, so its native /portal/<id>
+   *  navigation behavior is preserved. */
+  const [pulseChoice, setPulseChoice] = useState<'pending' | 'skipped'>(
+    'pending'
+  );
 
   // Pulse-attach return path: when the buyer comes back from Stripe
   // with ?attach=success or ?attach=cancelled, server resolves the
@@ -698,12 +711,97 @@ export function OrderSuccessForm({
           </div>
         )}
 
-        {/* Post-fulfillment state. The audit-upgrade decision has
-         *  already been made BEFORE this point (pre-intake gate
-         *  renders the AuditUpgradePanel earlier), so we don't
-         *  need to surface it again here. Pulse-attach is the next
-         *  conversion opportunity in the funnel. */}
+        {/* SCORE_UNLOCK SEQUENCED FLOW. Standalone TurfScan buyers
+         *  decide on the audit upgrade BEFORE this branch (pre-intake
+         *  gate at ~L897+ returns the AuditUpgradePanel alone). They
+         *  reach the done=true branch only after that decision, and
+         *  then see Pulse + success card together via showAttachPanel.
+         *
+         *  Score_unlock buyers skip the pre-intake gate (done=true
+         *  hydrates immediately to bypass the intake form they
+         *  already filled on /prove-it), so the audit decision and
+         *  the Pulse decision both need to happen INSIDE this branch.
+         *  Stack them as a strict sequence — one panel at a time —
+         *  so we don't compete two CTAs against each other:
+         *
+         *    Step 1: AuditUpgradePanel alone
+         *    Step 2: PulseAttachPanel alone (only if audit decided)
+         *    Step 3: success card with "View my full TurfMap" CTA
+         *
+         *  Each step's "skip" advances to the next. Each step's
+         *  "accept" path also advances (audit accept → inlineUpgradeAccepted
+         *  flips true; pulse accept → Stripe Checkout redirect, then
+         *  attachState='success' kicks in which is handled by the
+         *  existing showAttachWizard branch above).
+         *
+         *  Eligibility for the Pulse step mirrors the original
+         *  showAttachPanel computation below (publicId + stripeCustomerId
+         *  + not warm cohort). When ineligible, step 2 is skipped
+         *  entirely and we fall straight to step 3. */}
+        {scoreUnlock &&
+          sessionId &&
+          upgradeChoice === 'pending' &&
+          !isAuditUpgrade &&
+          !inlineUpgradeAccepted && (
+            <AuditUpgradePanel
+              source="order_success"
+              sessionId={sessionId}
+              savedCard={savedCard}
+              onSkip={() => setUpgradeChoice('skipped')}
+              onInlineConfirmSuccess={() => {
+                setInlineUpgradeAccepted(true);
+                void import('@/components/marketing/scan/MetaPixel').then(
+                  ({ trackMetaEvent }) => {
+                    trackMetaEvent('Purchase', {
+                      currency: 'USD',
+                      value: 197,
+                      content_name: 'Visibility Audit',
+                      content_category: 'upgrade',
+                    });
+                  }
+                );
+              }}
+            />
+          )}
+
+        {scoreUnlock &&
+          (upgradeChoice === 'skipped' ||
+            isAuditUpgrade ||
+            inlineUpgradeAccepted) &&
+          pulseChoice === 'pending' &&
+          publicId &&
+          sessionId &&
+          stripeCustomerId &&
+          cohort !== 'crm_reactivation_q2' &&
+          attachState !== 'success' && (
+            <PulseAttachPanel
+              publicId={publicId}
+              stripeCustomerId={stripeCustomerId}
+              originalSessionId={sessionId}
+              onSkip={() => setPulseChoice('skipped')}
+              skipLabel="Skip — see my heatmap"
+            />
+          )}
+
+        {/* Score_unlock buyers who haven't reached step 3 yet should NOT
+         *  see the legacy attach-panel / success-card layout below.
+         *  Short-circuit by hiding everything else when scoreUnlock is
+         *  active AND either step 1 or step 2 is still pending. */}
+        {scoreUnlock &&
+        ((upgradeChoice === 'pending' &&
+          !isAuditUpgrade &&
+          !inlineUpgradeAccepted) ||
+          (pulseChoice === 'pending' &&
+            publicId &&
+            stripeCustomerId &&
+            cohort !== 'crm_reactivation_q2' &&
+            attachState !== 'success')) ? null : (
         <>
+        {/* Post-fulfillment state. For standalone TurfScan buyers the
+         *  audit-upgrade decision was made BEFORE this branch (pre-
+         *  intake gate). For score_unlock buyers, both audit AND
+         *  pulse decisions have just been made above; falling
+         *  through to here means it's time for the heatmap CTA. */}
         {showAttachPanel ? (
           // Attach-panel-primary layout. Compact celebration header,
           // then the attach panel as the hero element, then any
@@ -864,45 +962,8 @@ export function OrderSuccessForm({
           </div>
         )}
 
-        {/* Score-unlock-only audit upsell. Standalone TurfScan buyers
-         *  see the AuditUpgradePanel via the pre-intake gate (below,
-         *  ~L897). Score_unlock buyers bypass that gate because the
-         *  mount-time useEffect hydrates done=true from the scoreUnlock
-         *  prop to skip the intake form they already filled on
-         *  /prove-it. Without this inline panel they'd never see the
-         *  audit upsell at all — losing the highest-intent moment of
-         *  the session. Placed BELOW the success card so the "View
-         *  my full TurfMap" CTA reads first (immediate intent honored),
-         *  then the upsell pitches once they've registered the win.
-         *  See CertaPro Calgary / Justin Enns incident 2026-06-04. */}
-        {scoreUnlock &&
-          sessionId &&
-          upgradeChoice === 'pending' &&
-          !isAuditUpgrade &&
-          !inlineUpgradeAccepted && (
-            <div className="mt-6">
-              <AuditUpgradePanel
-                source="order_success"
-                sessionId={sessionId}
-                savedCard={savedCard}
-                onSkip={() => setUpgradeChoice('skipped')}
-                onInlineConfirmSuccess={() => {
-                  setInlineUpgradeAccepted(true);
-                  void import('@/components/marketing/scan/MetaPixel').then(
-                    ({ trackMetaEvent }) => {
-                      trackMetaEvent('Purchase', {
-                        currency: 'USD',
-                        value: 197,
-                        content_name: 'Visibility Audit',
-                        content_category: 'upgrade',
-                      });
-                    }
-                  );
-                }}
-              />
-            </div>
-          )}
         </>
+        )}
       </>
     );
   }
