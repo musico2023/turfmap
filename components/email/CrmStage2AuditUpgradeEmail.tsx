@@ -98,7 +98,7 @@ export default function CrmStage2AuditUpgradeEmail({
         <Text className="text-zinc-300 text-sm leading-relaxed mb-4">
           &#10003; <strong>TurfScore Lift Promise:</strong>{' '}
           implement within 14 days. +10 TurfScore points in 90 days, or your
-          $499 back.
+          money back.
         </Text>
 
         <Section className="text-center my-6">

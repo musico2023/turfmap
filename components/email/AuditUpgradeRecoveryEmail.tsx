@@ -127,7 +127,7 @@ function copyForStage(
           And it&rsquo;s underwritten by our{' '}
           <strong>TurfScore Lift Promise</strong>: implement the plan
           within 14 days. If you don&rsquo;t gain +10 TurfScore points
-          in 90 days, we refund the full $499. Zero risk.
+          in 90 days, we refund the full cost. Zero risk.
         </>
       ),
       cta: 'Upgrade now — save $302 →',
@@ -167,8 +167,10 @@ function copyForStage(
           <br />
           And the <strong>TurfScore Lift Promise</strong> is the safety
           net: implement the plan in 14 days,{' '}
-          <strong>+10 TurfScore points in 90 days or your $499 back</strong>.
-          You can&rsquo;t lose.
+          <strong>
+            +10 TurfScore points in 90 days or we refund the full cost
+          </strong>
+          . You can&rsquo;t lose.
           <br />
           <br />
           After the window closes, the upgrade lists at{' '}
@@ -209,7 +211,7 @@ function copyForStage(
         recovery code. The audit is the same either way — the{' '}
         30-min strategist call, the per-vertical NAP audit, the 90-day
         roadmap, the re-scan, the check-in, the{' '}
-        <strong>+10 TurfScore points or $499 back</strong> promise.
+        <strong>+10 TurfScore points or full refund</strong> promise.
         Only the price changes.
         <br />
         <br />

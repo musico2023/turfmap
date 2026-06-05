@@ -70,7 +70,7 @@ const AUDIT_DELIVERABLES: readonly string[] = [
   '90-Day Visibility Roadmap (PDF) — week-by-week action plan with projected TurfScore lift per action',
   '30-day automated re-scan to measure progress',
   '60-day strategist check-in call to review re-scan and adjust the plan',
-  'TurfScore Lift Promise: implement the recommendations within 14 days. +10 TurfScore points in 90 days, or your $499 back.',
+  'TurfScore Lift Promise: implement the recommendations within 14 days. +10 TurfScore points in 90 days, or your money back.',
 ];
 
 export function OrderConfirmationEmail({

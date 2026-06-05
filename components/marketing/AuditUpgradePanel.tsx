@@ -362,7 +362,7 @@ export function AuditUpgradePanel({
             Implement the plan within 14 days. If you don&rsquo;t gain{' '}
             <strong className="text-white">+10 TurfScore points</strong>{' '}
             in 90 days,{' '}
-            <strong className="text-white">we refund the full $499</strong>.
+            <strong className="text-white">we refund the full cost</strong>.
           </div>
         </div>
       </div>
