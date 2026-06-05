@@ -176,30 +176,34 @@ export function PulseAttachPanel({
         <span>30-day Pulse trial</span>
       </div>
 
-      <h3 className="font-display text-2xl md:text-3xl font-bold leading-tight mb-3">
-        Your free 30-day Pulse trial is ready.
+      <h3 className="font-display text-2xl md:text-3xl font-bold leading-tight mb-3 text-white">
+        Your <span style={{ color: 'var(--color-lime)' }}>free</span>{' '}
+        30-day Pulse trial is ready.
       </h3>
 
       <p className="text-base md:text-lg text-zinc-300 leading-relaxed mb-5 max-w-2xl">
-        We&rsquo;ll re-scan you every Monday, alert you when your
+        We&rsquo;ll re-scan you every Monday, alert you when your{' '}
         TurfScore moves, and refresh your AI Coach playbook each week.{' '}
-        <strong className="font-semibold text-zinc-100">
+        <strong className="font-semibold text-white">
           After 30 days, $39/mo. Cancel anytime.
         </strong>
       </p>
 
       {/* Three-bullet feature row — what they actually get during the
-       *  trial. Compact icons + one-line bodies so the panel doesn't
-       *  bloat the success page. */}
+       *  trial. Compact icons + bolder one-line bodies so the panel
+       *  doesn't bloat the success page but the value words pop on
+       *  scan. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
         <FeatureItem icon={Calendar} label="Weekly scans">
-          Map auto-refreshes every Monday morning.
+          Map auto-refreshes <strong className="text-white">every Monday</strong>.
         </FeatureItem>
         <FeatureItem icon={Bell} label="Drop alerts">
-          Email when your TurfScore moves more than ±5.
+          Email when your TurfScore moves{' '}
+          <strong className="text-white">±5 or more</strong>.
         </FeatureItem>
         <FeatureItem icon={TrendingUp} label="Refreshed playbook">
-          AI Coach revisits your fix list each week.
+          AI Coach revisits your fix list{' '}
+          <strong className="text-white">every week</strong>.
         </FeatureItem>
       </div>
 
@@ -238,9 +242,11 @@ export function PulseAttachPanel({
       </div>
 
       {/* Primary CTA + post-trial price reminder, then the skip link.
-       *  CTA is the focal point; the post-trial price is repeated
-       *  here in the immediate adjacency to the click so the buyer
-       *  is reminded one last time before commit. */}
+       *  Button is intentionally large + glow-shadowed: this is the
+       *  conversion focal point on the entire panel. Reassurance copy
+       *  to the right (or under, on mobile) repeats price + cancel
+       *  terms in the adjacency of the click so the buyer's last
+       *  visual before commit reinforces "low risk." */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <Button
           type="button"
@@ -248,26 +254,31 @@ export function PulseAttachPanel({
           size="lg"
           onClick={handleActivate}
           disabled={loading}
-          rightIcon={<ArrowRight size={16} strokeWidth={2.5} />}
+          rightIcon={<ArrowRight size={16} strokeWidth={3} />}
           className="w-full sm:w-auto"
+          style={{
+            boxShadow: '0 6px 20px #c5ff3a40',
+          }}
         >
-          {loading ? 'Opening secure checkout…' : 'Activate trial'}
+          {loading ? 'Opening secure checkout…' : 'Activate free trial'}
         </Button>
-        <div className="flex flex-col gap-1 text-xs text-zinc-500 leading-relaxed">
+        <div className="flex flex-col gap-1 text-xs leading-relaxed">
           <span className="flex items-center gap-1.5">
             <RefreshCw
-              size={11}
-              strokeWidth={2.25}
+              size={12}
+              strokeWidth={2.5}
               style={{ color: 'var(--color-lime)' }}
             />
-            <span>
-              Free for 30 days, then{' '}
-              <span className="text-zinc-300 font-semibold">$39/mo</span>.
-              Cancel anytime.
+            <span className="text-zinc-300">
+              <strong className="text-white">Free for 30 days</strong>,
+              then{' '}
+              <strong className="text-white font-semibold">$39/mo</strong>
+              . Cancel anytime.
             </span>
           </span>
-          <span className="text-zinc-600">
-            Card on file. No charge until day 31.
+          <span className="text-zinc-500">
+            Card on file. <strong className="text-zinc-300">
+            No charge until day 31</strong>.
           </span>
         </div>
       </div>

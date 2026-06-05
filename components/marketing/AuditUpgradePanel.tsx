@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, Check, Clock } from 'lucide-react';
+import { ArrowRight, Check, Clock, Shield } from 'lucide-react';
 
 /**
  * Visibility Audit upgrade panel — shown to TurfScan buyers within
@@ -226,19 +226,26 @@ export function AuditUpgradePanel({
         boxShadow: '0 0 24px #c5ff3a14',
       }}
     >
-      {/* Eyebrow strip — small lime-accented header to differentiate
-       *  from the (sibling) Pulse-attach panel which uses its own
-       *  amber/orange treatment. */}
-      <div className="flex items-center gap-2 mb-3 text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold">
+      {/* Eyebrow strip — lime-accented + price-anchor savings badge.
+       *  Strong color contrast on "SAVE $302" makes the discount the
+       *  first thing the eye lands on, not the small-print clock. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] uppercase tracking-[0.18em] font-mono font-semibold">
         <span style={{ color: 'var(--color-lime)' }}>●</span>
         <span style={{ color: 'var(--color-lime)' }}>
           Visibility Audit upgrade
         </span>
-        <span className="text-zinc-600">·</span>
-        <span>$499 → $197 (24h window)</span>
+        <span className="text-zinc-700">·</span>
+        <span
+          className="px-2 py-0.5 rounded-sm text-black"
+          style={{ background: 'var(--color-lime)' }}
+        >
+          Save $302
+        </span>
+        <span className="text-zinc-700">·</span>
+        <span className="text-zinc-500">24h window</span>
       </div>
 
-      <h3 className="font-display text-xl md:text-2xl font-bold mb-3">
+      <h3 className="font-display text-xl md:text-2xl font-bold mb-3 text-white">
         {headline}
       </h3>
 
@@ -250,59 +257,153 @@ export function AuditUpgradePanel({
         What you get with the upgrade
       </div>
 
-      <ul className="space-y-2 mb-5">
-        {[
-          source === 'dashboard'
-            ? '30-min strategist call within 5 business days'
-            : '30-min strategist diagnostic call (live competitor teardown)',
-          source === 'dashboard'
-            ? 'Competitor heatmap analysis of your top 3 territory threats'
-            : 'Per-vertical NAP audit (every directory specific to your trade)',
-          source === 'dashboard'
-            ? null
-            : 'Competitor analysis with heatmap overlay',
-          '90-Day Visibility Roadmap PDF (week-by-week action plan)',
-          '30-day re-scan + 60-day strategist check-in call',
-          'TurfScore Lift Promise: implement within 14 days. +10 TurfScore points in 90 days, or your $499 back.',
-        ]
-          .filter(Boolean)
-          .map((line) => (
-            <li
-              key={line as string}
-              className="flex items-start gap-2.5 text-sm text-zinc-200 leading-relaxed"
-            >
-              <Check
-                size={14}
-                strokeWidth={2.5}
-                className="flex-shrink-0 mt-0.5"
-                style={{ color: 'var(--color-lime)' }}
-              />
-              <span>{line}</span>
-            </li>
-          ))}
+      {/* Standard deliverables — TurfScore Lift Promise is pulled OUT
+       *  to its own callout below because it's the risk-reversal
+       *  hero, not just another bullet. Bolded value-fragments help
+       *  the buyer's scan-pattern catch the differentiators. */}
+      <ul className="space-y-2.5 mb-5">
+        {(source === 'dashboard'
+          ? [
+              <>
+                <strong className="text-white">30-min strategist call</strong>{' '}
+                within 5 business days
+              </>,
+              <>
+                <strong className="text-white">
+                  Competitor heatmap analysis
+                </strong>{' '}
+                of your top 3 territory threats
+              </>,
+              <>
+                <strong className="text-white">
+                  90-Day Visibility Roadmap PDF
+                </strong>{' '}
+                (week-by-week action plan)
+              </>,
+              <>
+                <strong className="text-white">30-day re-scan</strong> +{' '}
+                <strong className="text-white">
+                  60-day strategist check-in
+                </strong>{' '}
+                call
+              </>,
+            ]
+          : [
+              <>
+                <strong className="text-white">
+                  30-min strategist diagnostic call
+                </strong>{' '}
+                (live competitor teardown)
+              </>,
+              <>
+                <strong className="text-white">Per-vertical NAP audit</strong>{' '}
+                (every directory specific to your trade)
+              </>,
+              <>
+                <strong className="text-white">Competitor analysis</strong>{' '}
+                with heatmap overlay
+              </>,
+              <>
+                <strong className="text-white">
+                  90-Day Visibility Roadmap PDF
+                </strong>{' '}
+                (week-by-week action plan)
+              </>,
+              <>
+                <strong className="text-white">30-day re-scan</strong> +{' '}
+                <strong className="text-white">
+                  60-day strategist check-in
+                </strong>{' '}
+                call
+              </>,
+            ]
+        ).map((line, i) => (
+          <li
+            key={i}
+            className="flex items-start gap-2.5 text-sm text-zinc-300 leading-relaxed"
+          >
+            <Check
+              size={15}
+              strokeWidth={3}
+              className="flex-shrink-0 mt-0.5"
+              style={{ color: 'var(--color-lime)' }}
+            />
+            <span>{line}</span>
+          </li>
+        ))}
       </ul>
 
-      {/* Pricing line — clean, no parenthetical. Previous copy was
-       *  "(your $49 already counted)" which implied a literal $49
-       *  credit toward $499 — but the actual discount is $302, so
-       *  the math was always slippery. The time-window callout
-       *  below conveys the temporal scope; this line just states
-       *  the price. */}
-      <div className="mb-3">
-        <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
-          <strong className="text-zinc-100">
-            Normally $499. Upgrade now: $197.
-          </strong>
-        </p>
+      {/* TurfScore Lift Promise — risk reversal hero. Pulled out of
+       *  the bullet list so it gets its own callout: shield icon,
+       *  lime border, distinct heading. This is the strongest
+       *  conversion lever (money-back guarantee) and was previously
+       *  buried as the 6th bullet. */}
+      <div
+        className="rounded-md border-2 px-4 py-3 mb-5 flex items-start gap-3"
+        style={{
+          background: 'rgba(197, 255, 58, 0.05)',
+          borderColor: 'rgba(197, 255, 58, 0.35)',
+        }}
+      >
+        <Shield
+          size={18}
+          strokeWidth={2.25}
+          className="flex-shrink-0 mt-0.5"
+          style={{ color: 'var(--color-lime)' }}
+        />
+        <div className="text-sm leading-relaxed">
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] font-mono font-bold mb-1"
+            style={{ color: 'var(--color-lime)' }}
+          >
+            TurfScore Lift Promise
+          </div>
+          <div className="text-zinc-200">
+            Implement the plan within 14 days. If you don&rsquo;t gain{' '}
+            <strong className="text-white">+10 TurfScore points</strong>{' '}
+            in 90 days,{' '}
+            <strong className="text-white">we refund the full $499</strong>.
+          </div>
+        </div>
       </div>
 
-      {/* Time-window callout */}
-      <div className="flex items-center gap-2 mb-5 text-xs text-zinc-400 font-mono">
-        <Clock size={12} style={{ color: 'var(--color-lime)' }} />
+      {/* Pricing display — strong visual hierarchy. $197 is the
+       *  attention anchor; $499 strikethrough is supporting context;
+       *  "you save $302" reinforces below. Previous version had both
+       *  prices in the same bold weight which made the discount
+       *  invisible to a scanner. */}
+      <div className="mb-4 flex items-baseline gap-3 flex-wrap">
+        <span className="font-display text-3xl md:text-4xl font-bold text-white">
+          $197
+        </span>
+        <span className="text-base md:text-lg text-zinc-500 line-through font-mono">
+          $499
+        </span>
+        <span
+          className="text-sm font-semibold"
+          style={{ color: 'var(--color-lime)' }}
+        >
+          Save $302 today
+        </span>
+      </div>
+
+      {/* Time-window callout — stronger amber-style treatment so the
+       *  scarcity registers. Previous version was muted gray text
+       *  that visually receded; conversion benefits from this being
+       *  one of the loudest elements on the panel. */}
+      <div
+        className="flex items-center gap-2 mb-5 text-xs font-mono font-semibold px-3 py-2 rounded-md border"
+        style={{
+          background: 'rgba(197, 255, 58, 0.08)',
+          borderColor: 'rgba(197, 255, 58, 0.25)',
+          color: 'var(--color-lime)',
+        }}
+      >
+        <Clock size={13} strokeWidth={2.5} />
         <span>
           {timeRemainingLabel ??
             (source === 'order_success'
-              ? 'Special pricing for the next 24 hours only'
+              ? 'Special pricing — next 24 hours only'
               : 'Upgrade window closes soon — after that, $499 from scratch')}
         </span>
       </div>
@@ -329,16 +430,21 @@ export function AuditUpgradePanel({
         </div>
       )}
 
-      {/* CTA + skip affordance */}
+      {/* CTA + skip affordance. Button is intentionally larger (px-7,
+       *  py-3.5, base font, full-width on mobile) for a $197 commit —
+       *  small CTAs read as low-importance regardless of color. Hover
+       *  brightness lift gives a tactile cue that the button is
+       *  interactive. */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <button
           type="button"
           onClick={handleClick}
           disabled={busy}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-md text-sm font-semibold transition-colors disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-md text-base font-bold transition-all disabled:opacity-50 hover:brightness-110 w-full sm:w-auto"
           style={{
             background: 'var(--color-lime)',
             color: '#000',
+            boxShadow: '0 6px 20px #c5ff3a40',
           }}
         >
           {busy
@@ -347,8 +453,8 @@ export function AuditUpgradePanel({
               : 'Opening checkout…'
             : savedCard
               ? 'Upgrade now'
-              : 'Add the Roadmap → $197'}
-          {!busy && <ArrowRight size={14} strokeWidth={2.5} />}
+              : 'Add the Roadmap'}
+          {!busy && <ArrowRight size={16} strokeWidth={3} />}
         </button>
         {source === 'order_success' && (
           <button
