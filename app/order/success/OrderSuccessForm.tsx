@@ -783,6 +783,45 @@ export function OrderSuccessForm({
          *  showAttachPanel computation below (publicId + stripeCustomerId
          *  + not warm cohort). When ineligible, step 2 is skipped
          *  entirely and we fall straight to step 3. */}
+        {/* Audit-purchased confirmation banner for score_unlock buyers
+         *  who accepted the audit upgrade. The standalone TurfScan
+         *  flow shows the same banner above the intake form (line
+         *  ~1140), but score_unlock buyers SKIP the intake form
+         *  (done=true hydrates on mount), so without this they'd
+         *  see no visual confirmation of the $197 charge.
+         *
+         *  Renders persistently across the Pulse step + the success
+         *  card so the "audit purchased" framing stays visible
+         *  through the rest of the page session. The same trigger
+         *  predicates that the form-banner uses
+         *  (isAuditUpgrade || inlineUpgradeAccepted). */}
+        {scoreUnlock && (isAuditUpgrade || inlineUpgradeAccepted) && (
+          <div
+            className="border rounded-md px-4 py-3 mb-5 flex items-start gap-2.5"
+            style={{
+              background: 'var(--color-card-glow)',
+              borderColor: 'var(--color-border-bright)',
+            }}
+          >
+            <Check
+              size={16}
+              strokeWidth={2.75}
+              className="flex-shrink-0 mt-0.5"
+              style={{ color: 'var(--color-lime)' }}
+            />
+            <div className="leading-relaxed text-sm">
+              <div className="font-semibold text-zinc-100 mb-0.5">
+                Visibility Audit upgrade purchased — $197
+              </div>
+              <div className="text-xs text-zinc-400">
+                Your strategist call link is in your inbox. Book it
+                anytime in the next 5 business days to get the most
+                out of your audit.
+              </div>
+            </div>
+          </div>
+        )}
+
         {scoreUnlock &&
           sessionId &&
           upgradeChoice === 'pending' &&

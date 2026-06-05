@@ -41,12 +41,14 @@ import type { ClientRow, LeadOrderRow, ScanRow } from '@/lib/supabase/types';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
 import { notifyAuditUpgradePurchase } from '@/lib/audit/operatorSlack';
-import { agencyClientUrl } from '@/lib/urls';
+import { agencyClientUrl, portalUrl } from '@/lib/urls';
 import {
   sendMetaCapiEvent,
   buildFbcFromFbclid,
 } from '@/lib/marketing/metaCapi';
 import { randomUUID } from 'crypto';
+import { sendOrderConfirmation } from '@/lib/email/resend';
+import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -549,6 +551,42 @@ export async function POST(req: Request) {
     } catch (e) {
       console.error(
         '[upgrade/confirm] prospects stamp failed (non-fatal)',
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  // Order confirmation email with the Cal.com strategist-booking
+  // link. This was previously only sent by the Stripe-Checkout-
+  // redirect path (handleAuditUpgradeCompletion in the webhook), so
+  // 1-click inline-confirm buyers were charged $197 and got no
+  // booking-link email — the only path to the strategist call. The
+  // audit-call-reminders cron would eventually send a REMINDER but
+  // that's a different template + assumes the confirmation already
+  // landed. This block mirrors the webhook's send: same template
+  // (sendOrderConfirmation tier='audit'), same dashboardUrl
+  // (portalUrl), same Cal.com booking URL pattern, same
+  // auditPurchaseKind='upgrade' so the buyer sees "$197 upgrade
+  // confirmed" not "$499 from scratch".
+  if (buyerEmail) {
+    const dashboardUrl = portalUrl(origin, client.public_id);
+    const bookingUrl = calcomBookingUrlForTier({
+      tier: 'audit',
+      email: buyerEmail,
+      businessName: client.business_name,
+    });
+    try {
+      await sendOrderConfirmation({
+        to: buyerEmail,
+        businessName: client.business_name,
+        tier: 'audit',
+        dashboardUrl,
+        bookingUrl,
+        auditPurchaseKind: 'upgrade',
+      });
+    } catch (e) {
+      console.error(
+        '[upgrade/confirm] order confirmation email failed (non-fatal)',
         e instanceof Error ? e.message : String(e)
       );
     }
