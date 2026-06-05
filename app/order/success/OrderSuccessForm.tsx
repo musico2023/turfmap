@@ -783,16 +783,25 @@ export function OrderSuccessForm({
               sessionId={sessionId}
               savedCard={savedCard}
               onSkip={() => setUpgradeChoice('skipped')}
-              onInlineConfirmSuccess={() => {
+              onInlineConfirmSuccess={({ metaEventId }) => {
                 setInlineUpgradeAccepted(true);
+                // Fire client-side Pixel with the server-provided
+                // event_id so Meta dedups against the CAPI Purchase
+                // event /api/upgrade/audit/confirm fired server-side.
+                // Without the shared id, every audit upgrade would
+                // count as 2 purchases in Events Manager.
                 void import('@/components/marketing/scan/MetaPixel').then(
                   ({ trackMetaEvent }) => {
-                    trackMetaEvent('Purchase', {
-                      currency: 'USD',
-                      value: 197,
-                      content_name: 'Visibility Audit',
-                      content_category: 'upgrade',
-                    });
+                    trackMetaEvent(
+                      'Purchase',
+                      {
+                        currency: 'USD',
+                        value: 197,
+                        content_name: 'Visibility Audit',
+                        content_category: 'upgrade',
+                      },
+                      metaEventId ? { eventID: metaEventId } : undefined
+                    );
                   }
                 );
               }}
@@ -1074,27 +1083,32 @@ export function OrderSuccessForm({
         sessionId={sessionId}
         savedCard={savedCard}
         onSkip={() => setUpgradeChoice('skipped')}
-        onInlineConfirmSuccess={() => {
+        onInlineConfirmSuccess={({ metaEventId }) => {
           // 1-click confirm succeeded server-side. Flip choice so
           // the next render bypasses the panel and renders the
           // intake form with an "audit purchased" banner (same
           // visual state as the Stripe-Checkout-redirect return
           // path with ?upgrade=audit).
           setInlineUpgradeAccepted(true);
-          // Fire Meta Pixel Purchase for the inline 1-click upgrade.
-          // The Stripe-Checkout-redirect path fires Purchase server-
-          // rendered on /order/success when ?upgrade=audit lands; this
-          // off-session path never redirects, so we fire from the
-          // client when the confirm succeeds. Same payload either way
-          // so events are interchangeable in Meta Events Manager.
+          // Fire Meta Pixel Purchase for the inline 1-click upgrade
+          // with the server-provided event_id so Meta dedups against
+          // the CAPI Purchase /api/upgrade/audit/confirm just sent
+          // server-side. The Stripe-Checkout-redirect path fires
+          // Purchase server-rendered on /order/success when
+          // ?upgrade=audit lands (also with eventID for dedup against
+          // handleAuditUpgradeCompletion's CAPI fire).
           void import('@/components/marketing/scan/MetaPixel').then(
             ({ trackMetaEvent }) => {
-              trackMetaEvent('Purchase', {
-                currency: 'USD',
-                value: 197,
-                content_name: 'Visibility Audit',
-                content_category: 'upgrade',
-              });
+              trackMetaEvent(
+                'Purchase',
+                {
+                  currency: 'USD',
+                  value: 197,
+                  content_name: 'Visibility Audit',
+                  content_category: 'upgrade',
+                },
+                metaEventId ? { eventID: metaEventId } : undefined
+              );
             }
           );
         }}

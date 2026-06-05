@@ -66,11 +66,13 @@ export type AuditUpgradePanelProps = {
   savedCard?: { brand: string; last4: string } | null;
   /** Order-success only. Fired when the inline confirm succeeds
    *  (no Stripe redirect). Parent transitions state to show the
-   *  audit-purchased banner + intake form. No-op when the panel
-   *  falls back to Stripe Checkout redirect (the Stripe flow
-   *  redirects away, then the page reloads with ?upgrade=audit
-   *  which the parent reads separately). */
-  onInlineConfirmSuccess?: () => void;
+   *  audit-purchased banner + intake form, and fires the client-
+   *  side Meta Pixel Purchase event using the server-provided
+   *  eventId for CAPI dedup. No-op when the panel falls back to
+   *  Stripe Checkout redirect (the Stripe flow redirects away,
+   *  then the page reloads with ?upgrade=audit which the parent
+   *  reads separately). */
+  onInlineConfirmSuccess?: (args: { metaEventId: string | null }) => void;
 };
 
 export function AuditUpgradePanel({
@@ -145,12 +147,23 @@ export function AuditUpgradePanel({
           reason?: string;
           error?: string;
           payment_intent_id?: string;
+          /** Server-generated Meta CAPI event_id. When present, the
+           *  parent's onInlineConfirmSuccess uses it to fire fbq
+           *  with the same id — Meta dedupes (Purchase, event_id)
+           *  pairs across server CAPI + client Pixel and counts ONE
+           *  conversion. */
+          meta_event_id?: string;
         };
         if (confirmData.ok) {
           // Success! Notify parent so it transitions to the
           // post-upgrade state (intake form + audit-purchased
-          // banner). No redirect needed.
-          if (onInlineConfirmSuccess) onInlineConfirmSuccess();
+          // banner). No redirect needed. Forward the CAPI event_id
+          // so the parent fires its client-side Purchase pixel with
+          // matching id for dedup.
+          if (onInlineConfirmSuccess)
+            onInlineConfirmSuccess({
+              metaEventId: confirmData.meta_event_id ?? null,
+            });
           setBusy(false);
           return;
         }

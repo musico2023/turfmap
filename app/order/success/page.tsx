@@ -315,6 +315,16 @@ export default async function OrderSuccessPage({
           content_name: 'Visibility Audit',
           content_category: 'upgrade',
         },
+        // event_id stamped server-side by handleAuditUpgradeCompletion
+        // (Stripe webhook redirect path) or /api/upgrade/audit/confirm
+        // (1-click inline path, which also returns it to the client
+        // for the inline trackMetaEvent call). When non-null, the
+        // page-level Pixel + the server-side CAPI carry the same id
+        // and Meta dedupes the pair.
+        eventID:
+          sessionState?.kind === 'ok'
+            ? sessionState.metaAuditUpgradeEventId
+            : null,
       }
     : scoreUnlockState &&
         tier === 'scan' &&
@@ -605,6 +615,17 @@ type SessionState =
          *  (legacy unlock rows). */
         metaPurchaseEventId: string | null;
       } | null;
+      /** Audit-upgrade redirect-path Meta CAPI event_id. Stamped on
+       *  the ORIGINAL scan lead_orders row by
+       *  handleAuditUpgradeCompletion (Stripe webhook) or
+       *  /api/upgrade/audit/confirm (1-click inline). Passed to the
+       *  page-level MetaPixelTrack when isAuditUpgrade=true so the
+       *  fbq Purchase pixel fires with the same id Meta will use to
+       *  dedup against the server CAPI event. Null when the buyer
+       *  is on /order/success for any other reason (no
+       *  ?upgrade=audit) — the field still lives on the SessionState
+       *  return so the lookup happens cleanly regardless. */
+      metaAuditUpgradeEventId: string | null;
     }
   | { kind: 'warning'; message: string };
 
@@ -680,6 +701,14 @@ async function validateAndRecordSession(
   // up by Stripe session_id (the canonical key for this score_unlock
   // lead_orders row).
   let metaPurchaseEventId: string | null = null;
+  // For audit-upgrade redirect returns (?upgrade=audit), the original
+  // scan lead_orders row was stamped with meta_audit_purchase_event_id
+  // by handleAuditUpgradeCompletion. Look it up here so the page-level
+  // MetaPixelTrack for the audit Purchase event dedups against the
+  // server CAPI fire. Distinct field from meta_purchase_event_id
+  // (which is for the original $49 unlock) — both can coexist on the
+  // same lead_orders row if the buyer first unlocked then upgraded.
+  let metaAuditUpgradeEventId: string | null = null;
   if (result.scoreUnlock) {
     const { data: client } = await supabase
       .from('clients')
@@ -696,6 +725,22 @@ async function validateAndRecordSession(
     const candidate = unlockRow?.stripe_metadata?.meta_purchase_event_id;
     if (typeof candidate === 'string' && candidate.length > 0) {
       metaPurchaseEventId = candidate;
+    }
+  }
+  // Audit-upgrade redirect path — separate from score_unlock. The
+  // session_id in the URL is the buyer's ORIGINAL scan session
+  // (Stripe success_url preserved it), so we look up that row's
+  // metadata directly.
+  if (sessionId) {
+    const { data: scanRow } = await supabase
+      .from('lead_orders')
+      .select('stripe_metadata')
+      .eq('stripe_session_id', sessionId)
+      .maybeSingle<{ stripe_metadata: Record<string, unknown> | null }>();
+    const candidate =
+      scanRow?.stripe_metadata?.meta_audit_purchase_event_id;
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      metaAuditUpgradeEventId = candidate;
     }
   }
 
@@ -717,5 +762,6 @@ async function validateAndRecordSession(
           metaPurchaseEventId,
         }
       : null,
+    metaAuditUpgradeEventId,
   };
 }

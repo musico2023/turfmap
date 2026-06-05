@@ -42,6 +42,11 @@ import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { computeLlmFitScore } from '@/lib/audit/llmFitScore';
 import { notifyAuditUpgradePurchase } from '@/lib/audit/operatorSlack';
 import { agencyClientUrl } from '@/lib/urls';
+import {
+  sendMetaCapiEvent,
+  buildFbcFromFbclid,
+} from '@/lib/marketing/metaCapi';
+import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -414,6 +419,82 @@ export async function POST(req: Request) {
     }
   }
 
+  // Meta CAPI Purchase event for the inline (1-click) upgrade path.
+  // Server-side fire so ad-blockers can't suppress the conversion.
+  // event_id is also returned to the client so OrderSuccessForm's
+  // trackMetaEvent('Purchase', ...) call can pass the same id —
+  // Meta then dedupes the (Purchase, event_id) pair and counts ONE
+  // conversion instead of two.
+  //
+  // Pulled into a helper-style block here (not extracted to a function
+  // because of the long scope of locals already in flight). Mirrors the
+  // pattern in handleAuditUpgradeCompletion for the redirect path.
+  const metaEventId = randomUUID();
+  try {
+    const originalMeta = leadOrder.stripe_metadata as
+      | Record<string, unknown>
+      | null;
+    const fbclid =
+      originalMeta && typeof originalMeta.attribution_fbclid === 'string'
+        ? originalMeta.attribution_fbclid
+        : null;
+    const leadSource =
+      originalMeta && typeof originalMeta.lead_source === 'string'
+        ? originalMeta.lead_source
+        : null;
+    const fbc = fbclid ? buildFbcFromFbclid(fbclid) : null;
+
+    const customData: Record<string, string | number | boolean> = {
+      content_name: 'Visibility Audit',
+      content_category: 'upgrade',
+      value: 197,
+      currency: 'USD',
+    };
+    if (leadSource) customData.lead_source = leadSource;
+
+    const capiResult = await sendMetaCapiEvent({
+      event: 'Purchase',
+      eventId: metaEventId,
+      eventSourceUrl: `${origin}/order/success?session_id=${body.session_id}&upgrade=audit`,
+      userData: {
+        email: buyerEmail ?? undefined,
+        fbc,
+      },
+      customData,
+    });
+
+    // Stamp event_id back on the ORIGINAL scan lead_orders row so any
+    // subsequent /order/success?upgrade=audit render can read it
+    // (defensive — the client-side pixel actually fires synchronously
+    // from setInlineUpgradeAccepted using the event_id returned in
+    // this response, but stamping the row also covers the case where
+    // the buyer refreshes the page).
+    await supabase
+      .from('lead_orders')
+      .update({
+        stripe_metadata: {
+          ...(originalMeta ?? {}),
+          meta_audit_purchase_event_id: metaEventId,
+          meta_audit_purchase_value_cents: '19700',
+          meta_audit_purchase_capi_fired: capiResult.ok ? 'true' : 'false',
+        },
+      })
+      .eq('id', leadOrder.id);
+
+    if (!capiResult.ok && capiResult.reason !== 'not_configured') {
+      console.warn(
+        '[upgrade/confirm] Meta CAPI Purchase failed:',
+        capiResult.reason,
+        capiResult.message
+      );
+    }
+  } catch (e) {
+    console.warn(
+      '[upgrade/confirm] Meta CAPI Purchase threw',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
   // Pending-intake path: stop here, /api/orders/fulfill picks up
   // the rest when the buyer submits the scan intake form.
   if (isPendingIntake || !client || !originalScan) {
@@ -422,6 +503,7 @@ export async function POST(req: Request) {
       payment_intent_id: paymentIntent.id,
       lead_order_id: newLeadOrder.id,
       pending_intake: true,
+      meta_event_id: metaEventId,
     });
   }
 
@@ -476,5 +558,6 @@ export async function POST(req: Request) {
     ok: true,
     payment_intent_id: paymentIntent.id,
     lead_order_id: newLeadOrder.id,
+    meta_event_id: metaEventId,
   });
 }

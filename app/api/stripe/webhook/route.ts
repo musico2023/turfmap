@@ -61,6 +61,11 @@ import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
 import { ensurePulsePlusCommitmentSchedule } from '@/lib/stripe/subscription';
 import { handleScoreUnlockCompletion } from '@/lib/score/handleScoreUnlock';
+import {
+  sendMetaCapiEvent,
+  buildFbcFromFbclid,
+} from '@/lib/marketing/metaCapi';
+import { randomUUID } from 'crypto';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -1084,6 +1089,78 @@ async function handleAuditUpgradeCompletion(
         e instanceof Error ? e.message : String(e)
       );
     }
+  }
+
+  // Meta CAPI Purchase event — server-side firing so ad-blockers can't
+  // suppress the conversion. event_id is stamped on the ORIGINAL scan
+  // lead_orders row (where /order/success looks it up) so the
+  // client-side fbq fired by isAuditUpgrade renders the matched pair
+  // and Meta counts ONE conversion. Without dedup we'd see 2 events
+  // per real conversion in Events Manager.
+  try {
+    const metaEventId = randomUUID();
+    const originalMeta = originalLeadOrder.stripe_metadata as
+      | Record<string, unknown>
+      | null;
+    const fbclid =
+      originalMeta && typeof originalMeta.attribution_fbclid === 'string'
+        ? originalMeta.attribution_fbclid
+        : null;
+    const leadSource =
+      originalMeta && typeof originalMeta.lead_source === 'string'
+        ? originalMeta.lead_source
+        : null;
+    const fbc = fbclid ? buildFbcFromFbclid(fbclid) : null;
+
+    const customData: Record<string, string | number | boolean> = {
+      content_name: 'Visibility Audit',
+      content_category: 'upgrade',
+      value: 197,
+      currency: 'USD',
+    };
+    if (leadSource) customData.lead_source = leadSource;
+
+    const capiResult = await sendMetaCapiEvent({
+      event: 'Purchase',
+      eventId: metaEventId,
+      eventSourceUrl: `${origin}/order/success?session_id=${originalLeadOrder.stripe_session_id ?? ''}&upgrade=audit`,
+      userData: {
+        email: buyerEmail ?? undefined,
+        fbc,
+      },
+      customData,
+    });
+
+    // Stamp event_id on the ORIGINAL scan row so /order/success?
+    // upgrade=audit can read it and pass to MetaPixelTrack for the
+    // client-side dedup. Also tag the audit_upgrade lead_orders row
+    // so analytics can confirm the CAPI side fired (vs. only
+    // client-side).
+    if (originalLeadOrder.id) {
+      await supabase
+        .from('lead_orders')
+        .update({
+          stripe_metadata: {
+            ...(originalMeta ?? {}),
+            meta_audit_purchase_event_id: metaEventId,
+            meta_audit_purchase_value_cents: '19700',
+            meta_audit_purchase_capi_fired: capiResult.ok ? 'true' : 'false',
+          },
+        })
+        .eq('id', originalLeadOrder.id);
+    }
+    if (!capiResult.ok && capiResult.reason !== 'not_configured') {
+      console.warn(
+        '[audit-upgrade] Meta CAPI Purchase failed:',
+        capiResult.reason,
+        capiResult.message
+      );
+    }
+  } catch (e) {
+    console.warn(
+      '[audit-upgrade] Meta CAPI Purchase threw',
+      e instanceof Error ? e.message : String(e)
+    );
   }
 }
 
