@@ -394,28 +394,51 @@ export async function POST(req: Request) {
         customData.turf_score = capiTurfScore;
       }
 
-      const result = await sendMetaCapiEvent({
-        event: 'Lead',
-        eventId: capiEventId,
-        eventSourceUrl: capiEventSourceUrl,
-        userData: {
-          email: capiEmail,
-          phone: capiPhone,
-          ip: capiIp,
-          userAgent: capiUserAgent,
-          fbp: capiFbp,
-          fbc: capiFbc,
-        },
-        customData,
-      });
-      if (!result.ok && result.reason !== 'not_configured') {
-        // Surface non-config failures in server logs so a misconfigured
-        // access token or a graph API outage doesn't disappear silently.
-        console.warn(
-          '[score/preview-init] Meta CAPI Lead failed:',
-          result.reason,
-          result.message
-        );
+      const capiUserData = {
+        email: capiEmail,
+        phone: capiPhone,
+        ip: capiIp,
+        userAgent: capiUserAgent,
+        fbp: capiFbp,
+        fbc: capiFbc,
+      };
+
+      // Fire BOTH the generic standard Lead and a dedicated
+      // 'FreeScoreSubmit' custom event. They share capiEventId — Meta
+      // dedupes per (event_name, event_id), so the shared id only
+      // dedupes each against its own client-side pixel fire, never
+      // against the other. FreeScoreSubmit is the clean signal we
+      // build a Custom Conversion on + optimize the lander campaign
+      // toward; Lead stays for backwards-compatible reporting.
+      const [leadResult, freeScoreResult] = await Promise.all([
+        sendMetaCapiEvent({
+          event: 'Lead',
+          eventId: capiEventId,
+          eventSourceUrl: capiEventSourceUrl,
+          userData: capiUserData,
+          customData,
+        }),
+        sendMetaCapiEvent({
+          event: 'FreeScoreSubmit',
+          eventId: capiEventId,
+          eventSourceUrl: capiEventSourceUrl,
+          userData: capiUserData,
+          customData,
+        }),
+      ]);
+      // Surface non-config failures in server logs so a misconfigured
+      // access token or a graph API outage doesn't disappear silently.
+      for (const [name, result] of [
+        ['Lead', leadResult],
+        ['FreeScoreSubmit', freeScoreResult],
+      ] as const) {
+        if (!result.ok && result.reason !== 'not_configured') {
+          console.warn(
+            `[score/preview-init] Meta CAPI ${name} failed:`,
+            result.reason,
+            result.message
+          );
+        }
       }
     });
   }

@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import { ArrowRight, AlertCircle, Lock, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { trackMetaEvent, readCookie } from '@/components/marketing/scan/MetaPixel';
+import {
+  trackMetaEvent,
+  trackMetaCustomEvent,
+  readCookie,
+} from '@/components/marketing/scan/MetaPixel';
 import {
   AddressAutocomplete,
   type AddressFields,
@@ -386,16 +390,30 @@ export function ScanIntakeForm({
       // server, so Facebook dedupes against the CAPI Lead the server
       // just kicked off in after().
       if (previewMode) {
+        const leadParams = {
+          content_name: 'TurfScore Free Preview',
+          content_category: 'score_preview_submit',
+          utm_source: utmSource ?? undefined,
+          utm_medium: utmMedium ?? undefined,
+          utm_campaign: utmCampaign ?? undefined,
+          ...(leadSource ? { lead_source: leadSource } : {}),
+        };
         trackMetaEvent(
           'Lead',
-          {
-            content_name: 'TurfScore Free Preview',
-            content_category: 'score_preview_submit',
-            utm_source: utmSource ?? undefined,
-            utm_medium: utmMedium ?? undefined,
-            utm_campaign: utmCampaign ?? undefined,
-            ...(leadSource ? { lead_source: leadSource } : {}),
-          },
+          leadParams,
+          metaEventId ? { eventID: metaEventId } : undefined
+        );
+        // Dedicated custom conversion for the free-score funnel, fired
+        // ALONGSIDE the standard Lead (not instead of it) so we keep
+        // generic Lead reporting but also get a clean, purpose-built
+        // 'FreeScoreSubmit' event to build a Custom Conversion on and
+        // optimize the lander campaign toward. Reuses metaEventId —
+        // dedup is per (event_name, event_id), so sharing the id with
+        // the Lead event above is safe (different event names). The
+        // server fires the matching CAPI FreeScoreSubmit in after().
+        trackMetaCustomEvent(
+          'FreeScoreSubmit',
+          leadParams,
           metaEventId ? { eventID: metaEventId } : undefined
         );
       }
