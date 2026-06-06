@@ -86,6 +86,38 @@ export function trackMetaEvent(
   }
 }
 
+/**
+ * Imperative fbq('trackCustom', ...) call for CUSTOM (non-standard)
+ * events. Same guards + dedup semantics as trackMetaEvent: pass
+ * `eventID` when the same logical event is ALSO sent server-side via
+ * sendMetaCapiEvent so Facebook dedupes the pixel + CAPI pair on
+ * event_name + event_id.
+ *
+ * Use for purpose-built conversions we want to define a Custom
+ * Conversion on and optimize a campaign toward — e.g.
+ * 'FreeScoreSubmit', kept SEPARATE from the generic standard 'Lead'
+ * event so Ads Manager reports + optimization key off the real
+ * free-score submission and nothing else.
+ */
+export function trackMetaCustomEvent(
+  event: string,
+  params?: Record<string, unknown>,
+  options?: { eventID?: string }
+): void {
+  if (typeof window === 'undefined') return;
+  if (!pixelId()) return;
+  if (typeof window.fbq !== 'function') return;
+  if (params && options?.eventID) {
+    window.fbq('trackCustom', event, params, { eventID: options.eventID });
+  } else if (params) {
+    window.fbq('trackCustom', event, params);
+  } else if (options?.eventID) {
+    window.fbq('trackCustom', event, {}, { eventID: options.eventID });
+  } else {
+    window.fbq('trackCustom', event);
+  }
+}
+
 /** Read a cookie value by name. Returns null if the cookie doesn't
  *  exist or if running on the server. Used to forward _fbp/_fbc to
  *  the server for CAPI matching. */
