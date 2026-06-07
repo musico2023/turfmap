@@ -110,7 +110,7 @@ export default function ScoreLanderPage() {
            *  list price (no MAPCHECK50 discount). The cold-Meta
            *  lander at /free-score sends 'free_score' instead and
            *  gets the discount. */}
-          <ScanIntakeForm previewMode leadSource="score" />
+          <ScanIntakeForm previewMode leadSource="score" useBusinessAutocomplete />
 
           {/* What's included / what's locked — honest disclosure so
            *  the buyer isn't surprised when they land on the blurred

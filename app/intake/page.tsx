@@ -229,6 +229,7 @@ export default async function IntakePage({
               prefillBusinessParam ?? prefill?.businessName ?? null
             }
             prefillKeyword={prefillKeywordParam ?? prefill?.keyword ?? null}
+            useBusinessAutocomplete
           />
 
           <div
