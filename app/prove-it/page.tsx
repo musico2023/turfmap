@@ -803,6 +803,7 @@ export default async function ProveItLanderPage({
           <ScanIntakeForm
             previewMode
             leadSource="prove_it"
+            useBusinessAutocomplete
             utmSource={utmSource}
             utmMedium={utmMedium}
             utmCampaign={utmCampaign}

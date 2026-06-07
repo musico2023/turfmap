@@ -8,6 +8,7 @@ import {
   trackMetaCustomEvent,
   readCookie,
 } from '@/components/marketing/scan/MetaPixel';
+import { GoogleBusinessAutocomplete } from '@/components/marketing/scan/GoogleBusinessAutocomplete';
 import {
   AddressAutocomplete,
   type AddressFields,
@@ -92,6 +93,16 @@ export type ScanIntakeFormProps = {
    *    - 'free_score'  → cold-Meta /free-score lander → $49 unlock
    *  Ignored outside previewMode. */
   leadSource?: string | null;
+  /** When true, swap the businessName + AddressAutocomplete pair
+   *  (Mapbox-based) for a single Google Places business-autocomplete
+   *  input. Picking from the dropdown auto-fills business name,
+   *  formatted address, lat/lng, and phone via /api/places/resolve.
+   *  Collapses 4-5 typed fields → 1 buyer pick. Phone input is also
+   *  hidden when this is on (Google supplies it). Enabled on the
+   *  Meta-paid landers (/free-score, /prove-it) where form friction
+   *  is the bottleneck; left off on homepage /score (lower-friction
+   *  audience there). */
+  useBusinessAutocomplete?: boolean;
 };
 
 export function ScanIntakeForm({
@@ -111,6 +122,7 @@ export function ScanIntakeForm({
   prefillKeyword = null,
   previewMode = false,
   leadSource = null,
+  useBusinessAutocomplete = false,
 }: ScanIntakeFormProps) {
   const [businessName, setBusinessName] = useState(prefillBusinessName ?? '');
   const [address, setAddress] = useState('');
@@ -186,7 +198,12 @@ export function ScanIntakeForm({
     keywords.every((k) => k.trim().length >= 2) &&
     email.includes('@') &&
     email.length >= 5 &&
-    phone.trim().length >= 7;
+    // Phone-filled is only required when we're collecting it
+    // ourselves. On the Google autocomplete path, phone is auto-
+    // resolved (when Google has it) and rides through invisibly —
+    // missing-phone is acceptable since downstream Meta CAPI
+    // accepts the event without it (just lower match quality).
+    (useBusinessAutocomplete || phone.trim().length >= 7);
 
   // The Turnstile widget renders only when (a) we're in previewMode,
   // (b) the site key is configured, and (c) every other field looks
@@ -436,54 +453,94 @@ export function ScanIntakeForm({
   return (
     <>
     <form onSubmit={onSubmit} className="space-y-4">
-      <Field
-        label="Business name"
-        id="biz-name"
-        value={businessName}
-        onChange={setBusinessName}
-        placeholder="e.g. Acme Plumbing"
-        autoComplete="organization"
-        required
-      />
-      {/* Address — special-cased: Mapbox AddressAutofill instead of
-       *  the plain Field component. Picking from the dropdown writes
-       *  the canonical formatted address back into state so the
-       *  downstream Stripe + fulfill steps geocode against a known-
-       *  good string. Free typing still works (degrades gracefully)
-       *  if NEXT_PUBLIC_MAPBOX_TOKEN is unset or Mapbox doesn't have
-       *  a match. */}
-      <AddressFieldWithAutocomplete
-        value={address}
-        picked={addressPicked ? selected : null}
-        onChange={(next) => {
-          setAddress(next);
-          // Clear the Mapbox pick only when the buyer TYPES something
-          // that doesn't match what they previously picked. Mapbox's
-          // AddressAutofill writes street_address ("1051 Southfield
-          // Drive") to the input AFTER our onSelect fires (which set
-          // address = formatted "...Plainfield, Indiana 46168..."),
-          // triggering this onChange with the shorter string — that
-          // is NOT a real edit, just Mapbox's post-pick canonicalize.
-          // Tolerating both `formatted` and `street_address` keeps
-          // the pick alive across that auto-rewrite so the submit
-          // forwards the coords end-to-end.
-          if (
-            selected &&
-            next !== selected.formatted &&
-            next !== selected.street_address
-          ) {
-            setSelected(null);
-          }
-        }}
-        onSelect={(fields: AddressFields) => {
-          setAddress(fields.formatted);
-          setSelected(fields);
-          // Clear any prior "please pick from dropdown" gate error
-          // now that the buyer has picked. Other errors (network /
-          // Stripe) stay surfaced until the next submit.
-          setError(null);
-        }}
-      />
+      {useBusinessAutocomplete ? (
+        // Single-field Google Places autocomplete — replaces the
+        // separate Business name + Mapbox address pair. Picking
+        // from the dropdown auto-fills businessName, address,
+        // lat/lng, AND phone. The downstream submit body shape is
+        // identical to the Mapbox path (AddressFields-equivalent
+        // `selected` state is constructed from the resolved Place).
+        <div>
+          <label
+            htmlFor="biz-google"
+            className="block text-xs font-mono uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-2"
+          >
+            Find your business on Google
+          </label>
+          <GoogleBusinessAutocomplete
+            placeholder="Type your business name…"
+            onResolved={(place) => {
+              setBusinessName(place.businessName);
+              setAddress(place.formattedAddress);
+              // Construct the AddressFields shape that the Mapbox
+              // path produces, so downstream submit logic doesn't
+              // need to branch on which autocomplete fired.
+              const components = place.addressComponents ?? null;
+              setSelected({
+                formatted: place.formattedAddress,
+                street_address: components?.streetAddress ?? '',
+                city: components?.city ?? null,
+                region: components?.region ?? null,
+                postcode: components?.postcode ?? null,
+                country_code: components?.countryCode ?? null,
+                latitude: place.latitude,
+                longitude: place.longitude,
+              } as unknown as AddressFields);
+              // Auto-fill phone from Google when present. Buyer
+              // can still see/edit it via the hidden phone field
+              // — actually, on the autocomplete path we don't
+              // render the phone field at all, so the value just
+              // rides through to the submit body. Meta CAPI gets
+              // the hashed value for free.
+              if (place.phone) setPhone(place.phone);
+              setError(null);
+            }}
+            onClear={() => {
+              setBusinessName('');
+              setAddress('');
+              setSelected(null);
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          <Field
+            label="Business name"
+            id="biz-name"
+            value={businessName}
+            onChange={setBusinessName}
+            placeholder="e.g. Acme Plumbing"
+            autoComplete="organization"
+            required
+          />
+          {/* Address — special-cased: Mapbox AddressAutofill instead of
+           *  the plain Field component. Picking from the dropdown writes
+           *  the canonical formatted address back into state so the
+           *  downstream Stripe + fulfill steps geocode against a known-
+           *  good string. Free typing still works (degrades gracefully)
+           *  if NEXT_PUBLIC_MAPBOX_TOKEN is unset or Mapbox doesn't have
+           *  a match. */}
+          <AddressFieldWithAutocomplete
+            value={address}
+            picked={addressPicked ? selected : null}
+            onChange={(next) => {
+              setAddress(next);
+              if (
+                selected &&
+                next !== selected.formatted &&
+                next !== selected.street_address
+              ) {
+                setSelected(null);
+              }
+            }}
+            onSelect={(fields: AddressFields) => {
+              setAddress(fields.formatted);
+              setSelected(fields);
+              setError(null);
+            }}
+          />
+        </>
+      )}
       {keywordSlotCount === 1 ? (
         <Field
           label="Keyword to scan"
@@ -551,17 +608,25 @@ export function ScanIntakeForm({
         required
         hint="Where we send your report + receipt."
       />
-      <Field
-        label="Business phone"
-        id="biz-phone"
-        type="tel"
-        value={phone}
-        onChange={setPhone}
-        placeholder="(416) 555-1234"
-        autoComplete="tel"
-        required
-        hint="The number your business publishes on Google + directories. Not your personal cell."
-      />
+      {/* Phone — hidden when the Google business autocomplete is on
+       *  (Google's Place Details supplies the phone for free for ~90%
+       *  of local businesses). Falls back to the typed field for the
+       *  Mapbox path where we don't get phone from the autocomplete.
+       *  On both paths the value is forwarded to the submit body for
+       *  Meta CAPI match quality + downstream lead enrichment. */}
+      {!useBusinessAutocomplete && (
+        <Field
+          label="Business phone"
+          id="biz-phone"
+          type="tel"
+          value={phone}
+          onChange={setPhone}
+          placeholder="(416) 555-1234"
+          autoComplete="tel"
+          required
+          hint="The number your business publishes on Google + directories. Not your personal cell."
+        />
+      )}
 
       {/* Cloudflare Turnstile — bot-protection check on the free
        *  /score flow. Only renders in previewMode AND after every

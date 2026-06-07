@@ -823,6 +823,7 @@ export default async function ScanFreeLanderPage({
           <ScanIntakeForm
             previewMode
             leadSource="free_score"
+            useBusinessAutocomplete
             utmSource={utmSource}
             utmMedium={utmMedium}
             utmCampaign={utmCampaign}
