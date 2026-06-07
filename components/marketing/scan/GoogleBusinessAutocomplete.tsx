@@ -197,24 +197,46 @@ export function GoogleBusinessAutocomplete({
         // known property path so we're forward + backward compatible.
         // Also tolerate detail.place.Eg.id which is an internal
         // minified property from older builds — last-ditch fallback.
-        const handlePick = (event: Event) => {
+        const handlePick = async (event: Event) => {
+          // The current GA build of PlaceAutocompleteElement attaches
+          // the picked PlacePrediction DIRECTLY to the event (not
+          // under event.detail like the legacy CustomEvent pattern).
+          // We walk every property path Google has used across
+          // revisions so we work regardless of which build the
+          // browser loaded.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const detail = (event as CustomEvent<any>).detail as any;
-          const placeId: string | null =
-            // New API: gmp-select fires with placePrediction
-            detail?.placePrediction?.placeId ??
-            detail?.placePrediction?.place_id ??
-            // Legacy API: gmp-placeselect fires with place
-            detail?.place?.id ??
-            detail?.place?.placeId ??
-            // Minified internal property fallback (older builds)
-            detail?.place?.Eg?.id ??
+          const ev = event as any;
+          const targetValue = ev.target?.value as
+            | { placeId?: string; place_id?: string; id?: string }
+            | undefined;
+          let placeId: string | null =
+            // Modern: event.placePrediction.placeId
+            ev.placePrediction?.placeId ??
+            ev.placePrediction?.place_id ??
+            // Some builds: the prediction's .toPlace() exposes id
+            ev.placePrediction?.toPlace?.()?.id ??
+            // Element's .value property (set after pick)
+            targetValue?.placeId ??
+            targetValue?.place_id ??
+            targetValue?.id ??
+            // Legacy: detail.placePrediction.placeId
+            ev.detail?.placePrediction?.placeId ??
+            ev.detail?.place?.id ??
+            ev.detail?.place?.placeId ??
             null;
           if (!placeId) {
-            console.warn(
-              '[business-autocomplete] no place id in event detail',
-              detail
-            );
+            // Diagnostic dump — when none of the known paths hit,
+            // log the entire event surface so we can converge in
+            // one more iteration.
+            // eslint-disable-next-line no-console
+            console.warn('[business-autocomplete] no place id; dumping event', {
+              type: event.type,
+              placePrediction: ev.placePrediction,
+              target_value: targetValue,
+              target_keys: ev.target ? Object.keys(ev.target) : null,
+              detail: ev.detail,
+              event_keys: Object.keys(ev).filter((k) => !k.startsWith('_')),
+            });
             setError(
               "Couldn't read the picked business. Try refreshing or pick another suggestion."
             );
