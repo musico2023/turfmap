@@ -213,6 +213,21 @@ export async function createPreviewClient(
       latitude,
       longitude,
       service_radius_miles: 1.6,
+      // Stamp Google Place ID when the buyer picked from the
+      // PlaceAutocompleteElement. This lets the existing gbp_signals
+      // enrichment pipeline (lib/google/enrich.ts) skip Text Search
+      // and go straight to Place Details with a known-good id.
+      // google_place_match_status='manual' tells the enrichment
+      // system this id was buyer-confirmed, so it should be trusted
+      // without re-verification. Null fields are fine when the
+      // buyer used the legacy Mapbox path — the enrichment cron
+      // can still resolve via Text Search later.
+      ...(input.googlePlaceId
+        ? {
+            google_place_id: input.googlePlaceId,
+            google_place_match_status: 'manual' as const,
+          }
+        : {}),
     })
     .select('*')
     .single<ClientLocationRow>();

@@ -108,6 +108,23 @@ const Body = z.object({
       country_code: z.string().max(8).nullish(),
     })
     .optional(),
+  /** Google Places fields when the buyer came in via the
+   *  PlaceAutocompleteElement on /intake (or /score/free-score/
+   *  prove-it on preview-mode submits — handled by the sister
+   *  /api/score/preview-init route). Stamped on Stripe session
+   *  metadata so the downstream fulfill route can:
+   *    - Stamp client_locations.google_place_id directly without
+   *      a Text Search round-trip (saves a ~$0.005 Pro call per
+   *      fulfillment + improves match accuracy).
+   *    - Trigger the existing gbp_signals enrichment pipeline with
+   *      a known-good place_id, so the AI Coach has GBP context on
+   *      first generation rather than only after the next refresh.
+   *
+   *  Both optional — the form degrades gracefully when the buyer
+   *  used the legacy Mapbox path (no autocomplete available, or
+   *  Google didn't have their listing). */
+  google_place_id: z.string().max(300).optional(),
+  google_primary_type: z.string().max(100).optional(),
 });
 
 // Coupons that resolve to a $0 charge after the discount applies.
@@ -268,6 +285,18 @@ export async function POST(req: Request) {
     if (c.region) metadata.region = c.region;
     if (c.postcode) metadata.postcode = c.postcode;
     if (c.country_code) metadata.country_code = c.country_code;
+  }
+  // Google Places fields when the buyer picked from the
+  // PlaceAutocompleteElement. The fulfill route reads these off the
+  // Stripe session metadata to stamp client_locations.google_place_id
+  // directly (skipping Text Search) and to trigger the gbp_signals
+  // enrichment with a known-good place_id so the AI Coach has GBP
+  // context on first generation.
+  if (body.google_place_id) {
+    metadata.google_place_id = body.google_place_id;
+  }
+  if (body.google_primary_type) {
+    metadata.google_primary_type = body.google_primary_type;
   }
   // Prospect id + derived cohort marker, mirroring /api/checkout/[tier]:
   // VIP → crm_reactivation_q2 (warm), prospect_id present → cold_email.
