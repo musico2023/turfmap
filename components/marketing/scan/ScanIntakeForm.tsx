@@ -631,7 +631,7 @@ export function ScanIntakeForm({
         placeholder="you@business.com"
         autoComplete="email"
         required
-        hint="Where we send your report + receipt."
+        hint="Where we send your report."
       />
       {/* Phone — hidden when the Google business autocomplete is on
        *  (Google's Place Details supplies the phone for free for ~90%
