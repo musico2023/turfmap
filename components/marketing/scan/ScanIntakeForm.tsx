@@ -125,6 +125,16 @@ export function ScanIntakeForm({
   useBusinessAutocomplete = false,
 }: ScanIntakeFormProps) {
   const [businessName, setBusinessName] = useState(prefillBusinessName ?? '');
+  // Google Places fields — set when the buyer picks via the
+  // PlaceAutocompleteElement (useBusinessAutocomplete=true path).
+  // Forwarded to /api/score/preview-init so the preview lead_orders
+  // row's stripe_metadata carries them; /share/<id> reads primary_type
+  // for niche-accurate trade-economics inference. Null on the legacy
+  // Mapbox path; preview-init handles missing values gracefully.
+  const [googlePlaceId, setGooglePlaceId] = useState<string | null>(null);
+  const [googlePrimaryType, setGooglePrimaryType] = useState<string | null>(
+    null
+  );
   const [address, setAddress] = useState('');
   // Mapbox-picked address record. Set when the buyer chooses from the
   // autocomplete dropdown; cleared if they subsequently edit the text
@@ -350,6 +360,15 @@ export function ScanIntakeForm({
             : {}),
           businessName: businessName.trim(),
           address: address.trim(),
+          // Google Places fields when the buyer came in via the
+          // PlaceAutocompleteElement. Server stamps these on the
+          // preview lead_orders row's stripe_metadata; /share/<id>
+          // reads google_primary_type for trade-economics inference
+          // (canonical Google category vs the fragile keyword regex).
+          ...(googlePlaceId ? { google_place_id: googlePlaceId } : {}),
+          ...(googlePrimaryType
+            ? { google_primary_type: googlePrimaryType }
+            : {}),
           // Always send keywords as an array — server validates the
           // count against the tier (1 for scan/audit/pulse, 3 for
           // strategy/pulse_plus). Also send `keyword` (first element)
@@ -493,6 +512,12 @@ export function ScanIntakeForm({
               // rides through to the submit body. Meta CAPI gets
               // the hashed value for free.
               if (place.phone) setPhone(place.phone);
+              // Persist the canonical Google identifiers. placeId
+              // is the lookup key for downstream Place Details
+              // calls; primaryType is the trade signal the /share
+              // page uses for niche-accurate ROI economics.
+              setGooglePlaceId(place.placeId);
+              setGooglePrimaryType(place.primaryType);
               setError(null);
             }}
             onClear={() => {

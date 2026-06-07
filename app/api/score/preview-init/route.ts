@@ -91,6 +91,18 @@ const Body = z.object({
   // Source URL of the conversion (e.g. 'https://turfmap.ai/free-score').
   // Improves CAPI attribution match rate when present.
   event_source_url: z.string().url().max(1000).optional(),
+  // Google Places fields when the buyer picked from the
+  // PlaceAutocompleteElement on the lander (vs the legacy Mapbox
+  // address path). Both optional — the form degrades gracefully
+  // when the autocomplete isn't available.
+  //
+  // google_primary_type is THE canonical signal for the trade-
+  // economics inference on /share/<id> — much more reliable than
+  // regex-matching the buyer-typed keyword. Format is Google's
+  // place_types enum: e.g. 'steak_house', 'plumber',
+  // 'hair_salon', 'roofing_contractor'.
+  google_place_id: z.string().max(300).optional(),
+  google_primary_type: z.string().max(100).optional(),
 });
 
 const RATE_LIMIT_PER_EMAIL_PER_DAY = 1;
@@ -224,6 +236,13 @@ export async function POST(req: Request) {
     longitude: body.longitude,
     components: body.components ?? null,
     leadSource: body.lead_source ?? null,
+    // Google fields when the buyer came through the new
+    // PlaceAutocompleteElement on the lander. createPreviewClient
+    // stamps them on the preview lead_orders row's stripe_metadata
+    // so /share/<id> can read primary_type for the trade-economics
+    // inference (much more reliable than keyword regex matching).
+    googlePlaceId: body.google_place_id ?? null,
+    googlePrimaryType: body.google_primary_type ?? null,
     attribution: {
       utm_source: body.utm_source ?? null,
       utm_medium: body.utm_medium ?? null,

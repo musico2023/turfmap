@@ -536,6 +536,12 @@ export default async function PublicSharePage({
             <PreviewROIAnchor
               reach={reach}
               keyword={keyword?.keyword ?? null}
+              googlePrimaryType={
+                meta &&
+                typeof (meta as Record<string, unknown>)['google_primary_type'] === 'string'
+                  ? ((meta as Record<string, unknown>)['google_primary_type'] as string)
+                  : null
+              }
               unlockPriceUsd={discountedUnlock ? 49 : 99}
             />
           )}
@@ -894,13 +900,21 @@ function bandInterpretationFor(band: string): {
 function PreviewROIAnchor({
   reach,
   keyword,
+  googlePrimaryType,
   unlockPriceUsd,
 }: {
   reach: number;
   keyword: string | null;
+  /** Google Business Profile primary category — stamped at preview-
+   *  init when the buyer came in via PlaceAutocompleteElement.
+   *  When non-null, used as the PRIMARY signal for trade economics
+   *  (canonical Google place_types enum value, e.g. 'steak_house').
+   *  Keyword regex match falls in as a backup. Null on legacy
+   *  (Mapbox-path) leads. */
+  googlePrimaryType: string | null;
   unlockPriceUsd: number;
 }) {
-  const econ = inferTradeEconomics(keyword);
+  const econ = inferTradeEconomics(keyword, googlePrimaryType);
   const missedCells = Math.max(0, 81 - Math.round((reach / 100) * 81));
   // Coverage ratio of the unlock price by ONE recovered customer.
   // Integer-floored so the number doesn't read inflated. < 1 means
@@ -976,11 +990,24 @@ function PreviewROIAnchor({
  *  multiplies whatever number we return here against the $49
  *  unlock price, so over-inflating these values makes the claim
  *  feel less defensible. */
-function inferTradeEconomics(keyword: string | null): {
+function inferTradeEconomics(
+  keyword: string | null,
+  googlePrimaryType: string | null = null
+): {
   tradeLabel: string;
   unitLabel: 'job' | 'appointment' | 'order' | 'service call' | 'cover' | 'lesson' | 'membership' | 'transaction' | 'client engagement';
   avgJobUSD: number;
 } {
+  // Prefer Google's canonical place_types enum when the buyer came in
+  // via the PlaceAutocompleteElement. It's a curated category from
+  // Google Business Profile — far more reliable than regex-matching
+  // a buyer-typed keyword. "Steakhouse toronto" misses any regex
+  // that doesn't explicitly include 'steakhouse', but Google ships
+  // primary_type='steak_house' for the same business.
+  if (googlePrimaryType) {
+    const fromGoogle = economicsForGoogleType(googlePrimaryType);
+    if (fromGoogle) return fromGoogle;
+  }
   if (!keyword) {
     return { tradeLabel: 'this business', unitLabel: 'order', avgJobUSD: 100 };
   }
@@ -1146,6 +1173,121 @@ function inferTradeEconomics(keyword: string | null): {
   // $100/order so non-home-services niches don't get an
   // implausibly high anchor.
   return { tradeLabel: 'this business', unitLabel: 'order', avgJobUSD: 100 };
+}
+
+/** Google Places primary_type → economics. Direct match against
+ *  Google's curated place_types enum — much higher signal than
+ *  buyer-typed keyword regex.
+ *
+ *  Reference: https://developers.google.com/maps/documentation/places/web-service/place-types
+ *
+ *  Returns null when the type isn't mapped — caller falls back to
+ *  keyword regex. Conservative: when in doubt, leave a type unmapped
+ *  and let keyword matching take over rather than risk an off-base
+ *  category claim. */
+function economicsForGoogleType(
+  primaryType: string
+):
+  | {
+      tradeLabel: string;
+      unitLabel:
+        | 'job'
+        | 'appointment'
+        | 'order'
+        | 'service call'
+        | 'cover'
+        | 'lesson'
+        | 'membership'
+        | 'transaction'
+        | 'client engagement';
+      avgJobUSD: number;
+    }
+  | null {
+  // Normalize: Google sometimes returns the type with or without the
+  // 'point_of_interest' suffix; we match on the bare token.
+  const t = primaryType.toLowerCase();
+
+  // ─── Restaurants + dining ─────────────────────────────────────
+  if (t === 'steak_house') return { tradeLabel: 'upscale dining', unitLabel: 'cover', avgJobUSD: 85 };
+  if (t === 'fine_dining_restaurant') return { tradeLabel: 'fine dining', unitLabel: 'cover', avgJobUSD: 110 };
+  if (t === 'sushi_restaurant' || t === 'japanese_restaurant') return { tradeLabel: 'sushi / Japanese', unitLabel: 'cover', avgJobUSD: 70 };
+  if (t === 'french_restaurant' || t === 'italian_restaurant' || t === 'mediterranean_restaurant') return { tradeLabel: 'European dining', unitLabel: 'cover', avgJobUSD: 75 };
+  if (t === 'seafood_restaurant') return { tradeLabel: 'seafood', unitLabel: 'cover', avgJobUSD: 80 };
+  if (t === 'brewery' || t === 'wine_bar' || t === 'pub' || t === 'bar') return { tradeLabel: 'bar / lounge', unitLabel: 'cover', avgJobUSD: 55 };
+  if (t === 'night_club') return { tradeLabel: 'nightclub', unitLabel: 'cover', avgJobUSD: 60 };
+  if (t === 'pizza_restaurant' || t === 'hamburger_restaurant' || t === 'fast_food_restaurant' || t === 'mexican_restaurant' || t === 'taco_restaurant') return { tradeLabel: 'casual food', unitLabel: 'order', avgJobUSD: 25 };
+  if (t === 'cafe' || t === 'coffee_shop') return { tradeLabel: 'cafe / coffee', unitLabel: 'order', avgJobUSD: 12 };
+  if (t === 'bakery' || t === 'donut_shop' || t === 'ice_cream_shop') return { tradeLabel: 'bakery / sweets', unitLabel: 'order', avgJobUSD: 15 };
+  if (t === 'restaurant' || t === 'meal_takeaway' || t === 'meal_delivery' || t === 'breakfast_restaurant' || t === 'brunch_restaurant') return { tradeLabel: 'food orders', unitLabel: 'order', avgJobUSD: 35 };
+
+  // ─── Home services ────────────────────────────────────────────
+  if (t === 'roofing_contractor') return { tradeLabel: 'roofing', unitLabel: 'job', avgJobUSD: 8000 };
+  if (t === 'hvac_contractor') return { tradeLabel: 'HVAC', unitLabel: 'service call', avgJobUSD: 450 };
+  if (t === 'plumber') return { tradeLabel: 'plumbing', unitLabel: 'service call', avgJobUSD: 450 };
+  if (t === 'electrician') return { tradeLabel: 'electrical work', unitLabel: 'job', avgJobUSD: 350 };
+  if (t === 'painter') return { tradeLabel: 'painting', unitLabel: 'job', avgJobUSD: 1500 };
+  if (t === 'general_contractor') return { tradeLabel: 'remodeling', unitLabel: 'job', avgJobUSD: 5000 };
+  if (t === 'landscaper') return { tradeLabel: 'landscaping', unitLabel: 'job', avgJobUSD: 500 };
+  if (t === 'cleaning_service' || t === 'house_cleaning_service') return { tradeLabel: 'cleaning', unitLabel: 'job', avgJobUSD: 200 };
+  if (t === 'moving_company') return { tradeLabel: 'moving services', unitLabel: 'job', avgJobUSD: 1200 };
+  if (t === 'pest_control_service') return { tradeLabel: 'pest control', unitLabel: 'service call', avgJobUSD: 300 };
+  if (t === 'locksmith') return { tradeLabel: 'locksmith work', unitLabel: 'service call', avgJobUSD: 200 };
+
+  // ─── Auto + transport ─────────────────────────────────────────
+  if (t === 'car_repair' || t === 'auto_repair_shop') return { tradeLabel: 'auto repair', unitLabel: 'service call', avgJobUSD: 400 };
+  if (t === 'car_dealer') return { tradeLabel: 'vehicle sales', unitLabel: 'transaction', avgJobUSD: 3000 };
+  if (t === 'car_wash' || t === 'auto_detailing') return { tradeLabel: 'car wash / detailing', unitLabel: 'job', avgJobUSD: 80 };
+  if (t === 'gas_station') return { tradeLabel: 'gas station', unitLabel: 'order', avgJobUSD: 50 };
+  if (t === 'taxi_stand') return { tradeLabel: 'taxi', unitLabel: 'order', avgJobUSD: 30 };
+
+  // ─── Health + wellness ────────────────────────────────────────
+  if (t === 'chiropractor') return { tradeLabel: 'chiropractic care', unitLabel: 'appointment', avgJobUSD: 150 };
+  if (t === 'physiotherapist') return { tradeLabel: 'physiotherapy', unitLabel: 'appointment', avgJobUSD: 130 };
+  if (t === 'massage') return { tradeLabel: 'massage', unitLabel: 'appointment', avgJobUSD: 110 };
+  if (t === 'dental_clinic' || t === 'dentist') return { tradeLabel: 'dental care', unitLabel: 'appointment', avgJobUSD: 500 };
+  if (t === 'optometrist' || t === 'eye_care') return { tradeLabel: 'eye care', unitLabel: 'appointment', avgJobUSD: 250 };
+  if (t === 'veterinary_care') return { tradeLabel: 'veterinary care', unitLabel: 'appointment', avgJobUSD: 250 };
+  if (t === 'doctor' || t === 'medical_clinic') return { tradeLabel: 'medical clinic', unitLabel: 'appointment', avgJobUSD: 250 };
+  if (t === 'physiotherapy_clinic' || t === 'wellness_center') return { tradeLabel: 'wellness care', unitLabel: 'appointment', avgJobUSD: 200 };
+  if (t === 'hospital') return { tradeLabel: 'hospital', unitLabel: 'appointment', avgJobUSD: 500 };
+
+  // ─── Beauty + personal care ───────────────────────────────────
+  if (t === 'hair_salon' || t === 'beauty_salon') return { tradeLabel: 'salon services', unitLabel: 'appointment', avgJobUSD: 80 };
+  if (t === 'barber_shop') return { tradeLabel: 'barbering', unitLabel: 'appointment', avgJobUSD: 35 };
+  if (t === 'nail_salon') return { tradeLabel: 'nail salon', unitLabel: 'appointment', avgJobUSD: 60 };
+  if (t === 'spa') return { tradeLabel: 'spa services', unitLabel: 'appointment', avgJobUSD: 130 };
+  if (t === 'beauty_school' || t === 'cosmetics_store') return { tradeLabel: 'beauty', unitLabel: 'order', avgJobUSD: 100 };
+  if (t === 'tattoo_parlor' || t === 'tattoo_shop') return { tradeLabel: 'tattoo / piercing', unitLabel: 'appointment', avgJobUSD: 300 };
+
+  // ─── Fitness + instruction ────────────────────────────────────
+  if (t === 'gym' || t === 'fitness_center') return { tradeLabel: 'fitness', unitLabel: 'membership', avgJobUSD: 100 };
+  if (t === 'yoga_studio') return { tradeLabel: 'yoga studio', unitLabel: 'membership', avgJobUSD: 130 };
+  if (t === 'martial_arts_school') return { tradeLabel: 'martial arts', unitLabel: 'lesson', avgJobUSD: 90 };
+  if (t === 'golf_course' || t === 'golf_driving_range') return { tradeLabel: 'golf services', unitLabel: 'lesson', avgJobUSD: 110 };
+
+  // ─── Pro services + B2B ───────────────────────────────────────
+  if (t === 'lawyer' || t === 'law_firm') return { tradeLabel: 'legal services', unitLabel: 'client engagement', avgJobUSD: 1500 };
+  if (t === 'accountant' || t === 'accounting') return { tradeLabel: 'accounting', unitLabel: 'client engagement', avgJobUSD: 600 };
+  if (t === 'real_estate_agency') return { tradeLabel: 'real estate', unitLabel: 'transaction', avgJobUSD: 6000 };
+  if (t === 'insurance_agency') return { tradeLabel: 'insurance', unitLabel: 'client engagement', avgJobUSD: 800 };
+  if (t === 'financial_consultant' || t === 'financial_planner') return { tradeLabel: 'financial services', unitLabel: 'client engagement', avgJobUSD: 1200 };
+  if (t === 'bank' || t === 'atm') return { tradeLabel: 'banking', unitLabel: 'client engagement', avgJobUSD: 800 };
+  if (t === 'marketing_agency' || t === 'consulting' || t === 'consultant') return { tradeLabel: 'marketing / consulting', unitLabel: 'client engagement', avgJobUSD: 2500 };
+  if (t === 'photographer') return { tradeLabel: 'photography', unitLabel: 'job', avgJobUSD: 800 };
+  if (t === 'school' || t === 'training_school' || t === 'driving_school' || t === 'first_aid_class') return { tradeLabel: 'training', unitLabel: 'lesson', avgJobUSD: 200 };
+
+  // ─── Retail / specialty ───────────────────────────────────────
+  if (t === 'florist') return { tradeLabel: 'floral orders', unitLabel: 'order', avgJobUSD: 90 };
+  if (t === 'jewelry_store') return { tradeLabel: 'jewelry', unitLabel: 'order', avgJobUSD: 600 };
+  if (t === 'pet_store') return { tradeLabel: 'pet supplies', unitLabel: 'order', avgJobUSD: 65 };
+  if (t === 'pharmacy') return { tradeLabel: 'pharmacy', unitLabel: 'order', avgJobUSD: 35 };
+  if (t === 'cannabis_dispensary') return { tradeLabel: 'dispensary', unitLabel: 'order', avgJobUSD: 60 };
+  if (t === 'clothing_store' || t === 'shoe_store') return { tradeLabel: 'apparel', unitLabel: 'order', avgJobUSD: 100 };
+  if (t === 'furniture_store') return { tradeLabel: 'furniture', unitLabel: 'order', avgJobUSD: 600 };
+  if (t === 'grocery_store' || t === 'supermarket') return { tradeLabel: 'grocery', unitLabel: 'order', avgJobUSD: 65 };
+
+  // Not mapped — caller falls back to keyword regex.
+  return null;
 }
 
 /** Preview-cohort testimonial card. Lives between the heatmap +

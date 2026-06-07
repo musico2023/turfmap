@@ -72,6 +72,21 @@ export type CreatePreviewClientInput = {
    *    - undefined     → defaults to 'score' behaviour in unlock-init.
    *  Adding a new lander? Pick a stable slug and document it here. */
   leadSource?: string | null;
+  /** Google Place ID of the buyer's business — set when they came in
+   *  through the PlaceAutocompleteElement on the lander. Stamped on
+   *  `lead_orders.stripe_metadata.google_place_id`. Lets downstream
+   *  enrichment flows skip Text Search and go straight to Place Details
+   *  (the place_id is the canonical Google identifier). Null when the
+   *  buyer used the legacy Mapbox path. */
+  googlePlaceId?: string | null;
+  /** Google Business Profile primary category — Google's place_types
+   *  enum value (e.g. 'steak_house', 'plumber', 'roofing_contractor').
+   *  Stamped on `lead_orders.stripe_metadata.google_primary_type`. The
+   *  /share/<id> page reads this for niche-accurate trade-economics
+   *  inference — far more reliable than keyword-regex matching since
+   *  it's the actual Google category, not a buyer-typed search term.
+   *  Null when the buyer used the legacy Mapbox path. */
+  googlePrimaryType?: string | null;
   /** Attribution payload forwarded from the upstream lander. Captured
    *  to `lead_orders.stripe_metadata.attribution_*` for funnel
    *  reporting and downstream Conversion API dedup. */
@@ -249,6 +264,12 @@ export async function createPreviewClient(
   // Stamp the lander identifier so unlock-init can decide whether
   // to auto-apply MAPCHECK50 ($49 Meta-cohort price) vs leave the
   // unlock at $99 (homepage /score traffic).
+  if (input.googlePlaceId) {
+    stripeMetadata.google_place_id = input.googlePlaceId;
+  }
+  if (input.googlePrimaryType) {
+    stripeMetadata.google_primary_type = input.googlePrimaryType;
+  }
   if (input.leadSource) {
     stripeMetadata.lead_source = input.leadSource;
   }
