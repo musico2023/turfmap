@@ -596,6 +596,13 @@ type SessionState =
           postcode: string | null;
           country_code: string | null;
         } | null;
+        /** Google Places fields when the buyer picked from the
+         *  PlaceAutocompleteElement on /intake. Forwarded into
+         *  /api/orders/fulfill so client_locations.google_place_id
+         *  is stamped and gbp_signals enrichment uses Place
+         *  Details directly. Null on Mapbox-path buyers. */
+        googlePlaceId: string | null;
+        googlePrimaryType: string | null;
       } | null;
       /** Score-funnel unlock payload — non-null when the buyer
        *  arrived via /score → $99 unlock. OrderSuccessForm uses

@@ -98,6 +98,19 @@ export type LoadedSession = {
       postcode: string | null;
       country_code: string | null;
     } | null;
+    /** Google Place ID stamped by /api/scan/checkout/init when the
+     *  buyer picked from the PlaceAutocompleteElement on /intake.
+     *  When present, the fulfill route stamps it directly on
+     *  client_locations.google_place_id (with match_status='manual')
+     *  so the gbp_signals enrichment skips Text Search. Null when
+     *  the buyer used the legacy Mapbox path. */
+    googlePlaceId: string | null;
+    /** Google Business Profile primary category — Google's
+     *  place_types enum value (e.g. 'steak_house', 'plumber').
+     *  Forwarded for downstream context (trade-economics inference,
+     *  category-aware AI Coach prompting). Null on the legacy
+     *  Mapbox path. */
+    googlePrimaryType: string | null;
   } | null;
   /**
    * Score-funnel unlock payload — populated when
@@ -324,6 +337,8 @@ export async function loadCheckoutSession(
         latitude: hasGeo ? lat : null,
         longitude: hasGeo ? lng : null,
         components: hasComponents ? components : null,
+        googlePlaceId: m.google_place_id?.trim() || null,
+        googlePrimaryType: m.google_primary_type?.trim() || null,
       };
     }
   }

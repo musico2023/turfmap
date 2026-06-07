@@ -165,6 +165,17 @@ export function OrderSuccessForm({
       postcode: string | null;
       country_code: string | null;
     } | null;
+    /** Google Place ID stamped by /api/scan/checkout/init when the
+     *  buyer picked from the PlaceAutocompleteElement. Forwarded to
+     *  /api/orders/fulfill so client_locations.google_place_id is
+     *  stamped directly + refreshLocationSignals fetches Place
+     *  Details without going through Text Search. Null on legacy
+     *  Mapbox-path buyers. */
+    googlePlaceId: string | null;
+    /** Google Business Profile primary category. Forwarded for
+     *  downstream context-aware tooling (trade economics, AI Coach
+     *  prompt enrichment). Null on Mapbox-path buyers. */
+    googlePrimaryType: string | null;
   } | null;
   /**
    * Score-funnel unlock payload — non-null when the buyer arrived
@@ -404,6 +415,14 @@ export function OrderSuccessForm({
             latitude: prefilledIntake.latitude ?? undefined,
             longitude: prefilledIntake.longitude ?? undefined,
             components: prefilledIntake.components ?? undefined,
+            // Google Places fields (when the buyer picked from the
+            // PlaceAutocompleteElement). Fulfill stamps these on
+            // client_locations and routes the gbp_signals fetch
+            // through the direct Place Details path (skipping the
+            // legacy Text Search + match-scoring step).
+            google_place_id: prefilledIntake.googlePlaceId ?? undefined,
+            google_primary_type:
+              prefilledIntake.googlePrimaryType ?? undefined,
           }),
         });
         if (cancelled) return;

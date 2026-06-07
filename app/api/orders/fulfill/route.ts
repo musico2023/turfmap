@@ -68,7 +68,10 @@ import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapP
  *  PDF + prep notes in hand before any buyer touchpoint. */
 const OPERATOR_AUDIT_EMAIL = 'anthony@fourdots.io';
 import { calcomBookingUrlForTier } from '@/lib/integrations/calcom';
-import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
+import {
+  enrichLocationFromOnboarding,
+  refreshLocationSignals,
+} from '@/lib/google/enrich';
 import { computeLlmFitScore, shouldPitchLlm } from '@/lib/audit/llmFitScore';
 import {
   inferTradeFitFromKeyword,
@@ -128,6 +131,25 @@ const FulfillBody = z.object({
       country_code: z.string().nullish(),
     })
     .optional(),
+  /** Google Place ID stamped on Stripe session metadata by
+   *  /api/scan/checkout/init when the buyer picked from the
+   *  PlaceAutocompleteElement. When present, the fulfill route
+   *  stamps it directly on client_locations.google_place_id with
+   *  google_place_match_status='manual' (buyer-confirmed via the
+   *  autocomplete pick — no need for the enrichLocationFromOnboarding
+   *  Text Search round-trip + score-matching). Downstream gbp_signals
+   *  enrichment still fires via refreshLocationSignals to populate
+   *  Place Details. Null when the buyer used the legacy Mapbox path.
+   *
+   *  /order/success forwards this from the Stripe session's intake
+   *  payload (LoadedSession.intake.googlePlaceId) so the buyer
+   *  never has to re-confirm. */
+  google_place_id: z.string().max(300).optional(),
+  /** Google Business Profile primary category (e.g. 'steak_house',
+   *  'plumber'). Persisted for downstream context-aware tooling
+   *  (trade economics inference, AI Coach prompt enrichment).
+   *  Optional. */
+  google_primary_type: z.string().max(100).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -350,6 +372,16 @@ export async function POST(req: NextRequest) {
       latitude: geocode.lat,
       longitude: geocode.lng,
       service_radius_miles: 1.6,
+      // Buyer-confirmed Google Place ID from the PlaceAutocompleteElement.
+      // 'manual' tells lib/google/enrich.ts the id was operator/buyer
+      // confirmed — refreshLocationSignals can fetch Place Details
+      // immediately without re-running the match guardrail.
+      ...(body.google_place_id
+        ? {
+            google_place_id: body.google_place_id,
+            google_place_match_status: 'manual' as const,
+          }
+        : {}),
     })
     .select('*')
     .single<ClientLocationRow>();
@@ -365,14 +397,33 @@ export async function POST(req: NextRequest) {
   // Google Places enrichment — fire-and-forget. Looks up the GBP listing
   // for the buyer's business, stores place_id + initial signals snapshot
   // so the AI Coach can cite specific GBP signals. Soft-fails if the API
-  // key isn't configured or the strict-match guardrail rejects.
+  // key isn't configured.
+  //
+  // Two paths: when the buyer picked from the PlaceAutocompleteElement
+  // on the lander, the place_id is already known + stamped on the
+  // client_locations row above. Skip the Text Search + match-scoring
+  // round-trip (which costs an extra ~$0.005 + introduces a small
+  // chance the strict-match guardrail rejects a buyer-confirmed
+  // listing) and fetch Place Details directly via
+  // refreshLocationSignals.
+  //
+  // Legacy Mapbox-path buyers fall through to the original
+  // enrichLocationFromOnboarding which runs Text Search → match
+  // scoring → Place Details.
   after(async () => {
-    await enrichLocationFromOnboarding(supabase, {
-      locationId: location.id,
-      businessName: body.businessName.trim(),
-      latitude: geocode.lat,
-      longitude: geocode.lng,
-    });
+    if (body.google_place_id) {
+      await refreshLocationSignals(supabase, {
+        locationId: location.id,
+        placeId: body.google_place_id,
+      });
+    } else {
+      await enrichLocationFromOnboarding(supabase, {
+        locationId: location.id,
+        businessName: body.businessName.trim(),
+        latitude: geocode.lat,
+        longitude: geocode.lng,
+      });
+    }
   });
 
   // Send the order-confirmation email NOW, before the scan fires.
