@@ -965,23 +965,35 @@ function PreviewROIAnchor({
 }
 
 /** Keyword → industry-average economics. Matches against common
- *  trade tokens with conservative defaults. */
+ *  trade tokens with conservative defaults. Ordered most-specific
+ *  first; broader trade categories check after the long-tail
+ *  variants so e.g. "steakhouse" hits the upscale-dining branch
+ *  before the generic "restaurant" fallback.
+ *
+ *  Dollar values are intentionally conservative — under-promise
+ *  so the buyer's real economics make the math look better, not
+ *  worse. The "covered N× over" framing in the parent component
+ *  multiplies whatever number we return here against the $49
+ *  unlock price, so over-inflating these values makes the claim
+ *  feel less defensible. */
 function inferTradeEconomics(keyword: string | null): {
   tradeLabel: string;
-  unitLabel: 'job' | 'appointment' | 'order' | 'service call';
+  unitLabel: 'job' | 'appointment' | 'order' | 'service call' | 'cover' | 'lesson' | 'membership' | 'transaction' | 'client engagement';
   avgJobUSD: number;
 } {
   if (!keyword) {
-    return { tradeLabel: 'this service', unitLabel: 'service call', avgJobUSD: 350 };
+    return { tradeLabel: 'this business', unitLabel: 'order', avgJobUSD: 100 };
   }
   const k = keyword.toLowerCase();
-  if (/roof/.test(k)) {
-    return { tradeLabel: 'roofing', unitLabel: 'job', avgJobUSD: 8000 };
+
+  // ─── Home services (high-ticket) ──────────────────────────────
+  if (/roof|sidi(?:ng)?|window|gutter/.test(k)) {
+    return { tradeLabel: 'exterior remodeling', unitLabel: 'job', avgJobUSD: 8000 };
   }
-  if (/hvac|furnace|ac repair|air condition|heating|cooling/.test(k)) {
+  if (/hvac|furnace|ac repair|air condition|heating|cooling|duct/.test(k)) {
     return { tradeLabel: 'HVAC', unitLabel: 'service call', avgJobUSD: 450 };
   }
-  if (/plumb|drain|leak|water heater/.test(k)) {
+  if (/plumb|drain|leak|water heater|sewer|septic/.test(k)) {
     return { tradeLabel: 'plumbing', unitLabel: 'service call', avgJobUSD: 450 };
   }
   if (/electric/.test(k)) {
@@ -993,10 +1005,16 @@ function inferTradeEconomics(keyword: string | null): {
   if (/drywall/.test(k)) {
     return { tradeLabel: 'drywall work', unitLabel: 'job', avgJobUSD: 600 };
   }
-  if (/landscap|lawn|tree|garden|hardscape/.test(k)) {
+  if (/floor|tile|hardwood|carpet|vinyl/.test(k)) {
+    return { tradeLabel: 'flooring', unitLabel: 'job', avgJobUSD: 2500 };
+  }
+  if (/landscap|lawn|tree|garden|hardscape|snow remov/.test(k)) {
     return { tradeLabel: 'landscaping', unitLabel: 'job', avgJobUSD: 500 };
   }
-  if (/pest|exterm|rodent/.test(k)) {
+  if (/pool|hot tub|spa install/.test(k)) {
+    return { tradeLabel: 'pool services', unitLabel: 'service call', avgJobUSD: 300 };
+  }
+  if (/pest|exterm|rodent|termite/.test(k)) {
     return { tradeLabel: 'pest control', unitLabel: 'service call', avgJobUSD: 300 };
   }
   if (/garage door/.test(k)) {
@@ -1005,32 +1023,129 @@ function inferTradeEconomics(keyword: string | null): {
   if (/locksmith/.test(k)) {
     return { tradeLabel: 'locksmith work', unitLabel: 'service call', avgJobUSD: 200 };
   }
-  if (/clean|maid|janitor/.test(k)) {
+  if (/clean|maid|janitor|housekeep/.test(k)) {
     return { tradeLabel: 'cleaning', unitLabel: 'job', avgJobUSD: 200 };
   }
-  if (/remodel|renovation|contractor|construction/.test(k)) {
+  if (/movers|moving/.test(k)) {
+    return { tradeLabel: 'moving services', unitLabel: 'job', avgJobUSD: 1200 };
+  }
+  if (/remodel|renovation|contractor|general contract|construction/.test(k)) {
     return { tradeLabel: 'remodeling', unitLabel: 'job', avgJobUSD: 5000 };
   }
-  if (/chiro|wellness|massage|physio|therap/.test(k)) {
+
+  // ─── Restaurants + dining (varied unit prices) ────────────────
+  // Upscale dining lands here BEFORE the generic restaurant branch.
+  if (/steakhouse|steak|grill|bbq|barbecue|brewery|distillery|wine bar|gastropub/.test(k)) {
+    return { tradeLabel: 'upscale dining', unitLabel: 'cover', avgJobUSD: 85 };
+  }
+  if (/sushi|fine dining|french restaurant|italian restaurant|tasting menu/.test(k)) {
+    return { tradeLabel: 'fine dining', unitLabel: 'cover', avgJobUSD: 110 };
+  }
+  if (/bar\b|pub|tavern|lounge|nightclub|cocktail/.test(k)) {
+    return { tradeLabel: 'bar / lounge', unitLabel: 'cover', avgJobUSD: 55 };
+  }
+  if (/pizza|burger|taco|sandwich|fast food|fast casual|food truck/.test(k)) {
+    return { tradeLabel: 'casual food', unitLabel: 'order', avgJobUSD: 25 };
+  }
+  if (/restaurant|food|cafe|coffee|bakery|deli|breakfast|brunch|diner|ice cream|dessert/.test(k)) {
+    return { tradeLabel: 'food orders', unitLabel: 'order', avgJobUSD: 35 };
+  }
+
+  // ─── Auto + transportation ────────────────────────────────────
+  if (/auto repair|mechanic|brake|transmission|oil change|tire/.test(k)) {
+    return { tradeLabel: 'auto repair', unitLabel: 'service call', avgJobUSD: 400 };
+  }
+  if (/auto body|collision|car detail|car wash/.test(k)) {
+    return { tradeLabel: 'auto body / detailing', unitLabel: 'job', avgJobUSD: 500 };
+  }
+  if (/car dealer|used car|car deal|truck deal/.test(k)) {
+    return { tradeLabel: 'vehicle sales', unitLabel: 'transaction', avgJobUSD: 3000 };
+  }
+  if (/towing|tow truck/.test(k)) {
+    return { tradeLabel: 'towing', unitLabel: 'service call', avgJobUSD: 150 };
+  }
+
+  // ─── Health + wellness ────────────────────────────────────────
+  if (/chiro|wellness|massage|physio|therap|acupunct|reiki/.test(k)) {
     return { tradeLabel: 'wellness care', unitLabel: 'appointment', avgJobUSD: 200 };
   }
-  if (/dentist|dental|ortho/.test(k)) {
+  if (/dentist|dental|ortho|endodont|periodont/.test(k)) {
     return { tradeLabel: 'dental care', unitLabel: 'appointment', avgJobUSD: 500 };
   }
-  if (/lawyer|attorney|legal/.test(k)) {
-    return { tradeLabel: 'legal services', unitLabel: 'job', avgJobUSD: 1500 };
+  if (/optometrist|eye doctor|vision|optical/.test(k)) {
+    return { tradeLabel: 'eye care', unitLabel: 'appointment', avgJobUSD: 250 };
   }
-  if (/salon|barber|hair|nail|spa/.test(k)) {
+  if (/veterin|vet clinic|animal hospital|pet hospital/.test(k)) {
+    return { tradeLabel: 'veterinary care', unitLabel: 'appointment', avgJobUSD: 250 };
+  }
+  if (/medical spa|med spa|botox|filler|aesthet/.test(k)) {
+    return { tradeLabel: 'medical aesthetics', unitLabel: 'appointment', avgJobUSD: 450 };
+  }
+
+  // ─── Beauty + personal care ───────────────────────────────────
+  if (/salon|barber|hair|nail|brow|lash/.test(k)) {
     return { tradeLabel: 'salon services', unitLabel: 'appointment', avgJobUSD: 80 };
   }
+  if (/spa|facial|skin|beauty/.test(k)) {
+    return { tradeLabel: 'spa services', unitLabel: 'appointment', avgJobUSD: 130 };
+  }
+  if (/tattoo|piercing/.test(k)) {
+    return { tradeLabel: 'tattoo / piercing', unitLabel: 'appointment', avgJobUSD: 300 };
+  }
+
+  // ─── Fitness + instruction ────────────────────────────────────
+  if (/gym|crossfit|fitness|yoga|pilates|spin studio/.test(k)) {
+    return { tradeLabel: 'fitness', unitLabel: 'membership', avgJobUSD: 100 };
+  }
+  if (/personal train|coach|private lesson|martial arts|jiu jitsu|karate/.test(k)) {
+    return { tradeLabel: 'instruction', unitLabel: 'lesson', avgJobUSD: 90 };
+  }
+  if (/golf|driving range/.test(k)) {
+    return { tradeLabel: 'golf services', unitLabel: 'lesson', avgJobUSD: 110 };
+  }
+
+  // ─── Pro services + B2B ───────────────────────────────────────
+  if (/lawyer|attorney|legal/.test(k)) {
+    return { tradeLabel: 'legal services', unitLabel: 'client engagement', avgJobUSD: 1500 };
+  }
+  if (/account|cpa|tax prep|bookkeep/.test(k)) {
+    return { tradeLabel: 'accounting', unitLabel: 'client engagement', avgJobUSD: 600 };
+  }
+  if (/real estate|realtor|broker|mortgage/.test(k)) {
+    return { tradeLabel: 'real estate', unitLabel: 'transaction', avgJobUSD: 6000 };
+  }
+  if (/insurance/.test(k)) {
+    return { tradeLabel: 'insurance', unitLabel: 'client engagement', avgJobUSD: 800 };
+  }
+  if (/financial advis|wealth|invest/.test(k)) {
+    return { tradeLabel: 'financial services', unitLabel: 'client engagement', avgJobUSD: 1200 };
+  }
+  if (/seo|marketing|web design|web develop|agency|consulting/.test(k)) {
+    return { tradeLabel: 'marketing services', unitLabel: 'client engagement', avgJobUSD: 2500 };
+  }
+  if (/photographer|videograph|video product/.test(k)) {
+    return { tradeLabel: 'photography / video', unitLabel: 'job', avgJobUSD: 800 };
+  }
+  if (/training school|driving school|first aid|cpr|certif/.test(k)) {
+    return { tradeLabel: 'training', unitLabel: 'lesson', avgJobUSD: 200 };
+  }
+
+  // ─── Retail / florists / specialty ────────────────────────────
   if (/florist|flower/.test(k)) {
     return { tradeLabel: 'floral orders', unitLabel: 'order', avgJobUSD: 90 };
   }
-  if (/restaurant|food|cafe|bakery|deli/.test(k)) {
-    return { tradeLabel: 'food orders', unitLabel: 'order', avgJobUSD: 35 };
+  if (/jewel|jeweler|gold|diamond/.test(k)) {
+    return { tradeLabel: 'jewelry', unitLabel: 'order', avgJobUSD: 600 };
   }
-  // Generic fallback — keeps the page coherent even on unusual keywords.
-  return { tradeLabel: 'this service', unitLabel: 'service call', avgJobUSD: 350 };
+  if (/dispens|cannabis|weed shop/.test(k)) {
+    return { tradeLabel: 'dispensary', unitLabel: 'order', avgJobUSD: 60 };
+  }
+
+  // Generic fallback — keeps the page coherent even on unusual
+  // keywords. Lowered from $350/service-call to a more neutral
+  // $100/order so non-home-services niches don't get an
+  // implausibly high anchor.
+  return { tradeLabel: 'this business', unitLabel: 'order', avgJobUSD: 100 };
 }
 
 /** Preview-cohort testimonial card. Lives between the heatmap +
