@@ -188,18 +188,36 @@ export function GoogleBusinessAutocomplete({
         el.style.width = '100%';
         el.setAttribute('placeholder', placeholder);
 
-        // The placeselect event fires when the buyer picks from the
-        // dropdown. The event payload includes a `place` Place object;
-        // we read its `id` and send to our /api/places/resolve route
-        // for the full normalized record.
-        el.addEventListener('gmp-placeselect', (event: Event) => {
-          const detail = (
-            event as CustomEvent<{ place?: { id?: string; Eg?: { id?: string } } }>
-          ).detail;
-          const placeId =
-            detail?.place?.id ?? detail?.place?.Eg?.id ?? null;
+        // Buyer-pick event. Google has renamed this across API
+        // revisions (gmp-placeselect → gmp-select), and the detail
+        // shape changed too: the old API delivered a Place object
+        // directly; the new API delivers a PlacePrediction that has
+        // a placeId getter (and a .toPlace() method for full
+        // details). We listen for BOTH event names and check every
+        // known property path so we're forward + backward compatible.
+        // Also tolerate detail.place.Eg.id which is an internal
+        // minified property from older builds — last-ditch fallback.
+        const handlePick = (event: Event) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const detail = (event as CustomEvent<any>).detail as any;
+          const placeId: string | null =
+            // New API: gmp-select fires with placePrediction
+            detail?.placePrediction?.placeId ??
+            detail?.placePrediction?.place_id ??
+            // Legacy API: gmp-placeselect fires with place
+            detail?.place?.id ??
+            detail?.place?.placeId ??
+            // Minified internal property fallback (older builds)
+            detail?.place?.Eg?.id ??
+            null;
           if (!placeId) {
-            console.warn('[business-autocomplete] no place id in event');
+            console.warn(
+              '[business-autocomplete] no place id in event detail',
+              detail
+            );
+            setError(
+              "Couldn't read the picked business. Try refreshing or pick another suggestion."
+            );
             return;
           }
           setResolving(true);
@@ -238,7 +256,11 @@ export function GoogleBusinessAutocomplete({
               );
             })
             .finally(() => setResolving(false));
-        });
+        };
+        // Listen for both event names — Google fires whichever its
+        // current build supports.
+        el.addEventListener('gmp-select', handlePick);
+        el.addEventListener('gmp-placeselect', handlePick);
 
         // gmp-error fires on internal failures (invalid API key, no
         // network, etc). Surface so the buyer isn't stuck staring at
