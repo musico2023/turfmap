@@ -245,9 +245,14 @@ export default async function YourMapLandingPage({
   const { reach, rank, score, band } = HERO_METRICS;
 
   // Hero visual title personalizes when prospect data loads,
-  // otherwise falls back to the /fourdots default.
+  // otherwise falls back to the /fourdots default. Cold-prospect
+  // ingest pipeline leaves city empty for ~17% of rows (external
+  // Instantly.ai / Apollo enrichment gap) — when missing, drop the
+  // city segment entirely instead of rendering a trailing comma.
   const heroVisualTitle = personalization
-    ? `Sample · ${personalization.trade}, ${personalization.city}`
+    ? personalization.city && personalization.city.trim().length > 0
+      ? `Sample · ${personalization.trade}, ${personalization.city}`
+      : `Sample · ${personalization.trade}`
     : 'Sample · Plumber, midtown';
 
   return (
@@ -358,9 +363,11 @@ export default async function YourMapLandingPage({
                 <>
                   Our outreach team ran an 81-point geo-grid preview of{' '}
                   {personalization.business_name}&rsquo;s{' '}
-                  {personalization.city} service area. The cards below
-                  show what we found — and what the full scan unlocks.
-                  Then you get{' '}
+                  {personalization.city && personalization.city.trim().length > 0
+                    ? `${personalization.city} service area`
+                    : 'service area'}
+                  . The cards below show what we found — and what the
+                  full scan unlocks. Then you get{' '}
                   <strong className="font-semibold text-zinc-100 underline underline-offset-4 decoration-2">
                     three specific actions
                   </strong>{' '}
@@ -1484,8 +1491,10 @@ function TheCompetitionCard({
         of your service area.
       </p>
       <p className="text-zinc-400 text-sm leading-relaxed">
-        Their cells are visible to customers across most of {city}. The full
-        scan shows you exactly which cells they own — and where the gaps are.
+        Their cells are visible to customers across most of{' '}
+        {city && city.trim().length > 0 ? city : 'your service area'}. The
+        full scan shows you exactly which cells they own — and where the
+        gaps are.
       </p>
     </div>
   );
