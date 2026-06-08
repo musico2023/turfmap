@@ -196,6 +196,18 @@ export function LocationsManager({
                   {loc.address || '(no address)'}
                 </div>
               </div>
+              {/* GBP status pill — visible in the collapsed row so
+               *  the operator can see at a glance which locations
+               *  need backfill without having to expand each one.
+               *  Critical for the COLDSCAN cohort: clients created
+               *  via /score before the intake-form Google Places
+               *  autocomplete shipped have google_place_match_status
+               *  = null, which breaks NAP audit at scan time +
+               *  leaves the Roadmap PDF's NAP page blank. Clicking
+               *  the row expands into the EditLocationForm where
+               *  GbpMatchPanel surfaces the actual confirm / search
+               *  affordances (CertaPro 2026-06-08 regression). */}
+              <GbpStatusPill status={loc.google_place_match_status} />
               {expandedId === loc.id ? (
                 <ChevronDown size={14} className="text-zinc-500" />
               ) : (
@@ -214,6 +226,57 @@ export function LocationsManager({
         ))}
       </ul>
     </div>
+  );
+}
+
+// ─── GBP status pill (collapsed-row affordance) ──────────────────────────
+//
+// Renders a compact colored pill in the location-row list so operators
+// can scan for not-yet-linked GBP listings without expanding each row.
+// Same color vocabulary as GbpMatchPanel's full badge below (auto =
+// amber attention, confirmed / manual = lime success, rejected /
+// no_match = red attention, null = neutral "needs link"). Pressing the
+// row opens EditLocationForm where the full panel surfaces the actual
+// confirm / search controls.
+//
+// Status semantics (from migration 0019):
+//   null           — never matched; Google Place ID empty
+//   'auto'         — strict-match enrichment guessed a place id, but the
+//                    operator hasn't confirmed yet
+//   'confirmed'    — operator clicked "That's us" after auto-match
+//   'manual'       — operator picked a listing via the search panel
+//   'rejected'     — operator clicked "Not us" — needs relink
+//   'no_match'     — search ran but Google returned nothing for this
+//                    location's name + city
+function GbpStatusPill({
+  status,
+}: {
+  status: ClientLocationRow['google_place_match_status'];
+}) {
+  const config = (() => {
+    if (status === 'confirmed' || status === 'manual') {
+      return { text: 'GBP ✓', color: 'var(--color-lime, #c5ff3a)', bg: '#1a2a05' };
+    }
+    if (status === 'auto') {
+      return { text: 'GBP: confirm', color: '#fbbf24', bg: '#2a1f05' };
+    }
+    if (status === 'rejected') {
+      return { text: 'GBP: relink', color: '#f87171', bg: '#2a0606' };
+    }
+    if (status === 'no_match') {
+      return { text: 'GBP: no match', color: '#f87171', bg: '#2a0606' };
+    }
+    // null — never linked. Neutral attention prompt; click the row to
+    // open the search panel and link the right GBP listing.
+    return { text: 'GBP: link', color: '#a1a1aa', bg: '#1a1a1a' };
+  })();
+  return (
+    <span
+      className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold flex-shrink-0"
+      style={{ background: config.bg, color: config.color }}
+    >
+      {config.text}
+    </span>
   );
 }
 

@@ -201,6 +201,26 @@ export async function createPreviewClient(
   };
 
   // ─── 3. Primary location ─────────────────────────────────────────────
+  // Structured NAP fields from the Google Places resolve (or the
+  // legacy Mapbox path's `components` block). Stamping these at
+  // preview-creation time is the difference between a NAP audit that
+  // fires successfully at scan time vs. one that silently skips with
+  // `'location missing structured NAP fields'` and leaves the
+  // Roadmap PDF's NAP page rendering "NAP audit data unavailable"
+  // (CertaPro 2026-06-08 regression — visibility_audits row created
+  // but nap_audits row never landed because the location's phone +
+  // street_address + region + postcode were null at scan time).
+  //
+  // Source priority: input.components.* (from ScanIntakeForm's
+  // PlaceAutocompleteElement resolve OR Mapbox's onSelect) →
+  // null fallback. input.phone comes from the form's hidden phone
+  // field (auto-filled from Place Details.nationalPhoneNumber when
+  // the buyer picked from the Places dropdown; empty otherwise).
+  const napPhone = input.phone || null;
+  const napStreet = input.components?.street_address?.trim() || null;
+  const napRegion = input.components?.region?.trim() || null;
+  const napPostcode = input.components?.postcode?.trim() || null;
+
   const { data: location, error: locErr } = await supabase
     .from('client_locations')
     .insert({
@@ -213,6 +233,13 @@ export async function createPreviewClient(
       latitude,
       longitude,
       service_radius_miles: 1.6,
+      // Structured NAP — empty strings normalize to null since
+      // maybeRunNapAudit's locationToBusinessProfile() guard treats
+      // empty strings as missing (falsy check).
+      ...(napPhone ? { phone: napPhone } : {}),
+      ...(napStreet ? { street_address: napStreet } : {}),
+      ...(napRegion ? { region: napRegion } : {}),
+      ...(napPostcode ? { postcode: napPostcode } : {}),
       // Stamp Google Place ID when the buyer picked from the
       // PlaceAutocompleteElement. This lets the existing gbp_signals
       // enrichment pipeline (lib/google/enrich.ts) skip Text Search
