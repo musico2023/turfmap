@@ -644,6 +644,39 @@ async function regenerateForExistingAudit(args: {
 }): Promise<BootstrapCompAuditResult> {
   const { supabase, auditId, leadOrderId, client, appOrigin, buyerEmail, prospect } = args;
 
+  // Re-trigger the NAP audit AWAITED before PDF generation. The
+  // bootstrap's create-path fire-and-forget trigger may have failed
+  // silently (e.g. CertaPro 2026-06-08: visibility_audits row created
+  // but nap_audits row never landed → PDF rendered "NAP audit data
+  // unavailable"). Forcing the regenerate path to AWAIT the audit
+  // gives the operator a deterministic recovery: hit regenerate →
+  // DFS audit runs (~5-9s for ~9 directories) → PDF reads the now-
+  // populated findings. Idempotent on the 30-day window — re-clicks
+  // re-use the existing audit row instead of burning DFS credits.
+  //
+  // maxDuration on the calling endpoint is 300s; DFS overhead is
+  // ~5-9s so we have plenty of headroom inside the request budget.
+  try {
+    const napResult = await triggerNapAuditAtAuditInit(supabase, auditId, {
+      operatorOrigin: appOrigin,
+    });
+    if (!napResult.ok) {
+      console.error(
+        '[bootstrapCompAudit/regenerate] triggerNapAuditAtAuditInit failed',
+        napResult.stage,
+        napResult.error
+      );
+    }
+  } catch (e) {
+    // Never let a NAP audit failure block the PDF regenerate. The
+    // PDF will just render "unavailable" again, same as the
+    // original bootstrap — caller gets a regenerate they can retry.
+    console.error(
+      '[bootstrapCompAudit/regenerate] triggerNapAuditAtAuditInit threw',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+
   const pdfResult = await generateAndStoreRoadmapPdf(supabase, auditId);
   if (!pdfResult.ok) {
     return { ok: false, stage: pdfResult.stage, error: pdfResult.error };
