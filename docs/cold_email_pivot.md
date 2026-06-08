@@ -6,6 +6,29 @@
 
 ---
 
+## 🚨 Known upstream enrichment gaps (2026-06-08)
+
+The cold-prospect ingest is handled by an external pipeline (Instantly.ai / Apollo + custom enrichment scripts) — there is NO in-repo code that INSERTs into the `prospects` table. The pipeline silently drops several conversion-critical fields. Measured 2026-06-08 over the trailing 8 days:
+
+| Field | Used by | Missing rate | Impact |
+|---|---|---|---|
+| `top_competitor_name` | `/yourmap` Competition card, cold-stage3 email | **~99.8%** | Buyer doesn't learn the named threat — biggest conversion lever on the hero |
+| `top_competitor_share_pct` | `/yourmap` Competition card | **~99.8%** | No "winning 25% of your area" pressure |
+| `city` | `/yourmap` hero copy, sample heatmap header, Competition card | **~17%** (~3,800/day) | Generic "your service area" fallback instead of city-specific |
+| `trade` (truncated) | `/yourmap` fix-list copy, sample heatmap header, cold emails | **~3%** of historical rows | "this Landscap contractor" instead of "this Landscaping contractor" — backfilled 2026-06-08 via SQL but the source pipeline still produces them |
+
+**Render-side mitigations shipped** (so the page doesn't embarrass us until the pipeline is fixed):
+- `/yourmap` + `/freescan`: graceful empty-city fallbacks in headline copy + Competition card
+- `/yourmap` + `/freescan`: Competition card now always renders for personalized prospects; falls back to curiosity-driving "someone's winning your area — the full scan names them" copy when name/pct are null
+- `prospects.trade`: SQL backfill applied for high-confidence truncations (`Landscap` → `Landscaping`, `Dry` → `Drywall`, `Pest` → `Pest Control`, `Snow` → `Snow Removal`, `Pressure` → `Pressure Washing`, `Garage` → `Garage Door`, `Tree` → `Tree Service`, `Bee` → `Beekeeper`, `Window` → `Window Cleaning`, plus case-normalization of `hvac`/`roofer`/`plumber`/`landscaping`)
+
+**What still needs an upstream fix** (outside this repo — chase in the external pipeline):
+1. Competitor enrichment is effectively offline — needs to be reconnected so 99.8% of cold prospects start seeing real competitor names in the Competition card
+2. City field gets dropped on ~17% of enriched rows — find the resolver path that's silently failing
+3. Trade truncation source — looks like a `split(' ')[0]` or character-cap in the ingest script. Fix the source so future runs don't need SQL backfill
+
+---
+
 ## What changed at a glance
 
 Cold-email cohort transitions from **transactional ($49 TurfScan in body via MAPCHECK50)** → **reply-driven (free scan via COLDSCAN after positive reply, then free Visibility Audit + Cal.com booking offer)**.

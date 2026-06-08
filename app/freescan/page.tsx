@@ -352,16 +352,19 @@ export default async function FreeScanLandingPage({
              *  accent (uses the existing palette's --color-warn /
              *  orange channel) so it visually differentiates from
              *  the lime YOUR PREVIEW SCORE card without alarmism.
-             *  Renders only when we have competitor data. */}
-            {personalization &&
-              personalization.top_competitor_name &&
-              personalization.top_competitor_share_pct != null && (
-                <TheCompetitionCard
-                  competitorName={personalization.top_competitor_name}
-                  sharePct={personalization.top_competitor_share_pct}
-                  city={personalization.city}
-                />
-              )}
+             *
+             *  Now renders for EVERY personalized prospect — when
+             *  competitor enrichment is missing (99.8% of the cold
+             *  cohort as of 2026-06-08), the card swaps into a
+             *  curiosity-driving fallback so the conversion pressure
+             *  this card carries in the hero stack is preserved. */}
+            {personalization && (
+              <TheCompetitionCard
+                competitorName={personalization.top_competitor_name}
+                sharePct={personalization.top_competitor_share_pct}
+                city={personalization.city}
+              />
+            )}
 
             <PricePanel
               listCents={listCents}
@@ -1394,10 +1397,21 @@ function TheCompetitionCard({
   sharePct,
   city,
 }: {
-  competitorName: string;
-  sharePct: number;
+  // Both nullable: the cold-prospect Instantly/Apollo enrichment
+  // pipeline silently drops top_competitor_name + top_competitor_share_pct
+  // on ~99.8% of rows. Rather than hiding the card entirely (and
+  // losing one of the hero's strongest conversion levers), render a
+  // curiosity-driving fallback so every prospect sees the
+  // "someone's winning your area" pressure.
+  competitorName: string | null;
+  sharePct: number | null;
   city: string;
 }) {
+  const hasName = Boolean(competitorName && competitorName.trim().length > 0);
+  const hasPct = sharePct !== null && sharePct !== undefined;
+  const cityLabel =
+    city && city.trim().length > 0 ? city : 'your service area';
+
   return (
     <div
       className="rounded-lg p-5 md:p-6 border max-w-xl mb-5"
@@ -1411,18 +1425,38 @@ function TheCompetitionCard({
         <span style={{ color: 'var(--color-warn)' }}>The competition</span>
       </div>
       <h3 className="font-display text-xl md:text-2xl font-bold text-zinc-100 mb-2">
-        {competitorName}
+        {hasName ? competitorName : 'Someone’s winning your area.'}
       </h3>
-      <p className="text-zinc-200 text-sm md:text-base leading-relaxed mb-3">
-        Currently winning{' '}
-        <strong className="font-semibold" style={{ color: 'var(--color-warn)' }}>
-          {sharePct}%
-        </strong>{' '}
-        of your service area.
-      </p>
+      {hasPct ? (
+        <p className="text-zinc-200 text-sm md:text-base leading-relaxed mb-3">
+          Currently winning{' '}
+          <strong className="font-semibold" style={{ color: 'var(--color-warn)' }}>
+            {sharePct}%
+          </strong>{' '}
+          of your service area.
+        </p>
+      ) : (
+        <p className="text-zinc-200 text-sm md:text-base leading-relaxed mb-3">
+          A specific competitor is currently outranking you across{' '}
+          <strong className="font-semibold" style={{ color: 'var(--color-warn)' }}>
+            {cityLabel}
+          </strong>
+          .
+        </p>
+      )}
       <p className="text-zinc-400 text-sm leading-relaxed">
-        Their cells are visible to customers across most of {city}. The full
-        scan shows you exactly which cells they own — and where the gaps are.
+        {hasName ? (
+          <>
+            Their cells are visible to customers across most of {cityLabel}.
+            The full scan shows you exactly which cells they own — and where
+            the gaps are.
+          </>
+        ) : (
+          <>
+            The full scan names them — and shows you exactly which Map Pack
+            cells they own, plus where the gaps are.
+          </>
+        )}
       </p>
     </div>
   );
