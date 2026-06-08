@@ -434,13 +434,6 @@ export default async function YourMapLandingPage({
                   className="w-1.5 h-1.5 rounded-full"
                   style={{ background: 'var(--color-lime)' }}
                 />
-                24-hour refund window
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: 'var(--color-lime)' }}
-                />
                 81 real searches
               </span>
             </div>
@@ -783,10 +776,7 @@ export default async function YourMapLandingPage({
           background: 'var(--color-card)',
         }}
       >
-        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-8">
-          <TrustItem icon={ShieldCheck} label="Refund window">
-            Full refund within 24h if your scan hasn&rsquo;t been delivered.
-          </TrustItem>
+        <div className="max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8">
           <TrustItem icon={Clock} label="Delivery">
             Scan completes in &lt; 1 min. AI Coach fix list lands in your
             inbox alongside your map.
