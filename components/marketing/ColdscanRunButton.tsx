@@ -123,7 +123,7 @@ export function ColdscanRunButton({
             centered ? 'text-center max-w-sm' : ''
           }`}
         >
-          One click — no card, no Stripe checkout. Your scan runs in
+          One click. Your scan runs in
           ~30-60 seconds and we&rsquo;ll show your TurfMap as soon as
           it&rsquo;s done.
         </p>
