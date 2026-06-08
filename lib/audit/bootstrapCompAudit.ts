@@ -368,11 +368,66 @@ export async function bootstrapCompAudit(
     >();
   if (existingAudit) {
     // Already bootstrapped. Refresh the booking timestamp if the
-    // caller supplied one (e.g. buyer rescheduled).
+    // caller supplied one (e.g. buyer rescheduled, OR buyer booked
+    // their Cal.com slot AFTER an admin-triggered pre-booking
+    // bootstrap — Justin/CertaPro 2026-06-08 flow).
     if (input.callStartTime) {
       await patchVisibilityAudit(supabase, existingAudit.id, {
         strategist_call_scheduled_at: input.callStartTime,
       });
+
+      // Slack ping for the booking-after-bootstrap case. The
+      // create-path ping (~line 556) only fires when bootstrap is
+      // the FIRST signal we see for the buyer. For audits
+      // pre-bootstrapped via admin endpoint (then Cal.com booking
+      // lands later as a separate webhook fire), the booking would
+      // otherwise be silent — Anthony explicitly flagged this miss
+      // when Justin booked June 18 11:30am and no notification
+      // landed. Same template as the create-path call so the ping
+      // looks consistent in #llm-leads regardless of which order
+      // the signals arrived in.
+      try {
+        const [scanLookup, auditLookup, keywordLookup] = await Promise.all([
+          supabase
+            .from('scans')
+            .select('turf_score')
+            .eq('client_id', client.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle<{ turf_score: number | null }>(),
+          supabase
+            .from('visibility_audits')
+            .select('llm_fit_score')
+            .eq('id', existingAudit.id)
+            .maybeSingle<{ llm_fit_score: number | null }>(),
+          supabase
+            .from('tracked_keywords')
+            .select('keyword')
+            .eq('client_id', client.id)
+            .eq('is_primary', true)
+            .maybeSingle<{ keyword: string }>(),
+        ]);
+        await notifyCompAuditBooked({
+          businessName: client.business_name,
+          buyerEmail: input.email ?? prospect?.email ?? '(unknown email)',
+          market:
+            [client.city, client.region].filter(Boolean).join(', ') ||
+            client.address ||
+            '',
+          trade: keywordLookup.data?.keyword ?? prospect?.trade ?? 'unknown',
+          startingTurfScore: scanLookup.data?.turf_score ?? 0,
+          llmFitScore: auditLookup.data?.llm_fit_score ?? 3,
+          callScheduledAt: input.callStartTime,
+          bootstrapSource: input.source,
+          agencyDashboardUrl: agencyClientUrl(appOrigin, client.public_id),
+          roadmapPdfUrl: existingAudit.roadmap_pdf_url,
+        });
+      } catch (e) {
+        console.error(
+          '[bootstrapCompAudit] notifyCompAuditBooked failed for existing-audit booking',
+          e instanceof Error ? e.message : String(e)
+        );
+      }
     }
 
     // Force-regenerate path — re-run the PDF + operator email
