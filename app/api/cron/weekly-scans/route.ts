@@ -197,34 +197,57 @@ async function handle(req: Request) {
     }
   }
 
-  // 4. Iterate (client, location, keyword) tuples sequentially. Each
-  //    scan is ~30-60s; sequential keeps the function within
-  //    maxDuration without parallelism complexity.
+  // 4. Build a per-client queue of (location, keyword) tuples, THEN
+  //    iterate round-robin — one tuple per client per round, looping
+  //    until every queue is empty.
+  //
+  //    Why round-robin instead of client-by-client: scans are ~30-60s
+  //    each and the function maxDuration is 300s. A single client with
+  //    many tuples (e.g. D Spot Dessert Cafe: 5 locations × 12 keywords
+  //    = 60 tuples) could consume the ENTIRE budget before any other
+  //    client gets a chance. Result: D Spot scanned 60×, every other
+  //    Pulse+ client scanned 0× (the bug Anthony flagged 2026-06-08).
+  //
+  //    Round-robin guarantees fairness: every client gets their first
+  //    tuple scanned before any client gets their second. Combined
+  //    with the hourly Monday schedule (0 * * * 1 in vercel.json),
+  //    every client should complete their entire weekly set within
+  //    a few hours of the first Monday tick.
+  const todayStartUtc = new Date();
+  todayStartUtc.setUTCHours(0, 0, 0, 0);
+  const todayCutoff = todayStartUtc.toISOString();
+
+  type ClientForScan = typeof activeClients[number];
+  type LocationForScan = NonNullable<
+    ReturnType<typeof locationsByClient.get>
+  >[number];
+  type KeywordForScan = NonNullable<typeof allKeywords>[number];
+  type Tuple = {
+    client: ClientForScan;
+    location: LocationForScan;
+    keyword: KeywordForScan;
+  };
+  const queuesByClient = new Map<string, Tuple[]>();
   const results: RunResult[] = [];
   let triggered = 0;
   let skipped = 0;
   let errors = 0;
 
-  const todayStartUtc = new Date();
-  todayStartUtc.setUTCHours(0, 0, 0, 0);
-  const todayCutoff = todayStartUtc.toISOString();
-
   for (const client of activeClients) {
     const locations = locationsByClient.get(client.id) ?? [];
-    // Tier-driven cap: precompute the in-cap keyword id set per
-    // location for this client. Over-cap rows fire neither scheduled
-    // nor on-demand scans — see lib/subscription/keywordCap.
     const tier = resolveTier(client);
     const cap = maxKeywordsPerLocation(tier);
+    const queue: Tuple[] = [];
     for (const location of locations) {
       const kws = keywordsByLocation.get(location.id) ?? [];
       const inCap = inCapKeywordIds(kws, cap);
-      // Filter to weekly here (we pulled all frequencies above for the
-      // ordering — see step 3). Other cadences are handled by their
-      // own crons.
       const weeklyKws = kws.filter((k) => k.scan_frequency === 'weekly');
       for (const kw of weeklyKws) {
         if (!inCap.has(kw.id)) {
+          // Over-cap rows count as skipped but don't queue — they
+          // don't burn cron budget and the result is recorded
+          // immediately so an operator querying the cron response
+          // can see why a specific tuple was excluded.
           results.push({
             clientId: client.id,
             locationId: location.id,
@@ -234,25 +257,50 @@ async function handle(req: Request) {
           skipped++;
           continue;
         }
-        const r = await scanOneTuple(
-          supabase,
-          { id: client.id, business_name: client.business_name },
-          location,
-          kw,
-          todayCutoff
-        );
-        results.push(r);
-        if (r.skipped) skipped++;
-        else if (r.error) errors++;
-        else triggered++;
+        queue.push({ client, location, keyword: kw });
       }
     }
+    if (queue.length > 0) queuesByClient.set(client.id, queue);
+  }
+
+  // Round-robin drain. Maintain a clientId order; pop one tuple from
+  // each in turn; remove clients with empty queues; loop until none.
+  const clientOrder = activeClients
+    .map((c) => c.id)
+    .filter((id) => queuesByClient.has(id));
+  let round = 0;
+  while (clientOrder.length > 0) {
+    round++;
+    const stillActive: string[] = [];
+    for (const clientId of clientOrder) {
+      const queue = queuesByClient.get(clientId);
+      if (!queue || queue.length === 0) continue;
+      const next = queue.shift()!;
+      const r = await scanOneTuple(
+        supabase,
+        { id: next.client.id, business_name: next.client.business_name },
+        next.location,
+        next.keyword,
+        todayCutoff
+      );
+      results.push(r);
+      if (r.skipped) skipped++;
+      else if (r.error) errors++;
+      else triggered++;
+      if (queue.length > 0) stillActive.push(clientId);
+    }
+    // Replace the client order with the still-non-empty subset.
+    // Push the just-drained ones to the back of the queue so the
+    // round-robin order rotates fairly across rounds.
+    clientOrder.length = 0;
+    clientOrder.push(...stillActive);
   }
 
   return NextResponse.json({
     triggered,
     skipped,
     errors,
+    rounds: round,
     results,
     runAt: new Date().toISOString(),
   });
