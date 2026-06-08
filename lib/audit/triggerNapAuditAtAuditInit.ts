@@ -229,11 +229,21 @@ export async function triggerNapAuditAtAuditInit(
 
   // 5. Fire the NAP audit. maybeRunNapAudit handles idempotency on
   //    the recent-audit window so re-calls inside 30 days are no-ops.
+  //
+  //    triggered_by MUST be null (or a real users.id UUID) — the
+  //    nap_audits.triggered_by column has a FK constraint to
+  //    users(id), so passing a free-form string like 'audit-init'
+  //    bombs the insert with "invalid input syntax for type uuid"
+  //    and the row never lands (CertaPro 2026-06-08 regression).
+  //    The original intent was to record provenance ("this audit
+  //    was triggered by audit-init vs. a scan vs. a manual run") —
+  //    if we want that back, add a separate text column instead of
+  //    abusing triggered_by.
   try {
     const result = await maybeRunNapAudit(
       supabase,
       audit.client_id,
-      'audit-init',
+      null,
       location.id
     );
     return {
