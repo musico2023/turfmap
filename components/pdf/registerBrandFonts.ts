@@ -45,17 +45,29 @@ export function registerBrandFonts(): void {
   // root). Font.register accepts a string path (or URL); the
   // renderer reads the file on demand when laying out glyphs.
   const fontsDir = path.join(process.cwd(), 'public', 'fonts');
+  const regularPath = path.join(fontsDir, 'BricolageGrotesque-Regular.otf');
+  const boldPath = path.join(fontsDir, 'BricolageGrotesque-Bold.otf');
+  // Bricolage Grotesque doesn't ship a true italic cut — the typeface
+  // is upright-only. RoadmapPdf.tsx uses `fontStyle: 'italic'` on a
+  // handful of body-copy elements (note callouts, promise footer);
+  // without an italic registration, @react-pdf/renderer THROWS at
+  // render time with "Could not resolve font for Bricolage Grotesque,
+  // fontWeight 400, fontStyle italic" — bombing the entire Roadmap
+  // PDF generation (caught Yoda / Justin Enns regenerate fails
+  // 2026-06-08).
+  //
+  // Fix: register the regular cut under both 'normal' AND 'italic'
+  // styles. @react-pdf/renderer falls back to synthesized italic
+  // (visual skew) when the registered file doesn't have native
+  // italic outlines — close enough to real italic for emphasis runs
+  // and lets the PDF render instead of crash.
   Font.register({
     family: BRAND_FONT_FAMILY,
     fonts: [
-      {
-        src: path.join(fontsDir, 'BricolageGrotesque-Regular.otf'),
-        fontWeight: 400,
-      },
-      {
-        src: path.join(fontsDir, 'BricolageGrotesque-Bold.otf'),
-        fontWeight: 700,
-      },
+      { src: regularPath, fontWeight: 400, fontStyle: 'normal' },
+      { src: regularPath, fontWeight: 400, fontStyle: 'italic' },
+      { src: boldPath, fontWeight: 700, fontStyle: 'normal' },
+      { src: boldPath, fontWeight: 700, fontStyle: 'italic' },
     ],
   });
   // Disable @react-pdf/renderer's hyphenation rules — they're
