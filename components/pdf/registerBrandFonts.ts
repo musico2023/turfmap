@@ -3,6 +3,22 @@
  * exports match the brand spec (CLAUDE.md: "Display font: Bricolage
  * Grotesque").
  *
+ * ───────────────────────────────────────────────────────────────────
+ * REGISTERED INVARIANT — every PDF template must stay within this:
+ *   fontWeight: 400 (regular) or 700 (bold) — nearest-match routing,
+ *     but adding 500/600/etc. without registering the corresponding
+ *     OTF will route silently to the closer of {400, 700} and may
+ *     look subtly off-brand. Audited 2026-06-08: all uses are 400/700.
+ *   fontStyle: 'normal' or 'italic' — italic falls back to the
+ *     regular cut (synthesized skew), since Bricolage ships no true
+ *     italic. Audited 2026-06-08: TurfReport uses zero italics,
+ *     RoadmapPdf uses 5 (note callouts + closing block).
+ * Adding a new weight/style to a PDF template? Register it here
+ * FIRST — otherwise @react-pdf/renderer will throw at render time
+ * with "Could not resolve font for Bricolage Grotesque…" (the bug
+ * that crashed Justin's regenerate 2026-06-08 on the italic path).
+ * ───────────────────────────────────────────────────────────────────
+ *
  * Why this module exists separately:
  *   Font.register has process-global side effects — once called, the
  *   family is available everywhere in the same Node process. We want
