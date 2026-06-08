@@ -26,6 +26,8 @@ import { headers } from 'next/headers';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { logLanderVisit } from '@/lib/analytics/landerVisits';
+import { logFunnelEvent } from '@/lib/analytics/funnelEvents';
+import { YourmapFunnelEmitter } from '@/components/yourmap/YourmapFunnelEmitter';
 import type { ProspectRow } from '@/lib/supabase/types';
 
 /**
@@ -197,6 +199,8 @@ export default async function YourMapLandingPage({
   // pollute the prospect-click count. See lib/analytics/landerVisits.ts.
   if (prospectId) {
     const reqHeaders = await headers();
+    const ua = reqHeaders.get('user-agent');
+    const ref = reqHeaders.get('referer');
     logLanderVisit({
       path:         '/yourmap',
       utm_source:   utmSource,
@@ -204,8 +208,26 @@ export default async function YourMapLandingPage({
       utm_campaign: utmCampaign,
       coupon:       couponCode,
       prospect_id:  prospectId,
-      user_agent:   reqHeaders.get('user-agent'),
-      referer:      reqHeaders.get('referer'),
+      user_agent:   ua,
+      referer:      ref,
+    });
+    // Mirror the view into cold_funnel_events so the funnel summary
+    // view doesn't need to JOIN ops_lander_visits cross-table (cuts
+    // the funnel query from a 3-table join down to a single
+    // grouped scan on cold_funnel_events). The client-side
+    // emitter ALSO fires yourmap_view on mount; the summary view
+    // COUNTs DISTINCT prospect_id per event_type so the double-fire
+    // doesn't inflate counts. Belt-and-suspenders: if the client
+    // JS fails to run (ad blocker, no-JS context, dead browser tab
+    // restored), the server-side log still captures the view.
+    logFunnelEvent({
+      event_type:   'yourmap_view',
+      prospect_id:  prospectId,
+      utm_source:   utmSource,
+      utm_medium:   utmMedium,
+      utm_campaign: utmCampaign,
+      user_agent:   ua,
+      referer:      ref,
     });
   }
 
@@ -257,6 +279,21 @@ export default async function YourMapLandingPage({
 
   return (
     <div className="min-h-screen w-full text-white">
+      {/* Cold-funnel event emitter (Phase 1 — migration 0041). Only
+       *  mounted when we have a resolvable prospect_id, since the
+       *  funnel summary view groups by utm_campaign + prospect and
+       *  events without prospect lineage would just inflate noise.
+       *  Fires yourmap_view (mirror of server-side log + redundancy
+       *  for the rare case the server log fails), yourmap_scroll_50,
+       *  yourmap_scroll_form, and coldscan_cta_click. */}
+      {prospectId && (
+        <YourmapFunnelEmitter
+          prospectId={prospectId}
+          utmSource={utmSource}
+          utmMedium={utmMedium}
+          utmCampaign={utmCampaign}
+        />
+      )}
       {/* ─── HEADER ───────────────────────────────────────────────────
        *  /yourmap-specific simplification per Sprint-1 Fix 1.7: the
        *  "Existing customer?" link from /fourdots is REMOVED here.
@@ -423,18 +460,36 @@ export default async function YourMapLandingPage({
               />
             )}
 
-            <PricePanel
-              listCents={listCents}
-              finalCents={finalCents}
-              coupon={coupon}
-              couponCode={couponCode}
-              utmSource={utmSource}
-              utmMedium={utmMedium}
-              utmCampaign={utmCampaign}
-              gclid={gclid}
-              prospectId={prospectId}
-              useColdscanBypass={useColdscanBypass}
-            />
+            {/* CTA section marker + CTA click marker for the cold-
+             *  funnel emitter (Phase 1 — migration 0041). The
+             *  emitter (mounted at the top of the page tree) uses an
+             *  IntersectionObserver on data-funnel-section="cta" to
+             *  fire yourmap_scroll_form when the panel enters view,
+             *  and a delegated click listener on
+             *  data-funnel-cta="coldscan" to fire coldscan_cta_click
+             *  when the prospect clicks the run button. The markers
+             *  live on a wrapper div instead of being threaded into
+             *  PricePanel/ColdscanRunButton/ScanIntakeLinkButton
+             *  props because the delegated listener pattern means
+             *  the buttons don't need to know about funnel events
+             *  at all. */}
+            <div
+              data-funnel-section="cta"
+              data-funnel-cta="coldscan"
+            >
+              <PricePanel
+                listCents={listCents}
+                finalCents={finalCents}
+                coupon={coupon}
+                couponCode={couponCode}
+                utmSource={utmSource}
+                utmMedium={utmMedium}
+                utmCampaign={utmCampaign}
+                gclid={gclid}
+                prospectId={prospectId}
+                useColdscanBypass={useColdscanBypass}
+              />
+            </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-zinc-500 font-mono">
               <span className="flex items-center gap-1.5">

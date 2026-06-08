@@ -41,6 +41,7 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { runScanForLocation } from '@/lib/scans/runScan';
 import { notifyColdscanCompleted } from '@/lib/audit/operatorSlack';
+import { logFunnelEvent } from '@/lib/analytics/funnelEvents';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -254,6 +255,26 @@ export async function POST(req: NextRequest) {
   }
 
   // ─── 7. Run the scan synchronously ───────────────────────────────────
+  // Funnel event #8 (free_scan_started) lands BEFORE the scan call so
+  // even if runScanForLocation throws mid-execution we still capture
+  // intent. The "started but never completed" gap in the funnel
+  // summary view (started count > completed count) is the operator
+  // signal that scan execution is the failing step.
+  logFunnelEvent({
+    event_type:   'free_scan_started',
+    prospect_id:  prospect.id,
+    utm_source:   body.utm_source ?? null,
+    utm_medium:   body.utm_medium ?? null,
+    utm_campaign: body.utm_campaign ?? null,
+    // No user_agent — this is a server-side action initiated by the
+    // ColdscanRunButton's fetch POST; the UA on the originating
+    // browser request isn't a useful signal here, and skipping it
+    // lets the scanner-bot filter no-op (server-internal events
+    // should never be filtered as bot traffic).
+    user_agent:   null,
+    referer:      null,
+  });
+
   const scanResult = await runScanForLocation(supabase, {
     client,
     location,
@@ -297,6 +318,23 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  // Funnel event #9 (free_scan_completed). Fires only after BOTH the
+  // scan ran successfully AND the share link insert landed — this is
+  // the moment the buyer is about to be redirected to /share/<id> and
+  // see their TurfMap. completed count in the summary view = the
+  // success endpoint of the funnel; the gap between
+  // free_scan_started and free_scan_completed = scan/share failure
+  // rate.
+  logFunnelEvent({
+    event_type:   'free_scan_completed',
+    prospect_id:  prospect.id,
+    utm_source:   body.utm_source ?? null,
+    utm_medium:   body.utm_medium ?? null,
+    utm_campaign: body.utm_campaign ?? null,
+    user_agent:   null,
+    referer:      null,
+  });
 
   // ─── 9. Operator Slack notification (#llm-leads) ────────────────────
   // Fire-and-forget. The free buyer is about to land on /share/<id>;
