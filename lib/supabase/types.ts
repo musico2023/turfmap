@@ -340,6 +340,25 @@ export type NapAuditRow = {
    *  (default). Existing rows backfilled to 'brightlocal' since they
    *  pre-date the DFS checker. */
   provider: 'brightlocal' | 'dfs' | null;
+  /** Added in migration 0040: provenance of the trigger that fired
+   *  this audit. Replaces the prior abuse of triggered_by for the
+   *  same purpose (the FK to users(id) rejected free-form strings).
+   *
+   *    'scan'       — post-scan auto-fire from runScanForLocation
+   *    'audit-init' — visibility audit bootstrap / fulfill init
+   *    'ai-coach'   — self-heal at AI Coach generation time
+   *    'manual'     — operator-triggered via admin endpoint
+   *    'cron'       — future scheduled refresh cron
+   *
+   *  null on rows that pre-date 0040 or for legacy code paths that
+   *  haven't been wired through yet. */
+  trigger_source:
+    | 'scan'
+    | 'audit-init'
+    | 'ai-coach'
+    | 'manual'
+    | 'cron'
+    | null;
 };
 
 /** Public share link for a scan — see /share/<id>. */

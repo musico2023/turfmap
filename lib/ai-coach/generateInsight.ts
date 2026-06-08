@@ -221,11 +221,14 @@ export async function generateInsight(
     scan.turf_score != null ? Number(scan.turf_score) : null;
 
   // NAP audit grounding (self-healing), scoped to the scan's LOCATION.
+  // trigger_source='ai-coach' distinguishes self-heal triggers from
+  // post-scan auto-fires + audit-init bootstraps (migration 0040).
   await maybeRunNapAudit(
     supabase,
     client.id,
     triggeredBy,
-    scanLocation?.id ?? null
+    scanLocation?.id ?? null,
+    'ai-coach'
   );
   const napAudit = await maybeFinalizeNapAudit(supabase, client.id, {
     waitForReadyMs: napAuditWaitMs,

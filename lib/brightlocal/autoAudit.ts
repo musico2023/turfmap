@@ -47,6 +47,18 @@ import type {
   NapAuditRow,
 } from '@/lib/supabase/types';
 
+/** Trigger-source vocabulary mirrored from migration 0040's CHECK
+ *  constraint on nap_audits.trigger_source. Keep this enum in sync
+ *  with the migration's allowed-values list — adding a new value
+ *  here without updating the constraint will cause inserts to
+ *  reject. See NapAuditRow.trigger_source for full semantics. */
+export type NapAuditTriggerSource =
+  | 'scan'
+  | 'audit-init'
+  | 'ai-coach'
+  | 'manual'
+  | 'cron';
+
 /**
  * Which backend to use for NAP audits. Selected via env so we can
  * switch back to BrightLocal Data API when commercial access is in
@@ -125,7 +137,8 @@ export async function maybeRunNapAudit(
   supabase: SupabaseLike,
   clientId: string,
   triggeredBy: string | null,
-  locationId: string | null = null
+  locationId: string | null = null,
+  triggerSource: NapAuditTriggerSource | null = null
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
   // 1. Pull client metadata. The historical billing_mode='one_time' tier
   // gate is GONE — DFS-based audits (default provider) cost ~$0.09 per
@@ -196,10 +209,19 @@ export async function maybeRunNapAudit(
       business,
       client.industry,
       location.latitude,
-      location.longitude
+      location.longitude,
+      triggerSource
     );
   }
-  return runBrightlocalAudit(supabase, clientId, location.id, triggeredBy, business, client.industry);
+  return runBrightlocalAudit(
+    supabase,
+    clientId,
+    location.id,
+    triggeredBy,
+    business,
+    client.industry,
+    triggerSource
+  );
 }
 
 /** DFS-backed audit path. Runs synchronously (~5-9s for ~9 directories),
@@ -217,7 +239,8 @@ async function runDfsAudit(
   business: BusinessProfile,
   industry: string | null,
   latitude: number | null,
-  longitude: number | null
+  longitude: number | null,
+  triggerSource: NapAuditTriggerSource | null
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
   // Insert pending row first so the row id is stable even if the audit
   // itself throws.
@@ -229,6 +252,7 @@ async function runDfsAudit(
       triggered_by: triggeredBy,
       status: 'pending',
       provider: 'dfs',
+      trigger_source: triggerSource,
     })
     .select('id')
     .single<{ id: string }>();
@@ -328,7 +352,8 @@ async function runBrightlocalAudit(
   locationId: string,
   triggeredBy: string | null,
   business: BusinessProfile,
-  industry: string | null
+  industry: string | null,
+  triggerSource: NapAuditTriggerSource | null
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
   const directories = getDirectoriesForIndustry(industry);
   const profile = inferProfileForIndustry(industry);
@@ -341,6 +366,7 @@ async function runBrightlocalAudit(
       triggered_by: triggeredBy,
       status: 'pending',
       provider: 'brightlocal',
+      trigger_source: triggerSource,
     })
     .select('id')
     .single<{ id: string }>();

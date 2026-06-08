@@ -232,19 +232,17 @@ export async function triggerNapAuditAtAuditInit(
   //
   //    triggered_by MUST be null (or a real users.id UUID) — the
   //    nap_audits.triggered_by column has a FK constraint to
-  //    users(id), so passing a free-form string like 'audit-init'
-  //    bombs the insert with "invalid input syntax for type uuid"
-  //    and the row never lands (CertaPro 2026-06-08 regression).
-  //    The original intent was to record provenance ("this audit
-  //    was triggered by audit-init vs. a scan vs. a manual run") —
-  //    if we want that back, add a separate text column instead of
-  //    abusing triggered_by.
+  //    users(id). The 'audit-init' provenance string lives on the
+  //    separate trigger_source column added in migration 0040 — the
+  //    pre-0040 code abused triggered_by for this and bombed every
+  //    cold-prospect bootstrap (CertaPro 2026-06-08 regression).
   try {
     const result = await maybeRunNapAudit(
       supabase,
       audit.client_id,
       null,
-      location.id
+      location.id,
+      'audit-init'
     );
     return {
       ok: true,

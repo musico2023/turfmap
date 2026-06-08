@@ -245,7 +245,10 @@ export async function runScanForLocation(
     .eq('id', scanId);
 
   // 7. Auto-fire NAP audit for THIS location (best-effort; absorbed errors).
-  await maybeRunNapAudit(supabase, client.id, triggeredBy, location.id);
+  // trigger_source='scan' tags the resulting nap_audits row so an
+  // operator can distinguish post-scan auto-fires from audit-init
+  // bootstrap or AI Coach self-heal triggers (migration 0040).
+  await maybeRunNapAudit(supabase, client.id, triggeredBy, location.id, 'scan');
 
   // 8. Dispatch alerts based on score / momentum / competitor / cell
   //    diff against the prior scan. Best-effort — never fails the
