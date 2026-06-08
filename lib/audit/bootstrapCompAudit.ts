@@ -565,6 +565,11 @@ export async function bootstrapCompAudit(
       callScheduledAt: input.callStartTime ?? null,
       bootstrapSource: input.source,
       agencyDashboardUrl: agencyClientUrl(appOrigin, client.public_id),
+      // Pass the freshly-signed PDF URL through so #llm-leads gets a
+      // one-click "Download Roadmap PDF" link in the ping. Null when
+      // PDF generation failed (operatorSlack surfaces the failure
+      // explicitly so Anthony knows to check Vercel logs).
+      roadmapPdfUrl,
     });
   } catch (e) {
     console.error(

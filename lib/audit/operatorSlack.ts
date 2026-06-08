@@ -357,6 +357,13 @@ export type CompAuditBookedContext = {
   /** Agency-side dashboard URL — clicks land Anthony directly on
    *  the buyer's data in /clients/<public_id>. */
   agencyDashboardUrl: string;
+  /** Signed Supabase Storage URL for the Roadmap PDF (90-day TTL).
+   *  When non-null, an "📄 Download Roadmap PDF →" link renders in
+   *  the Slack message body so Anthony can grab the PDF directly
+   *  from #llm-leads without digging through email or the agency
+   *  dashboard. Null when PDF generation failed (caller should
+   *  also include a failure note in this case). */
+  roadmapPdfUrl?: string | null;
 };
 
 /** "🤝 Comp audit booked" — fires from bootstrapCompAudit when a
@@ -375,6 +382,15 @@ export async function notifyCompAuditBooked(
       : ctx.bootstrapSource === 'admin'
         ? 'Manual bootstrap via /api/admin/bootstrap-comp-audit'
         : 'Bootstrap source: unknown';
+  // Roadmap PDF line. When the PDF generated successfully, surface a
+  // direct download link so Anthony can grab it from #llm-leads
+  // without going through inbox/dashboard. When PDF gen failed
+  // (e.g. font-resolution crash 2026-06-08), call that out
+  // explicitly so Anthony knows to investigate vs. assume the PDF
+  // is sitting somewhere he just hasn't checked.
+  const pdfLine = ctx.roadmapPdfUrl
+    ? `📄 <${ctx.roadmapPdfUrl}|Download Roadmap PDF>`
+    : '⚠️ Roadmap PDF generation failed — check Vercel logs';
   return postOperatorSlack({
     text: `🤝 Comp audit booked: ${ctx.businessName} (${ctx.buyerEmail})`,
     blocks: [
@@ -382,7 +398,7 @@ export async function notifyCompAuditBooked(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*🤝 Cold prospect booked Visibility Audit*\n*${ctx.businessName}* — ${ctx.trade} in ${ctx.market}\nBuyer: ${ctx.buyerEmail}\nTurfScore: ${ctx.startingTurfScore} · LLM Fit: ${ctx.llmFitScore}/5\n${callLine}\n_${sourceLine}_`,
+          text: `*🤝 Cold prospect booked Visibility Audit*\n*${ctx.businessName}* — ${ctx.trade} in ${ctx.market}\nBuyer: ${ctx.buyerEmail}\nTurfScore: ${ctx.startingTurfScore} · LLM Fit: ${ctx.llmFitScore}/5\n${callLine}\n${pdfLine}\n_${sourceLine}_`,
         },
       },
       {
