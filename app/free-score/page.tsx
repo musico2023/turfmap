@@ -212,7 +212,7 @@ export default async function ScanFreeLanderPage({
             className="text-[11px] uppercase tracking-[0.22em] font-mono font-semibold mb-5"
             style={{ color: 'var(--color-lime)' }}
           >
-            Free TurfScore · 60 seconds · No card required
+            Free TurfScore · 60 seconds
           </div>
 
           {/* H1 — echoes Meta creative #1 (red square / neighborhood
