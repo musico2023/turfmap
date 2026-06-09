@@ -12,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
+import { TheirDataTeaser } from '@/components/yourmap/TheirDataTeaser';
 import { ScanIntakeLinkButton } from '@/components/marketing/scan/ScanIntakeLinkButton';
 import { ColdscanRunButton } from '@/components/marketing/ColdscanRunButton';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
@@ -385,6 +386,21 @@ export default async function YourMapLandingPage({
               )}
             </h1>
 
+            {/* Personalized stat hero (Part B 5.2) — large display
+             *  callout computed from real preview data: invisibility
+             *  percent + city + business name. Omitted entirely when
+             *  any input is missing per the brief's "cut the sentence
+             *  rather than ship a placeholder" rule. */}
+            {personalization && personalization.invisibility_count > 0 && (
+              <PersonalizedStatHero
+                invisiblePct={Math.round(
+                  (personalization.invisibility_count / 81) * 100
+                )}
+                city={personalization.city}
+                businessName={personalization.business_name}
+              />
+            )}
+
             <p className="font-display text-lg md:text-xl text-zinc-300 italic leading-snug mb-5 max-w-xl">
               The full Google Maps audit you should run before spending
               another dollar on local SEO.
@@ -460,19 +476,15 @@ export default async function YourMapLandingPage({
               />
             )}
 
+            {/* Risk-reversal callout (Part B 5.6) — pulled UP from
+             *  the bottom of the page so it sits adjacent to the
+             *  first CTA. Worst-case/best-case framing reduces the
+             *  perceived risk of clicking through, right at the
+             *  moment of decision. */}
+            <RiskReversalCallout />
+
             {/* CTA section marker + CTA click marker for the cold-
-             *  funnel emitter (Phase 1 — migration 0041). The
-             *  emitter (mounted at the top of the page tree) uses an
-             *  IntersectionObserver on data-funnel-section="cta" to
-             *  fire yourmap_scroll_form when the panel enters view,
-             *  and a delegated click listener on
-             *  data-funnel-cta="coldscan" to fire coldscan_cta_click
-             *  when the prospect clicks the run button. The markers
-             *  live on a wrapper div instead of being threaded into
-             *  PricePanel/ColdscanRunButton/ScanIntakeLinkButton
-             *  props because the delegated listener pattern means
-             *  the buttons don't need to know about funnel events
-             *  at all. */}
+             *  funnel emitter (Phase 1 — migration 0041). */}
             <div
               data-funnel-section="cta"
               data-funnel-cta="coldscan"
@@ -491,111 +503,128 @@ export default async function YourMapLandingPage({
               />
             </div>
 
-            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-zinc-500 font-mono">
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: 'var(--color-lime)' }}
-                />
-                Delivered in under a minute
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: 'var(--color-lime)' }}
-                />
-                81 real searches
-              </span>
-            </div>
+            {/* Trust strip (Part B 5.3) — replaces the previous
+             *  thin "Delivered in a minute · 81 real searches" line
+             *  with a richer 3-card row that signals legitimacy
+             *  before the buyer clicks. Cold traffic is maximally
+             *  skeptical; this strip's job is to answer "is this
+             *  real or another PDF mill?" before the click. */}
+            <TrustStripRow
+              city={personalization?.city ?? null}
+            />
           </div>
 
-          {/* Right: sample heatmap + score row.
-           *  Sprint-2 Fix 1 made this column visually SUBORDINATE
-           *  to the left column. Per spec:
-           *    - slightly smaller scale (opacity-reduced shell +
-           *      tighter container)
-           *    - slightly muted color treatment (lower-opacity
-           *      score cards via the `subdued` flag)
-           *    - keeps current EXAMPLE badge + caption stack
-           *  The left column is now the buyer-data anchor
-           *  (YourPreviewScoreCard + TheCompetitionCard); this
-           *  right column shows what the product looks like, not
-           *  what the buyer's data is.
-           */}
-          <div className="lg:col-span-5 opacity-90">
-            {/* ANONYMIZED-EXAMPLE pill — solid lime fill so it reads
-             *  at a glance even when the rest of the card is being
-             *  scanned. Carries enough visual weight to override
-             *  the buyer's first instinct ("is that my data?"). */}
-            <div className="mb-2 flex">
-              <span
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] uppercase tracking-[0.16em] font-bold"
-                style={{
-                  background: 'var(--color-lime)',
-                  color: '#000',
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: '#000' }}
-                />
-                Anonymized example — not your data
-              </span>
-            </div>
-            <div
-              className="border rounded-lg p-5 relative"
-              style={{
-                background: 'var(--color-card)',
-                borderColor: 'var(--color-border-bright)',
-                boxShadow: '0 0 60px #c5ff3a10',
-              }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
-                  {heroVisualTitle}
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-500">
+          {/* Right column. Part B 5.1: for PERSONALIZED prospects,
+           *  show the aggregate-proportional their-data teaser
+           *  (81-cell shape with exactly invisibility_count dimmed)
+           *  with the honesty label that this is aggregate, not
+           *  per-cell. The previous "anonymized sample heatmap with
+           *  different numbers labeled NOT YOUR DATA" treatment
+           *  contradicted the prospect's stated TurfScore and
+           *  undercut the "we already mapped you" promise.
+           *
+           *  Fallback path (no personalization data → caller
+           *  clicked a bare /yourmap with no prospect_id, or the
+           *  prospect_id didn't resolve): keep the old sample
+           *  heatmap with the explicit "not your data" framing.
+           *  That's still honest — they didn't get the personalized
+           *  experience. */}
+          <div className="lg:col-span-5">
+            {personalization ? (
+              <TheirDataTeaser
+                prospectId={personalization.id}
+                businessName={personalization.business_name}
+                previewScore={personalization.preview_score}
+                invisibilityCount={personalization.invisibility_count}
+              />
+            ) : (
+              <>
+                <div className="mb-2 flex">
                   <span
-                    className="w-1.5 h-1.5 rounded-full animate-pulse"
-                    style={{ background: 'var(--color-lime)' }}
-                  />
-                  LIVE
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] uppercase tracking-[0.16em] font-bold"
+                    style={{
+                      background: 'var(--color-lime)',
+                      color: '#000',
+                    }}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ background: '#000' }}
+                    />
+                    Anonymized example — not your data
+                  </span>
                 </div>
-              </div>
-              <HeatmapGrid cells={cells} />
-              {/* Caption sits IMMEDIATELY adjacent to the heatmap
-               *  visual (inside the card, between heatmap + score
-               *  row) per Sprint-1 Fix 1.1. Bold lead clause kills
-               *  any "wait, is that my data?" ambiguity on first
-               *  glance. */}
-              <p className="text-[11px] text-zinc-400 mt-3 mb-4 leading-relaxed text-center">
-                <strong className="text-zinc-200">
-                  This is a sample heatmap, not your data.
-                </strong>{' '}
-                Your full TurfScan reveals your actual 81-cell heatmap,
-                your specific TurfScore, and your competitor positions.
-              </p>
-              {/* Score cards — distinct cards (not just text) with
-               *  larger values per Fix 1.4. Buyer should read this
-               *  row as "the three numbers your full scan reveals,"
-               *  hence the heavier visual treatment. */}
-              <div className="grid grid-cols-3 gap-3 md:gap-4">
-                <ScoreReadout label="TurfReach™" value={`${reach}%`} />
-                <ScoreReadout
-                  label="TurfRank™"
-                  value={`${rank.toFixed(1)} / 3`}
-                />
-                <ScoreReadout
-                  label="TurfScore™"
-                  value={String(score)}
-                  highlight
-                  bandLabel={band}
-                />
-              </div>
-            </div>
+                <div
+                  className="border rounded-lg p-5 relative"
+                  style={{
+                    background: 'var(--color-card)',
+                    borderColor: 'var(--color-border-bright)',
+                    boxShadow: '0 0 60px #c5ff3a10',
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">
+                      {heroVisualTitle}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-500">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full animate-pulse"
+                        style={{ background: 'var(--color-lime)' }}
+                      />
+                      LIVE
+                    </div>
+                  </div>
+                  <HeatmapGrid cells={cells} />
+                  <p className="text-[11px] text-zinc-400 mt-3 mb-4 leading-relaxed text-center">
+                    <strong className="text-zinc-200">
+                      This is a sample heatmap, not your data.
+                    </strong>{' '}
+                    Your full TurfScan reveals your actual 81-cell heatmap,
+                    your specific TurfScore, and your competitor positions.
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 md:gap-4">
+                    <ScoreReadout label="TurfReach™" value={`${reach}%`} />
+                    <ScoreReadout
+                      label="TurfRank™"
+                      value={`${rank.toFixed(1)} / 3`}
+                    />
+                    <ScoreReadout
+                      label="TurfScore™"
+                      value={String(score)}
+                      highlight
+                      bandLabel={band}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </section>
+
+      {/* ─── "1 of 81" reframe (Part B 5.5) ──────────────────────────
+       *  Sits immediately after the hero so the prospect understands
+       *  WHY a score of 0 / Invisible matters, in plain terms.
+       *  Personalized against their preview score + city; the brief
+       *  requires every element be framed as about this prospect,
+       *  not generic marketing. */}
+      {personalization && (
+        <OneOfEightyOneSection
+          invisiblePct={Math.round(
+            (personalization.invisibility_count / 81) * 100
+          )}
+          city={personalization.city}
+          businessName={personalization.business_name}
+        />
+      )}
+
+      {/* ─── Testimonial (Part B 5.4) ────────────────────────────────
+       *  Ports the named-operator testimonial from /free-score —
+       *  one piece of social proof from a real Fourdots client.
+       *  Sits high up in the page so the cold prospect's skepticism
+       *  ("is this just another marketing site?") gets a third-party
+       *  answer BEFORE the fix list reveal. */}
+      <TestimonialSection />
 
       {/* ─── WHAT YOU'LL GET (mirrors /fourdots Section 03) ─────────── */}
       <section
@@ -1085,6 +1114,231 @@ export default async function YourMapLandingPage({
 // them through another buy flow would create duplicate records.
 // Two affordances: sign in (existing customer) or run a new scan
 // on a different keyword (different SKU, different lander).
+
+/* ───────────────────────────────────────────────────────────────────
+ * Part B 5.2 — Personalized stat hero.
+ *
+ * Large display callout under the H1, computed from real prospect
+ * data: "{invisible_pct}% of {city} can't find {business_name}."
+ * The brief explicitly forbids placeholders — if any input is
+ * missing we cut the sentence (caller is expected to gate this
+ * with a `personalization && invisibility_count > 0` check). City
+ * gracefully degrades to "your service area" when missing.
+ * ─────────────────────────────────────────────────────────────────── */
+function PersonalizedStatHero({
+  invisiblePct,
+  city,
+  businessName,
+}: {
+  invisiblePct: number;
+  city: string;
+  businessName: string;
+}) {
+  const cityLabel =
+    city && city.trim().length > 0 ? city : 'your service area';
+  return (
+    <div className="mb-5 max-w-xl">
+      <p
+        className="font-display text-2xl md:text-3xl font-bold leading-tight"
+        style={{ color: 'var(--color-warn)' }}
+      >
+        {invisiblePct}%
+        <span className="text-zinc-200 font-normal"> of </span>
+        <span className="text-zinc-100 font-semibold">{cityLabel}</span>
+        <span className="text-zinc-200 font-normal"> can&rsquo;t find </span>
+        <span className="text-zinc-100 font-semibold">{businessName}</span>
+        <span className="text-zinc-200 font-normal">.</span>
+      </p>
+      <p className="text-[11px] text-zinc-500 font-mono uppercase tracking-[0.16em] mt-2">
+        Computed from your real 81-point preview · not an estimate
+      </p>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Part B 5.6 — Risk-reversal callout (pulled up adjacent to first CTA).
+ *
+ * Previously lived in the closing-CTA section at the bottom of the
+ * page. Moved here so the worst-case/best-case framing hits the
+ * buyer at the moment of decision, not after they've already
+ * decided to leave. Generic copy — doesn't need prospect personalization
+ * because the framing is about the OFFER (free scan), not them.
+ * ─────────────────────────────────────────────────────────────────── */
+function RiskReversalCallout() {
+  return (
+    <div className="mb-4 max-w-xl">
+      <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
+        <strong className="font-semibold text-zinc-100">Worst case:</strong>{' '}
+        the free scan confirms what you suspect.{' '}
+        <strong className="font-semibold text-zinc-100">Best case:</strong>{' '}
+        one fix pays for the scan ten times over.
+      </p>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Part B 5.3 — Trust strip placed near the first CTA.
+ *
+ * Three signals that answer the cold prospect's first skepticism
+ * ("is this real, or another PDF mill?"). Each is framed as
+ * about THIS prospect's scan, not generic marketing — the brief
+ * explicitly calls out that ported homepage blocks dilute the
+ * personalization that makes the channel work.
+ *
+ * The strip replaces the older single-line "Delivered in a minute
+ * · 81 real searches" affordance directly under the CTA.
+ * ─────────────────────────────────────────────────────────────────── */
+function TrustStripRow({ city }: { city: string | null }) {
+  const cityLabel = city && city.trim().length > 0 ? city : 'your area';
+  return (
+    <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3 max-w-xl">
+      <TrustStripItem
+        eyebrow="Real searches"
+        title="81 Google queries"
+        body={`Ran across ${cityLabel} — not estimates, not a directory check.`}
+      />
+      <TrustStripItem
+        eyebrow="Real deliverable"
+        title="Branded TurfReport PDF"
+        body="Shareable with your team, your operator, or your next agency."
+      />
+      <TrustStripItem
+        eyebrow="Real operators"
+        title="Built by Fourdots"
+        body="The agency that uses TurfMap on every client engagement."
+      />
+    </div>
+  );
+}
+
+function TrustStripItem({
+  eyebrow,
+  title,
+  body,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div
+      className="rounded-md border p-3"
+      style={{
+        background: 'var(--color-bg)',
+        borderColor: 'var(--color-border)',
+      }}
+    >
+      <div
+        className="text-[9px] uppercase tracking-[0.18em] font-mono font-semibold mb-1.5"
+        style={{ color: 'var(--color-lime)' }}
+      >
+        ● {eyebrow}
+      </div>
+      <div className="text-[13px] font-semibold text-zinc-100 leading-tight mb-1">
+        {title}
+      </div>
+      <p className="text-[11px] text-zinc-400 leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Part B 5.5 — "One check = 1 of 81" reframe section.
+ *
+ * Compact section explaining why a low TurfScore matters — the
+ * prospect probably checked their rank once from their office and
+ * saw a misleading "good" result. Personalized against their own
+ * invisibility percent + city so it doesn't read as generic.
+ * ─────────────────────────────────────────────────────────────────── */
+function OneOfEightyOneSection({
+  invisiblePct,
+  city,
+  businessName,
+}: {
+  invisiblePct: number;
+  city: string;
+  businessName: string;
+}) {
+  const cityLabel =
+    city && city.trim().length > 0 ? city : 'your service area';
+  return (
+    <section
+      className="px-6 md:px-10 py-14 border-t"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <div className="max-w-3xl mx-auto">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3">
+          <span style={{ color: 'var(--color-lime)' }}>·</span>{' '}
+          Why a score of 0 doesn&rsquo;t mean what you think
+        </div>
+        <h2 className="font-display text-3xl md:text-4xl font-bold leading-[1.05] tracking-tight mb-5 text-zinc-100">
+          You checked your rank from your office. That&rsquo;s{' '}
+          <em>one search</em> out of 81.
+        </h2>
+        <p className="text-zinc-300 text-base md:text-lg leading-relaxed">
+          When you Google &ldquo;{businessName.split(' ')[0].toLowerCase()}{' '}
+          near me&rdquo; from your shop, Google centers the search around
+          you. You rank #1 — for one cell. The TurfScan ran the other
+          80 cells across {cityLabel} and found that{' '}
+          <strong className="font-semibold text-zinc-100">
+            {invisiblePct}% of them
+          </strong>{' '}
+          don&rsquo;t show {businessName} at all. Same business, same
+          listing — different cells, different outcomes.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Part B 5.4 — Testimonial section.
+ *
+ * Ports the named-operator testimonial from /free-score (the GTA
+ * painting operator who caught an 18-month GBP category mismatch).
+ * One quote, with attribution. Sits high in the page to answer the
+ * cold prospect's third-party-proof question before the fix list
+ * reveals the AI Coach output.
+ * ─────────────────────────────────────────────────────────────────── */
+function TestimonialSection() {
+  return (
+    <section
+      className="px-6 md:px-10 py-14 border-t"
+      style={{
+        borderColor: 'var(--color-border)',
+        background: 'var(--color-card)',
+      }}
+    >
+      <div className="max-w-3xl mx-auto">
+        <div
+          className="relative rounded-lg p-7 md:p-9 border"
+          style={{
+            background: 'var(--color-card-glow)',
+            borderColor: 'rgba(197, 255, 58, 0.35)',
+            boxShadow: '0 0 30px #c5ff3a14',
+          }}
+        >
+          <div
+            className="font-display text-5xl md:text-6xl font-black leading-none absolute -top-1 left-5 md:left-7 select-none"
+            style={{ color: 'var(--color-lime)' }}
+            aria-hidden="true"
+          >
+            &ldquo;
+          </div>
+          <blockquote className="text-base md:text-lg text-zinc-50 leading-relaxed pt-4 md:pt-5">
+            TurfMap caught a GBP category mismatch we&rsquo;d missed for
+            18 months. Fixed it the same day.
+          </blockquote>
+          <p className="mt-4 text-xs font-mono text-zinc-500 leading-relaxed">
+            — Painting operator, Greater Toronto Area
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function AlreadyConvertedState({ convertedAt }: { convertedAt: string }) {
   const dateStr = new Date(convertedAt).toLocaleDateString('en-US', {
