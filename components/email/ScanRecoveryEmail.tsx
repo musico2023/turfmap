@@ -91,22 +91,27 @@ function copyForStage(
           You started a TurfScan{forBusiness(biz)} but didn&apos;t
           finish checkout — so the 81-point geo-grid scan + your AI
           Coach Fix List never ran. No charge was made.
+          <br />
+          <br />
           {kw ? (
             <>
-              {' '}
               We still have your details ready to map{' '}
               <strong>{bizLabel}</strong> for{' '}
               <strong>&lsquo;{kw}&rsquo;</strong> across your whole
-              service area and turn the results into three prioritized
-              actions you can take this week.
+              service area.
+              <br />
+              <br />
+              The results turn into three prioritized actions you can
+              take this week.
             </>
           ) : (
             <>
-              {' '}
               We still have your details ready — picking up where you
-              left off takes about a minute, and you&apos;ll get the
-              full scan plus the Fix List with three prioritized
-              actions.
+              left off takes about a minute.
+              <br />
+              <br />
+              You&apos;ll get the full scan plus the Fix List with
+              three prioritized actions.
             </>
           )}
         </>
@@ -136,13 +141,16 @@ function copyForStage(
               for <strong>&lsquo;{kw}&rsquo;</strong>
             </>
           ) : null}
-          {' '}
-          — or which competitors are eating your visibility in the
-          neighborhoods that matter. The scan maps all 81 grid points
-          so you can see exactly where you show up and where you
-          don&apos;t, and the AI Coach Fix List turns those gaps into
-          three prioritized actions named to your real audit data —
-          not generic advice.
+          {' '}— or which competitors are eating your visibility in
+          the neighborhoods that matter.
+          <br />
+          <br />
+          The scan maps all 81 grid points so you can see exactly
+          where you show up and where you don&apos;t.
+          <br />
+          <br />
+          The AI Coach Fix List turns those gaps into three prioritized
+          actions named to your real audit data — not generic advice.
         </>
       ),
       cta: 'Run my TurfScan →',
@@ -163,12 +171,17 @@ function copyForStage(
     body: (
       <>
         This is the last nudge about the TurfScan you started
-        {forBusiness(biz)}. We&apos;ll hold your details for now, but
-        we clear out incomplete checkouts after a while — after that
-        you&apos;d be starting from scratch on both the 81-point map
-        and the three-action Fix List the AI Coach builds from it. If
-        something about the checkout got in the way, just hit reply
-        and tell me what happened; I read every response.
+        {forBusiness(biz)}.
+        <br />
+        <br />
+        We&apos;ll hold your details for now, but we clear out
+        incomplete checkouts after a while. After that you&apos;d be
+        starting from scratch on both the 81-point map and the
+        three-action Fix List.
+        <br />
+        <br />
+        If something about the checkout got in the way, just hit reply
+        and tell me what happened — I read every response.
       </>
     ),
     cta: 'Finish my scan →',

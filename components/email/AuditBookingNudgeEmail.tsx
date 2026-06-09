@@ -56,9 +56,11 @@ function copyForStage(stage: AuditBookingNudgeStage, businessName: string): Stag
         <>
           Your Visibility Audit for <strong>{businessName}</strong>{' '}
           is paid for, but we still need a 30-minute slot on your
-          calendar before the strategist walkthrough can run. Most
-          buyers book within an hour — pick a time that works and
-          we&apos;ll take it from there.
+          calendar before the strategist walkthrough can run.
+          <br />
+          <br />
+          Most buyers book within an hour — pick a time that works
+          and we&apos;ll take it from there.
         </>
       ),
       cta: 'Pick your time →',
@@ -78,11 +80,15 @@ function copyForStage(stage: AuditBookingNudgeStage, businessName: string): Stag
       body: (
         <>
           Quick check-in. Your Visibility Audit is paid for and the
-          analysis is queued up for <strong>{businessName}</strong>,
-          but the strategist call is the unlock for the rest of the
+          analysis is queued up for <strong>{businessName}</strong>.
+          <br />
+          <br />
+          The strategist call is the unlock for the rest of the
           deliverable — competitor teardown, NAP fix list, and the
-          tuned 90-Day Roadmap. The 30-minute slot is the only piece
-          waiting on you.
+          tuned 90-Day Roadmap.
+          <br />
+          <br />
+          The 30-minute slot is the only piece waiting on you.
         </>
       ),
       cta: 'Book the walkthrough →',
@@ -103,12 +109,16 @@ function copyForStage(stage: AuditBookingNudgeStage, businessName: string): Stag
       <>
         I noticed your Visibility Audit for{' '}
         <strong>{businessName}</strong>{' '}
-        still doesn&apos;t have a strategist call booked. This is the
-        last automated nudge —
-        if you don&apos;t pick a slot in the next day or two,
-        I&apos;ll email you directly so we can sort out the
-        deliverable, whether that means a call, an async walkthrough,
-        or a refund if the timing has shifted.
+        still doesn&apos;t have a strategist call booked.
+        <br />
+        <br />
+        This is the last automated nudge. If you don&apos;t pick a
+        slot in the next day or two, I&apos;ll email you directly
+        so we can sort out the deliverable.
+        <br />
+        <br />
+        Whether that means a call, an async walkthrough, or a refund
+        if the timing has shifted — happy to make it right.
       </>
     ),
     cta: 'Book my call →',

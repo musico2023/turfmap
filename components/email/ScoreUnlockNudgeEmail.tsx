@@ -123,6 +123,7 @@ function copyForStage(
         : 'Your TurfScore is ready.',
       body: (
         <>
+          {/* Para 1 — the scan result. One sentence, no chaining. */}
           The 81-point scan{forBusiness(biz)} just finished.
           {scoreText ? (
             <>
@@ -140,13 +141,24 @@ function copyForStage(
               ) : null}
               .
             </>
-          ) : null}{' '}
-          Your map preview is live — open it to see where you appear
-          and where you don&apos;t. You&rsquo;ll see the{' '}
-          <strong>top 3 competitors outranking you</strong>{' '}with the
-          territory each one holds, but{' '}
-          <strong>you won&rsquo;t see who they are</strong>{' '}until you
-          unlock. The full 81-cell map,{' '}
+          ) : null}
+          <br />
+          <br />
+          {/* Para 2 — what's live now. Transitional. */}
+          Your map preview is live. Open it to see where you appear,
+          and where you don&apos;t.
+          <br />
+          <br />
+          {/* Para 3 — the tease (anticipation). */}
+          You&rsquo;ll see the{' '}
+          <strong>top 3 competitors outranking you</strong> with the
+          territory each one holds — but{' '}
+          <strong>you won&rsquo;t see who they are</strong> until you
+          unlock.
+          <br />
+          <br />
+          {/* Para 4 — the offer. Bolded price last. */}
+          The full 81-cell map,{' '}
           <strong>the names of the competitors taking your calls</strong>,
           and your AI Coach Fix List all unlock together for{' '}
           <strong>{priceInline}</strong>.
@@ -227,18 +239,24 @@ function copyForStage(
             <strong>
               {scoreText}/100
               {bandText ? ` (${bandText})` : ''}
-            </strong>{' '}
-            — the unlock shows you{' '}
-            <strong>the names of the competitors currently
-            outranking you</strong>{' '}
-            (still hidden in your preview) plus the exact cells to
-            work on first.
+            </strong>
+            .
           </>
-        ) : null}{' '}
+        ) : null}
+        <br />
+        <br />
+        The unlock shows you{' '}
+        <strong>the names of the competitors currently outranking you</strong>{' '}
+        (still hidden in your preview) plus the exact cells to work
+        on first.
+        <br />
+        <br />
         Your preview link stays live for now, but I&rsquo;d hate for
         you to leave money on the table because the map stayed locked.
-        If something specific is in the way, just hit reply and tell me
-        — I read every response.
+        <br />
+        <br />
+        If something specific is in the way, just hit reply and tell
+        me — I read every response.
       </>
     ),
     cta: 'Unlock my full map →',
