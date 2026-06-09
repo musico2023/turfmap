@@ -1162,17 +1162,23 @@ function PersonalizedStatHero({
  * Previously lived in the closing-CTA section at the bottom of the
  * page. Moved here so the worst-case/best-case framing hits the
  * buyer at the moment of decision, not after they've already
- * decided to leave. Generic copy — doesn't need prospect personalization
- * because the framing is about the OFFER (free scan), not them.
+ * decided to leave.
+ *
+ * Copy rewritten 2026-06-08: the legacy "one fix pays for the scan
+ * ten times over" framing was leftover from the $99/$49 paid era —
+ * makes no sense when the scan itself is free (COLDSCAN). Reframed
+ * around lead/call volume, which is what home-services operators
+ * actually measure success in.
  * ─────────────────────────────────────────────────────────────────── */
 function RiskReversalCallout() {
   return (
     <div className="mb-4 max-w-xl">
       <p className="text-sm md:text-base text-zinc-300 leading-relaxed">
         <strong className="font-semibold text-zinc-100">Worst case:</strong>{' '}
-        the free scan confirms what you suspect.{' '}
+        the scan confirms what you already suspect.{' '}
         <strong className="font-semibold text-zinc-100">Best case:</strong>{' '}
-        one fix pays for the scan ten times over.
+        one of the three fixes moves you into the top 3 for cells
+        you&rsquo;re invisible in today — and the calls follow.
       </p>
     </div>
   );
@@ -1199,10 +1205,16 @@ function TrustStripRow({ city }: { city: string | null }) {
         title="81 Google queries"
         body={`Ran across ${cityLabel} — not estimates, not a directory check.`}
       />
+      {/* "Real deliverable" was previously "Branded TurfReport PDF"
+       *  — that's actually only shipped to audit-tier buyers + Pulse
+       *  subscribers, NOT the free TurfScan output that this lander
+       *  promises. Rewritten to describe what cold-cohort buyers
+       *  actually get: a Fix List of 3 prioritized actions written
+       *  by the AI Coach from their real audit data. */}
       <TrustStripItem
         eyebrow="Real deliverable"
-        title="Branded TurfReport PDF"
-        body="Shareable with your team, your operator, or your next agency."
+        title="3 prioritized fixes"
+        body="Written by the AI Coach from your real audit data — not generic SEO advice."
       />
       <TrustStripItem
         eyebrow="Real operators"
