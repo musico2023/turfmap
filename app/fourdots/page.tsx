@@ -12,26 +12,37 @@ import {
   Zap,
 } from 'lucide-react';
 import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
-import { ScanIntakeLinkButton } from '@/components/marketing/scan/ScanIntakeLinkButton';
+import { ScanIntakeForm } from '@/components/marketing/scan/ScanIntakeForm';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { buildHeroCells, HERO_METRICS } from '@/components/marketing/heroSeed';
-import {
-  finalPriceCents,
-  formatUsd,
-  lookupCoupon,
-  type CouponDescriptor,
-} from '@/lib/coupons/knownCoupons';
+// Coupon-math helpers (formatUsd, lookupCoupon, finalPriceCents,
+// CouponDescriptor) were removed when /fourdots switched from the
+// paid-intake funnel to the free-score funnel — the discount logic
+// is now driven entirely by lead_source='fourdots' inside
+// unlock-init (see lib/score/leadSources.ts), not by a URL coupon
+// param or per-tier price math.
+
+// Anchor scroll target for the "Get my free TurfScore" CTA buttons.
+// Matches the pattern /free-score uses for its hero → form jump. The
+// constant lives at module scope so the CTA buttons + the form
+// section can't drift out of sync.
+const FORM_ANCHOR = 'fourdots-score-form';
 import { headers } from 'next/headers';
 import { logLanderVisit } from '@/lib/analytics/landerVisits';
 
 export const metadata: Metadata = {
-  title: 'Get your $49 TurfScan — TurfMap',
+  title: 'Get your free TurfScore — TurfMap',
   description:
-    'See exactly where you rank across your service area. 81-point geo-grid scan + AI Coach fix list, delivered in under a minute. $50 off with code FOURDOTS50.',
+    "See exactly where you're invisible across your service area. Free TurfScore in 60 seconds — then unlock the full 81-cell heatmap + AI Coach Fix List for $49 only if you want to.",
   // Paid-traffic LP — not a canonical entry point. Don't compete
   // with / for brand keywords or bleed into organic results.
   robots: { index: false, follow: false },
 };
+
+// Force dynamic — same reason as /score and /free-score. The inline
+// ScanIntakeForm pulls in Mapbox's AddressAutofill, which references
+// `document` at module-eval time and crashes static prerender.
+export const dynamic = 'force-dynamic';
 
 /**
  * Single-purpose landing page for paid + warm traffic — most often
@@ -86,18 +97,28 @@ export default async function ScanLandingPage({
   }>;
 }) {
   const params = await searchParams;
-  const couponCode = pickFirst(params.coupon);
+  // coupon param is intentionally NOT consumed any more. The page
+  // routes every buyer through the free-score funnel; the FOURDOTS50
+  // discount auto-applies on the unlock side via lead_source='fourdots'
+  // (see lib/score/leadSources.ts's unlockCouponCodeForLeadSource).
+  // The URL still carries `coupon=FOURDOTS50` for backward
+  // compatibility with the marketing destination URLs on fourdots.io
+  // — we just don't act on it here.
   const utmSource = pickFirst(params.utm_source);
   const utmMedium = pickFirst(params.utm_medium);
   const utmCampaign = pickFirst(params.utm_campaign);
+  const utmContent = pickFirst(params.utm_content);
+  const utmTerm = pickFirst(params.utm_term);
   const gclid = pickFirst(params.gclid);
+  const fbclid = pickFirst(params.fbclid);
 
   // Fire-and-forget click log for the LLM Ops Dashboard funnel "Clicks" step.
-  // /fourdots is the paid-traffic lander (Google Ads + Meta + future paid
-  // channels). Unlike /yourmap (cold-email cohort), there's no prospect_id
-  // here — clicks are anonymous. The scanner-UA filter in landerVisits.ts
-  // drops obvious bots before insert. Only log when utmSource is present
-  // so internal/test traffic without UTMs doesn't pollute the count.
+  // /fourdots is the paid-traffic lander (fourdots.io exit-intent +
+  // downsell, Google Ads, Meta). Unlike /yourmap (cold-email cohort),
+  // there's no prospect_id here — clicks are anonymous. The scanner-UA
+  // filter in landerVisits.ts drops obvious bots before insert. Only
+  // log when utmSource is present so internal/test traffic without
+  // UTMs doesn't pollute the count.
   if (utmSource) {
     const reqHeaders = await headers();
     logLanderVisit({
@@ -105,17 +126,12 @@ export default async function ScanLandingPage({
       utm_source:   utmSource,
       utm_medium:   utmMedium,
       utm_campaign: utmCampaign,
-      coupon:       couponCode,
+      coupon:       null, // not relevant on the free-score path
       prospect_id:  null,
       user_agent:   reqHeaders.get('user-agent'),
       referer:      reqHeaders.get('referer'),
     });
   }
-
-  const coupon = lookupCoupon(couponCode, 'scan');
-  const listCents = 9900; // TurfScan list price; mirrors Stripe Price.
-  const showDiscount = coupon !== null;
-  const finalCents = coupon ? finalPriceCents(coupon) : listCents;
 
   // Hero heatmap + metrics — same source data as the homepage hero
   // so the lander reads as a focused excerpt of /, not a different
@@ -179,7 +195,7 @@ export default async function ScanLandingPage({
         <div className="relative max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-start">
           {/* Left: copy + offer panel */}
           <div className="lg:col-span-7">
-            <OfferEyebrow showDiscount={showDiscount} couponLabel={coupon?.label} />
+            <OfferEyebrow />
 
             {/* H1 — two-line punch. Line 1 names the discovery ("where
              *  you win — and where you don't"); line 2 closes the loop
@@ -218,24 +234,14 @@ export default async function ScanLandingPage({
                 Most local businesses are invisible to two-thirds of
                 the people searching for them.
               </strong>{' '}
-              Then you get{' '}
-              <strong className="font-semibold text-zinc-100 underline underline-offset-4 decoration-2">
-                three specific actions
-              </strong>{' '}
-              &mdash; the ones with the highest impact, in priority
-              order.
+              See your score first &mdash;{' '}
+              <strong className="font-semibold text-zinc-100">free,
+              no card</strong>. Unlock the full 81-cell heatmap +
+              AI Coach Fix List for $49 only if it&rsquo;s worth it.
             </p>
 
-            <PricePanel
-              listCents={listCents}
-              finalCents={finalCents}
-              coupon={coupon}
-              couponCode={couponCode}
-              utmSource={utmSource}
-              utmMedium={utmMedium}
-              utmCampaign={utmCampaign}
-              gclid={gclid}
-            />
+            <FreeScoreCtaPanel />
+
 
             {/* Mini trust line under the price panel — three quick
              *  reassurances in mono, lime-bullet style matching the
@@ -657,69 +663,76 @@ export default async function ScanLandingPage({
         </div>
       </section>
 
-      {/* CLOSING CTA — second buy button so buyers who scrolled to
-       *  read the FAQ don't have to scroll all the way back up.
-       *  Larger, brighter, tinted — visually the page's loudest beat.
-       *  The worst-case/best-case frame above the price reminder
-       *  mirrors the closing language on the main marketing page —
-       *  reframes the $49 as a low-risk diagnostic regardless of
-       *  what the scan turns up. */}
-      <section className="px-6 md:px-10 pb-10">
-        <div className="max-w-3xl mx-auto">
-          <div
-            className="rounded-lg p-7 md:p-9 border text-center"
-            style={{
-              background: 'var(--color-card-glow)',
-              borderColor: 'var(--color-border-bright)',
-              boxShadow: '0 0 40px #c5ff3a14',
-            }}
-          >
-            <div className="font-display text-2xl md:text-3xl font-bold mb-3">
-              Ready to see your map?
+      {/* FORM SECTION — the actual conversion event lives here. The
+       *  hero and closing-CTA buttons both anchor-scroll the buyer
+       *  down to this form. Mirrors the /free-score structure
+       *  (section 07 in that file) so we get the same A/B-tested
+       *  form-block pattern that's working on cold-Meta traffic.
+       *
+       *  leadSource='fourdots' tags the preview client so unlock-init
+       *  auto-applies FOURDOTS50 ($99 → $49) on the /share unlock
+       *  Checkout — no manual code typing, no buyer confusion.
+       *  See lib/score/leadSources.ts's unlockCouponCodeForLeadSource
+       *  for the slug-to-coupon map. */}
+      <section
+        id={FORM_ANCHOR}
+        className="px-6 md:px-10 py-12 md:py-20 border-t scroll-mt-20"
+        style={{
+          borderColor: 'var(--color-border-bright)',
+          background:
+            'linear-gradient(135deg, var(--color-card) 0%, var(--color-card-glow) 100%)',
+        }}
+      >
+        <div className="max-w-2xl mx-auto">
+          <div className="text-center md:text-left mb-7">
+            <div
+              className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold mb-3"
+              style={{ color: 'var(--color-lime)' }}
+            >
+              Your turn · free TurfScore · 60 seconds
             </div>
-            <p className="text-sm md:text-base text-zinc-300 mb-1 max-w-md mx-auto leading-relaxed">
-              <strong className="font-semibold text-zinc-100">
+            <h2 className="font-display text-3xl md:text-5xl font-black leading-tight tracking-tight mb-4 text-zinc-50">
+              Find out what your map looks like.
+            </h2>
+            <p className="text-base md:text-lg text-zinc-300 leading-relaxed max-w-xl mx-auto md:mx-0">
+              <strong className="font-semibold text-zinc-50">
                 Worst case:
               </strong>{' '}
-              {formatUsd(finalCents)} confirms what you suspect.
-            </p>
-            <p className="text-sm md:text-base text-zinc-300 mb-3 max-w-md mx-auto leading-relaxed">
-              <strong className="font-semibold text-zinc-100">
+              your free score confirms what you suspect.{' '}
+              <strong className="font-semibold text-zinc-50">
                 Best case:
               </strong>{' '}
-              one fix pays for the scan ten times over.
+              one $49 unlock + one fix pays for itself ten times over.
             </p>
-            <p className="text-xs md:text-sm text-zinc-500 mb-6 max-w-md mx-auto leading-relaxed">
-              {showDiscount && coupon ? (
-                <>
-                  {formatUsd(finalCents)} TurfScan with{' '}
-                  <span className="font-mono text-zinc-300">
-                    {coupon.code}
-                  </span>{' '}
-                  applied at checkout. One-time, no subscription.
-                </>
-              ) : (
-                <>{formatUsd(finalCents)} TurfScan. One-time, no subscription.</>
-              )}
-            </p>
-            <ScanIntakeLinkButton from="fourdots"
-              coupon={couponCode}
-              utmSource={utmSource}
-              utmMedium={utmMedium}
-              utmCampaign={utmCampaign}
-              gclid={gclid}
-              label={`Get my ${formatUsd(finalCents)} TurfScan`}
-              centered
-            />
           </div>
 
-          {/* Audit-ladder offramp — small, low-contrast, no accent
-           *  color or button styling. Mirrors the "Looking for full-
-           *  service local SEO instead..." footer line on the main
-           *  pricing page. The buyer who's curious clicks; the
-           *  buyer who's committed to $49 ignores it without
-           *  feeling pulled. */}
-          <p className="mt-6 text-xs text-zinc-600 text-center leading-relaxed">
+          <ScanIntakeForm
+            previewMode
+            leadSource="fourdots"
+            useBusinessAutocomplete
+            utmSource={utmSource}
+            utmMedium={utmMedium}
+            utmCampaign={utmCampaign}
+            utmContent={utmContent}
+            utmTerm={utmTerm}
+            gclid={gclid}
+            fbclid={fbclid}
+          />
+
+          <p className="mt-5 text-xs text-zinc-500 leading-relaxed text-center md:text-left">
+            60-second delivery
+            <span className="text-zinc-700 mx-2">·</span>
+            No credit card
+            <span className="text-zinc-700 mx-2">·</span>
+            $49 unlock optional, after you see your score
+          </p>
+
+          {/* Audit-ladder offramp — preserved from the prior closing
+           *  CTA. Low-contrast offramp for the buyer who's already
+           *  thinking past the free score toward the 90-day Roadmap.
+           *  Doesn't pull the free-score-curious buyer; lives at the
+           *  bottom of the page as a separate decision. */}
+          <p className="mt-8 text-xs text-zinc-600 text-center md:text-left leading-relaxed">
             Want a 90-day Roadmap built around your map?{' '}
             <a
               href="https://www.turfmap.ai/#section-04"
@@ -769,115 +782,80 @@ export default async function ScanLandingPage({
 }
 
 /**
- * Lime-on-dark eyebrow above the hero. Customer-facing language:
- * when a discount is active it surfaces the value of the offer
- * directly ($50 off · TurfScan), without leaking internal terms
- * like "exit-intent." Without a coupon it reads as a generic
- * audit-tier eyebrow consistent with the homepage hero.
+ * Lime-on-dark eyebrow above the hero. Switched to free-score
+ * framing — the page no longer sells $49 TurfScan up front; the buyer
+ * runs a free preview scan first, then sees the $49 unlock CTA on
+ * /share (FOURDOTS50 auto-applied via lead_source).
  */
-function OfferEyebrow({
-  showDiscount,
-  couponLabel,
-}: {
-  showDiscount: boolean;
-  couponLabel?: string;
-}) {
+function OfferEyebrow() {
   return (
     <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-5 flex items-center gap-2 flex-wrap">
       <span style={{ color: 'var(--color-lime)' }}>●</span>
-      {showDiscount ? (
-        <>
-          <span style={{ color: 'var(--color-lime)' }}>{couponLabel}</span>
-          <span className="text-zinc-600">·</span>
-          <span>TurfScan · One-time audit</span>
-        </>
-      ) : (
-        <>
-          <span style={{ color: 'var(--color-lime)' }}>TurfScan</span>
-          <span className="text-zinc-600">·</span>
-          <span>One-time audit · From $99</span>
-        </>
-      )}
+      <span style={{ color: 'var(--color-lime)' }}>Free TurfScore</span>
+      <span className="text-zinc-600">·</span>
+      <span>No card · 60 seconds · $49 unlock after</span>
     </div>
   );
 }
 
 /**
- * Price + CTA panel in the hero. Strikethrough list price + lime
- * final price when a discount is active; clean single price + CTA
- * otherwise. The CTA inherits the page's primary button styling
- * (lime bg, dark text) — visible from anywhere above-the-fold on
- * desktop.
+ * Hero offer panel for the free-score funnel. Replaces the
+ * previous PricePanel which sold $49 TurfScan up front. Now shows
+ * "FREE" prominently with a single CTA that anchor-scrolls down to
+ * the ScanIntakeForm section. The $49 unlock is framed as the
+ * after-the-fact step, not a barrier to entry.
+ *
+ * Layout mirrors the prior PricePanel's footprint so the hero
+ * visual rhythm doesn't shift — same padding, same border-bright
+ * accent, same horizontal layout on sm+. The buyer who saw the
+ * old $49 lime price now sees a FREE lime headline with the same
+ * weight in the visual hierarchy.
+ *
+ * Server component — uses a plain `<a href="#anchor">` for the
+ * scroll. Smooth-scroll behavior is handled by Tailwind's
+ * `scroll-smooth` on the html root + the `scroll-mt-20` on the
+ * form section. No client JS required.
  */
-function PricePanel({
-  listCents,
-  finalCents,
-  coupon,
-  couponCode,
-  utmSource,
-  utmMedium,
-  utmCampaign,
-  gclid,
-}: {
-  listCents: number;
-  finalCents: number;
-  coupon: CouponDescriptor | null;
-  couponCode: string | null;
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
-  gclid: string | null;
-}) {
-  const showDiscount = coupon !== null;
+function FreeScoreCtaPanel() {
   return (
     <div
       className="rounded-lg p-5 md:p-6 border max-w-xl"
       style={{
-        background: showDiscount
-          ? 'var(--color-card-glow)'
-          : 'var(--color-card)',
-        borderColor: showDiscount
-          ? 'var(--color-border-bright)'
-          : 'var(--color-border)',
-        boxShadow: showDiscount ? '0 0 30px #c5ff3a14' : undefined,
+        background: 'var(--color-card-glow)',
+        borderColor: 'var(--color-border-bright)',
+        boxShadow: '0 0 30px #c5ff3a14',
       }}
     >
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-2">
-            TurfScan
+            TurfScore
           </div>
           <div className="flex items-baseline gap-3 flex-wrap">
-            {showDiscount && (
-              <span className="font-display text-2xl md:text-3xl text-zinc-600 line-through font-semibold">
-                {formatUsd(listCents)}
-              </span>
-            )}
             <span
               className="font-display text-4xl md:text-5xl font-bold"
-              style={{
-                color: showDiscount ? 'var(--color-lime)' : '#ffffff',
-              }}
+              style={{ color: 'var(--color-lime)' }}
             >
-              {formatUsd(finalCents)}
+              FREE
             </span>
-            <span className="text-xs text-zinc-500 font-mono">one-time</span>
+            <span className="text-xs text-zinc-500 font-mono">no card</span>
           </div>
-          {showDiscount && coupon && (
-            <p className="text-xs text-zinc-400 mt-2">
-              <span className="font-mono text-zinc-200">{coupon.code}</span>{' '}
-              applied at checkout — no manual code needed.
-            </p>
-          )}
+          <p className="text-xs text-zinc-400 mt-2 max-w-xs">
+            Full unlock — 81-cell heatmap + AI Coach Fix List —{' '}
+            <span className="text-zinc-200">$49</span> after, only if
+            you want it.
+          </p>
         </div>
-        <ScanIntakeLinkButton from="fourdots"
-          coupon={couponCode}
-          utmSource={utmSource}
-          utmMedium={utmMedium}
-          utmCampaign={utmCampaign}
-          gclid={gclid}
-          label={`Get my ${formatUsd(finalCents)} TurfScan`}
-        />
+        <a
+          href={`#${FORM_ANCHOR}`}
+          className="inline-flex items-center justify-center gap-2 rounded-md font-display font-bold px-5 py-3 text-sm md:text-base transition-transform hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
+          style={{
+            background: 'var(--color-lime)',
+            color: '#000',
+          }}
+        >
+          Get my free TurfScore <span aria-hidden>→</span>
+        </a>
       </div>
     </div>
   );

@@ -29,7 +29,10 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { isDiscountedLeadSource } from '@/lib/score/leadSources';
+import {
+  isDiscountedLeadSource,
+  unlockCouponCodeForLeadSource,
+} from '@/lib/score/leadSources';
 import type { ClientRow, ScanShareLinkRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
@@ -168,28 +171,37 @@ export async function POST(req: Request) {
   // See lib/score/leadSources.ts for the canonical set.
   const applyDiscount = isDiscountedLeadSource(unlockLeadSource);
 
-  // Resolve Stripe's promotion_code id for MAPCHECK50 when the cohort
-  // qualifies. Soft-fails — if Stripe doesn't return a code, the
-  // buyer still gets to Checkout at list ($99) rather than being
-  // blocked. We surface the failure in the server logs.
+  // Resolve which Stripe promotion code to apply per lead_source —
+  // MAPCHECK50 for cold-Meta cohorts (free_score / prove_it),
+  // FOURDOTS50 for the fourdots.io exit-intent + downsell cohort.
+  // Discount math is identical ($99 → $49) but the codes are kept
+  // distinct in Stripe so channel attribution stays clean in the
+  // unit-economics rollup.
+  //
+  // Soft-fails — if Stripe doesn't return the code, the buyer still
+  // gets to Checkout at list ($99) rather than being blocked. We
+  // surface the failure in server logs.
+  const couponCode = unlockCouponCodeForLeadSource(unlockLeadSource);
   let discounts: Array<{ promotion_code: string }> | undefined;
-  if (applyDiscount) {
+  let appliedCouponCode: string | null = null;
+  if (applyDiscount && couponCode) {
     try {
       const promos = await stripe.promotionCodes.list({
-        code: 'MAPCHECK50',
+        code: couponCode,
         active: true,
         limit: 1,
       });
       if (promos.data[0]?.id) {
         discounts = [{ promotion_code: promos.data[0].id }];
+        appliedCouponCode = couponCode;
       } else {
         console.warn(
-          '[score/unlock-init] MAPCHECK50 promotion code not found in Stripe — falling back to list price.'
+          `[score/unlock-init] ${couponCode} promotion code not found in Stripe — falling back to list price.`
         );
       }
     } catch (e) {
       console.warn(
-        '[score/unlock-init] MAPCHECK50 lookup failed:',
+        `[score/unlock-init] ${couponCode} lookup failed:`,
         e instanceof Error ? e.message : String(e)
       );
     }
@@ -252,7 +264,7 @@ export async function POST(req: Request) {
         // timestamp. Hardcoded to the current shipped variant since
         // we're not running A/B; bump the slug when /share changes.
         share_variant: 'v2_competitor_names_locked',
-        ...(discounts ? { applied_coupon: 'MAPCHECK50' } : {}),
+        ...(appliedCouponCode ? { applied_coupon: appliedCouponCode } : {}),
       },
     });
     if (!session.url) {
