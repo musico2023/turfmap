@@ -93,7 +93,7 @@ function copyForStage(
           You can&rsquo;t see any of it without a fresh scan.
           <br />
           <br />
-          That&rsquo;s what <strong>Pulse</strong> does — it
+          That&rsquo;s what <strong>Pulse</strong>{' '}does — it
           re-scans you <strong>every Monday</strong>, alerts you
           when your TurfScore moves more than ±5, and refreshes
           your AI Coach Fix List each week.
@@ -103,7 +103,7 @@ function copyForStage(
           opening a one-time offer:{' '}
           <strong>60 days free instead of 30</strong> — double the
           standard trial. Activate within{' '}
-          <strong>{safeHours} hours</strong> and Pulse runs free
+          <strong>{safeHours} hours</strong>{' '}and Pulse runs free
           through the end of next month before any charge.
         </>
       ),
@@ -123,7 +123,7 @@ function copyForStage(
     headline: `Last reminder.`,
     body: (
       <>
-        The <strong>60-day Pulse trial</strong> offer I extended for{' '}
+        The <strong>60-day Pulse trial</strong>{' '}offer I extended for{' '}
         {bizLabel} expires in <strong>{safeHours} hours</strong>.
         After that, the standard 30-day trial is still available —
         but the extra month is gone.
@@ -134,9 +134,9 @@ function copyForStage(
         — <strong>Weekly scans</strong> (4 scans/month vs $99
         each one-off)
         <br />
-        — <strong>Drop alerts</strong> when your TurfScore moves ±5+
+        — <strong>Drop alerts</strong>{' '}when your TurfScore moves ±5+
         <br />
-        — <strong>Refreshed AI Coach Fix List</strong> every week
+        — <strong>Refreshed AI Coach Fix List</strong>{' '}every week
         <br />
         — All of it free for the first 60 days
         <br />

@@ -119,7 +119,7 @@ function copyForStage(
           re-scan, and a 60-day check-in.
           <br />
           <br />
-          The <strong>$302 discount</strong> is locked to the next{' '}
+          The <strong>$302 discount</strong>{' '}is locked to the next{' '}
           <strong>{safeHours} hours</strong>. After that, it&rsquo;s{' '}
           $499 from scratch — no recovery, no second chance.
           <br />
@@ -146,13 +146,13 @@ function copyForStage(
       headline: `${safeHours} hours left.`,
       body: (
         <>
-          Your <strong>$302 discount</strong> on the Visibility Audit
+          Your <strong>$302 discount</strong>{' '}on the Visibility Audit
           upgrade expires in <strong>{safeHours} hours</strong>.
           {scoreText ? (
             <>
               {' '}
               You&rsquo;re sitting at{' '}
-              <strong>{scoreText}/100</strong> right now. The audit
+              <strong>{scoreText}/100</strong>{' '}right now. The audit
               upgrade ships a 90-day roadmap built specifically to lift
               that number.
             </>
@@ -165,7 +165,7 @@ function copyForStage(
           )}
           <br />
           <br />
-          And the <strong>TurfScore Lift Promise</strong> is the safety
+          And the <strong>TurfScore Lift Promise</strong>{' '}is the safety
           net: implement the plan in 14 days,{' '}
           <strong>
             +10 TurfScore points in 90 days or we refund the full cost
@@ -174,7 +174,7 @@ function copyForStage(
           <br />
           <br />
           After the window closes, the upgrade lists at{' '}
-          <strong>$499</strong> with no second chance at the {' '}
+          <strong>$499</strong>{' '}with no second chance at the {' '}
           $302 off.
         </>
       ),
@@ -196,7 +196,7 @@ function copyForStage(
     headline: `Final ${safeHours} hours.`,
     body: (
       <>
-        Your <strong>$302 discount</strong> on the Visibility Audit
+        Your <strong>$302 discount</strong>{' '}on the Visibility Audit
         upgrade expires in <strong>{safeHours} hours</strong>
         {cutoffTimeLabel ? (
           <>
@@ -211,7 +211,7 @@ function copyForStage(
         recovery code. The audit is the same either way — the{' '}
         30-min strategist call, the per-vertical NAP audit, the 90-day
         roadmap, the re-scan, the check-in, the{' '}
-        <strong>+10 TurfScore points or full refund</strong> promise.
+        <strong>+10 TurfScore points or full refund</strong>{' '}promise.
         Only the price changes.
         <br />
         <br />

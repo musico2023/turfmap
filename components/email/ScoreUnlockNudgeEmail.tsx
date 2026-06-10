@@ -151,9 +151,9 @@ function copyForStage(
           <br />
           {/* Para 3 — the tease (anticipation). */}
           You&rsquo;ll see the{' '}
-          <strong>top 3 competitors outranking you</strong> with the
+          <strong>top 3 competitors outranking you</strong>{' '}with the
           territory each one holds — but{' '}
-          <strong>you won&rsquo;t see who they are</strong> until you
+          <strong>you won&rsquo;t see who they are</strong>{' '}until you
           unlock.
           <br />
           <br />
@@ -208,7 +208,7 @@ function copyForStage(
       footnote: discounted ? (
         <>
           One-time charge, no subscription. Code{' '}
-          <strong>MAPCHECK50</strong> auto-applied at checkout. Full
+          <strong>MAPCHECK50</strong>{' '}auto-applied at checkout. Full
           refund within 7 days if the unlocked report doesn&rsquo;t
           show you something you didn&rsquo;t already know.
         </>
@@ -262,7 +262,7 @@ function copyForStage(
     cta: 'Unlock my full map →',
     footnote: discounted ? (
       <>
-        — Anthony, TurfMap. Your <strong>MAPCHECK50</strong> code is
+        — Anthony, TurfMap. Your <strong>MAPCHECK50</strong>{' '}code is
         still good — unlock pulls down to $49 at checkout. Reply
         anytime, a real person sees it.
       </>

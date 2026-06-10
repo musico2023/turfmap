@@ -96,8 +96,8 @@ function copyForStage(
           {kw ? (
             <>
               We still have your details ready to map{' '}
-              <strong>{bizLabel}</strong> for{' '}
-              <strong>&lsquo;{kw}&rsquo;</strong> across your whole
+              <strong>{bizLabel}</strong>{' '}for{' '}
+              <strong>&lsquo;{kw}&rsquo;</strong>{' '}across your whole
               service area.
               <br />
               <br />
@@ -134,7 +134,7 @@ function copyForStage(
       body: (
         <>
           Every day without a TurfScan is a day you don&apos;t know
-          where <strong>{bizLabel}</strong> actually ranks
+          where <strong>{bizLabel}</strong>{' '}actually ranks
           {kw ? (
             <>
               {' '}

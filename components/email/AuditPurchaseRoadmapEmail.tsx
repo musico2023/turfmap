@@ -74,7 +74,7 @@ export function AuditPurchaseRoadmapEmail({
     >
       <H1>New {tierLabel} buyer Roadmap.</H1>
       <P>
-        <strong>{businessName}</strong> just completed a {tierLabel}{' '}
+        <strong>{businessName}</strong>{' '}just completed a {tierLabel}{' '}
         purchase. Their 90-Day Roadmap PDF is attached — review
         before the strategist call (or before manual outreach if
         they haven&apos;t booked Cal.com yet).
