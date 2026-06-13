@@ -1,0 +1,1131 @@
+'use client';
+
+/**
+ * QuizFlow — quizflow-format lead-capture funnel for /free-score-now.
+ *
+ * Ported structural pattern from the Logik Group Insulation Rebate
+ * funnel (see /Users/anthonyalfonsi/Claude/quizflow/). Skinned in
+ * TurfMap colors (lime / dark) and Bricolage Grotesque display type.
+ *
+ * Conversion principles preserved verbatim:
+ *   - Mobile-first device-frame container (max-width 440px, full
+ *     screen on mobile, phone-shaped card with shadow on desktop)
+ *   - Persistent top progress bar + circular back button
+ *   - One question per step (low cognitive load, momentum builds)
+ *   - HARD-QUALIFY first (Q1 routes non-operators to a graceful
+ *     dead-end before the user invests effort)
+ *   - Single-select cards with icon + tick affordance
+ *   - Contact step LAST — the conversion event
+ *   - Slide animation between steps (slideIn / slideOut, ~420ms)
+ *
+ * Submit path:
+ *   /api/score/preview-init  (lead_source='free_score' →
+ *     unlock-init auto-applies MAPCHECK50 on /share, same as the
+ *     existing long-scroll /free-score lander)
+ *   → on success, fires trackMetaEvent('Lead', …) for the pixel
+ *     and redirects the buyer to /share/<shareId> where the scan
+ *     reveals plus the $49 unlock CTA live.
+ *
+ * Disqualify branch:
+ *   Q1 "no, not me" routes to a soft dead-end card with a link
+ *   back to the homepage. Mirrors the Logik renter dead-end.
+ */
+
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Briefcase,
+  Check,
+  Compass,
+  Crosshair,
+  Crown,
+  Droplets,
+  Flame,
+  Hammer,
+  Home,
+  Mail,
+  PaintBucket,
+  Sparkles,
+  Trees,
+  Wrench,
+  Zap,
+} from 'lucide-react';
+import { TurnstileWidget } from '@/components/security/TurnstileWidget';
+import {
+  GoogleBusinessAutocomplete,
+  type ResolvedPlace,
+} from '@/components/marketing/scan/GoogleBusinessAutocomplete';
+import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
+
+// ────────────────────────────────────────────────────────────────────
+// STEP MACHINE
+// ────────────────────────────────────────────────────────────────────
+
+type StepName =
+  | 'cover'
+  | 'owner'      // Q1 hard-qualify
+  | 'trade'     // Q2
+  | 'visibility' // Q3 self-assessed rank
+  | 'service_area' // Q4 (informational, drives the personalization on /share)
+  | 'keyword'   // Q5
+  | 'gbp'       // Q6 — GBP picker (also captures business_name + address)
+  | 'contact'   // email + Turnstile
+  | 'loading'   // POSTing preview-init + redirecting to /share
+  | 'disqualify'; // dead-end for non-operators
+
+// Steps that count toward the visible progress bar. Cover doesn't
+// count (no commitment yet); loading/disqualify aren't part of the
+// quiz ladder either.
+const PROGRESS_STEPS: StepName[] = [
+  'owner',
+  'trade',
+  'visibility',
+  'service_area',
+  'keyword',
+  'gbp',
+  'contact',
+];
+
+// ────────────────────────────────────────────────────────────────────
+// TRADE OPTIONS (Q2)
+// ────────────────────────────────────────────────────────────────────
+
+type TradeOption = {
+  slug: string;
+  label: string;
+  Icon: typeof Wrench;
+};
+
+const TRADES: TradeOption[] = [
+  { slug: 'hvac', label: 'HVAC', Icon: Flame },
+  { slug: 'plumbing', label: 'Plumbing', Icon: Droplets },
+  { slug: 'roofing', label: 'Roofing', Icon: Home },
+  { slug: 'electrical', label: 'Electrical', Icon: Zap },
+  { slug: 'landscaping', label: 'Landscaping', Icon: Trees },
+  { slug: 'painting', label: 'Painting', Icon: PaintBucket },
+  { slug: 'general', label: 'General contractor', Icon: Hammer },
+  { slug: 'other', label: 'Something else', Icon: Briefcase },
+];
+
+// ────────────────────────────────────────────────────────────────────
+// VISIBILITY SELF-ASSESSMENT OPTIONS (Q3)
+// Builds anticipation for the score reveal. Doesn't drive logic;
+// captured into stripe_metadata for cohort analysis later.
+// ────────────────────────────────────────────────────────────────────
+
+const VISIBILITY_OPTIONS = [
+  { slug: 'top', label: 'I rank #1 in my area', icon: '🏆' },
+  { slug: 'mixed', label: 'I show up sometimes', icon: '🤞' },
+  { slug: 'unknown', label: "I have no idea", icon: '🤷' },
+  { slug: 'invisible', label: "I'm probably invisible", icon: '👻' },
+];
+
+const OWNER_OPTIONS = [
+  { slug: 'owner', label: 'Yes, I own / run the business', sub: "I'm the operator" },
+  { slug: 'manager', label: 'I run marketing for it', sub: "Owner-adjacent, makes calls on this" },
+  { slug: 'agency', label: "I'm a freelancer or agency", sub: 'Doing this for a client' },
+  { slug: 'no', label: 'No, not me', sub: 'Just curious / researching' },
+];
+
+// ────────────────────────────────────────────────────────────────────
+// FORM STATE TYPES
+// ────────────────────────────────────────────────────────────────────
+
+// (ResolvedPlace type imported above from the shared component —
+// uses nullable lat/lng since some Google Place rows don't ship
+// coordinates. We guard against that at submit time.)
+
+// ────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ────────────────────────────────────────────────────────────────────
+
+export function QuizFlow({
+  searchParamsPromise,
+}: {
+  searchParamsPromise: Promise<{
+    [key: string]: string | string[] | undefined;
+  }>;
+}) {
+  // ─── Step machine ────────────────────────────────────────────────
+  const [step, setStep] = useState<StepName>('cover');
+  const [history, setHistory] = useState<StepName[]>(['cover']);
+
+  // ─── Form state ──────────────────────────────────────────────────
+  const [owner, setOwner] = useState<string | null>(null);
+  const [trade, setTrade] = useState<string | null>(null);
+  const [visibility, setVisibility] = useState<string | null>(null);
+  const [serviceCity, setServiceCity] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [place, setPlace] = useState<ResolvedPlace | null>(null);
+  const [email, setEmail] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+
+  // ─── Attribution (UTMs + Meta cookies) ──────────────────────────
+  const [utm, setUtm] = useState({
+    source: '',
+    medium: '',
+    campaign: '',
+    content: '',
+    term: '',
+    gclid: '',
+    fbclid: '',
+  });
+
+  useEffect(() => {
+    // Hydrate UTMs from the searchParams promise. Safe to await
+    // inside a useEffect — render isn't blocked.
+    searchParamsPromise.then((sp) => {
+      const pick = (k: string): string => {
+        const v = sp[k];
+        if (typeof v === 'string') return v;
+        if (Array.isArray(v)) return v[0] ?? '';
+        return '';
+      };
+      setUtm({
+        source: pick('utm_source'),
+        medium: pick('utm_medium'),
+        campaign: pick('utm_campaign'),
+        content: pick('utm_content'),
+        term: pick('utm_term'),
+        gclid: pick('gclid'),
+        fbclid: pick('fbclid'),
+      });
+    });
+  }, [searchParamsPromise]);
+
+  // ─── Submit state ────────────────────────────────────────────────
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+  const LOADING_MESSAGES = useMemo(
+    () => [
+      'Centering the grid on your service area…',
+      'Running 81 Google searches in parallel…',
+      'Mapping where you appear and where you don’t…',
+      'Naming the competitors taking the cells…',
+      'Almost there — your TurfScore is forming…',
+    ],
+    []
+  );
+
+  // Rotate the loading messages every ~2s while the scan runs.
+  useEffect(() => {
+    if (step !== 'loading') return;
+    const id = window.setInterval(() => {
+      setLoadingMsgIdx((i) => Math.min(LOADING_MESSAGES.length - 1, i + 1));
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [step, LOADING_MESSAGES.length]);
+
+  // ─── Navigation helpers ──────────────────────────────────────────
+  function goTo(next: StepName) {
+    setHistory((prev) => [...prev, next]);
+    setStep(next);
+  }
+  function goBack() {
+    if (history.length <= 1) return;
+    const next = history.slice(0, -1);
+    setHistory(next);
+    setStep(next[next.length - 1]);
+    setSubmitError(null);
+  }
+
+  // ─── Progress percentage ─────────────────────────────────────────
+  const progressPct = useMemo(() => {
+    const idx = PROGRESS_STEPS.indexOf(step);
+    if (idx < 0) return step === 'cover' ? 0 : 100;
+    return Math.round(((idx + 1) / PROGRESS_STEPS.length) * 100);
+  }, [step]);
+
+  // ─── Submit handler ──────────────────────────────────────────────
+  async function submitPreview() {
+    if (!place || !keyword.trim() || !email.trim()) {
+      setSubmitError('Missing required fields. Hit back and double-check.');
+      return;
+    }
+    if (place.latitude === null || place.longitude === null) {
+      // Google Place didn't ship coordinates. Rare but possible —
+      // happens on some chain locations and brand-new GBP listings.
+      // Block submission since the scan can't seed an 81-point grid
+      // without a center. Buyer can hit back + pick a different
+      // location.
+      setSubmitError(
+        "Google didn't return coordinates for that listing. Pick a different location."
+      );
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    goTo('loading');
+
+    // Client-side dedup id for Meta CAPI. Server-side preview-init
+    // forwards this to the Conversions API so the pixel Lead + CAPI
+    // Lead dedupe correctly.
+    const eventId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `evt_${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+
+    // Read fbp / fbc cookies for CAPI user_data matching. Best-
+    // effort — if cookies aren't present (no Meta pixel load yet,
+    // or buyer hard-blocks them) the server still accepts the
+    // event, just with weaker attribution.
+    function readCookie(name: string): string {
+      if (typeof document === 'undefined') return '';
+      const m = document.cookie.match(new RegExp(`(^|; )${name}=([^;]+)`));
+      return m ? decodeURIComponent(m[2]) : '';
+    }
+    const fbp = readCookie('_fbp');
+    const fbc = readCookie('_fbc');
+
+    try {
+      const body = {
+        businessName: place.businessName,
+        keyword: keyword.trim(),
+        email: email.trim(),
+        phone: place.phone || '',
+        address: place.formattedAddress,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        components: {
+          street_address: place.addressComponents?.streetAddress ?? null,
+          city: place.addressComponents?.city ?? null,
+          region: place.addressComponents?.region ?? null,
+          postcode: place.addressComponents?.postcode ?? null,
+          country_code: place.addressComponents?.countryCode ?? null,
+        },
+        // Pin lead_source so unlock-init auto-applies MAPCHECK50 on
+        // the /share unlock CTA. Same path as the existing
+        // long-scroll /free-score lander (see
+        // lib/score/leadSources.ts's DISCOUNTED_LEAD_SOURCES).
+        lead_source: 'free_score',
+        utm_source: utm.source || 'paid_traffic',
+        utm_medium: utm.medium || 'lp_quizflow',
+        utm_campaign: utm.campaign || undefined,
+        utm_content: utm.content || undefined,
+        utm_term: utm.term || undefined,
+        gclid: utm.gclid || undefined,
+        fbclid: utm.fbclid || undefined,
+        turnstile_token: turnstileToken || undefined,
+        meta_event_id: eventId,
+        fbp_cookie: fbp || undefined,
+        fbc_cookie: fbc || undefined,
+        event_source_url:
+          typeof window !== 'undefined' ? window.location.href : undefined,
+        google_place_id: place.placeId,
+        google_primary_type: place.primaryType ?? undefined,
+      };
+
+      const res = await fetch('/api/score/preview-init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json()) as {
+        share_url?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.share_url) {
+        setSubmitting(false);
+        setSubmitError(data.error || 'Something went sideways. Try again.');
+        goTo('contact');
+        return;
+      }
+
+      // Pixel Lead event — same eventID as the server-side CAPI
+      // call so Meta dedupes them. trackMetaEvent is a no-op if
+      // fbq hasn't loaded; the server-side event still fires.
+      trackMetaEvent(
+        'Lead',
+        {
+          content_name: 'TurfScan preview',
+          content_category: trade ?? undefined,
+        },
+        { eventID: eventId }
+      );
+
+      // Hard navigate so the /share page mounts fresh (it's a
+      // server component reading the scan results from the URL).
+      window.location.assign(data.share_url);
+    } catch (e) {
+      setSubmitting(false);
+      setSubmitError(
+        e instanceof Error ? e.message : 'Network hiccup. Try again.'
+      );
+      goTo('contact');
+    }
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────
+  return (
+    <div className="min-h-dvh w-full bg-black text-white flex items-center justify-center">
+      {/* DEVICE FRAME: full-bleed on mobile, phone-shaped card on
+       *  desktop (matches the Logik quizflow's 440×880 device
+       *  treatment). Single column, internal scroll per step. */}
+      <div
+        className="
+          relative w-full max-w-[440px] h-dvh max-h-[920px]
+          flex flex-col overflow-hidden
+          bg-[#0a0a0a]
+          md:rounded-[34px] md:h-[880px]
+          md:border md:border-zinc-800
+          md:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8),0_0_60px_-10px_rgba(197,255,58,0.12)]
+        "
+      >
+        <Topbar
+          progressPct={progressPct}
+          canGoBack={history.length > 1 && step !== 'loading'}
+          onBack={goBack}
+        />
+
+        <div className="relative flex-1 overflow-hidden">
+          {step === 'cover' && (
+            <CoverStep onStart={() => goTo('owner')} />
+          )}
+          {step === 'owner' && (
+            <SingleSelectStep
+              eyebrow="QUESTION 1 OF 6"
+              title="Are you the one calling the shots on Google rankings?"
+              subtitle="So we frame the score the right way for you."
+              options={OWNER_OPTIONS}
+              selected={owner}
+              onSelect={(slug) => {
+                setOwner(slug);
+                window.setTimeout(() => {
+                  if (slug === 'no') {
+                    goTo('disqualify');
+                  } else {
+                    goTo('trade');
+                  }
+                }, 220);
+              }}
+            />
+          )}
+          {step === 'trade' && (
+            <SingleSelectStep
+              eyebrow="QUESTION 2 OF 6"
+              title="What do you do?"
+              subtitle="So the score copy and Fix List match your category."
+              options={TRADES.map((t) => ({
+                slug: t.slug,
+                label: t.label,
+                Icon: t.Icon,
+              }))}
+              selected={trade}
+              onSelect={(slug) => {
+                setTrade(slug);
+                window.setTimeout(() => goTo('visibility'), 220);
+              }}
+            />
+          )}
+          {step === 'visibility' && (
+            <SingleSelectStep
+              eyebrow="QUESTION 3 OF 6"
+              title="How would you describe your current Google visibility?"
+              subtitle="No wrong answer — this just calibrates the reveal."
+              options={VISIBILITY_OPTIONS.map((o) => ({
+                slug: o.slug,
+                label: o.label,
+                icon: o.icon,
+              }))}
+              selected={visibility}
+              onSelect={(slug) => {
+                setVisibility(slug);
+                window.setTimeout(() => goTo('service_area'), 220);
+              }}
+            />
+          )}
+          {step === 'service_area' && (
+            <TextInputStep
+              eyebrow="QUESTION 4 OF 6"
+              title="Which city do you serve?"
+              subtitle="So we can label your map and the heatmap."
+              placeholder="e.g. Calgary"
+              value={serviceCity}
+              onChange={setServiceCity}
+              onContinue={() => goTo('keyword')}
+              continueDisabled={serviceCity.trim().length < 2}
+              continueLabel="Continue →"
+              autoComplete="address-level2"
+            />
+          )}
+          {step === 'keyword' && (
+            <TextInputStep
+              eyebrow="QUESTION 5 OF 6"
+              title="What does someone search to find you?"
+              subtitle="The keyword your highest-value customers actually type. Not your business name."
+              placeholder={`e.g. ${exampleKeyword(trade, serviceCity)}`}
+              value={keyword}
+              onChange={setKeyword}
+              onContinue={() => goTo('gbp')}
+              continueDisabled={keyword.trim().length < 2}
+              continueLabel="Continue →"
+            />
+          )}
+          {step === 'gbp' && (
+            <GbpStep
+              place={place}
+              onResolved={(p) => {
+                setPlace(p);
+                // Auto-advance after a brief beat so the buyer sees
+                // their pick land before the step transitions.
+                window.setTimeout(() => goTo('contact'), 450);
+              }}
+              onClear={() => setPlace(null)}
+            />
+          )}
+          {step === 'contact' && (
+            <ContactStep
+              email={email}
+              onEmailChange={setEmail}
+              onTurnstileToken={setTurnstileToken}
+              onSubmit={submitPreview}
+              submitting={submitting}
+              submitError={submitError}
+              place={place}
+            />
+          )}
+          {step === 'loading' && (
+            <LoadingStep
+              message={LOADING_MESSAGES[loadingMsgIdx]}
+              messageCount={LOADING_MESSAGES.length}
+              currentIdx={loadingMsgIdx}
+            />
+          )}
+          {step === 'disqualify' && <DisqualifyStep />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// TOP BAR — progress + back button + wordmark
+// ────────────────────────────────────────────────────────────────────
+
+function Topbar({
+  progressPct,
+  canGoBack,
+  onBack,
+}: {
+  progressPct: number;
+  canGoBack: boolean;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex-none flex items-center gap-3 px-4 pt-4 pb-2">
+      <button
+        type="button"
+        onClick={onBack}
+        disabled={!canGoBack}
+        aria-label="Back"
+        className={`
+          w-9 h-9 rounded-full border flex items-center justify-center
+          transition-opacity
+          ${canGoBack ? 'opacity-100 border-zinc-700 bg-[#0d0d0d] hover:bg-zinc-900' : 'opacity-0 pointer-events-none border-zinc-800'}
+        `}
+      >
+        <ArrowLeft size={16} className="text-zinc-300" />
+      </button>
+      <div className="flex-1 h-[7px] rounded-full bg-zinc-900 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-[width] duration-500 ease-out"
+          style={{
+            width: `${progressPct}%`,
+            background:
+              'linear-gradient(90deg, #a9e029 0%, #c5ff3a 100%)',
+            boxShadow: '0 0 12px rgba(197, 255, 58, 0.4)',
+          }}
+        />
+      </div>
+      <div className="flex-none flex items-center gap-2">
+        <span
+          className="w-6 h-6 rounded-md flex items-center justify-center"
+          style={{ background: 'var(--color-lime, #c5ff3a)' }}
+        >
+          <Crosshair size={14} strokeWidth={2.25} className="text-black" />
+        </span>
+        <span className="font-display text-sm font-bold tracking-tight text-zinc-200">
+          TurfMap
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// COVER (Step 0) — hero + trust marks + start CTA
+// ────────────────────────────────────────────────────────────────────
+
+function CoverStep({ onStart }: { onStart: () => void }) {
+  return (
+    <StepShell>
+      <div className="flex-1 flex flex-col items-center justify-center text-center pt-2">
+        {/* Score badge — TurfMap equivalent of the Logik $1,250
+         *  rebate plate. Lime gradient ring around a "0–100" hint
+         *  + glow. Sets up the reveal at the end. */}
+        <div className="flex flex-col items-center gap-1.5 mb-7">
+          <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-500 font-semibold">
+            Your TurfScore
+          </div>
+          <div
+            className="font-display text-[64px] font-black leading-none tracking-[-0.04em]"
+            style={{
+              color: 'var(--color-lime, #c5ff3a)',
+              textShadow: '0 4px 30px rgba(197, 255, 58, 0.35)',
+            }}
+          >
+            0–100
+          </div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-300 font-semibold">
+            Free · 60 seconds · No card
+          </div>
+        </div>
+
+        <h1 className="font-display text-[28px] md:text-[30px] font-bold leading-[1.08] tracking-[-0.02em] mb-3 max-w-[14ch]">
+          Find out how <em className="not-italic" style={{ color: 'var(--color-lime, #c5ff3a)' }}>invisible</em> you are on Google Maps.
+        </h1>
+        <p className="text-zinc-400 text-[15px] leading-[1.55] mb-7 max-w-[32ch]">
+          We scan 81 cells around your service area and show you, cell by cell,
+          where you appear and where you don&rsquo;t.
+        </p>
+
+        <div className="flex flex-col gap-2 w-full max-w-[300px] mb-6">
+          <TrustBadge
+            icon={<Sparkles size={16} className="text-black" />}
+            text="Real Google data — not estimates"
+          />
+          <TrustBadge
+            icon={<Crown size={16} className="text-black" />}
+            text="Built by Fourdots Digital"
+          />
+          <TrustBadge
+            icon={<Compass size={16} className="text-black" />}
+            text="60-second delivery, no card"
+          />
+        </div>
+      </div>
+
+      <FooterBar>
+        <CtaButton onClick={onStart}>
+          Check my visibility (60 sec)
+          <ArrowRight size={16} className="ml-1.5 -mr-0.5" />
+        </CtaButton>
+        <p className="text-center text-[11.5px] text-zinc-500 mt-2.5">
+          We&rsquo;ll never share your email.
+        </p>
+      </FooterBar>
+    </StepShell>
+  );
+}
+
+function TrustBadge({
+  icon,
+  text,
+}: {
+  icon: React.ReactNode;
+  text: string;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2.5 bg-[#0d0d0d] border border-zinc-800 rounded-xl px-4 py-2.5">
+      <span
+        className="w-[22px] h-[22px] rounded-md flex items-center justify-center flex-none"
+        style={{ background: 'var(--color-lime, #c5ff3a)' }}
+      >
+        {icon}
+      </span>
+      <span className="text-[13.5px] font-semibold text-zinc-200 leading-tight">
+        {text}
+      </span>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SINGLE-SELECT STEP (Q1, Q2, Q3) — option cards with icon + tick
+// ────────────────────────────────────────────────────────────────────
+
+type SingleSelectOption = {
+  slug: string;
+  label: string;
+  sub?: string;
+  Icon?: typeof Wrench;
+  icon?: string; // emoji fallback
+};
+
+function SingleSelectStep({
+  eyebrow,
+  title,
+  subtitle,
+  options,
+  selected,
+  onSelect,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  options: SingleSelectOption[];
+  selected: string | null;
+  onSelect: (slug: string) => void;
+}) {
+  return (
+    <StepShell>
+      <StepHeader eyebrow={eyebrow} title={title} subtitle={subtitle} />
+      <div className="flex flex-col gap-2.5 mt-2">
+        {options.map((opt) => {
+          const isSel = selected === opt.slug;
+          return (
+            <button
+              key={opt.slug}
+              type="button"
+              onClick={() => onSelect(opt.slug)}
+              className={`
+                w-full text-left flex items-center gap-3.5 px-4 py-3.5 rounded-2xl
+                border transition-[transform,background,border-color] duration-150
+                active:scale-[0.985]
+                ${
+                  isSel
+                    ? 'border-[color:var(--color-lime,#c5ff3a)] bg-[rgba(197,255,58,0.06)]'
+                    : 'border-zinc-800 bg-[#0d0d0d] hover:border-zinc-700'
+                }
+              `}
+            >
+              <span
+                className="w-11 h-11 rounded-xl flex items-center justify-center flex-none"
+                style={{
+                  background: isSel
+                    ? 'var(--color-lime, #c5ff3a)'
+                    : 'rgba(197, 255, 58, 0.08)',
+                }}
+              >
+                {opt.Icon ? (
+                  <opt.Icon
+                    size={22}
+                    className={isSel ? 'text-black' : ''}
+                    style={
+                      isSel
+                        ? undefined
+                        : { color: 'var(--color-lime, #c5ff3a)' }
+                    }
+                  />
+                ) : (
+                  <span className="text-[22px] leading-none">{opt.icon}</span>
+                )}
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-semibold text-[15.5px] leading-tight text-zinc-100">
+                  {opt.label}
+                </span>
+                {opt.sub && (
+                  <span className="block text-[12.5px] text-zinc-500 mt-0.5">
+                    {opt.sub}
+                  </span>
+                )}
+              </span>
+              <span
+                className={`
+                  w-6 h-6 rounded-full border-2 flex items-center justify-center flex-none
+                  transition-colors duration-150
+                  ${isSel ? 'border-[color:var(--color-lime,#c5ff3a)]' : 'border-zinc-700'}
+                `}
+                style={{
+                  background: isSel
+                    ? 'var(--color-lime, #c5ff3a)'
+                    : 'transparent',
+                }}
+              >
+                {isSel && <Check size={14} className="text-black" strokeWidth={3} />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </StepShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// TEXT INPUT STEP (Q4, Q5)
+// ────────────────────────────────────────────────────────────────────
+
+function TextInputStep({
+  eyebrow,
+  title,
+  subtitle,
+  placeholder,
+  value,
+  onChange,
+  onContinue,
+  continueDisabled,
+  continueLabel,
+  autoComplete,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  onContinue: () => void;
+  continueDisabled: boolean;
+  continueLabel: string;
+  autoComplete?: string;
+}) {
+  return (
+    <StepShell>
+      <StepHeader eyebrow={eyebrow} title={title} subtitle={subtitle} />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        className="
+          w-full bg-[#0d0d0d] border-2 border-zinc-800 rounded-xl
+          px-4 py-3.5 text-[16px] text-zinc-100 placeholder:text-zinc-600
+          focus:outline-none focus:border-[color:var(--color-lime,#c5ff3a)]
+          focus:shadow-[0_0_0_4px_rgba(197,255,58,0.12)]
+          transition-[border-color,box-shadow] duration-150
+        "
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !continueDisabled) {
+            onContinue();
+          }
+        }}
+        autoFocus
+      />
+      <FooterBar>
+        <CtaButton onClick={onContinue} disabled={continueDisabled}>
+          {continueLabel}
+        </CtaButton>
+      </FooterBar>
+    </StepShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// GBP STEP (Q6) — Google Places autocomplete
+// ────────────────────────────────────────────────────────────────────
+
+function GbpStep({
+  place,
+  onResolved,
+  onClear,
+}: {
+  place: ResolvedPlace | null;
+  onResolved: (p: ResolvedPlace) => void;
+  onClear: () => void;
+}) {
+  return (
+    <StepShell>
+      <StepHeader
+        eyebrow="QUESTION 6 OF 6"
+        title="Pick your business on Google"
+        subtitle="So we lock the right location — city, address, GBP. Pick from the dropdown."
+      />
+      <GoogleBusinessAutocomplete
+        placeholder="Type your business name…"
+        onResolved={(p) => {
+          onResolved(p);
+        }}
+        onClear={() => {
+          onClear();
+        }}
+      />
+      {place && (
+        <div className="mt-4 rounded-xl border border-[color:var(--color-lime,#c5ff3a)] bg-[rgba(197,255,58,0.06)] p-3.5">
+          <div className="flex items-start gap-2.5">
+            <span className="text-[16px] leading-none mt-0.5">📍</span>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-zinc-100 text-[14px] leading-tight">
+                {place.businessName}
+              </div>
+              <div className="text-[12px] text-zinc-400 mt-1 leading-snug">
+                {place.formattedAddress}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </StepShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// CONTACT STEP (the conversion event)
+// ────────────────────────────────────────────────────────────────────
+
+function ContactStep({
+  email,
+  onEmailChange,
+  onTurnstileToken,
+  onSubmit,
+  submitting,
+  submitError,
+  place,
+}: {
+  email: string;
+  onEmailChange: (v: string) => void;
+  onTurnstileToken: (token: string) => void;
+  onSubmit: () => void;
+  submitting: boolean;
+  submitError: string | null;
+  place: ResolvedPlace | null;
+}) {
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  return (
+    <StepShell>
+      <StepHeader
+        eyebrow="ONE LAST STEP"
+        title="Where do we send your TurfScore?"
+        subtitle="60-second scan kicks off as soon as you hit send."
+      />
+      {place && (
+        <p className="text-[12.5px] text-zinc-500 mb-3">
+          Scanning <span className="text-zinc-300 font-semibold">{place.businessName}</span>.
+        </p>
+      )}
+      <label
+        htmlFor="quizflow-email"
+        className="block text-[13px] font-semibold text-zinc-300 mb-1.5"
+      >
+        Email
+      </label>
+      <div className="relative">
+        <Mail
+          size={16}
+          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600"
+        />
+        <input
+          id="quizflow-email"
+          type="email"
+          inputMode="email"
+          value={email}
+          onChange={(e) => onEmailChange(e.target.value)}
+          placeholder="you@business.com"
+          autoComplete="email"
+          autoFocus
+          className="
+            w-full bg-[#0d0d0d] border-2 border-zinc-800 rounded-xl
+            pl-10 pr-4 py-3.5 text-[16px] text-zinc-100 placeholder:text-zinc-600
+            focus:outline-none focus:border-[color:var(--color-lime,#c5ff3a)]
+            focus:shadow-[0_0_0_4px_rgba(197,255,58,0.12)]
+            transition-[border-color,box-shadow] duration-150
+          "
+        />
+      </div>
+
+      <div className="mt-4">
+        <TurnstileWidget onToken={onTurnstileToken} />
+      </div>
+
+      {submitError && (
+        <p className="mt-3 text-[12.5px] text-red-400 leading-snug">
+          {submitError}
+        </p>
+      )}
+
+      <FooterBar>
+        <CtaButton onClick={onSubmit} disabled={!valid || submitting}>
+          {submitting ? 'Scanning…' : 'Run my free TurfScan →'}
+        </CtaButton>
+        <p className="text-center text-[11.5px] text-zinc-500 mt-2.5 leading-snug">
+          By submitting, you agree to receive your TurfScore by email.
+          We never share it. Unsubscribe anytime.
+        </p>
+      </FooterBar>
+    </StepShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// LOADING STEP — scan-running state with rotating messaging
+// ────────────────────────────────────────────────────────────────────
+
+function LoadingStep({
+  message,
+  messageCount,
+  currentIdx,
+}: {
+  message: string;
+  messageCount: number;
+  currentIdx: number;
+}) {
+  const progressPct = Math.round(((currentIdx + 1) / messageCount) * 100);
+  return (
+    <StepShell>
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-3">
+        <div
+          className="w-[74px] h-[74px] rounded-full border-[6px] mb-7"
+          style={{
+            borderColor: '#1a1a1a',
+            borderTopColor: 'var(--color-lime, #c5ff3a)',
+            animation: 'tm-spin 0.9s linear infinite',
+          }}
+        />
+        <p className="font-display font-semibold text-[19px] text-zinc-100 mb-2 transition-opacity duration-300 max-w-[28ch] leading-tight">
+          {message}
+        </p>
+        <p className="text-zinc-500 text-[13px]">
+          81 cells. ~30–60 seconds.
+        </p>
+        <div className="mt-5 w-[200px] h-1.5 rounded-full bg-zinc-900 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-[width] duration-500"
+            style={{
+              width: `${progressPct}%`,
+              background: 'var(--color-lime, #c5ff3a)',
+            }}
+          />
+        </div>
+      </div>
+      <style jsx>{`
+        @keyframes tm-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
+    </StepShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// DISQUALIFY STEP — graceful dead-end for non-operators
+// ────────────────────────────────────────────────────────────────────
+
+function DisqualifyStep() {
+  return (
+    <StepShell>
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-3">
+        <div
+          className="w-[88px] h-[88px] rounded-full flex items-center justify-center mb-5"
+          style={{ background: '#0d0d0d', border: '2px solid #27272a' }}
+        >
+          <Compass size={36} className="text-zinc-500" />
+        </div>
+        <h1 className="font-display font-bold text-[26px] leading-tight tracking-tight text-zinc-100 mb-3 max-w-[18ch]">
+          TurfMap is built for the operator.
+        </h1>
+        <p className="text-zinc-400 text-[15px] leading-[1.55] mb-7 max-w-[30ch]">
+          The score only matters if you can act on the Fix List. If you&rsquo;re
+          researching for a business owner, forward them this link.
+        </p>
+        <Link
+          href="/"
+          className="text-zinc-400 hover:text-zinc-200 underline underline-offset-4 text-[13.5px] font-mono"
+        >
+          See what TurfMap does →
+        </Link>
+      </div>
+    </StepShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SHARED LAYOUT PRIMITIVES
+// ────────────────────────────────────────────────────────────────────
+
+function StepShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="absolute inset-0 flex flex-col px-5 pt-3 pb-5 overflow-y-auto">
+      {children}
+    </div>
+  );
+}
+
+function StepHeader({
+  eyebrow,
+  title,
+  subtitle,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="mb-5">
+      <div
+        className="text-[11px] font-mono font-bold tracking-[0.18em] mb-2.5"
+        style={{ color: 'var(--color-lime, #c5ff3a)' }}
+      >
+        {eyebrow}
+      </div>
+      <h1 className="font-display text-[24px] font-bold leading-[1.18] tracking-tight text-zinc-100 mb-2">
+        {title}
+      </h1>
+      {subtitle && (
+        <p className="text-zinc-400 text-[14.5px] leading-[1.5]">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FooterBar({ children }: { children: React.ReactNode }) {
+  return <div className="mt-auto pt-4">{children}</div>;
+}
+
+function CtaButton({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`
+        w-full rounded-xl py-4 font-display font-bold text-[16.5px] tracking-tight
+        flex items-center justify-center
+        transition-[opacity,transform,background-color] duration-150
+        active:scale-[0.99]
+        ${
+          disabled
+            ? 'opacity-40 cursor-not-allowed'
+            : 'opacity-100 hover:brightness-[1.05]'
+        }
+      `}
+      style={{
+        background: 'var(--color-lime, #c5ff3a)',
+        color: '#000',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// HELPERS
+// ────────────────────────────────────────────────────────────────────
+
+function exampleKeyword(trade: string | null, city: string): string {
+  const c = city.trim() || 'toronto';
+  const tradeKw =
+    trade === 'hvac'
+      ? 'hvac repair'
+      : trade === 'plumbing'
+        ? 'emergency plumber'
+        : trade === 'roofing'
+          ? 'roof repair'
+          : trade === 'electrical'
+            ? 'electrician'
+            : trade === 'landscaping'
+              ? 'lawn care'
+              : trade === 'painting'
+                ? 'house painter'
+                : trade === 'general'
+                  ? 'home renovation'
+                  : 'plumber';
+  return `${tradeKw} ${c.toLowerCase()}`;
+}
