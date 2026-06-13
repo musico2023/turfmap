@@ -40,7 +40,6 @@ import {
   Check,
   Compass,
   Crosshair,
-  Crown,
   Droplets,
   Flame,
   Hammer,
@@ -65,25 +64,35 @@ import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
 
 type StepName =
   | 'cover'
-  | 'owner'      // Q1 hard-qualify
-  | 'trade'     // Q2
-  | 'visibility' // Q3 self-assessed rank
-  | 'service_area' // Q4 (informational, drives the personalization on /share)
-  | 'keyword'   // Q5
-  | 'gbp'       // Q6 — GBP picker (also captures business_name + address)
-  | 'contact'   // email + Turnstile
-  | 'loading'   // POSTing preview-init + redirecting to /share
-  | 'disqualify'; // dead-end for non-operators
+  | 'owner'            // Q1 hard-qualify
+  | 'info_invisibility' // ★ info slide — "invisible in 2/3 of your area"
+  | 'trade'            // Q2
+  | 'info_top3'        // ★ info slide — "Google shows three. Three."
+  | 'visibility'       // Q3 self-assessed rank
+  | 'info_proof'       // ★ info slide — Oklahoma roofer case study + testimonial
+  | 'service_area'     // Q4 city
+  | 'keyword'          // Q5
+  | 'info_deliverable' // ★ info slide — "Your TurfScore + Fix List + named competitors"
+  | 'gbp'              // Q6 GBP picker
+  | 'contact'          // email + Turnstile
+  | 'loading'          // POSTing preview-init + redirecting to /share
+  | 'disqualify';      // dead-end for non-operators
 
 // Steps that count toward the visible progress bar. Cover doesn't
 // count (no commitment yet); loading/disqualify aren't part of the
-// quiz ladder either.
+// quiz ladder either. Info slides DO count — the brief calls for
+// presenting core information mixed with intake, and the buyer
+// should feel forward momentum through each tap.
 const PROGRESS_STEPS: StepName[] = [
   'owner',
+  'info_invisibility',
   'trade',
+  'info_top3',
   'visibility',
+  'info_proof',
   'service_area',
   'keyword',
+  'info_deliverable',
   'gbp',
   'contact',
 ];
@@ -397,11 +406,14 @@ export function QuizFlow({
                   if (slug === 'no') {
                     goTo('disqualify');
                   } else {
-                    goTo('trade');
+                    goTo('info_invisibility');
                   }
                 }, 220);
               }}
             />
+          )}
+          {step === 'info_invisibility' && (
+            <InfoInvisibility onContinue={() => goTo('trade')} />
           )}
           {step === 'trade' && (
             <SingleSelectStep
@@ -416,9 +428,12 @@ export function QuizFlow({
               selected={trade}
               onSelect={(slug) => {
                 setTrade(slug);
-                window.setTimeout(() => goTo('visibility'), 220);
+                window.setTimeout(() => goTo('info_top3'), 220);
               }}
             />
+          )}
+          {step === 'info_top3' && (
+            <InfoTop3 onContinue={() => goTo('visibility')} />
           )}
           {step === 'visibility' && (
             <SingleSelectStep
@@ -433,9 +448,12 @@ export function QuizFlow({
               selected={visibility}
               onSelect={(slug) => {
                 setVisibility(slug);
-                window.setTimeout(() => goTo('service_area'), 220);
+                window.setTimeout(() => goTo('info_proof'), 220);
               }}
             />
+          )}
+          {step === 'info_proof' && (
+            <InfoProof onContinue={() => goTo('service_area')} />
           )}
           {step === 'service_area' && (
             <TextInputStep
@@ -459,10 +477,13 @@ export function QuizFlow({
               placeholder={`e.g. ${exampleKeyword(trade, serviceCity)}`}
               value={keyword}
               onChange={setKeyword}
-              onContinue={() => goTo('gbp')}
+              onContinue={() => goTo('info_deliverable')}
               continueDisabled={keyword.trim().length < 2}
               continueLabel="Continue →"
             />
+          )}
+          {step === 'info_deliverable' && (
+            <InfoDeliverable onContinue={() => goTo('gbp')} />
           )}
           {step === 'gbp' && (
             <GbpStep
@@ -585,7 +606,17 @@ function CoverStep({ onStart }: { onStart: () => void }) {
         </div>
 
         <h1 className="font-display text-[28px] md:text-[30px] font-bold leading-[1.08] tracking-[-0.02em] mb-3 max-w-[14ch]">
-          Find out how <em className="not-italic" style={{ color: 'var(--color-lime, #c5ff3a)' }}>invisible</em> you are on Google Maps.
+          Find out how{' '}
+          <em
+            className="not-italic"
+            style={{
+              color: '#ff4d4d',
+              textShadow: '0 2px 22px rgba(255, 77, 77, 0.35)',
+            }}
+          >
+            invisible
+          </em>{' '}
+          you are on Google Maps.
         </h1>
         <p className="text-zinc-400 text-[15px] leading-[1.55] mb-7 max-w-[32ch]">
           We scan 81 cells around your service area and show you, cell by cell,
@@ -597,9 +628,12 @@ function CoverStep({ onStart }: { onStart: () => void }) {
             icon={<Sparkles size={16} className="text-black" />}
             text="Real Google data — not estimates"
           />
+          {/* Replaced "Built by Fourdots Digital" with the buyer's
+           *  actual deliverable. "Built by an agency" is true but
+           *  doesn't compel — what they leave with is the Fix List. */}
           <TrustBadge
-            icon={<Crown size={16} className="text-black" />}
-            text="Built by Fourdots Digital"
+            icon={<Crosshair size={16} className="text-black" />}
+            text="AI Coach: 3 prioritized fixes"
           />
           <TrustBadge
             icon={<Compass size={16} className="text-black" />}
@@ -1022,6 +1056,367 @@ function DisqualifyStep() {
         </Link>
       </div>
     </StepShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// INFO SLIDES — interleaved between intake questions per the brief.
+//
+// Each presents a single high-conversion idea from /free-score, paired
+// with a small visual beat (mini-grid, top-3 illustration, testimonial
+// card) so the buyer's tap-tap-tap rhythm doesn't fall into a wall
+// of text. Continue CTA advances the step machine.
+// ────────────────────────────────────────────────────────────────────
+
+/** Shared layout primitive for info slides — eyebrow + headline +
+ *  body + visual + Continue button + StepShell scroll container. */
+function InfoSlide({
+  eyebrow,
+  headline,
+  body,
+  visual,
+  ctaLabel = 'Continue →',
+  onContinue,
+}: {
+  eyebrow: string;
+  headline: React.ReactNode;
+  body: React.ReactNode;
+  visual?: React.ReactNode;
+  ctaLabel?: string;
+  onContinue: () => void;
+}) {
+  return (
+    <StepShell>
+      <div className="flex-1 flex flex-col">
+        <div
+          className="text-[11px] font-mono font-bold tracking-[0.18em] mb-2.5"
+          style={{ color: 'var(--color-lime, #c5ff3a)' }}
+        >
+          {eyebrow}
+        </div>
+        <h1 className="font-display text-[24px] md:text-[26px] font-bold leading-[1.18] tracking-tight text-zinc-100 mb-3">
+          {headline}
+        </h1>
+        <div className="text-zinc-400 text-[14.5px] leading-[1.55] mb-5">
+          {body}
+        </div>
+        {visual && <div className="mb-2">{visual}</div>}
+      </div>
+      <FooterBar>
+        <CtaButton onClick={onContinue}>{ctaLabel}</CtaButton>
+      </FooterBar>
+    </StepShell>
+  );
+}
+
+// ─── Info slide 1 — "two-thirds invisible" (after owner Q1) ─────────
+
+function InfoInvisibility({ onContinue }: { onContinue: () => void }) {
+  return (
+    <InfoSlide
+      eyebrow="WHY THIS MATTERS"
+      headline={
+        <>
+          Most local businesses are{' '}
+          <em
+            className="not-italic"
+            style={{ color: '#ff4d4d' }}
+          >
+            invisible
+          </em>{' '}
+          in two-thirds of their service area.
+        </>
+      }
+      body={
+        <>
+          You probably rank #1 from your office. But Google centers
+          searches around the searcher — so two miles away, you&rsquo;re
+          often nowhere.
+          <br />
+          <br />
+          Your free TurfScore (0&ndash;100) tells you exactly how
+          visible you are across your{' '}
+          <strong className="text-zinc-200 font-semibold">whole</strong>{' '}
+          service area — block by block.
+        </>
+      }
+      visual={<MiniInvisibilityGrid />}
+      ctaLabel="Tell me more →"
+      onContinue={onContinue}
+    />
+  );
+}
+
+/** 5×5 stylized grid — most cells red (invisible) with one lime
+ *  highlighted cell representing "you" right at the center (where
+ *  you searched). Makes the abstract idea visual at a glance. */
+function MiniInvisibilityGrid() {
+  // Deterministic pattern: 25 cells, center = lime (the buyer's
+  // office), most others red (invisible), a few zinc (some
+  // visibility). Hand-tuned for visual rhythm, not random.
+  const CELLS: ('lime' | 'red' | 'dim')[] = [
+    'red', 'red', 'red', 'red', 'red',
+    'red', 'red', 'red', 'dim', 'red',
+    'red', 'red', 'lime', 'red', 'red',
+    'red', 'dim', 'red', 'red', 'red',
+    'red', 'red', 'red', 'red', 'red',
+  ];
+  return (
+    <div className="grid grid-cols-5 gap-1.5 max-w-[200px] mx-auto mb-2">
+      {CELLS.map((kind, i) => {
+        const isLime = kind === 'lime';
+        const isRed = kind === 'red';
+        return (
+          <div
+            key={i}
+            className="aspect-square rounded-full"
+            style={{
+              background: isLime
+                ? 'radial-gradient(circle, rgba(197,255,58,0.65) 0%, rgba(197,255,58,0.18) 60%, transparent 100%)'
+                : isRed
+                  ? 'radial-gradient(circle, rgba(239,68,68,0.55) 0%, rgba(239,68,68,0.10) 60%, transparent 100%)'
+                  : 'radial-gradient(circle, rgba(150,150,150,0.30) 0%, transparent 70%)',
+              border: isLime
+                ? '1px solid rgba(197,255,58,0.5)'
+                : isRed
+                  ? '1px solid rgba(239,68,68,0.30)'
+                  : '1px solid rgba(120,120,120,0.20)',
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Info slide 2 — "Google shows three" (after trade Q2) ───────────
+
+function InfoTop3({ onContinue }: { onContinue: () => void }) {
+  return (
+    <InfoSlide
+      eyebrow="THE GOOGLE MAPS TRUTH"
+      headline={
+        <>
+          If you&rsquo;re not in the top{' '}
+          <em
+            className="not-italic"
+            style={{ color: 'var(--color-lime, #c5ff3a)' }}
+          >
+            three
+          </em>
+          , you&rsquo;re{' '}
+          <em
+            className="not-italic"
+            style={{ color: '#ff4d4d' }}
+          >
+            invisible
+          </em>
+          .
+        </>
+      }
+      body={
+        <>
+          Google&rsquo;s local map pack shows three businesses.
+          Three. Not ten, not five.
+          <br />
+          <br />
+          For a given block, if you&rsquo;re not one of those three,
+          your competitor is taking that call.
+        </>
+      }
+      visual={<MapPackVisual />}
+      ctaLabel="Got it →"
+      onContinue={onContinue}
+    />
+  );
+}
+
+/** Three stacked map-pack-style cards mimicking Google's local
+ *  pack output. The bottom card is dimmed with "you're invisible"
+ *  framing — the visual proof of the "only three slots" idea. */
+function MapPackVisual() {
+  return (
+    <div className="flex flex-col gap-1.5 max-w-[280px] mx-auto">
+      {[1, 2, 3].map((n) => (
+        <div
+          key={n}
+          className="flex items-center gap-2.5 rounded-md border bg-[#0d0d0d] border-zinc-800 px-3 py-2"
+        >
+          <span
+            className="w-6 h-6 rounded-md flex items-center justify-center font-display font-bold text-[11px] text-black flex-none"
+            style={{ background: 'var(--color-lime, #c5ff3a)' }}
+          >
+            {n}
+          </span>
+          <span className="flex-1 h-2 rounded-full bg-zinc-800" />
+          <span className="text-[10px] font-mono text-zinc-500">4.{8 + n}★</span>
+        </div>
+      ))}
+      <div
+        className="flex items-center gap-2.5 rounded-md border px-3 py-2 mt-1 opacity-50"
+        style={{
+          background: '#1a0d0d',
+          borderColor: '#5a1f1f',
+        }}
+      >
+        <span
+          className="w-6 h-6 rounded-md flex items-center justify-center font-display font-bold text-[11px] text-white flex-none"
+          style={{ background: '#ff4d4d' }}
+        >
+          ?
+        </span>
+        <span className="flex-1 text-[11px] text-zinc-400 font-mono">
+          you — invisible to this searcher
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Info slide 3 — Oklahoma case study + testimonial (after Q3) ────
+
+function InfoProof({ onContinue }: { onContinue: () => void }) {
+  return (
+    <InfoSlide
+      eyebrow="WHAT WE'VE SEEN"
+      headline={
+        <>
+          A roofer in Oklahoma thought they ranked{' '}
+          <em
+            className="not-italic"
+            style={{ color: 'var(--color-lime, #c5ff3a)' }}
+          >
+            #1
+          </em>
+          .
+        </>
+      }
+      body={
+        <>
+          When we scanned their territory,{' '}
+          <strong className="text-zinc-200 font-semibold" style={{ color: '#ff4d4d' }}>
+            68% of their city
+          </strong>{' '}
+          couldn&rsquo;t find them in the top 3.
+          <br />
+          <br />
+          Same business. Same listing. Different blocks, different
+          outcomes.
+        </>
+      }
+      visual={<TestimonialQuoteCard />}
+      ctaLabel="Show me mine →"
+      onContinue={onContinue}
+    />
+  );
+}
+
+/** Compact testimonial card — single quote from the painting
+ *  operator (verbatim from /free-score) with the lime accent
+ *  treatment that already carries social-proof weight in the
+ *  rest of the funnel. */
+function TestimonialQuoteCard() {
+  return (
+    <div
+      className="relative rounded-xl border p-4 pl-9 mt-1"
+      style={{
+        background: 'var(--color-card-glow, #141414)',
+        borderColor: 'rgba(197, 255, 58, 0.35)',
+        boxShadow: '0 0 22px rgba(197, 255, 58, 0.10)',
+      }}
+    >
+      <div
+        className="font-display text-[42px] font-black leading-none absolute -top-0.5 left-3 select-none"
+        style={{ color: 'var(--color-lime, #c5ff3a)' }}
+        aria-hidden="true"
+      >
+        &ldquo;
+      </div>
+      <blockquote className="text-[13.5px] text-zinc-100 leading-relaxed">
+        TurfMap caught a GBP category mismatch we&rsquo;d missed for 18
+        months. Fixed it the same day.
+      </blockquote>
+      <p className="mt-2.5 text-[10.5px] font-mono text-zinc-500 leading-tight">
+        — Painting operator, Greater Toronto Area
+      </p>
+    </div>
+  );
+}
+
+// ─── Info slide 4 — "what you'll get" (after keyword Q5) ────────────
+
+function InfoDeliverable({ onContinue }: { onContinue: () => void }) {
+  return (
+    <InfoSlide
+      eyebrow="WHAT YOU'LL WALK AWAY WITH"
+      headline={
+        <>
+          Your TurfScore +{' '}
+          <em
+            className="not-italic"
+            style={{ color: 'var(--color-lime, #c5ff3a)' }}
+          >
+            3 prioritized fixes
+          </em>
+          .
+        </>
+      }
+      body={
+        <>
+          Not a generic SEO checklist. A short list, ordered by
+          impact, written from your real audit data.
+        </>
+      }
+      visual={<DeliverableChecklist />}
+      ctaLabel="Show me my map →"
+      onContinue={onContinue}
+    />
+  );
+}
+
+/** Three-item checklist showing the concrete deliverables, each
+ *  with a lime checkmark + short title + brief explainer line.
+ *  Mirrors the AI Coach Fix List preview structure but shrunk for
+ *  the device frame width. */
+function DeliverableChecklist() {
+  const ITEMS: { title: string; body: string }[] = [
+    {
+      title: 'Your TurfScore (0–100)',
+      body: 'One number across 81 real Google searches.',
+    },
+    {
+      title: 'Block-by-block heatmap',
+      body: 'See exactly which cells you own — and which you don’t.',
+    },
+    {
+      title: 'Named competitors',
+      body: 'The businesses taking calls in the cells you’re missing.',
+    },
+  ];
+  return (
+    <div className="flex flex-col gap-2 max-w-[330px] mx-auto">
+      {ITEMS.map((it, i) => (
+        <div
+          key={i}
+          className="flex items-start gap-2.5 rounded-xl border border-zinc-800 bg-[#0d0d0d] px-3.5 py-3"
+        >
+          <span
+            className="w-6 h-6 rounded-md flex items-center justify-center flex-none mt-0.5"
+            style={{ background: 'var(--color-lime, #c5ff3a)' }}
+          >
+            <Check size={14} className="text-black" strokeWidth={3} />
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-[13.5px] text-zinc-100 leading-tight">
+              {it.title}
+            </div>
+            <div className="text-[12px] text-zinc-500 leading-snug mt-0.5">
+              {it.body}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
