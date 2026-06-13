@@ -962,9 +962,26 @@ function ContactStep({
         />
       </div>
 
-      <div className="mt-4">
-        <TurnstileWidget onToken={onTurnstileToken} />
-      </div>
+      {/* Cloudflare Turnstile site key — read from the public env
+       *  var that's already wired into the rest of the funnel
+       *  (ScanIntakeForm.tsx:182 uses the same one). Without this,
+       *  TurnstileWidget short-circuits to render-nothing + empty
+       *  token, which is exactly what was producing the
+       *  "Bot-protection check is required" submit error: the
+       *  server's TURNSTILE_SECRET_KEY is set so verification IS
+       *  enforced, but the client wasn't shipping a token because
+       *  the widget never rendered. */}
+      {process.env.NEXT_PUBLIC_TURNSTILE_SITEKEY ? (
+        <div className="mt-4">
+          <p className="text-[11px] uppercase tracking-[0.18em] font-mono text-zinc-500 mb-1.5">
+            Quick bot check
+          </p>
+          <TurnstileWidget
+            siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITEKEY}
+            onToken={onTurnstileToken}
+          />
+        </div>
+      ) : null}
 
       {submitError && (
         <p className="mt-3 text-[12.5px] text-red-400 leading-snug">
