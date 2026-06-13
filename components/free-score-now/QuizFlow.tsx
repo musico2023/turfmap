@@ -44,6 +44,7 @@ import {
   Flame,
   Hammer,
   Home,
+  Layers,
   Mail,
   MapPin,
   PaintBucket,
@@ -109,14 +110,27 @@ type TradeOption = {
   Icon: typeof Wrench;
 };
 
+// Verbatim Fourdots Digital "home services" verticals (per
+// fourdots.io/home-services), in the same order they're listed on
+// the marketing site. These ARE the ideal-customer trades for the
+// downstream upsell ladder — same slug values get stamped into
+// stripe_metadata.trade so cohort analysis can later split unit
+// economics by vertical without separate joins.
+//
+// "Something else" stays as the safety-valve option: TurfMap works
+// on any local business with a Google Business Profile, but a
+// non-ideal trade gets routed into a softer downstream nurture
+// instead of the home-services upsell sequence. We don't disqualify
+// — we just measure them separately.
 const TRADES: TradeOption[] = [
-  { slug: 'hvac', label: 'HVAC', Icon: Flame },
-  { slug: 'plumbing', label: 'Plumbing', Icon: Droplets },
   { slug: 'roofing', label: 'Roofing', Icon: Home },
-  { slug: 'electrical', label: 'Electrical', Icon: Zap },
-  { slug: 'landscaping', label: 'Landscaping', Icon: Trees },
+  { slug: 'hvac', label: 'HVAC', Icon: Flame },
+  { slug: 'renovation', label: 'Renovation & Remodeling', Icon: Hammer },
   { slug: 'painting', label: 'Painting', Icon: PaintBucket },
-  { slug: 'general', label: 'General contractor', Icon: Hammer },
+  { slug: 'electrical', label: 'Electrical', Icon: Zap },
+  { slug: 'pool_spa', label: 'Pool & Spa', Icon: Droplets },
+  { slug: 'landscaping', label: 'Landscaping', Icon: Trees },
+  { slug: 'insulation', label: 'Insulation', Icon: Layers },
   { slug: 'other', label: 'Something else', Icon: Briefcase },
 ];
 
@@ -1687,22 +1701,29 @@ function CtaButton({
 // ────────────────────────────────────────────────────────────────────
 
 function exampleKeyword(trade: string | null, city: string | null): string {
+  // Aligned with the Fourdots "home services" trade slugs above.
+  // Each example is the canonical search a high-value customer of
+  // that vertical would actually type. Falls back to "home services
+  // <city>" for the 'other' bucket — generic enough that the buyer
+  // can replace it without confusion.
   const c = (city ?? '').trim() || 'toronto';
   const tradeKw =
-    trade === 'hvac'
-      ? 'hvac repair'
-      : trade === 'plumbing'
-        ? 'emergency plumber'
-        : trade === 'roofing'
-          ? 'roof repair'
-          : trade === 'electrical'
-            ? 'electrician'
-            : trade === 'landscaping'
-              ? 'lawn care'
-              : trade === 'painting'
-                ? 'house painter'
-                : trade === 'general'
-                  ? 'home renovation'
-                  : 'plumber';
+    trade === 'roofing'
+      ? 'roof repair'
+      : trade === 'hvac'
+        ? 'hvac repair'
+        : trade === 'renovation'
+          ? 'home renovation'
+          : trade === 'painting'
+            ? 'house painter'
+            : trade === 'electrical'
+              ? 'electrician'
+              : trade === 'pool_spa'
+                ? 'pool installation'
+                : trade === 'landscaping'
+                  ? 'lawn care'
+                  : trade === 'insulation'
+                    ? 'attic insulation'
+                    : 'home services';
   return `${tradeKw} ${c.toLowerCase()}`;
 }
