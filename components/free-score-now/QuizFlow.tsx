@@ -69,11 +69,12 @@ type StepName =
   | 'trade'            // Q2
   | 'info_top3'        // ★ info slide — "Google shows three. Three."
   | 'visibility'       // Q3 self-assessed rank
-  | 'info_proof'       // ★ info slide — Oklahoma roofer case study + testimonial
-  | 'service_area'     // Q4 city
-  | 'keyword'          // Q5
-  | 'info_deliverable' // ★ info slide — "Your TurfScore + Fix List + named competitors"
-  | 'gbp'              // Q6 GBP picker
+  | 'info_proof'       // ★ info slide — Toronto roofer case study + testimonial
+  | 'gbp'              // Q4 GBP picker (city derived from Google Places
+                       //   addressComponents — so the standalone city
+                       //   question that used to precede this is gone)
+  | 'keyword'          // Q5 (final question — last thing before contact)
+  | 'info_deliverable' // ★ info slide — what they walk away with
   | 'contact'          // email + Turnstile
   | 'loading'          // POSTing preview-init + redirecting to /share
   | 'disqualify';      // dead-end for non-operators
@@ -90,10 +91,9 @@ const PROGRESS_STEPS: StepName[] = [
   'info_top3',
   'visibility',
   'info_proof',
-  'service_area',
+  'gbp',
   'keyword',
   'info_deliverable',
-  'gbp',
   'contact',
 ];
 
@@ -162,10 +162,15 @@ export function QuizFlow({
   const [history, setHistory] = useState<StepName[]>(['cover']);
 
   // ─── Form state ──────────────────────────────────────────────────
+  // Note: there's no standalone city/service_area state — the city
+  // we use for keyword-example personalization comes from the GBP
+  // pick (place.addressComponents.city), so a separate question
+  // would be redundant. The GBP step now precedes the keyword step
+  // so the resolved city is available by the time we render the
+  // keyword input placeholder.
   const [owner, setOwner] = useState<string | null>(null);
   const [trade, setTrade] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<string | null>(null);
-  const [serviceCity, setServiceCity] = useState('');
   const [keyword, setKeyword] = useState('');
   const [place, setPlace] = useState<ResolvedPlace | null>(null);
   const [email, setEmail] = useState('');
@@ -395,7 +400,7 @@ export function QuizFlow({
           )}
           {step === 'owner' && (
             <SingleSelectStep
-              eyebrow="QUESTION 1 OF 6"
+              eyebrow="QUESTION 1 OF 5"
               title="Are you the one calling the shots on Google rankings?"
               subtitle="So we frame the score the right way for you."
               options={OWNER_OPTIONS}
@@ -417,7 +422,7 @@ export function QuizFlow({
           )}
           {step === 'trade' && (
             <SingleSelectStep
-              eyebrow="QUESTION 2 OF 6"
+              eyebrow="QUESTION 2 OF 5"
               title="What do you do?"
               subtitle="So the score copy and Fix List match your category."
               options={TRADES.map((t) => ({
@@ -437,7 +442,7 @@ export function QuizFlow({
           )}
           {step === 'visibility' && (
             <SingleSelectStep
-              eyebrow="QUESTION 3 OF 6"
+              eyebrow="QUESTION 3 OF 5"
               title="How would you describe your current Google visibility?"
               subtitle="No wrong answer — this just calibrates the reveal."
               options={VISIBILITY_OPTIONS.map((o) => ({
@@ -453,37 +458,7 @@ export function QuizFlow({
             />
           )}
           {step === 'info_proof' && (
-            <InfoProof onContinue={() => goTo('service_area')} />
-          )}
-          {step === 'service_area' && (
-            <TextInputStep
-              eyebrow="QUESTION 4 OF 6"
-              title="Which city do you serve?"
-              subtitle="So we can label your map and the heatmap."
-              placeholder="e.g. Calgary"
-              value={serviceCity}
-              onChange={setServiceCity}
-              onContinue={() => goTo('keyword')}
-              continueDisabled={serviceCity.trim().length < 2}
-              continueLabel="Continue →"
-              autoComplete="address-level2"
-            />
-          )}
-          {step === 'keyword' && (
-            <TextInputStep
-              eyebrow="QUESTION 5 OF 6"
-              title="What does someone search to find you?"
-              subtitle="The keyword your highest-value customers actually type. Not your business name."
-              placeholder={`e.g. ${exampleKeyword(trade, serviceCity)}`}
-              value={keyword}
-              onChange={setKeyword}
-              onContinue={() => goTo('info_deliverable')}
-              continueDisabled={keyword.trim().length < 2}
-              continueLabel="Continue →"
-            />
-          )}
-          {step === 'info_deliverable' && (
-            <InfoDeliverable onContinue={() => goTo('gbp')} />
+            <InfoProof onContinue={() => goTo('gbp')} />
           )}
           {step === 'gbp' && (
             <GbpStep
@@ -492,10 +467,29 @@ export function QuizFlow({
                 setPlace(p);
                 // Auto-advance after a brief beat so the buyer sees
                 // their pick land before the step transitions.
-                window.setTimeout(() => goTo('contact'), 450);
+                window.setTimeout(() => goTo('keyword'), 450);
               }}
               onClear={() => setPlace(null)}
             />
+          )}
+          {step === 'keyword' && (
+            <TextInputStep
+              eyebrow="QUESTION 5 OF 5"
+              title="What does someone search to find you?"
+              subtitle="The keyword your highest-value customers actually type. Not your business name."
+              placeholder={`e.g. ${exampleKeyword(
+                trade,
+                place?.addressComponents?.city ?? null
+              )}`}
+              value={keyword}
+              onChange={setKeyword}
+              onContinue={() => goTo('info_deliverable')}
+              continueDisabled={keyword.trim().length < 2}
+              continueLabel="Continue →"
+            />
+          )}
+          {step === 'info_deliverable' && (
+            <InfoDeliverable onContinue={() => goTo('contact')} />
           )}
           {step === 'contact' && (
             <ContactStep
@@ -855,7 +849,7 @@ function GbpStep({
   return (
     <StepShell>
       <StepHeader
-        eyebrow="QUESTION 6 OF 6"
+        eyebrow="QUESTION 4 OF 5"
         title="Pick your business on Google"
         subtitle="So we lock the right location — city, address, GBP. Pick from the dropdown."
       />
@@ -1281,7 +1275,7 @@ function InfoProof({ onContinue }: { onContinue: () => void }) {
       eyebrow="WHAT WE'VE SEEN"
       headline={
         <>
-          A roofer in Oklahoma thought they ranked{' '}
+          A roofer in Toronto thought they ranked{' '}
           <em
             className="not-italic"
             style={{ color: 'var(--color-lime, #c5ff3a)' }}
@@ -1294,7 +1288,7 @@ function InfoProof({ onContinue }: { onContinue: () => void }) {
       body={
         <>
           When we scanned their territory,{' '}
-          <strong className="text-zinc-200 font-semibold" style={{ color: '#ff4d4d' }}>
+          <strong className="font-semibold" style={{ color: '#ff4d4d' }}>
             68% of their city
           </strong>{' '}
           couldn&rsquo;t find them in the top 3.
@@ -1348,49 +1342,59 @@ function TestimonialQuoteCard() {
 function InfoDeliverable({ onContinue }: { onContinue: () => void }) {
   return (
     <InfoSlide
-      eyebrow="WHAT YOU'LL WALK AWAY WITH"
+      eyebrow="WHAT WE'LL GENERATE FOR YOU"
       headline={
         <>
-          Your TurfScore +{' '}
+          Your TurfScore, full heatmap, competitor analysis, and{' '}
           <em
             className="not-italic"
             style={{ color: 'var(--color-lime, #c5ff3a)' }}
           >
             3 prioritized fixes
-          </em>
-          .
+          </em>{' '}
+          to start claiming your territory.
         </>
       }
       body={
         <>
-          Not a generic SEO checklist. A short list, ordered by
-          impact, written from your real audit data.
+          The free preview reveals your TurfScore and confirms there
+          are competitors taking calls in your area. Unlock the rest
+          when you want the full picture.
         </>
       }
       visual={<DeliverableChecklist />}
-      ctaLabel="Show me my map →"
+      ctaLabel="Show me my score →"
       onContinue={onContinue}
     />
   );
 }
 
-/** Three-item checklist showing the concrete deliverables, each
- *  with a lime checkmark + short title + brief explainer line.
- *  Mirrors the AI Coach Fix List preview structure but shrunk for
- *  the device frame width. */
+/** Four-item checklist showing the full deliverable suite (TurfScore
+ *  / heatmap / competitor analysis / Fix List). Each row also carries
+ *  a small "free preview" or "unlock" tag so the buyer knows what's
+ *  visible at $0 vs. behind the $49 unlock CTA on /share — surfaces
+ *  the value ladder without burying it. */
 function DeliverableChecklist() {
-  const ITEMS: { title: string; body: string }[] = [
+  const ITEMS: { title: string; body: string; gate: 'free' | 'unlock' }[] = [
     {
       title: 'Your TurfScore (0–100)',
       body: 'One number across 81 real Google searches.',
+      gate: 'free',
     },
     {
-      title: 'Block-by-block heatmap',
-      body: 'See exactly which cells you own — and which you don’t.',
+      title: 'Full block-by-block heatmap',
+      body: 'Exactly which cells you own — and which you don’t.',
+      gate: 'unlock',
     },
     {
-      title: 'Named competitors',
+      title: 'Competitor analysis',
       body: 'The businesses taking calls in the cells you’re missing.',
+      gate: 'unlock',
+    },
+    {
+      title: '3 prioritized fixes',
+      body: 'AI Coach Fix List, written from your real audit data.',
+      gate: 'unlock',
     },
   ];
   return (
@@ -1407,8 +1411,29 @@ function DeliverableChecklist() {
             <Check size={14} className="text-black" strokeWidth={3} />
           </span>
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-[13.5px] text-zinc-100 leading-tight">
-              {it.title}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-[13.5px] text-zinc-100 leading-tight">
+                {it.title}
+              </span>
+              <span
+                className={`
+                  text-[9px] font-mono font-bold uppercase tracking-[0.12em]
+                  px-1.5 py-0.5 rounded
+                `}
+                style={
+                  it.gate === 'free'
+                    ? {
+                        background: 'rgba(197,255,58,0.12)',
+                        color: 'var(--color-lime, #c5ff3a)',
+                      }
+                    : {
+                        background: 'rgba(160,160,160,0.10)',
+                        color: '#a1a1aa',
+                      }
+                }
+              >
+                {it.gate === 'free' ? 'Free' : 'Unlock'}
+              </span>
             </div>
             <div className="text-[12px] text-zinc-500 leading-snug mt-0.5">
               {it.body}
@@ -1504,8 +1529,8 @@ function CtaButton({
 // HELPERS
 // ────────────────────────────────────────────────────────────────────
 
-function exampleKeyword(trade: string | null, city: string): string {
-  const c = city.trim() || 'toronto';
+function exampleKeyword(trade: string | null, city: string | null): string {
+  const c = (city ?? '').trim() || 'toronto';
   const tradeKw =
     trade === 'hvac'
       ? 'hvac repair'
