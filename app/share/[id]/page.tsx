@@ -418,10 +418,26 @@ export default async function PublicSharePage({
       </div>
 
       {/* Heatmap + sidebar — same shape as portal/dashboard but
-          internals stripped out. */}
+       *  internals stripped out.
+       *
+       *  Mobile reorder (2026-06-13): the score sidebar gets
+       *  order-1 + the heatmap gets order-2, so on mobile the
+       *  buyer sees their actual TurfScore FIRST (the reveal they
+       *  came for) and only then scrolls to the blurred heatmap
+       *  with its PreviewHeatmapLock "Your full map is ready"
+       *  unlock prompt. Previously the heatmap-lock copy
+       *  monopolized the first viewport on mobile and buried the
+       *  score below it — Anthony flagged this from a real
+       *  /free-score-now flow test 2026-06-13.
+       *
+       *  On lg+ (desktop) we re-pin to source order so the
+       *  heatmap goes back to the left (col-span-8) and the score
+       *  sidebar back to the right (col-span-4) — that layout was
+       *  fine because both columns are visible above the fold at
+       *  once on desktop. */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         <div
-          className="lg:col-span-8 border rounded-lg p-4 md:p-6 relative"
+          className="order-2 lg:order-1 lg:col-span-8 border rounded-lg p-4 md:p-6 relative"
           style={{
             background: 'var(--color-card)',
             borderColor: 'var(--color-border)',
@@ -489,7 +505,7 @@ export default async function PublicSharePage({
           )}
         </div>
 
-        <div className="lg:col-span-4 space-y-4">
+        <div className="order-1 lg:order-2 lg:col-span-4 space-y-4">
           {/* Attribution eyebrow — same intent as on /portal: the
               score family is the account holder's, not whoever the
               heatmap is currently toggled to show. Especially
