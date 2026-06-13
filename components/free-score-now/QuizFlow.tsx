@@ -45,8 +45,10 @@ import {
   Hammer,
   Home,
   Mail,
+  MapPin,
   PaintBucket,
   Sparkles,
+  Star,
   Trees,
   Wrench,
   Zap,
@@ -1225,43 +1227,198 @@ function InfoTop3({ onContinue }: { onContinue: () => void }) {
   );
 }
 
-/** Three stacked map-pack-style cards mimicking Google's local
- *  pack output. The bottom card is dimmed with "you're invisible"
- *  framing — the visual proof of the "only three slots" idea. */
+/** Stylized Google Local 3-pack illustration — ports the visual
+ *  language from the homepage's MapPackDemo (components/marketing/
+ *  MapPackDemo.tsx) so the buyer sees a consistent vocabulary
+ *  across surfaces: rank chip colors (#1 lime / #2 yellow / #3
+ *  orange), eyebrow + pin-icon header, mini SVG map with three
+ *  positioned pins, listing rows with real-looking business names
+ *  + star ratings + reviews count + category, and a bottom-caption
+ *  punchline.
+ *
+ *  Two adaptations vs. the homepage version:
+ *    1. Sized down for the 440px-wide device frame (tighter padding,
+ *       smaller fonts).
+ *    2. ★ Appends a fourth row — the "you — invisible to this
+ *       searcher" red card — which is the whole point of the slide.
+ *       The first three rows show what Google returns; the fourth
+ *       drives the punchline home before the buyer continues. */
+const PACK_ENTRIES: {
+  rank: 1 | 2 | 3;
+  name: string;
+  rating: number;
+  reviews: number;
+  category: string;
+}[] = [
+  { rank: 1, name: 'Atlas Plumbing & Drain', rating: 4.8, reviews: 142, category: 'Plumber' },
+  { rank: 2, name: 'Quick Pipe Pros', rating: 4.6, reviews: 87, category: 'Plumber' },
+  { rank: 3, name: 'Maple City Plumbers', rating: 4.4, reviews: 53, category: 'Plumber' },
+];
+
+const RANK_COLORS = {
+  1: '#c5ff3a', // lime
+  2: '#e8e54a', // yellow
+  3: '#ff9f3a', // orange
+} as const;
+
 function MapPackVisual() {
   return (
-    <div className="flex flex-col gap-1.5 max-w-[280px] mx-auto">
-      {[1, 2, 3].map((n) => (
-        <div
-          key={n}
-          className="flex items-center gap-2.5 rounded-md border bg-[#0d0d0d] border-zinc-800 px-3 py-2"
-        >
-          <span
-            className="w-6 h-6 rounded-md flex items-center justify-center font-display font-bold text-[11px] text-black flex-none"
-            style={{ background: 'var(--color-lime, #c5ff3a)' }}
-          >
-            {n}
-          </span>
-          <span className="flex-1 h-2 rounded-full bg-zinc-800" />
-          <span className="text-[10px] font-mono text-zinc-500">4.{8 + n}★</span>
-        </div>
-      ))}
+    <div
+      className="rounded-lg border overflow-hidden mx-auto max-w-[330px]"
+      style={{
+        background: 'var(--color-card, #0d0d0d)',
+        borderColor: 'var(--color-border-bright, #3f3f46)',
+        boxShadow: '0 12px 36px rgba(197, 255, 58, 0.08)',
+      }}
+    >
+      {/* Eyebrow header */}
       <div
-        className="flex items-center gap-2.5 rounded-md border px-3 py-2 mt-1 opacity-50"
+        className="px-3 py-2 flex items-center justify-between border-b"
+        style={{ borderColor: 'var(--color-border, #27272a)' }}
+      >
+        <div className="text-[9px] uppercase tracking-[0.2em] font-mono font-semibold text-zinc-500">
+          Google&apos;s local 3-pack
+        </div>
+        <MapPin size={11} className="text-zinc-600" />
+      </div>
+
+      {/* Stylized mini map — pure SVG, three rank-colored pins */}
+      <div className="px-3 pt-2.5">
+        <div
+          className="relative rounded-md overflow-hidden"
+          style={{
+            background: '#0d130a',
+            border: '1px solid var(--color-border, #27272a)',
+            height: 80,
+          }}
+        >
+          <svg
+            viewBox="0 0 280 110"
+            className="absolute inset-0 w-full h-full"
+            preserveAspectRatio="xMidYMid slice"
+            aria-hidden
+          >
+            <g stroke="#1f1f1f" strokeWidth="1" fill="none">
+              <path d="M0 35 L280 30" />
+              <path d="M0 75 L280 78" />
+              <path d="M60 0 L65 110" />
+              <path d="M160 0 L155 110" />
+              <path d="M230 0 L232 110" />
+            </g>
+            <path
+              d="M0 55 L280 52"
+              stroke="#2a2a1a"
+              strokeWidth="1.5"
+              fill="none"
+            />
+            <path
+              d="M210 90 Q240 85 270 95 L280 110 L210 110 Z"
+              fill="#c5ff3a"
+              fillOpacity="0.08"
+            />
+            <g>
+              {[
+                { x: 95, y: 45, color: RANK_COLORS[1] },
+                { x: 145, y: 60, color: RANK_COLORS[2] },
+                { x: 185, y: 40, color: RANK_COLORS[3] },
+              ].map((pin, i) => (
+                <g key={i}>
+                  <circle
+                    cx={pin.x}
+                    cy={pin.y + 1}
+                    r={6}
+                    fill="rgba(0,0,0,0.6)"
+                  />
+                  <circle cx={pin.x} cy={pin.y} r={6} fill={pin.color} />
+                  <circle cx={pin.x} cy={pin.y} r={2} fill="#0a0a0a" />
+                </g>
+              ))}
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      {/* Three real-looking listing rows */}
+      <ul className="px-3 py-2.5 space-y-2">
+        {PACK_ENTRIES.map((entry) => (
+          <li
+            key={entry.name}
+            className="flex items-start gap-2 text-[12px] leading-tight"
+          >
+            <div
+              className="flex-none w-[22px] h-[22px] rounded-md flex items-center justify-center font-display font-bold text-[10.5px]"
+              style={{
+                background: RANK_COLORS[entry.rank],
+                color: '#0a0a0a',
+              }}
+              aria-hidden
+            >
+              {entry.rank}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-zinc-100 truncate text-[12.5px]">
+                {entry.name}
+              </div>
+              <div className="flex items-center gap-1.5 text-[10.5px] text-zinc-500 mt-0.5">
+                <Star
+                  size={9}
+                  fill="#f5c842"
+                  stroke="#f5c842"
+                  className="flex-none"
+                />
+                <span className="text-zinc-300 font-mono">
+                  {entry.rating.toFixed(1)}
+                </span>
+                <span className="font-mono">({entry.reviews})</span>
+                <span className="text-zinc-700">·</span>
+                <span className="truncate">{entry.category}</span>
+              </div>
+            </div>
+          </li>
+        ))}
+
+        {/* ★ Fourth row — the punchline. Same row geometry as the
+         *  three pack entries above so the buyer reads it as part
+         *  of the same list, but in red with a "?" badge to signal
+         *  the absence. */}
+        <li
+          className="flex items-start gap-2 text-[12px] leading-tight pt-2 mt-1 border-t"
+          style={{ borderColor: 'var(--color-border, #27272a)' }}
+        >
+          <div
+            className="flex-none w-[22px] h-[22px] rounded-md flex items-center justify-center font-display font-bold text-[11.5px] text-white"
+            style={{ background: '#ff4d4d' }}
+            aria-hidden
+          >
+            ?
+          </div>
+          <div className="min-w-0 flex-1">
+            <div
+              className="font-semibold text-[12.5px] leading-tight"
+              style={{ color: '#ff4d4d' }}
+            >
+              You
+            </div>
+            <div className="text-[10.5px] text-zinc-500 mt-0.5 leading-snug">
+              Invisible to this searcher.
+            </div>
+          </div>
+        </li>
+      </ul>
+
+      {/* Bottom punchline caption */}
+      <div
+        className="px-3 py-2.5 border-t text-[10.5px] text-zinc-500 leading-snug"
         style={{
-          background: '#1a0d0d',
-          borderColor: '#5a1f1f',
+          borderColor: 'var(--color-border, #27272a)',
+          background: '#0d0d0d',
         }}
       >
-        <span
-          className="w-6 h-6 rounded-md flex items-center justify-center font-display font-bold text-[11px] text-white flex-none"
-          style={{ background: '#ff4d4d' }}
-        >
-          ?
-        </span>
-        <span className="flex-1 text-[11px] text-zinc-400 font-mono">
-          you — invisible to this searcher
-        </span>
+        These 3 businesses change{' '}
+        <span className="text-zinc-300 font-semibold">
+          every time the searcher moves
+        </span>{' '}
+        — even by a block. TurfMap measures all 81.
       </div>
     </div>
   );
