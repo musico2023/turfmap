@@ -21,11 +21,14 @@
  *     tier=scan + payment_status=paid, then derive customer_id
  *     for the upgrade Checkout.
  *
- *   source: "dashboard"
- *     Buyer is signed into the agency dashboard (/clients/<id>) or
- *     buyer portal (/portal/<id>). Body MUST include client_id;
- *     we look up the client's most recent fulfilled scan-tier
- *     lead_orders row to derive customer_id.
+ *   source: "stage_2_email"
+ *     Warm-cohort buyer clicking the CRM-reactivation Stage 2
+ *     audit-upgrade email. prospect_id is the capability token.
+ *
+ *   (The 'dashboard' source was removed 2026-06-13 per Anthony's
+ *   page-only upsell policy — the audit upgrade now lives on
+ *   /order/success exclusively. See migration 0043 + commit
+ *   9cfa172. /portal/<id> no longer surfaces this offer.)
  *
  * Gates (return 4xx if violated):
  *   - 400: missing required body fields
@@ -62,13 +65,15 @@ const UPGRADE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const UPGRADE_COUPON_CODE = 'UPGRADE_302_CREDIT';
 
 const RequestBody = z.object({
-  source: z.enum(['order_success', 'dashboard', 'stage_2_email']),
+  source: z.enum(['order_success', 'stage_2_email']),
   session_id: z.string().optional(),
-  client_id: z.string().uuid().optional(),
   /** Required when source='stage_2_email'. The warm-cohort prospect
    *  identifier acts as a capability token (same pattern /freescan
    *  + /yourmap use). The endpoint resolves the buyer's original
-   *  TurfScan purchase via lead_orders.stripe_metadata.prospect_id. */
+   *  TurfScan purchase via lead_orders.stripe_metadata.prospect_id.
+   *
+   *  The 'dashboard' source was removed 2026-06-13 per Anthony's
+   *  page-only upsell policy. */
   prospect_id: z.string().optional(),
 });
 
@@ -149,63 +154,6 @@ export async function POST(req: Request) {
         .eq('id', leadOrder.client_id)
         .maybeSingle<ClientRow>();
       client = c;
-    }
-  } else if (body.source === 'dashboard') {
-    // source: 'dashboard' — derive from client_id.
-    if (!body.client_id) {
-      return NextResponse.json(
-        { error: 'client_id required for dashboard source' },
-        { status: 400 }
-      );
-    }
-    const { data: c } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('id', body.client_id)
-      .maybeSingle<ClientRow>();
-    if (!c) {
-      return NextResponse.json({ error: 'client not found' }, { status: 404 });
-    }
-    client = c;
-    customerId = c.stripe_customer_id ?? null;
-
-    // Find the original TurfScan lead_orders row for this client.
-    const { data: lo } = await supabase
-      .from('lead_orders')
-      .select('*')
-      .eq('client_id', c.id)
-      .eq('tier', 'scan')
-      .eq('status', 'fulfilled')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<LeadOrderRow>();
-    leadOrder = lo;
-    if (!leadOrder) {
-      return NextResponse.json(
-        { error: 'no fulfilled TurfScan order found for this client' },
-        { status: 400 }
-      );
-    }
-    if (
-      leadOrder.stripe_metadata &&
-      typeof leadOrder.stripe_metadata === 'object' &&
-      'prospect_id' in leadOrder.stripe_metadata
-    ) {
-      const m = leadOrder.stripe_metadata as Record<string, unknown>;
-      prospectIdFromMetadata =
-        typeof m.prospect_id === 'string' ? m.prospect_id : null;
-    }
-    // Capture amount_total for the free-scan gate at step 1.5 below.
-    // Operator-initiated upgrades from /clients/<id> get the same gate
-    // as buyer-initiated ones — no $302 credit on $0 scans regardless
-    // of who clicks Upgrade.
-    if (leadOrder.stripe_session_id) {
-      const sessionResult = await loadCheckoutSession(
-        leadOrder.stripe_session_id
-      );
-      if (!('kind' in sessionResult)) {
-        originalAmountCents = sessionResult.amountTotal;
-      }
     }
   } else {
     // source: 'stage_2_email' — warm-cohort buyer clicking through

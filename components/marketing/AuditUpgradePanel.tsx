@@ -32,55 +32,42 @@ import { ArrowRight, Check, Clock, Shield } from 'lucide-react';
  */
 
 export type AuditUpgradePanelProps = {
-  /** Where this instance is being rendered. Forwarded to the
-   *  upgrade endpoint so the cancel_url routes back correctly + the
-   *  Stripe metadata records which placement converted. */
-  source: 'order_success' | 'dashboard';
-  /** For source=order_success: the original TurfScan checkout
-   *  session id from /order/success?session_id=...
-   *  For source=dashboard: omit; pass clientId instead. */
-  sessionId?: string;
-  /** For source=dashboard: the client UUID. The endpoint resolves
-   *  the most recent scan-tier lead_order from this. Omit on
-   *  order_success. */
-  clientId?: string;
-  /** Buyer's current TurfScore. Used in the dashboard placement's
-   *  contextual headline ("Your TurfScore is X"). Optional on
-   *  order_success since the score isn't computed yet. */
-  currentScore?: number | null;
-  /** Time remaining in the upgrade window. Pre-formatted by the
-   *  caller (e.g. "23h 14m left"). Dashboard placement only;
-   *  optional on order-success. */
-  timeRemainingLabel?: string;
-  /** Order-success only. Fired when the buyer declines the upgrade
-   *  and chooses to proceed to their TurfMap. The parent uses this
-   *  to reveal the "Your TurfMap is ready" success card, which is
-   *  hidden by default while the upgrade decision is pending so the
-   *  two CTAs don't compete. No-op on dashboard placement. */
+  /** Placement marker — forwarded to the upgrade endpoint so the
+   *  cancel_url routes back correctly + Stripe metadata records
+   *  which surface converted. Only 'order_success' since the
+   *  dashboard variant was removed 2026-06-13 per Anthony's
+   *  page-only policy. Kept as a literal (not a bare string) so
+   *  any future surface has to opt in explicitly. */
+  source: 'order_success';
+  /** The original TurfScan checkout session id from
+   *  /order/success?session_id=... — also the capability token the
+   *  upgrade endpoints validate against. Required. */
+  sessionId: string;
+  /** Fired when the buyer declines the upgrade and chooses to
+   *  proceed to their TurfMap. The parent uses this to reveal the
+   *  "Your TurfMap is ready" success card AND to fire
+   *  /api/upgrade/audit/decline so the upsell is permanently
+   *  expired for this scan order (Anthony page-only policy). */
   onSkip?: () => void;
-  /** Order-success only. The buyer's saved Stripe card (from the
-   *  original scan purchase). When present, panel renders a
-   *  no-redirect "Upgrade now" button (charges the saved card) that
-   *  fires /api/upgrade/audit/confirm. When null, falls back to
-   *  Stripe Checkout redirect via /create-session. */
+  /** The buyer's saved Stripe card (from the original scan
+   *  purchase). When present, panel renders a no-redirect "Upgrade
+   *  now" button (charges the saved card) that fires
+   *  /api/upgrade/audit/confirm. When null, falls back to Stripe
+   *  Checkout redirect via /create-session. */
   savedCard?: { brand: string; last4: string } | null;
-  /** Order-success only. Fired when the inline confirm succeeds
-   *  (no Stripe redirect). Parent transitions state to show the
-   *  audit-purchased banner + intake form, and fires the client-
-   *  side Meta Pixel Purchase event using the server-provided
-   *  eventId for CAPI dedup. No-op when the panel falls back to
-   *  Stripe Checkout redirect (the Stripe flow redirects away,
-   *  then the page reloads with ?upgrade=audit which the parent
-   *  reads separately). */
+  /** Fired when the inline confirm succeeds (no Stripe redirect).
+   *  Parent transitions state to show the audit-purchased banner +
+   *  intake form, and fires the client-side Meta Pixel Purchase
+   *  event using the server-provided eventId for CAPI dedup. No-op
+   *  when the panel falls back to Stripe Checkout redirect (the
+   *  Stripe flow redirects away, then the page reloads with
+   *  ?upgrade=audit which the parent reads separately). */
   onInlineConfirmSuccess?: (args: { metaEventId: string | null }) => void;
 };
 
 export function AuditUpgradePanel({
   source,
   sessionId,
-  clientId,
-  currentScore,
-  timeRemainingLabel,
   onSkip,
   savedCard,
   onInlineConfirmSuccess,
@@ -132,7 +119,7 @@ export function AuditUpgradePanel({
       // a single API call. On `fallback_to_checkout`, fall through
       // to the redirect-style flow (covers 3DS challenges + edge
       // cases where the inline path can't proceed).
-      if (savedCard && source === 'order_success' && sessionId) {
+      if (savedCard && sessionId) {
         const confirmRes = await fetch('/api/upgrade/audit/confirm', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -182,7 +169,6 @@ export function AuditUpgradePanel({
         body: JSON.stringify({
           source,
           session_id: sessionId,
-          client_id: clientId,
         }),
       });
       const data = (await res.json()) as {
@@ -201,34 +187,19 @@ export function AuditUpgradePanel({
     }
   }
 
-  // Headline + lead copy switches by placement. Order-success is
-  // forward-looking ("your scan is firing now"); dashboard is
-  // results-aware ("your TurfScore is X").
-  const headline =
-    source === 'dashboard' && currentScore != null
-      ? `Your TurfScore is ${currentScore}.`
-      : 'Add a 90-day Roadmap to your scan?';
-
-  const leadCopy =
-    source === 'dashboard' ? (
-      <>
-        The Fix List above shows you what to do, but:
-        <br />— Executing those actions in the right sequence takes
-        judgment.
-        <br />— Ranking up requires more than just the 3 highest-impact
-        moves.
-        <br />— Most operators leave 60–80% of potential lift on the
-        table.
-        <br />
-        <br />
-        Want a TurfMap strategist to build a 90-day implementation plan?
-      </>
-    ) : (
-      <>
-        Your TurfScan is firing now. Want a TurfMap strategist to build
-        a 90-day implementation plan based on what we find?
-      </>
-    );
+  // Forward-looking framing — this lands on /order/success right
+  // after the buyer paid for their TurfScan. The dashboard-variant
+  // results-aware copy ("Your TurfScore is X. The Fix List above
+  // shows you what to do, but...") was removed 2026-06-13 with
+  // the rest of the dashboard surface per Anthony's page-only
+  // policy.
+  const headline = 'Add a 90-day Roadmap to your scan?';
+  const leadCopy = (
+    <>
+      Your TurfScan is firing now. Want a TurfMap strategist to build
+      a 90-day implementation plan based on what we find?
+    </>
+  );
 
   return (
     <div
@@ -276,9 +247,7 @@ export function AuditUpgradePanel({
           Save $302
         </span>
         <span className="text-zinc-700">·</span>
-        <span className="text-zinc-500">
-          {source === 'order_success' ? 'this page only' : '24h window'}
-        </span>
+        <span className="text-zinc-500">this page only</span>
       </div>
 
       <h3 className="font-display text-xl md:text-2xl font-bold mb-3 text-white order-2">
@@ -298,62 +267,35 @@ export function AuditUpgradePanel({
        *  hero, not just another bullet. Bolded value-fragments help
        *  the buyer's scan-pattern catch the differentiators. */}
       <ul className="space-y-2.5 mb-5 order-9 lg:order-5">
-        {(source === 'dashboard'
-          ? [
-              <>
-                <strong className="text-white">30-min strategist call</strong>{' '}
-                within 5 business days
-              </>,
-              <>
-                <strong className="text-white">
-                  Competitor heatmap analysis
-                </strong>{' '}
-                of your top 3 territory threats
-              </>,
-              <>
-                <strong className="text-white">
-                  90-Day Visibility Roadmap PDF
-                </strong>{' '}
-                (week-by-week action plan)
-              </>,
-              <>
-                <strong className="text-white">30-day re-scan</strong> +{' '}
-                <strong className="text-white">
-                  60-day strategist check-in
-                </strong>{' '}
-                call
-              </>,
-            ]
-          : [
-              <>
-                <strong className="text-white">
-                  30-min strategist diagnostic call
-                </strong>{' '}
-                (live competitor teardown)
-              </>,
-              <>
-                <strong className="text-white">Per-vertical NAP audit</strong>{' '}
-                (every directory specific to your trade)
-              </>,
-              <>
-                <strong className="text-white">Competitor analysis</strong>{' '}
-                with heatmap overlay
-              </>,
-              <>
-                <strong className="text-white">
-                  90-Day Visibility Roadmap PDF
-                </strong>{' '}
-                (week-by-week action plan)
-              </>,
-              <>
-                <strong className="text-white">30-day re-scan</strong> +{' '}
-                <strong className="text-white">
-                  60-day strategist check-in
-                </strong>{' '}
-                call
-              </>,
-            ]
-        ).map((line, i) => (
+        {[
+          <>
+            <strong className="text-white">
+              30-min strategist diagnostic call
+            </strong>{' '}
+            (live competitor teardown)
+          </>,
+          <>
+            <strong className="text-white">Per-vertical NAP audit</strong>{' '}
+            (every directory specific to your trade)
+          </>,
+          <>
+            <strong className="text-white">Competitor analysis</strong>{' '}
+            with heatmap overlay
+          </>,
+          <>
+            <strong className="text-white">
+              90-Day Visibility Roadmap PDF
+            </strong>{' '}
+            (week-by-week action plan)
+          </>,
+          <>
+            <strong className="text-white">30-day re-scan</strong> +{' '}
+            <strong className="text-white">
+              60-day strategist check-in
+            </strong>{' '}
+            call
+          </>,
+        ].map((line, i) => (
           <li
             key={i}
             className="flex items-start gap-2.5 text-sm text-zinc-300 leading-relaxed"
@@ -436,12 +378,7 @@ export function AuditUpgradePanel({
         }}
       >
         <Clock size={13} strokeWidth={2.5} />
-        <span>
-          {timeRemainingLabel ??
-            (source === 'order_success'
-              ? 'This page only — once you leave, $499 from scratch'
-              : 'Upgrade window closes soon — after that, $499 from scratch')}
-        </span>
+        <span>This page only — once you leave, $499 from scratch</span>
       </div>
 
       {/* Saved-card row — only shown in the 1-click flow.
@@ -460,7 +397,7 @@ export function AuditUpgradePanel({
        *  viewports (< 360px); the natural break point lands between
        *  "ending 4242" and "· 1-click charge" which still reads
        *  cleanly. */}
-      {savedCard && source === 'order_success' && (
+      {savedCard && (
         <div
           className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-4 text-xs font-mono px-3 py-2.5 rounded-md border order-5 lg:order-9"
           style={{
@@ -515,16 +452,14 @@ export function AuditUpgradePanel({
               : 'Add the Roadmap'}
           {!busy && <ArrowRight size={16} strokeWidth={3} />}
         </button>
-        {source === 'order_success' && (
-          <button
-            type="button"
-            onClick={onSkip}
-            disabled={busy}
-            className="inline-flex items-center justify-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50 px-3 py-2.5 sm:px-2 sm:py-1"
-          >
-            Skip — open my TurfMap →
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onSkip}
+          disabled={busy}
+          className="inline-flex items-center justify-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50 px-3 py-2.5 sm:px-2 sm:py-1"
+        >
+          Skip — open my TurfMap →
+        </button>
       </div>
 
       {error && (

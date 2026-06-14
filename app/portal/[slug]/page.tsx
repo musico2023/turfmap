@@ -52,7 +52,6 @@ import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
-import { AuditUpgradePanel } from '@/components/marketing/AuditUpgradePanel';
 import { ClientBillingPanel } from '@/components/turfmap/ClientBillingPanel';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { resolveTier } from '@/lib/subscription/tier';
@@ -316,69 +315,13 @@ export default async function ClientPortalPage({
         }>()
     : { data: null };
 
-  // Audit-upgrade panel gating. Three conditions must all hold:
-  //   1. Buyer is on TurfScan tier (one_time billing mode), not
-  //      already on audit / pulse / strategy
-  //   2. No visibility_audits row for this client (= not already
-  //      upgraded; defends against double-upgrade)
-  //   3. Within 24 hours of the original lead_orders.created_at —
-  //      the spec'd upgrade window
-  // All three derived server-side so the client component only
-  // gets a boolean + a pre-formatted time-remaining string.
-  let showAuditUpgrade = false;
-  let upgradeTimeRemainingLabel: string | null = null;
-  if (client.billing_mode === 'one_time') {
-    const [{ data: existingAudit }, { data: scanLeadOrder }] =
-      await Promise.all([
-        supabase
-          .from('visibility_audits')
-          .select('id')
-          .eq('client_id', clientUuid)
-          .limit(1)
-          .maybeSingle<{ id: string }>(),
-        supabase
-          .from('lead_orders')
-          .select('created_at, stripe_metadata')
-          .eq('client_id', clientUuid)
-          .eq('tier', 'scan')
-          .eq('status', 'fulfilled')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle<{
-            created_at: string;
-            stripe_metadata: Record<string, unknown> | null;
-          }>(),
-      ]);
-    // WARM-COHORT SUPPRESSION: crm_reactivation_q2 buyers MUST NOT
-    // see the dashboard AuditUpgradePanel per campaign brief. They
-    // received their scan as a gift; Stage 2 email is the sole
-    // entry point to the audit pitch. Read cohort off the
-    // lead_orders row's stripe_metadata (stamped from session metadata
-    // at checkout time).
-    const cohortFromOrder =
-      scanLeadOrder?.stripe_metadata &&
-      typeof scanLeadOrder.stripe_metadata === 'object' &&
-      'cohort' in scanLeadOrder.stripe_metadata
-        ? String(scanLeadOrder.stripe_metadata.cohort)
-        : null;
-    const isWarmCohort = cohortFromOrder === 'crm_reactivation_q2';
-    if (!existingAudit && scanLeadOrder && !isWarmCohort) {
-      const orderAgeMs =
-        Date.now() - new Date(scanLeadOrder.created_at).getTime();
-      const remainingMs = 24 * 60 * 60 * 1000 - orderAgeMs;
-      if (remainingMs > 0) {
-        showAuditUpgrade = true;
-        const hours = Math.floor(remainingMs / (60 * 60 * 1000));
-        const minutes = Math.floor(
-          (remainingMs % (60 * 60 * 1000)) / (60 * 1000)
-        );
-        upgradeTimeRemainingLabel =
-          hours > 0
-            ? `Upgrade window closes in ${hours}h ${minutes}m. After that, $499 from scratch.`
-            : `Upgrade window closes in ${minutes}m. After that, $499 from scratch.`;
-      }
-    }
-  }
+  // (Dashboard-variant AuditUpgradePanel + its 24h-window gating
+  //  removed 2026-06-13 per Anthony's page-only policy — the audit
+  //  upsell now lives on /order/success exclusively. See migration
+  //  0043 + commit 9cfa172. The portal dashboard no longer surfaces
+  //  the upsell; buyers who skipped or never saw it can still book
+  //  a $499 standalone audit through the marketing site if they
+  //  decide later.)
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -603,22 +546,9 @@ export default async function ClientPortalPage({
           />
         </div>
 
-        {/* Audit-upgrade panel — TurfScan buyers within their 24h
-         *  upgrade window. Sits beneath the Fix List per spec; the
-         *  results-aware copy ("Your TurfScore is X. The Fix List
-         *  above shows you what to do, but...") leans on the
-         *  preceding AICoach context. After 24h or after upgrade
-         *  the gating server-side hides this entirely. */}
-        {showAuditUpgrade && (
-          <div className="lg:col-span-12">
-            <AuditUpgradePanel
-              source="dashboard"
-              clientId={clientUuid}
-              currentScore={latestScan?.turf_score ?? null}
-              timeRemainingLabel={upgradeTimeRemainingLabel ?? undefined}
-            />
-          </div>
-        )}
+        {/* (Audit-upgrade panel removed 2026-06-13 per Anthony's
+         *  page-only policy — see /order/success for the sole
+         *  surface.) */}
 
         {showBillingPanel && (
           <div className="lg:col-span-12">
