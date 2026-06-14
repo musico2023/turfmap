@@ -252,7 +252,17 @@ export function AuditUpgradePanel({
 
       {/* Eyebrow strip — lime-accented + price-anchor savings badge.
        *  Strong color contrast on "SAVE $302" makes the discount the
-       *  first thing the eye lands on, not the small-print clock. */}
+       *  first thing the eye lands on, not the small-print clock.
+       *
+       *  Scope-chip is source-keyed: on order_success the offer is
+       *  a strict one-shot (Anthony's 2026-06-13 policy: upsell
+       *  available on /order/success only, expires on decline) so we
+       *  surface "this page only" — NOT "24h window", which falsely
+       *  implies the buyer can come back tomorrow and still grab
+       *  the discount. On the dashboard placement the buyer arrives
+       *  via /portal post-fulfillment and the parent uses a real
+       *  time-keyed countdown (see DashboardAuditUpgradeBanner) so
+       *  "24h window" is honest there. */}
       <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] uppercase tracking-[0.18em] font-mono font-semibold order-1">
         <span style={{ color: 'var(--color-lime)' }}>●</span>
         <span style={{ color: 'var(--color-lime)' }}>
@@ -266,7 +276,9 @@ export function AuditUpgradePanel({
           Save $302
         </span>
         <span className="text-zinc-700">·</span>
-        <span className="text-zinc-500">24h window</span>
+        <span className="text-zinc-500">
+          {source === 'order_success' ? 'this page only' : '24h window'}
+        </span>
       </div>
 
       <h3 className="font-display text-xl md:text-2xl font-bold mb-3 text-white order-2">
@@ -427,7 +439,7 @@ export function AuditUpgradePanel({
         <span>
           {timeRemainingLabel ??
             (source === 'order_success'
-              ? 'Special pricing — next 24 hours only'
+              ? 'This page only — once you leave, $499 from scratch'
               : 'Upgrade window closes soon — after that, $499 from scratch')}
         </span>
       </div>
