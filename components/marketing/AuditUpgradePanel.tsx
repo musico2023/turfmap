@@ -433,24 +433,47 @@ export function AuditUpgradePanel({
       </div>
 
       {/* Saved-card row — only shown in the 1-click flow.
-       *  Surfaces what card will be charged so the buyer trusts
-       *  the no-redirect confirmation. */}
+       *
+       *  Surfaces what card will be charged so the buyer trusts the
+       *  no-redirect confirmation. On mobile this is the LOAD-BEARING
+       *  trust signal: "Upgrade now" + no Stripe redirect would feel
+       *  fast and twitchy to a thumb-tapping buyer if they couldn't
+       *  see what card was being charged. Visual treatment is
+       *  intentionally a notch louder than the original muted-gray
+       *  version — lime-tinted background + brand+last4 promoted to
+       *  zinc-100 — so a mobile glance registers the 1-click context
+       *  before the buyer commits.
+       *
+       *  flex-wrap keeps the row from overflowing on very narrow
+       *  viewports (< 360px); the natural break point lands between
+       *  "ending 4242" and "· 1-click charge" which still reads
+       *  cleanly. */}
       {savedCard && source === 'order_success' && (
         <div
-          className="flex items-center gap-2 mb-4 text-xs text-zinc-500 font-mono px-3 py-2 rounded-md border order-5 lg:order-9"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-4 text-xs font-mono px-3 py-2.5 rounded-md border order-5 lg:order-9"
           style={{
-            background: 'var(--color-bg)',
-            borderColor: 'var(--color-border)',
+            background: 'rgba(197, 255, 58, 0.07)',
+            borderColor: 'rgba(197, 255, 58, 0.3)',
           }}
         >
-          <span className="text-zinc-600">Paying with</span>
-          <span className="text-zinc-300 uppercase">
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{ background: 'var(--color-lime)' }}
+            aria-hidden="true"
+          />
+          <span className="text-zinc-500">Paying with</span>
+          <span className="text-zinc-100 uppercase font-semibold">
             {savedCard.brand}
           </span>
-          <span className="text-zinc-600">ending</span>
-          <span className="text-zinc-300">{savedCard.last4}</span>
+          <span className="text-zinc-500">ending</span>
+          <span className="text-zinc-100 font-semibold">{savedCard.last4}</span>
           <span className="text-zinc-700">·</span>
-          <span className="text-zinc-600">1-click charge</span>
+          <span
+            className="font-semibold"
+            style={{ color: 'var(--color-lime)' }}
+          >
+            1-click upgrade
+          </span>
         </div>
       )}
 
@@ -485,7 +508,7 @@ export function AuditUpgradePanel({
             type="button"
             onClick={onSkip}
             disabled={busy}
-            className="inline-flex items-center justify-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50 px-2 py-1"
+            className="inline-flex items-center justify-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50 px-3 py-2.5 sm:px-2 sm:py-1"
           >
             Skip — open my TurfMap →
           </button>

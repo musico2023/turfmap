@@ -852,7 +852,7 @@ export function OrderSuccessForm({
                 href={scoreUnlock.auditBookingUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-md font-bold text-sm py-2.5 px-4 transition-all whitespace-nowrap hover:brightness-110"
+                className="inline-flex items-center justify-center gap-2 rounded-md font-bold text-sm py-3 px-4 sm:py-2.5 transition-all whitespace-nowrap hover:brightness-110 w-full sm:w-auto"
                 style={{
                   background: 'var(--color-lime)',
                   color: 'black',
