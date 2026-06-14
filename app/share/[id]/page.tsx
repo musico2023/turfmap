@@ -1825,12 +1825,40 @@ function PreviewMobileLayout({
           )}
         </TeaserCard>
 
-        {/* AI Coach fix-list teaser */}
+        {/* AI Coach fix-list teaser
+         *
+         *  Conversion-anchor eyebrow + footnote (2026-06-13):
+         *  the Fix List has the least visible proof of the three
+         *  teaser cards — only blurred placeholder text, no real
+         *  numbers shipped to the browser. So the eyebrow has to
+         *  carry the "ready, custom, high-leverage" weight on its
+         *  own.
+         *
+         *   - Eyebrow names the AI Coach brand asset + tells the
+         *     buyer the Fix List materializes immediately after
+         *     unlock (kills the "AI takes time to generate"
+         *     hesitation that intercepts conversion at this card).
+         *   - Footnote closes the loop between the trajectory carrot
+         *     (projected +N points) and this card: "executing these
+         *     IS the lift." Without that, the carrot reads as
+         *     marketing math and the Fix List reads as filler. With
+         *     it, the buyer sees a coherent path: score → projection
+         *     → these specific fixes → that lift. */}
         <TeaserCard
           icon={<Sparkles size={14} style={{ color: 'var(--color-lime)' }} />}
           title="3 prioritized fixes"
           subtitle="Named to your real audit data"
         >
+          <div
+            className="text-[9px] uppercase tracking-[0.18em] font-mono font-semibold mb-2 flex items-center gap-1.5"
+            style={{ color: 'var(--color-lime)' }}
+          >
+            <span
+              className="inline-block w-1 h-1 rounded-full"
+              style={{ background: 'var(--color-lime)' }}
+            />
+            AI Coach · ready in seconds after unlock
+          </div>
           <div className="space-y-1.5 text-[10px]">
             {[1, 2, 3].map((n) => (
               <div key={n} className="flex items-start gap-2">
@@ -1854,6 +1882,14 @@ function PreviewMobileLayout({
               </div>
             ))}
           </div>
+          <p className="mt-3 text-[9px] leading-relaxed text-zinc-500">
+            Each fix targets a specific cell-rank gap from your scan.
+            Executing the top 3 is what drives the projected{' '}
+            <span className="text-zinc-300 font-semibold">
+              +{Math.max(0, projectedScore - score)}-point lift
+            </span>{' '}
+            above — most operators implement #1 same-day.
+          </p>
         </TeaserCard>
       </div>
 
