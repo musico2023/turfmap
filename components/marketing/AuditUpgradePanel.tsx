@@ -232,17 +232,28 @@ export function AuditUpgradePanel({
 
   return (
     <div
-      className="border rounded-lg p-6 md:p-7 mb-6"
+      className="border rounded-lg p-6 md:p-7 mb-6 flex flex-col"
       style={{
         background: 'var(--color-card-glow)',
         borderColor: 'var(--color-border-bright)',
         boxShadow: '0 0 24px #c5ff3a14',
       }}
     >
+      {/* Mobile-first reorder (2026-06-13): the flex+order-* classes
+       *  on each child below push pricing/saved-card/CTA up to
+       *  follow the headline directly on mobile, with the bullet
+       *  list + lift-promise box + time-window callout pushed
+       *  underneath the CTA. Cuts the scroll-to-action distance for
+       *  thumb-only buyers from ~5 scrolls to ~2.
+       *
+       *  Desktop (lg+) re-pins the original source order via
+       *  lg:order-* overrides so the previously-iterated CRO layout
+       *  (which was tuned for desktop preview) is preserved. */}
+
       {/* Eyebrow strip — lime-accented + price-anchor savings badge.
        *  Strong color contrast on "SAVE $302" makes the discount the
        *  first thing the eye lands on, not the small-print clock. */}
-      <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] uppercase tracking-[0.18em] font-mono font-semibold">
+      <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] uppercase tracking-[0.18em] font-mono font-semibold order-1">
         <span style={{ color: 'var(--color-lime)' }}>●</span>
         <span style={{ color: 'var(--color-lime)' }}>
           Visibility Audit upgrade
@@ -258,15 +269,15 @@ export function AuditUpgradePanel({
         <span className="text-zinc-500">24h window</span>
       </div>
 
-      <h3 className="font-display text-xl md:text-2xl font-bold mb-3 text-white">
+      <h3 className="font-display text-xl md:text-2xl font-bold mb-3 text-white order-2">
         {headline}
       </h3>
 
-      <p className="text-zinc-300 text-sm md:text-base leading-relaxed mb-5">
+      <p className="text-zinc-300 text-sm md:text-base leading-relaxed mb-5 order-3">
         {leadCopy}
       </p>
 
-      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-mono font-semibold mb-3 order-8 lg:order-4">
         What you get with the upgrade
       </div>
 
@@ -274,7 +285,7 @@ export function AuditUpgradePanel({
        *  to its own callout below because it's the risk-reversal
        *  hero, not just another bullet. Bolded value-fragments help
        *  the buyer's scan-pattern catch the differentiators. */}
-      <ul className="space-y-2.5 mb-5">
+      <ul className="space-y-2.5 mb-5 order-9 lg:order-5">
         {(source === 'dashboard'
           ? [
               <>
@@ -352,7 +363,7 @@ export function AuditUpgradePanel({
        *  conversion lever (money-back guarantee) and was previously
        *  buried as the 6th bullet. */}
       <div
-        className="rounded-md border-2 px-4 py-3 mb-5 flex items-start gap-3"
+        className="rounded-md border-2 px-4 py-3 mb-5 flex items-start gap-3 order-7 lg:order-6"
         style={{
           background: 'rgba(197, 255, 58, 0.05)',
           borderColor: 'rgba(197, 255, 58, 0.35)',
@@ -385,7 +396,7 @@ export function AuditUpgradePanel({
        *  "you save $302" reinforces below. Previous version had both
        *  prices in the same bold weight which made the discount
        *  invisible to a scanner. */}
-      <div className="mb-4 flex items-baseline gap-3 flex-wrap">
+      <div className="mb-4 flex items-baseline gap-3 flex-wrap order-4 lg:order-7">
         <span className="font-display text-3xl md:text-4xl font-bold text-white">
           $197
         </span>
@@ -405,7 +416,7 @@ export function AuditUpgradePanel({
        *  that visually receded; conversion benefits from this being
        *  one of the loudest elements on the panel. */}
       <div
-        className="flex items-center gap-2 mb-5 text-xs font-mono font-semibold px-3 py-2 rounded-md border"
+        className="flex items-center gap-2 mb-5 text-xs font-mono font-semibold px-3 py-2 rounded-md border order-10 lg:order-8"
         style={{
           background: 'rgba(197, 255, 58, 0.08)',
           borderColor: 'rgba(197, 255, 58, 0.25)',
@@ -426,7 +437,7 @@ export function AuditUpgradePanel({
        *  the no-redirect confirmation. */}
       {savedCard && source === 'order_success' && (
         <div
-          className="flex items-center gap-2 mb-4 text-xs text-zinc-500 font-mono px-3 py-2 rounded-md border"
+          className="flex items-center gap-2 mb-4 text-xs text-zinc-500 font-mono px-3 py-2 rounded-md border order-5 lg:order-9"
           style={{
             background: 'var(--color-bg)',
             borderColor: 'var(--color-border)',
@@ -448,7 +459,7 @@ export function AuditUpgradePanel({
        *  small CTAs read as low-importance regardless of color. Hover
        *  brightness lift gives a tactile cue that the button is
        *  interactive. */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 order-6 lg:order-10">
         <button
           type="button"
           onClick={handleClick}
@@ -482,7 +493,10 @@ export function AuditUpgradePanel({
       </div>
 
       {error && (
-        <p className="mt-3 text-xs text-red-400 leading-relaxed" role="alert">
+        <p
+          className="mt-3 text-xs text-red-400 leading-relaxed order-[11]"
+          role="alert"
+        >
           {error}
         </p>
       )}
