@@ -20,7 +20,18 @@
  * expiry check never serves a stale "active" page.
  */
 
-import { Crosshair, Crown, MapPin, Target, Compass, ChevronRight, Clock } from 'lucide-react';
+import {
+  ChevronRight,
+  Clock,
+  Compass,
+  Crosshair,
+  Crown,
+  Lock,
+  MapPin,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from 'lucide-react';
 import Link from 'next/link';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { isAgencyOwnerEmail } from '@/lib/auth/agency';
@@ -64,6 +75,7 @@ import {
   SHARE_HERO_SENTINEL_ID,
   SHARE_FINAL_SENTINEL_ID,
 } from '@/components/turfmap/StickyShareUnlockBar';
+import { UnlockShareButton } from '@/components/turfmap/UnlockShareButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -369,9 +381,16 @@ export default async function PublicSharePage({
         .
       </div>
 
-      {/* Compact business meta */}
+      {/* Compact business meta — hidden on mobile for preview cohort
+       *  because PreviewMobileLayout (rendered below) shows the
+       *  business name + keyword in a denser, conversion-tuned
+       *  sub-header instead. Non-preview viewers (paid buyers,
+       *  agency staff looking at their own clients) see the full
+       *  3-col meta on every viewport. */}
       <div
-        className="border-b px-4 md:px-8 py-4 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 items-start md:items-center"
+        className={`border-b px-4 md:px-8 py-4 ${
+          client.is_preview ? 'hidden lg:grid' : 'grid'
+        } grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 items-start md:items-center`}
         style={{ borderColor: 'var(--color-border)' }}
       >
         <div className="min-w-0">
@@ -417,6 +436,59 @@ export default async function PublicSharePage({
         </div>
       </div>
 
+      {/* Mobile-only quizflow-style layout for preview cohort
+       *  (2026-06-13). Replaces the desktop grid on lg-down with a
+       *  score-first reveal, projected-lift trajectory, ROI anchor,
+       *  3 compressed lock teasers, testimonial, and repeated
+       *  unlock CTAs — tuned to match the Logik-quizflow conversion
+       *  archetype Anthony shipped on /free-score-now. Same data,
+       *  same security guarantees (competitor names already null'd
+       *  server-side; the decoy heatmap inside PreviewMobileLayout
+       *  is band-keyed pseudorandom, no real cells).
+       *
+       *  The desktop grid below stays the canonical preview render
+       *  on lg+. Unlocked viewers (is_preview=false) never see this
+       *  block at all. */}
+      {client.is_preview && (
+        <div className="lg:hidden">
+          <PreviewMobileLayout
+            shareId={shareId}
+            businessName={client.business_name}
+            logoUrl={client.logo_url}
+            keyword={keyword?.keyword ?? null}
+            scanLocationLabel={
+              scanLocation
+                ? scanLocation.is_primary
+                  ? null
+                  : locationDisplayLabel(scanLocation)
+                : null
+            }
+            score={score}
+            reach={reach}
+            rank={rank}
+            bandLabel={band.label}
+            cells={cells}
+            topCompetitors={competitors.slice(0, 3).map((c) => ({
+              name: null,
+              top3Pct: c.top3Pct,
+              amr: Number.isFinite(c.amr) ? c.amr : null,
+            }))}
+            totalCompetitorCount={competitors.length}
+            googlePrimaryType={
+              meta &&
+              typeof (meta as Record<string, unknown>)['google_primary_type'] ===
+                'string'
+                ? ((meta as Record<string, unknown>)[
+                    'google_primary_type'
+                  ] as string)
+                : null
+            }
+            discountedUnlock={discountedUnlock}
+            previewLeaderShare={previewLeaderShare}
+          />
+        </div>
+      )}
+
       {/* Heatmap + sidebar — same shape as portal/dashboard but
        *  internals stripped out.
        *
@@ -434,8 +506,20 @@ export default async function PublicSharePage({
        *  heatmap goes back to the left (col-span-8) and the score
        *  sidebar back to the right (col-span-4) — that layout was
        *  fine because both columns are visible above the fold at
-       *  once on desktop. */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
+       *  once on desktop.
+       *
+       *  Mobile-preview takeover (2026-06-13): for preview-cohort
+       *  buyers on lg-down, this entire grid is hidden — the new
+       *  PreviewMobileLayout block (right after this div) takes
+       *  over with a quizflow-style score-first reveal, repeated
+       *  CTAs, and compressed lock teasers. Desktop preview still
+       *  uses this layout. Unlocked viewers (is_preview=false) get
+       *  this layout on every viewport. */}
+      <div
+        className={`${
+          client.is_preview ? 'hidden lg:grid' : 'grid'
+        } grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8`}
+      >
         <div
           className="order-2 lg:order-1 lg:col-span-8 border rounded-lg p-4 md:p-6 relative"
           style={{
@@ -1339,6 +1423,639 @@ function PreviewTestimonial() {
       </p>
     </div>
   );
+}
+
+/* ─── PreviewMobileLayout ────────────────────────────────────────────────
+ *
+ *  Quizflow-style mobile takeover for preview-cohort /share viewers.
+ *  Rendered only on lg-down + is_preview=true (see the conditional
+ *  block inside PublicSharePage). Replaces the desktop heatmap-left/
+ *  sidebar-right grid with a vertical, conversion-tuned ladder
+ *  matching the archetype Anthony shipped on /free-score-now:
+ *
+ *    ┌─────────────────────────────────────────────────────────────┐
+ *    │ 1.  Compressed sub-header (business + keyword)              │
+ *    │ 2.  Hero score reveal — bullseye SVG + score + band         │
+ *    │     + "invisible to X of 81 searchers" callout              │
+ *    │     [SHARE_HERO_SENTINEL_ID anchors sticky-bar hide here]   │
+ *    │ 3.  Trajectory carrot — "score → projected in 90 days"      │
+ *    │ 4.  Primary CTA #1 (UnlockShareButton — discount-aware)     │
+ *    │ 5.  ROI anchor (compressed — 2-line missed-revenue frame)   │
+ *    │ 6.  "What's behind the unlock" — 3 compact teaser cards     │
+ *    │       a. Block-by-block heatmap (band-keyed decoy thumb)    │
+ *    │       b. N competitors (real %, names blurred)              │
+ *    │       c. 3 prioritized fixes (blurred titles)               │
+ *    │ 7.  PreviewTestimonial — reused from existing helper        │
+ *    │ 8.  Final CTA (UnlockShareButton)                           │
+ *    │     [SHARE_FINAL_SENTINEL_ID anchors sticky-bar hide here]  │
+ *    └─────────────────────────────────────────────────────────────┘
+ *
+ *  SECURITY: every server-side gating contract preserved.
+ *    - Decoy heatmap uses a band-keyed pseudorandom 81-cell pattern
+ *      generated inside this component (no real cells shipped to the
+ *      browser — matches PreviewHeatmapLock's approach).
+ *    - Competitor names come from the caller already stripped to
+ *      null (the page server passes `topCompetitors[i].name = null`).
+ *      We render blurred ascii-block placeholders. Real top3Pct +
+ *      AMR stats remain visible as proof.
+ *    - AI Coach fix titles are decoy ascii blocks here — the real
+ *      fixes only resolve server-side on unlock fulfillment.
+ *
+ *  The two sticky-bar sentinels in this layout override the ones in
+ *  the desktop grid by document order (getElementById returns the
+ *  first match). Desktop sentinels remain in the hidden lg:grid block
+ *  for the lg+ rendering path; the StickyShareUnlockBar itself is
+ *  md:hidden so the two don't conflict. */
+
+type PreviewMobileLayoutProps = {
+  shareId: string;
+  businessName: string;
+  logoUrl: string | null;
+  keyword: string | null;
+  /** Friendly location label for the sub-header. `null` when the
+   *  scan was for the primary location (we don't need to disambiguate
+   *  one-location-businesses with a label). */
+  scanLocationLabel: string | null;
+  score: number;
+  reach: number;
+  rank: number | null;
+  bandLabel: string;
+  cells: HeatmapCell[];
+  /** Top-3 competitor stats with names already null'd server-side.
+   *  See PreviewCompetitorLockProps for the load-bearing contract. */
+  topCompetitors: Array<{
+    name: null;
+    top3Pct: number;
+    amr: number | null;
+  }>;
+  totalCompetitorCount: number;
+  googlePrimaryType: string | null;
+  discountedUnlock: boolean;
+  previewLeaderShare: number | null;
+};
+
+function PreviewMobileLayout({
+  shareId,
+  businessName,
+  logoUrl,
+  keyword,
+  scanLocationLabel,
+  score,
+  reach,
+  bandLabel,
+  topCompetitors,
+  totalCompetitorCount,
+  googlePrimaryType,
+  discountedUnlock,
+  previewLeaderShare,
+}: PreviewMobileLayoutProps) {
+  const econ = inferTradeEconomics(keyword, googlePrimaryType);
+  const missedCells = Math.max(0, 81 - Math.round((reach / 100) * 81));
+  const unlockPriceUsd = discountedUnlock ? 49 : 99;
+  const coverageMultiplier = Math.floor(econ.avgJobUSD / unlockPriceUsd);
+  const projectedScore = projectedScoreFor(score, bandLabel);
+  const bandColor = bandHexFor(bandLabel, score);
+  const ctaLabel = discountedUnlock
+    ? 'Unlock everything — $49'
+    : 'Unlock everything — $99';
+  const decoyHeatmap = buildMobileDecoyCells(bandLabel);
+  const competitorsCount = totalCompetitorCount;
+
+  // Trade-aware microcopy fragments. Falls back to neutral phrasing
+  // when keyword/type don't resolve into the econ tables.
+  const tradeUnit = econ.unitLabel;
+  const tradeLabel = econ.tradeLabel;
+
+  return (
+    <div className="px-4 py-5 space-y-5">
+      {/* ── Compressed sub-header ─────────────────────────────────── */}
+      <div className="flex items-start gap-3">
+        <ClientBrandMark
+          logoUrl={logoUrl}
+          businessName={businessName}
+          size={36}
+        />
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold leading-none mb-1">
+            TurfMap visibility report
+          </div>
+          <div className="font-display text-base font-bold text-zinc-50 leading-tight truncate">
+            {businessName}
+          </div>
+          <div className="text-[11px] font-mono text-zinc-500 leading-tight mt-0.5 truncate">
+            &ldquo;{keyword ?? '—'}&rdquo;
+            {scanLocationLabel ? ` · ${scanLocationLabel}` : ''}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Hero score reveal (bullseye + score + band) ──────────── */}
+      <div
+        className="rounded-lg border p-5 text-center"
+        style={{
+          background: 'var(--color-card)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <div
+          className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold mb-3"
+          style={{ color: bandColor }}
+        >
+          Your TurfScore
+        </div>
+        <BullseyeScore score={score} bandColor={bandColor} />
+        <div
+          className="mt-3 font-display text-lg font-bold"
+          style={{ color: bandColor }}
+        >
+          {bandLabel}
+        </div>
+        <p className="mt-2 text-sm text-zinc-300 leading-relaxed">
+          {missedCells >= 81 ? (
+            <>You&rsquo;re invisible to <strong className="text-white">every searcher</strong> in your service area.</>
+          ) : missedCells === 0 ? (
+            <>You appear across <strong className="text-white">all 81</strong> search points — top-tier visibility.</>
+          ) : (
+            <>You&rsquo;re invisible to <strong className="text-white">{missedCells} of 81</strong> searchers near you.</>
+          )}
+        </p>
+        {/* Sticky-bar hero sentinel — placed at the bottom of the
+         *  hero card so the sticky bar stays hidden while the buyer
+         *  is reading their score (and the first inline CTA right
+         *  below is also visible). Becomes off-screen as the buyer
+         *  scrolls into the teasers, triggering sticky reveal. */}
+        <div id={SHARE_HERO_SENTINEL_ID} aria-hidden="true" />
+      </div>
+
+      {/* ── Trajectory carrot ────────────────────────────────────── */}
+      <div
+        className="rounded-lg p-4 border"
+        style={{
+          background: 'rgba(197, 255, 58, 0.06)',
+          borderColor: 'rgba(197, 255, 58, 0.35)',
+        }}
+      >
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <TrendingUp size={12} style={{ color: 'var(--color-lime)' }} />
+          <div
+            className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold"
+            style={{ color: 'var(--color-lime)' }}
+          >
+            Projected with Fix List
+          </div>
+        </div>
+        <div className="font-display text-base font-bold text-zinc-50 leading-tight">
+          {score} → {projectedScore} in 90 days
+        </div>
+        <p className="mt-1.5 text-[11px] text-zinc-300 leading-relaxed">
+          {trajectoryCopyFor(bandLabel)}
+        </p>
+      </div>
+
+      {/* ── Primary CTA #1 ───────────────────────────────────────── */}
+      <div>
+        <UnlockShareButton shareId={shareId} label={ctaLabel} />
+        <p className="mt-2 text-[10px] text-center text-zinc-500 font-mono">
+          {discountedUnlock ? (
+            <>
+              <span className="line-through">$99</span> · MAPCHECK50 applied
+            </>
+          ) : (
+            <>One-time. No subscription.</>
+          )}
+          {' '}· 7-day refund
+        </p>
+      </div>
+
+      {/* ── ROI anchor (compressed) ──────────────────────────────── */}
+      <div
+        className="rounded-lg border p-4"
+        style={{
+          background: 'var(--color-card)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <div className="text-[10px] uppercase tracking-[0.18em] font-mono font-semibold text-zinc-500 mb-2">
+          What invisibility costs
+        </div>
+        <p className="text-sm text-zinc-300 leading-relaxed">
+          Industry average:{' '}
+          <strong className="text-zinc-100">
+            ~${econ.avgJobUSD.toLocaleString()}/{tradeUnit}
+          </strong>{' '}
+          for {tradeLabel}.
+        </p>
+        <p className="text-sm text-zinc-300 leading-relaxed mt-2">
+          {coverageMultiplier >= 2 ? (
+            <>
+              <span style={{ color: 'var(--color-lime)' }}>→</span> One
+              recovered customer covers the{' '}
+              <strong className="text-zinc-100">${unlockPriceUsd}</strong>{' '}
+              unlock{' '}
+              <strong className="text-zinc-100">
+                {coverageMultiplier}× over
+              </strong>
+              .
+            </>
+          ) : (
+            <>
+              <span style={{ color: 'var(--color-lime)' }}>→</span> A handful
+              of recovered customers covers the{' '}
+              <strong className="text-zinc-100">${unlockPriceUsd}</strong>{' '}
+              unlock — the Fix List is reusable forever.
+            </>
+          )}
+        </p>
+      </div>
+
+      {/* ── "What's behind the unlock" — 3 compact teaser cards ─── */}
+      <div className="space-y-3">
+        <div className="text-[10px] uppercase tracking-[0.22em] font-mono font-semibold text-zinc-500 px-1">
+          What&rsquo;s behind the unlock
+        </div>
+
+        {/* Heatmap teaser */}
+        <TeaserCard
+          icon={<MapPin size={14} style={{ color: 'var(--color-lime)' }} />}
+          title="Block-by-block heatmap"
+          subtitle="All 81 grid points · cell-level rank"
+        >
+          <div
+            className="grid grid-cols-9 gap-px h-[60px]"
+            style={{ filter: 'blur(2px) saturate(0.7) brightness(0.85)' }}
+            aria-hidden="true"
+          >
+            {decoyHeatmap.map((color, i) => (
+              <div key={i} style={{ background: color }} />
+            ))}
+          </div>
+        </TeaserCard>
+
+        {/* Competitor teaser — names blurred, real % stats visible */}
+        <TeaserCard
+          icon={<Crown size={14} style={{ color: 'var(--color-lime)' }} />}
+          title={
+            competitorsCount === 0
+              ? 'Competitor analysis'
+              : competitorsCount === 1
+                ? '1 competitor stealing your visibility'
+                : `${Math.min(competitorsCount, 3)} of ${competitorsCount} competitors stealing your visibility`
+          }
+          subtitle={
+            previewLeaderShare != null
+              ? `Top one outranks you in ${previewLeaderShare}% of cells`
+              : 'Named in the unlocked report'
+          }
+        >
+          {topCompetitors.length === 0 ? (
+            <p className="text-[11px] text-zinc-500">
+              No competitor data in this scan.
+            </p>
+          ) : (
+            <div className="font-mono text-[10px] space-y-0">
+              {topCompetitors.map((c, i) => (
+                <div
+                  key={i}
+                  className="flex justify-between items-center py-1.5"
+                  style={{
+                    borderTop:
+                      i === 0
+                        ? 'none'
+                        : '1px solid var(--color-border)',
+                  }}
+                >
+                  <span
+                    style={{
+                      filter: 'blur(3px)',
+                      color: '#a1a1aa',
+                      userSelect: 'none',
+                    }}
+                    aria-hidden="true"
+                  >
+                    ████████ ███████
+                  </span>
+                  <span className="text-zinc-200">
+                    {Math.round(c.top3Pct)}% of cells
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </TeaserCard>
+
+        {/* AI Coach fix-list teaser */}
+        <TeaserCard
+          icon={<Sparkles size={14} style={{ color: 'var(--color-lime)' }} />}
+          title="3 prioritized fixes"
+          subtitle="Named to your real audit data"
+        >
+          <div className="space-y-1.5 text-[10px]">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="flex items-start gap-2">
+                <span
+                  className="font-mono leading-tight"
+                  style={{ color: 'var(--color-lime)' }}
+                >
+                  {n}.
+                </span>
+                <span
+                  className="font-mono leading-tight"
+                  style={{
+                    filter: 'blur(3px)',
+                    color: '#a1a1aa',
+                    userSelect: 'none',
+                  }}
+                  aria-hidden="true"
+                >
+                  ████████ ████ ███████ ██████████ ████
+                </span>
+              </div>
+            ))}
+          </div>
+        </TeaserCard>
+      </div>
+
+      {/* ── Testimonial ──────────────────────────────────────────── */}
+      <PreviewTestimonial />
+
+      {/* ── Final CTA ────────────────────────────────────────────── */}
+      <div>
+        <UnlockShareButton shareId={shareId} label={ctaLabel} />
+        <p className="mt-2 text-[10px] text-center text-zinc-500 leading-relaxed">
+          One purchase unlocks all three: full 81-cell map · named competitors ·
+          AI Coach Fix List. 7-day refund.
+        </p>
+        {/* Sticky-bar final sentinel — hides the sticky once the
+         *  buyer reaches the final inline CTA so the two aren't both
+         *  in view simultaneously. */}
+        <div id={SHARE_FINAL_SENTINEL_ID} aria-hidden="true" />
+      </div>
+    </div>
+  );
+}
+
+/** Bullseye score visual — 3 concentric outer rings (faint, band-
+ *  colored) wrapped around a filled inner circle that holds the
+ *  score numeral. Matches the visual language of the homepage
+ *  TurfScore section and /score lander hero, but tighter for the
+ *  mobile flow (140px overall). Pure SVG, server-render safe. */
+function BullseyeScore({
+  score,
+  bandColor,
+}: {
+  score: number;
+  bandColor: string;
+}) {
+  return (
+    <div className="mx-auto" style={{ width: 140, height: 140 }}>
+      <svg
+        viewBox="0 0 140 140"
+        width="140"
+        height="140"
+        role="img"
+        aria-label={`TurfScore ${score} out of 100`}
+      >
+        {/* Outer rings — faint band-tint */}
+        <circle
+          cx="70"
+          cy="70"
+          r="68"
+          fill="none"
+          stroke={bandColor}
+          strokeOpacity="0.18"
+          strokeWidth="1"
+        />
+        <circle
+          cx="70"
+          cy="70"
+          r="56"
+          fill="none"
+          stroke={bandColor}
+          strokeOpacity="0.28"
+          strokeWidth="1"
+        />
+        <circle
+          cx="70"
+          cy="70"
+          r="44"
+          fill="none"
+          stroke={bandColor}
+          strokeOpacity="0.4"
+          strokeWidth="1"
+        />
+        {/* Inner filled circle — band-color tinted background +
+         *  stronger band-color stroke. */}
+        <circle
+          cx="70"
+          cy="70"
+          r="32"
+          fill={bandColor}
+          fillOpacity="0.12"
+          stroke={bandColor}
+          strokeOpacity="0.85"
+          strokeWidth="1.5"
+        />
+        <text
+          x="70"
+          y="73"
+          textAnchor="middle"
+          fontFamily="var(--font-mono, ui-monospace, SFMono-Regular, monospace)"
+          fontSize="30"
+          fontWeight="600"
+          fill="#ffffff"
+          dominantBaseline="middle"
+        >
+          {score}
+        </text>
+        <text
+          x="70"
+          y="93"
+          textAnchor="middle"
+          fontFamily="var(--font-mono, ui-monospace, SFMono-Regular, monospace)"
+          fontSize="9"
+          fill="#71717a"
+        >
+          / 100
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+/** Compact teaser-card wrapper used inside PreviewMobileLayout's
+ *  "What's behind the unlock" section. Single rounded card with
+ *  title row + icon + arrow + a children-driven preview body.
+ *  No inline CTA — the primary unlock CTAs sit above and below
+ *  the teaser stack; making each card its own conversion ask
+ *  would feel like 3 paywalls and torch the new layout's pacing. */
+function TeaserCard({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="rounded-lg border p-3"
+      style={{
+        background: 'var(--color-card)',
+        borderColor: 'var(--color-border)',
+      }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2.5">
+        <div className="flex items-start gap-2 min-w-0">
+          <div className="mt-0.5 flex-shrink-0">{icon}</div>
+          <div className="min-w-0">
+            <div className="text-[12px] font-semibold text-zinc-100 leading-tight">
+              {title}
+            </div>
+            <div className="text-[10px] text-zinc-500 leading-tight mt-0.5">
+              {subtitle}
+            </div>
+          </div>
+        </div>
+        <Lock size={12} className="flex-shrink-0 text-zinc-600 mt-0.5" />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Band → primary hex used for the bullseye stroke + band label.
+ *  Mirrors the desktop StatCard band tones via local mapping so
+ *  this component doesn't need to import the wider band-color
+ *  registry. Special-cases score=0 so the hero reads critical
+ *  even though the band label is the same as the 1-19 range. */
+function bandHexFor(bandLabel: string, score: number): string {
+  if (score === 0) return '#ff4d4d';
+  switch (bandLabel) {
+    case 'Invisible':
+      return '#ff4d4d';
+    case 'Patchy':
+      return '#ff9f3a';
+    case 'Solid':
+      return '#e8e54a';
+    case 'Dominant':
+      return '#c5ff3a';
+    case 'Rare air':
+    case 'Saturated':
+      return '#f5c842';
+    default:
+      return '#c5ff3a';
+  }
+}
+
+/** Conservative projected-score lift for the trajectory carrot.
+ *  Numbers intentionally under-promise — operators landing in
+ *  Invisible/Patchy who execute the Fix List typically see +15-25
+ *  point swings within 30 days; we project +30-40 over 90 days
+ *  because the cumulative effect of citation + GBP fixes compounds.
+ *  Clamps to 100 so we don't surface "score → 112" on edge cases. */
+function projectedScoreFor(score: number, bandLabel: string): number {
+  const baseLift = (() => {
+    switch (bandLabel) {
+      case 'Invisible':
+        return 45; // foundational fixes have the biggest leverage
+      case 'Patchy':
+        return 38;
+      case 'Solid':
+        return 22;
+      case 'Dominant':
+        return 12;
+      case 'Rare air':
+      case 'Saturated':
+        return 5;
+      default:
+        return 25;
+    }
+  })();
+  return Math.min(100, score + baseLift);
+}
+
+/** Short trajectory line that sits under the projected score in
+ *  the carrot card. Per-band so the framing matches the buyer's
+ *  starting position (Invisible operators need foundational-fix
+ *  reassurance; Dominant operators need defensive framing). */
+function trajectoryCopyFor(bandLabel: string): string {
+  switch (bandLabel) {
+    case 'Invisible':
+      return 'Operators starting in Invisible average +30-50 points after executing their first 3 Fix List actions.';
+    case 'Patchy':
+      return 'Patchy → Solid is where calls start compounding. Most operators get there in 30-60 days.';
+    case 'Solid':
+      return 'The Fix List shows what blocks the next 10-20 points — usually NAP inconsistencies on 3-5 specific directories.';
+    case 'Dominant':
+      return 'You’re already above-average. The Fix List locks in the cells where you’re #2/#3 instead of #1.';
+    case 'Rare air':
+    case 'Saturated':
+      return 'You’re winning. The Fix List shows defensive moves — what’s at risk and which competitors are closing in.';
+    default:
+      return 'The Fix List shows your three highest-leverage actions, named to your real data.';
+  }
+}
+
+/** Band-keyed pseudorandom 81-cell color array for the compact
+ *  decoy heatmap in the mobile teaser. No real cells ever ship to
+ *  the browser in preview mode — this mirrors PreviewHeatmapLock's
+ *  approach.
+ *
+ *  Distribution is loosely band-keyed (Invisible = mostly red;
+ *  Rare air = mostly lime) so the thumb visually correlates with
+ *  the buyer's actual score, but no cell carries real rank data.
+ *  Uses a deterministic seeded shuffle so the same band always
+ *  renders the same thumb (no Date.now / Math.random — server
+ *  components don't permit them and we want stable SSR output). */
+function buildMobileDecoyCells(bandLabel: string): string[] {
+  const RANK_COLORS = {
+    1: '#c5ff3a',
+    2: '#e8e54a',
+    3: '#ff9f3a',
+    miss: '#ff4d4d',
+  } as const;
+
+  // Fraction targets per band (rough): [#1, #2, #3, miss]
+  const mix = (() => {
+    switch (bandLabel) {
+      case 'Invisible':
+        return [0.04, 0.08, 0.12, 0.76];
+      case 'Patchy':
+        return [0.1, 0.16, 0.2, 0.54];
+      case 'Solid':
+        return [0.22, 0.26, 0.22, 0.3];
+      case 'Dominant':
+        return [0.42, 0.28, 0.18, 0.12];
+      case 'Rare air':
+      case 'Saturated':
+        return [0.7, 0.18, 0.08, 0.04];
+      default:
+        return [0.18, 0.22, 0.2, 0.4];
+    }
+  })();
+
+  const counts = mix.map((p) => Math.round(p * 81));
+  const colors: string[] = [];
+  for (let i = 0; i < counts[0]; i++) colors.push(RANK_COLORS[1]);
+  for (let i = 0; i < counts[1]; i++) colors.push(RANK_COLORS[2]);
+  for (let i = 0; i < counts[2]; i++) colors.push(RANK_COLORS[3]);
+  while (colors.length < 81) colors.push(RANK_COLORS.miss);
+  colors.length = 81;
+
+  // Deterministic shuffle keyed off the band string so each band
+  // always renders the same decoy thumb (stable SSR, no
+  // Date.now/Math.random).
+  let seed = 0;
+  for (let i = 0; i < bandLabel.length; i++) seed = (seed * 31 + bandLabel.charCodeAt(i)) >>> 0;
+  for (let i = colors.length - 1; i > 0; i--) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    [colors[i], colors[j]] = [colors[j], colors[i]];
+  }
+  return colors;
 }
 
 function ExpiredScreen({
