@@ -450,6 +450,12 @@ export type LeadOrderRow = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  /** Stamped when the buyer clicks Skip on the AuditUpgradePanel on
+   *  /order/success (migration 0043). NULL = upsell still available;
+   *  NOT NULL = upsell expired forever, panel does not re-render and
+   *  /api/upgrade/audit/{create-session,confirm} return 403.
+   *  Page-only policy, Anthony 2026-06-13. */
+  audit_upgrade_declined_at: string | null;
 };
 
 // ─── Citations (BrightLocal Citation Builder, migration 0012) ─────────────

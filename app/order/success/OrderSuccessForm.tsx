@@ -51,6 +51,7 @@ export function OrderSuccessForm({
   scoreUnlock,
   reopenTarget,
   extendedTrial,
+  auditUpgradeDeclined,
 }: {
   tier: string | null;
   sessionId: string | null;
@@ -211,6 +212,13 @@ export function OrderSuccessForm({
    *  trial_period_days:60. Default false keeps the standard 30-day
    *  trial behavior. */
   extendedTrial?: boolean;
+  /** Server-resolved flag — true when this scan order has
+   *  audit_upgrade_declined_at IS NOT NULL on lead_orders. Means
+   *  the buyer hit Skip on a prior /order/success visit; the
+   *  AuditUpgradePanel must not re-render (Anthony page-only
+   *  policy 2026-06-13). Defaults to false so legacy callers
+   *  pre-migration-0043 stay on the existing render path. */
+  auditUpgradeDeclined?: boolean;
 }) {
   const [businessName, setBusinessName] = useState('');
   const [address, setAddress] = useState('');
@@ -870,12 +878,41 @@ export function OrderSuccessForm({
           sessionId &&
           upgradeChoice === 'pending' &&
           !isAuditUpgrade &&
-          !inlineUpgradeAccepted && (
+          !inlineUpgradeAccepted &&
+          !auditUpgradeDeclined && (
             <AuditUpgradePanel
               source="order_success"
               sessionId={sessionId}
               savedCard={savedCard}
-              onSkip={() => setUpgradeChoice('skipped')}
+              onSkip={() => {
+                // Anthony page-only policy 2026-06-13: clicking Skip
+                // permanently expires the upsell. Fire the decline
+                // endpoint so the next /order/success render (or any
+                // upgrade API call) sees audit_upgrade_declined_at set
+                // and refuses to surface/process the upgrade. Local
+                // state flip is optimistic — we don't await the
+                // network call to keep the UX snappy. Best-effort:
+                // if the endpoint fails, the next page reload would
+                // still show the panel, but the user has already
+                // moved on visually so the worst case is "decline
+                // didn't persist, they get the offer again." The
+                // create-session + confirm endpoints are the load-
+                // bearing enforcement; this is the UX-suppression
+                // companion.
+                setUpgradeChoice('skipped');
+                if (sessionId) {
+                  void fetch('/api/upgrade/audit/decline', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId }),
+                  }).catch((e) => {
+                    console.warn(
+                      '[order/success] decline endpoint failed (non-fatal)',
+                      e instanceof Error ? e.message : String(e)
+                    );
+                  });
+                }
+              }}
               onInlineConfirmSuccess={({ metaEventId }) => {
                 setInlineUpgradeAccepted(true);
                 // Fire client-side Pixel with the server-provided

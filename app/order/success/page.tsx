@@ -224,6 +224,31 @@ export default async function OrderSuccessPage({
     }
   }
 
+  // ─── Audit-upgrade decline gate ─────────────────────────────────────
+  // Anthony policy 2026-06-13: the $197 audit upsell is offered on
+  // /order/success ONLY and expires when the buyer clicks Skip on
+  // the AuditUpgradePanel. The skip handler in OrderSuccessForm fires
+  // /api/upgrade/audit/decline which stamps audit_upgrade_declined_at
+  // on the scan-tier lead_orders row. Here we read that timestamp on
+  // every /order/success render so the panel doesn't reappear on
+  // page reloads / replayed tabs / shared URLs after a prior decline.
+  //
+  // Gated on tier='scan' + sessionId + !isAuditUpgrade so we don't
+  // pay for the lookup on flows that never render the panel (Pulse,
+  // upgrade-return, etc.). Falls through to `false` on lookup error
+  // — non-fatal; the API endpoint gate is the load-bearing enforcement,
+  // this is just UX-suppression.
+  let auditUpgradeDeclined = false;
+  if (tier === 'scan' && sessionId && !isAuditUpgrade) {
+    const supabase = getServerSupabase();
+    const { data: declineLookup } = await supabase
+      .from('lead_orders')
+      .select('audit_upgrade_declined_at')
+      .eq('stripe_session_id', sessionId)
+      .maybeSingle<{ audit_upgrade_declined_at: string | null }>();
+    auditUpgradeDeclined = Boolean(declineLookup?.audit_upgrade_declined_at);
+  }
+
   // Pulse-attach return path. When the buyer comes back from Stripe
   // with ?attach=success or ?attach=cancelled, we need to skip the
   // form re-render — they already filled it on the original purchase
@@ -469,6 +494,7 @@ export default async function OrderSuccessPage({
               attachOnboardingStep={attachOnboardingStep}
               isAuditUpgrade={isAuditUpgrade}
               savedCard={savedCard}
+              auditUpgradeDeclined={auditUpgradeDeclined}
               prospectId={
                 sessionState?.kind === 'ok' ? sessionState.prospectId : null
               }

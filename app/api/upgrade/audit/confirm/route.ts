@@ -146,7 +146,23 @@ export async function POST(req: Request) {
     client = c;
   }
 
-  // ─── 2. 24h window check ───────────────────────────────────────────
+  // ─── 2. Page-only decline gate ─────────────────────────────────────
+  // Anthony policy 2026-06-13: the $197 audit upsell is a strict
+  // one-shot on /order/success. Once the buyer clicks Skip (which
+  // fires /api/upgrade/audit/decline), the upgrade is gone forever
+  // for this scan order — even if they reload the page or hit this
+  // endpoint directly via a stale tab / replayed request.
+  if (leadOrder.audit_upgrade_declined_at) {
+    return NextResponse.json(
+      {
+        error: 'audit upgrade was declined and is no longer available',
+        declined_at: leadOrder.audit_upgrade_declined_at,
+      },
+      { status: 403 }
+    );
+  }
+
+  // ─── 3. 24h window check ───────────────────────────────────────────
   const orderAge = Date.now() - new Date(leadOrder.created_at).getTime();
   if (orderAge > UPGRADE_WINDOW_MS) {
     return NextResponse.json(

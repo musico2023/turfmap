@@ -367,7 +367,27 @@ export async function POST(req: Request) {
     }
   }
 
-  // ─── 3. 24h window check ───────────────────────────────────────────
+  // ─── 3. Page-only decline gate ─────────────────────────────────────
+  // Anthony policy 2026-06-13: the $197 audit upsell is a strict
+  // one-shot on /order/success. Once the buyer clicks Skip on the
+  // panel (which fires /api/upgrade/audit/decline), the upgrade is
+  // gone forever for this scan order — even via this redirect-style
+  // fallback path. Mirrored in confirm/route.ts. Applies to every
+  // source value (order_success, stage_2_email, and the now-defunct
+  // dashboard variant). The decline can only be set from the
+  // /order/success skip flow, but if any future surface tries to
+  // re-issue a Checkout for a declined order this gate stops it.
+  if (leadOrder.audit_upgrade_declined_at) {
+    return NextResponse.json(
+      {
+        error: 'audit upgrade was declined and is no longer available',
+        declined_at: leadOrder.audit_upgrade_declined_at,
+      },
+      { status: 403 }
+    );
+  }
+
+  // ─── 4. 24h window check ───────────────────────────────────────────
   // Counted from the original lead_orders.created_at (when the buyer
   // hit Stripe Checkout). This is the spec'd "scan completed" window
   // — using lead_order timestamp is a more reliable proxy than
