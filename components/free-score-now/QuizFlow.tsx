@@ -59,7 +59,10 @@ import {
   GoogleBusinessAutocomplete,
   type ResolvedPlace,
 } from '@/components/marketing/scan/GoogleBusinessAutocomplete';
-import { trackMetaEvent } from '@/components/marketing/scan/MetaPixel';
+import {
+  trackMetaCustomEvent,
+  trackMetaEvent,
+} from '@/components/marketing/scan/MetaPixel';
 
 // ────────────────────────────────────────────────────────────────────
 // STEP MACHINE
@@ -364,17 +367,31 @@ export function QuizFlow({
         return;
       }
 
-      // Pixel Lead event — same eventID as the server-side CAPI
-      // call so Meta dedupes them. trackMetaEvent is a no-op if
-      // fbq hasn't loaded; the server-side event still fires.
-      trackMetaEvent(
-        'Lead',
-        {
-          content_name: 'TurfScan preview',
-          content_category: trade ?? undefined,
-        },
-        { eventID: eventId }
-      );
+      // Meta Pixel fires — share `eventId` with the matching CAPI
+      // events fired server-side inside /api/score/preview-init's
+      // after() block so Meta dedupes each (event_name, event_id)
+      // pair. trackMetaEvent + trackMetaCustomEvent are no-ops when
+      // fbq hasn't loaded; the server-side CAPI events still fire.
+      //
+      // BOTH events fire alongside each other:
+      //   - 'Lead' — the generic standard event, backwards-compatible
+      //     with the existing Ads-Manager Lead reporting.
+      //   - 'FreeScoreSubmit' — purpose-built custom event the
+      //     /free-score-now lander campaign optimizes against. Without
+      //     a matching client-side Pixel fire, the CAPI FreeScoreSubmit
+      //     lands unmatched at Meta — still counts for Custom
+      //     Conversion attribution but with a weaker ad-optimization
+      //     signal. Mirrors the long-scroll /free-score form's pattern
+      //     in ScanIntakeForm.tsx so both lander variants emit the
+      //     same conversion shape.
+      const pixelParams = {
+        content_name: 'TurfScan preview',
+        content_category: trade ?? undefined,
+      };
+      trackMetaEvent('Lead', pixelParams, { eventID: eventId });
+      trackMetaCustomEvent('FreeScoreSubmit', pixelParams, {
+        eventID: eventId,
+      });
 
       // Hard navigate so the /share page mounts fresh (it's a
       // server component reading the scan results from the URL).
