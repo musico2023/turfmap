@@ -415,44 +415,11 @@ async function renderTemplate(
           return { subject: '', html: '' };
       }
     }
-    case 'audit-upgrade-recovery': {
-      const { AuditUpgradeRecoveryEmail } = await import(
-        '@/components/email/AuditUpgradeRecoveryEmail'
-      );
-      const stage =
-        (single(search.stage) ?? 'touch_1') as
-          | 'touch_1'
-          | 'touch_2'
-          | 'touch_3';
-      const sparse = single(search.sparse) === '1';
-      const businessName = sparse ? null : MOCK_BUSINESS;
-      const turfScore = sparse ? null : 20;
-      // Hours-remaining mirrors what handleScoreUnlock would bake in
-      // at each touch's scheduled compose time.
-      const hoursByStage = { touch_1: 23, touch_2: 16, touch_3: 2 } as const;
-      const cutoffTimeLabel =
-        stage === 'touch_3' ? '3:42 PM EDT today' : null;
-      const safeHours = hoursByStage[stage];
-      const subjectByStage = {
-        touch_1: `Your audit upgrade is still here — save $302 (${businessName ?? 'your business'})`,
-        touch_2: `${safeHours} hours left to save $302 on your audit`,
-        touch_3: `Final ${safeHours}h: $302 audit discount expires`,
-      } as const;
-      return {
-        subject: subjectByStage[stage],
-        html: await render(
-          AuditUpgradeRecoveryEmail({
-            businessName,
-            turfScore,
-            reopenUrl:
-              'https://turfmap.ai/order/success?tier=scan&session_id=cs_preview&reopen=audit',
-            stage,
-            hoursRemaining: safeHours,
-            cutoffTimeLabel,
-          })
-        ),
-      };
-    }
+    // (case 'audit-upgrade-recovery' removed 2026-06-13 — the
+    //  audit-upgrade recovery drip itself is gone per Anthony's
+    //  page-only upsell policy. The component
+    //  components/email/AuditUpgradeRecoveryEmail.tsx was deleted in
+    //  the same commit; this preview branch went with it.)
     case 'pulse-recovery': {
       const { PulseRecoveryEmail } = await import(
         '@/components/email/PulseRecoveryEmail'

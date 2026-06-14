@@ -40,7 +40,6 @@ import { generateInsight } from '@/lib/ai-coach/generateInsight';
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
 import {
   cancelScheduledEmail,
-  sendAuditUpgradeRecovery,
   sendOrderConfirmation,
   sendPulseRecovery,
   sendScanReady,
@@ -602,100 +601,47 @@ export async function handleScoreUnlockCompletion(
       );
     }
 
-    // 6d. Schedule upsell recovery drip — 3 audit + 2 pulse emails.
+    // 6d. Schedule Pulse-trial recovery drip — 2 emails over 72h.
     //
-    // Two abandonment lanes get their own scheduled drips, independent
-    // of each other. A buyer can convert audit but skip Pulse, or vice
-    // versa — each lane's emails are cancelled independently when its
-    // own upsell converts.
+    // The Pulse trial-attach offer is the only remaining upsell
+    // recovery lane. The audit-upgrade recovery drip (was 3 emails
+    // at T+1h/+8h/+22h) was removed 2026-06-13 per Anthony's
+    // page-only upsell policy: the audit upgrade is a strict one-
+    // shot on /order/success and expires on decline. Following up
+    // on a declined upsell with reopen-link emails directly
+    // contradicts the policy.
     //
-    // Audit recovery times itself INSIDE the natural 24h window:
-    //   touch_1 at T+1h, touch_2 at T+8h, touch_3 at T+22h
     // Pulse recovery uses an extended-trial offer (60 days vs the
     // standard 30) with a 72h offer window:
     //   touch_1 at T+48h, touch_2 at T+120h (5 days)
     //
-    // Reopen URLs round-trip the original Stripe session_id so
+    // The reopen URL round-trips the original Stripe session_id so
     // /order/success can re-hydrate the score_unlock state and re-
-    // render the relevant panel (?reopen=audit or ?reopen=pulse).
-    // ?extended=1 on the pulse reopen is read by the Pulse-attach
-    // route to flip trial_period_days from 30 → 60.
+    // render the Pulse-attach panel (?reopen=pulse). ?extended=1
+    // tells the Pulse-attach route to flip trial_period_days from
+    // 30 → 60.
     //
     // Email ids are stamped on the score_unlock lead_orders row's
-    // stripe_metadata. /api/upgrade/audit/confirm + the Stripe webhook
-    // for audit Checkout completion read those ids back to cancel the
-    // audit drip on conversion; the customer.subscription.created
-    // webhook does the same for the Pulse drip.
-    //
-    // Resend rate-limit (5 req/sec) easily handled here — we send 5
-    // scheduled requests sequentially with no throttle needed.
+    // stripe_metadata. The customer.subscription.created webhook
+    // reads them back to cancel the drip when Pulse converts.
     try {
       const now = Date.now();
       const HOUR_MS = 60 * 60 * 1000;
-      // Audit-recovery timing — INSIDE the 24h discount window.
-      const auditCutoff = new Date(now + 24 * HOUR_MS);
-      const t1At = new Date(now + 1 * HOUR_MS);
-      const t2At = new Date(now + 8 * HOUR_MS);
-      const t3At = new Date(now + 22 * HOUR_MS);
       // Pulse-recovery timing — extended-trial offer expires at T+72h.
       const pulseOfferCutoff = new Date(now + 72 * HOUR_MS);
       const pulseT1At = new Date(now + 48 * HOUR_MS);
       const pulseT2At = new Date(now + 120 * HOUR_MS);
-      const auditReopenUrl =
-        `${APP_ORIGIN}/order/success` +
-        `?tier=scan&session_id=${session.id}&reopen=audit`;
       const pulseReopenUrl =
         `${APP_ORIGIN}/order/success` +
         `?tier=scan&session_id=${session.id}&reopen=pulse&extended=1`;
-      const buyerScoreVal =
-        scan.turf_score != null ? Number(scan.turf_score) : null;
 
       // Hours-remaining at each compose time, baked into the body
-      // copy. Computed from the scheduledAt against the audit cutoff
+      // copy. Computed from the scheduledAt against the offer cutoff
       // so the numbers stay honest if Resend's scheduled delivery
       // slips by a few minutes.
       const hoursLeftAt = (sentAt: Date, cutoff: Date) =>
         Math.max(1, Math.round((cutoff.getTime() - sentAt.getTime()) / HOUR_MS));
-      // Touch 3's "expires at 3:42 PM EDT today" — pre-formatted in
-      // America/Toronto (TurfMap's operational TZ) so the buyer sees
-      // a familiar wall-clock time. Email clients don't render
-      // Intl-derived dates dynamically; we bake it at compose time.
-      const cutoffTimeLabel = auditCutoff.toLocaleTimeString('en-US', {
-        timeZone: 'America/Toronto',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZoneName: 'short',
-      });
 
-      const auditT1 = await sendAuditUpgradeRecovery({
-        to: email,
-        businessName: client.business_name,
-        turfScore: buyerScoreVal,
-        reopenUrl: auditReopenUrl,
-        stage: 'touch_1',
-        hoursRemaining: hoursLeftAt(t1At, auditCutoff),
-        scheduledAt: t1At.toISOString(),
-      });
-      const auditT2 = await sendAuditUpgradeRecovery({
-        to: email,
-        businessName: client.business_name,
-        turfScore: buyerScoreVal,
-        reopenUrl: auditReopenUrl,
-        stage: 'touch_2',
-        hoursRemaining: hoursLeftAt(t2At, auditCutoff),
-        scheduledAt: t2At.toISOString(),
-      });
-      const auditT3 = await sendAuditUpgradeRecovery({
-        to: email,
-        businessName: client.business_name,
-        turfScore: buyerScoreVal,
-        reopenUrl: auditReopenUrl,
-        stage: 'touch_3',
-        hoursRemaining: hoursLeftAt(t3At, auditCutoff),
-        cutoffTimeLabel,
-        scheduledAt: t3At.toISOString(),
-      });
       const pulseT1 = await sendPulseRecovery({
         to: email,
         businessName: client.business_name,
@@ -717,17 +663,11 @@ export async function handleScoreUnlockCompletion(
       // We look up by stripe_session_id (just inserted in step 3),
       // merge into existing metadata, and write back. Best-effort —
       // a write failure means we can't cancel the emails later when
-      // the buyer converts, so they'd receive a recovery email
-      // they shouldn't. Not fatal; just noisy.
+      // the buyer converts, so they'd receive a recovery email they
+      // shouldn't. Not fatal; just noisy.
       const idPatch: Record<string, string> = {};
-      if (auditT1.id) idPatch.audit_recovery_touch_1_email_id = auditT1.id;
-      if (auditT2.id) idPatch.audit_recovery_touch_2_email_id = auditT2.id;
-      if (auditT3.id) idPatch.audit_recovery_touch_3_email_id = auditT3.id;
       if (pulseT1.id) idPatch.pulse_recovery_touch_1_email_id = pulseT1.id;
       if (pulseT2.id) idPatch.pulse_recovery_touch_2_email_id = pulseT2.id;
-      // Also stamp the cutoffs so cancellation paths + analytics
-      // know when each drip stops being relevant.
-      idPatch.audit_recovery_cutoff = auditCutoff.toISOString();
       idPatch.pulse_recovery_offer_cutoff = pulseOfferCutoff.toISOString();
 
       if (Object.keys(idPatch).length > 0) {
@@ -753,7 +693,7 @@ export async function handleScoreUnlockCompletion(
       }
     } catch (e) {
       console.warn(
-        '[score-unlock] upsell recovery drip scheduling failed:',
+        '[score-unlock] Pulse recovery drip scheduling failed:',
         e instanceof Error ? e.message : String(e)
       );
     }

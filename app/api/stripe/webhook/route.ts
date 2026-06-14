@@ -221,38 +221,11 @@ export async function POST(req: Request) {
             : null;
         if (source === 'audit_upgrade') {
           await handleAuditUpgradeCompletion(supabase, session);
-          // Cancel the audit-recovery drip for this client — the
-          // buyer just converted via the Stripe Checkout redirect
-          // path. Same cancellation that /api/upgrade/audit/confirm
-          // fires for the 1-click inline path. Lookup by client_id
-          // pulled off the session metadata (handleAuditUpgrade-
-          // Completion is the authority on which client_id this
-          // session belongs to; metadata.client_id is set at
-          // create-session time but may be missing when the buyer
-          // upgrades pre-intake — that path has no audit-recovery
-          // drip to cancel anyway since the score_unlock client row
-          // exists by then).
-          const auditClientId =
-            session.metadata && 'client_id' in session.metadata
-              ? String(session.metadata.client_id ?? '')
-              : '';
-          if (auditClientId) {
-            try {
-              const { cancelUpsellRecoveryEmails } = await import(
-                '@/lib/score/cancelUpsellRecoveryEmails'
-              );
-              await cancelUpsellRecoveryEmails(
-                supabase,
-                auditClientId,
-                'audit'
-              );
-            } catch (e) {
-              console.warn(
-                `[stripe-webhook] cancelUpsellRecoveryEmails(audit) threw for ${session.id}:`,
-                e instanceof Error ? e.message : String(e)
-              );
-            }
-          }
+          // (Audit-recovery drip cancellation removed 2026-06-13 —
+          // the audit recovery drip itself is gone per Anthony's
+          // page-only upsell policy, so there's nothing to cancel
+          // on conversion. Pulse-recovery cancellation still fires
+          // from the customer.subscription.created handler.)
         } else if (source === 'score_unlock') {
           // /score lead-magnet → $99 unlock. Flips client.is_preview=false,
           // generates AI Coach in after(), provisions portal access, sends

@@ -1024,65 +1024,10 @@ export async function sendAuditCallConfirmed(args: {
   });
 }
 
-/**
- * sendAuditUpgradeRecovery — 3-touch drip for score_unlock buyers
- * who skipped the audit upgrade on /order/success.
- *
- * All three touches use Resend scheduled-send. Returns SendResult.id
- * so the caller can store it on lead_orders.stripe_metadata for
- * later cancellation (handleAuditUpgradeCompletion reads the ids
- * back + calls cancelScheduledEmail when the buyer converts).
- *
- * Times itself within the audit window's natural 24h scarcity —
- * T+1h, T+8h, T+22h — so every touch carries an honest countdown
- * to the cutoff. Touch 3 should also pass cutoffTimeLabel so the
- * "expires at 3:42 PM EDT today" copy renders cleanly.
- */
-export async function sendAuditUpgradeRecovery(args: {
-  to: string;
-  businessName?: string | null;
-  turfScore?: number | null;
-  reopenUrl: string;
-  stage: 'touch_1' | 'touch_2' | 'touch_3';
-  /** Hours remaining until the 24h audit window closes at compose
-   *  time. Baked into the body copy. */
-  hoursRemaining: number;
-  /** Touch 3 only. Pre-formatted local-time string. */
-  cutoffTimeLabel?: string | null;
-  /** ISO 8601. Always set for this drip — even touch 1 is scheduled
-   *  for T+1h rather than sent immediately, so the buyer doesn't get
-   *  the recovery email while they're still actively on /order/success. */
-  scheduledAt?: string;
-}): Promise<SendResult> {
-  const { AuditUpgradeRecoveryEmail } = await import(
-    '@/components/email/AuditUpgradeRecoveryEmail'
-  );
-  const html = await render(
-    AuditUpgradeRecoveryEmail({
-      businessName: args.businessName,
-      turfScore: args.turfScore,
-      reopenUrl: args.reopenUrl,
-      stage: args.stage,
-      hoursRemaining: args.hoursRemaining,
-      cutoffTimeLabel: args.cutoffTimeLabel,
-    })
-  );
-  const biz = args.businessName?.trim() || 'your business';
-  const safeHours = Math.max(1, Math.round(args.hoursRemaining));
-  // Subjects lead on the $302 discount + remaining hours so the
-  // urgency lands in the inbox preview without the buyer opening.
-  const subjectByStage = {
-    touch_1: `Your audit upgrade is still here — save $302 (${biz})`,
-    touch_2: `${safeHours} hours left to save $302 on your audit`,
-    touch_3: `Final ${safeHours}h: $302 audit discount expires`,
-  } as const;
-  return sendEmailWithId({
-    to: args.to,
-    subject: subjectByStage[args.stage],
-    html,
-    scheduledAt: args.scheduledAt,
-  });
-}
+// (sendAuditUpgradeRecovery removed 2026-06-13 — the audit-upgrade
+//  recovery drip itself is gone per Anthony's page-only upsell
+//  policy. See lib/score/handleScoreUnlock.ts step 6d and the
+//  cancellation rationale in lib/score/cancelUpsellRecoveryEmails.ts.)
 
 /**
  * sendPulseRecovery — 2-touch drip for score_unlock buyers who
