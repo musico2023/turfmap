@@ -52,6 +52,12 @@ type LeadRow = {
   turf_reach: number | null;
   share_id: string | null;
   unlocked: boolean;
+  // QuizFlow extras (added 2026-06-13, /free-score-now). All
+  // nullable — pre-existing leads + non-QuizFlow callers don't
+  // have them stamped on stripe_metadata.
+  role: string | null;
+  trade: string | null;
+  visibility_self_rating: string | null;
 };
 
 export async function GET(req: Request) {
@@ -143,7 +149,19 @@ export async function GET(req: Request) {
       minute: '2-digit',
       hour12: true,
     });
-    return `• *${biz}*${cityFrag} · ${kw} · score *${score}*${unlockTag}\n   ${email} · ${time} ET`;
+    // QuizFlow extras row — only rendered when at least one field
+    // is present so legacy/long-scroll leads stay tight. Reads
+    // "role: owner · trade: roofing · self-rated: invisible" — the
+    // self-rating tells Anthony what the buyer THOUGHT they were
+    // before the scan ran (great signal for cold-outreach copy).
+    const fragments: string[] = [];
+    if (l.role) fragments.push(`role: *${l.role}*`);
+    if (l.trade) fragments.push(`trade: *${l.trade}*`);
+    if (l.visibility_self_rating) {
+      fragments.push(`self-rated: *${l.visibility_self_rating}*`);
+    }
+    const quizLine = fragments.length > 0 ? `\n   ${fragments.join(' · ')}` : '';
+    return `• *${biz}*${cityFrag} · ${kw} · score *${score}*${unlockTag}\n   ${email} · ${time} ET${quizLine}`;
   });
 
   if (overflowCount > 0) {
@@ -317,6 +335,7 @@ async function loadLeadsInline(
       o.client_id && kw
         ? scanByPair.get(`${o.client_id}:${kw.id}`)
         : undefined;
+    const m = o.stripe_metadata ?? {};
     return {
       created_at: o.created_at,
       email: o.email,
@@ -327,8 +346,24 @@ async function loadLeadsInline(
       turf_reach: scan?.turf_reach ?? null,
       share_id: null,
       unlocked: o.client_id ? unlockedClientIds.has(o.client_id) : false,
+      role: pickString(m, 'role'),
+      trade: pickString(m, 'trade'),
+      visibility_self_rating: pickString(m, 'visibility_self_rating'),
     };
   });
+}
+
+/** Read a string property from a JSONB blob, returning null when
+ *  the key is absent or the value isn't a string. Used to pull the
+ *  QuizFlow extras off lead_orders.stripe_metadata defensively
+ *  (older rows pre-2026-06-13 won't have them). */
+function pickString(
+  m: Record<string, unknown> | null | undefined,
+  key: string
+): string | null {
+  if (!m) return null;
+  const v = m[key];
+  return typeof v === 'string' && v.length > 0 ? v : null;
 }
 
 /** Pull a "City, Region" fragment out of a comma-separated address

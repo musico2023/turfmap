@@ -350,6 +350,24 @@ export function QuizFlow({
           typeof window !== 'undefined' ? window.location.href : undefined,
         google_place_id: place.placeId,
         google_primary_type: place.primaryType ?? undefined,
+        // QuizFlow-specific captures: role + trade + visibility
+        // self-rating. Forwarded so /api/score/preview-init can
+        // stash them in lead_orders.stripe_metadata for the daily
+        // Slack recap + cohort analysis. The 'no' role routes to
+        // disqualify and never reaches this submit, so we only
+        // ever ship owner | manager | agency.
+        role:
+          owner === 'owner' || owner === 'manager' || owner === 'agency'
+            ? owner
+            : undefined,
+        trade: trade ?? undefined,
+        visibility_self_rating:
+          visibility === 'top' ||
+          visibility === 'mixed' ||
+          visibility === 'unknown' ||
+          visibility === 'invisible'
+            ? visibility
+            : undefined,
       };
 
       const res = await fetch('/api/score/preview-init', {

@@ -103,6 +103,23 @@ const Body = z.object({
   // 'hair_salon', 'roofing_contractor'.
   google_place_id: z.string().max(300).optional(),
   google_primary_type: z.string().max(100).optional(),
+  // /free-score-now QuizFlow extras. These were captured client-
+  // side from the quiz steps but previously dropped on submit;
+  // now stashed in stripe_metadata so the daily Slack recap +
+  // future cohort analysis can slice by them.
+  //   role        — owner | manager | agency  (the 'no' option
+  //                 routes to disqualify and never reaches submit)
+  //   trade       — slug from TRADES (roofing, hvac, renovation,
+  //                 painting, landscaping, insulation, other)
+  //   visibility  — buyer self-rating from before they saw their
+  //                 actual score (top | mixed | unknown | invisible)
+  // All optional — non-QuizFlow callers (ScanIntakeForm on
+  // /free-score) don't send them; legacy leads have them absent.
+  role: z.enum(['owner', 'manager', 'agency']).optional(),
+  trade: z.string().max(40).optional(),
+  visibility_self_rating: z
+    .enum(['top', 'mixed', 'unknown', 'invisible'])
+    .optional(),
 });
 
 const RATE_LIMIT_PER_EMAIL_PER_DAY = 1;
@@ -274,6 +291,49 @@ export async function POST(req: Request) {
     })
     .or(`key.eq.email:${email},email.eq.${email}`)
     .eq('day', new Date().toISOString().slice(0, 10));
+
+  // ─── Stamp QuizFlow extras on the lead_orders row ─────────────────
+  // /free-score-now captures role + trade + visibility self-rating
+  // in the quiz steps and forwards them in the POST body. We patch
+  // them onto the preview lead_orders row's stripe_metadata so the
+  // daily Slack recap + cohort analysis can slice by them. Fields
+  // are optional — non-QuizFlow callers (the long-scroll
+  // /free-score form on ScanIntakeForm) don't send them and we
+  // simply don't write the keys.
+  //
+  // Best-effort, fire-and-forget. A failed metadata patch would
+  // only hide these signals from downstream reporting; the lead
+  // itself + the preview unlock flow are already persisted.
+  const quizExtras: Record<string, string> = {};
+  if (body.role) quizExtras.role = body.role;
+  if (body.trade) quizExtras.trade = body.trade;
+  if (body.visibility_self_rating) {
+    quizExtras.visibility_self_rating = body.visibility_self_rating;
+  }
+  if (Object.keys(quizExtras).length > 0) {
+    void supabase
+      .from('lead_orders')
+      .select('id, stripe_metadata')
+      .eq('client_id', result.clientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        id: string;
+        stripe_metadata: Record<string, string> | null;
+      }>()
+      .then(async ({ data: leadOrder }) => {
+        if (!leadOrder) return;
+        await supabase
+          .from('lead_orders')
+          .update({
+            stripe_metadata: {
+              ...(leadOrder.stripe_metadata ?? {}),
+              ...quizExtras,
+            },
+          })
+          .eq('id', leadOrder.id);
+      });
+  }
 
   // ─── 3-touch unlock drip ─────────────────────────────────────────
   // Fire touch 1 immediately so the buyer's inbox has the preview
