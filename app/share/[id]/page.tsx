@@ -1681,6 +1681,16 @@ function PreviewMobileLayout({
           subtitle="All 81 grid points · cell-level rank"
         >
           <div
+            className="text-[9px] uppercase tracking-[0.18em] font-mono font-semibold mb-2 flex items-center gap-1.5"
+            style={{ color: 'var(--color-lime)' }}
+          >
+            <span
+              className="inline-block w-1 h-1 rounded-full"
+              style={{ background: 'var(--color-lime)' }}
+            />
+            From your 81 real Google searches
+          </div>
+          <div
             className="grid grid-cols-9 gap-px h-[60px]"
             style={{ filter: 'blur(2px) saturate(0.7) brightness(0.85)' }}
             aria-hidden="true"
@@ -1689,9 +1699,32 @@ function PreviewMobileLayout({
               <div key={i} style={{ background: color }} />
             ))}
           </div>
+          {keyword && (
+            <p className="mt-2 text-[9px] leading-relaxed text-zinc-500">
+              9×9 grid scanned for{' '}
+              <span className="font-mono text-zinc-400">
+                &ldquo;{keyword}&rdquo;
+              </span>{' '}
+              · cell ranks unlock with your full report.
+            </p>
+          )}
         </TeaserCard>
 
-        {/* Competitor teaser — names blurred, real % stats visible */}
+        {/* Competitor teaser — names blurred, real stats visible.
+         *
+         *  "These numbers feel real" plumbing (2026-06-13):
+         *   - Eyebrow row pins the data lineage ("From your 81
+         *     real Google searches") so the buyer doesn't read the
+         *     percentages as marketing copy.
+         *   - Each row carries a horizontal bar viz scaled to top3Pct.
+         *     Physical proportionality reads as measured data, not
+         *     hand-picked numbers.
+         *   - Avg-map-rank (amr) appears as a second computed stat
+         *     when available — two numbers per competitor anchors
+         *     them as analytics output, not single-stat invention.
+         *   - Methodology footnote at the bottom names the unit of
+         *     measure ("share of 81 grid cells where they show up
+         *     in the 3-pack"). */}
         <TeaserCard
           icon={<Crown size={14} style={{ color: 'var(--color-lime)' }} />}
           title={
@@ -1699,7 +1732,9 @@ function PreviewMobileLayout({
               ? 'Competitor analysis'
               : competitorsCount === 1
                 ? '1 competitor stealing your visibility'
-                : `${Math.min(competitorsCount, 3)} of ${competitorsCount} competitors stealing your visibility`
+                : competitorsCount <= 3
+                  ? `${competitorsCount} competitors stealing your visibility`
+                  : `Top 3 of ${competitorsCount} competitors stealing your visibility`
           }
           subtitle={
             previewLeaderShare != null
@@ -1712,34 +1747,81 @@ function PreviewMobileLayout({
               No competitor data in this scan.
             </p>
           ) : (
-            <div className="font-mono text-[10px] space-y-0">
-              {topCompetitors.map((c, i) => (
-                <div
-                  key={i}
-                  className="flex justify-between items-center py-1.5"
-                  style={{
-                    borderTop:
-                      i === 0
-                        ? 'none'
-                        : '1px solid var(--color-border)',
-                  }}
-                >
-                  <span
-                    style={{
-                      filter: 'blur(3px)',
-                      color: '#a1a1aa',
-                      userSelect: 'none',
-                    }}
-                    aria-hidden="true"
-                  >
-                    ████████ ███████
-                  </span>
-                  <span className="text-zinc-200">
-                    {Math.round(c.top3Pct)}% of cells
-                  </span>
-                </div>
-              ))}
-            </div>
+            <>
+              <div
+                className="text-[9px] uppercase tracking-[0.18em] font-mono font-semibold mb-2 flex items-center gap-1.5"
+                style={{ color: 'var(--color-lime)' }}
+              >
+                <span
+                  className="inline-block w-1 h-1 rounded-full"
+                  style={{ background: 'var(--color-lime)' }}
+                />
+                From your 81 real Google searches
+              </div>
+              <div className="space-y-0">
+                {topCompetitors.map((c, i) => {
+                  const pct = Math.max(0, Math.min(100, Math.round(c.top3Pct)));
+                  return (
+                    <div
+                      key={i}
+                      className="py-2"
+                      style={{
+                        borderTop:
+                          i === 0
+                            ? 'none'
+                            : '1px solid var(--color-border)',
+                      }}
+                    >
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span
+                          className="font-mono text-[10px]"
+                          style={{
+                            filter: 'blur(3px)',
+                            color: '#a1a1aa',
+                            userSelect: 'none',
+                          }}
+                          aria-hidden="true"
+                        >
+                          ████████ ███████
+                        </span>
+                        <span className="font-mono text-[10px] text-zinc-100 font-semibold flex items-baseline gap-1.5">
+                          <span>{pct}%</span>
+                          {c.amr != null && Number.isFinite(c.amr) ? (
+                            <span className="text-zinc-500 text-[9px]">
+                              · avg #{c.amr.toFixed(1)}
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                      {/* Proportional bar — visualizes the share so a
+                       *  glance confirms the % isn't arbitrary. Track
+                       *  + fill in dark-on-light so the bar reads
+                       *  even at small heights. */}
+                      <div
+                        className="h-1 w-full rounded-full overflow-hidden"
+                        style={{ background: 'var(--color-bg)' }}
+                        aria-hidden="true"
+                      >
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${pct}%`,
+                            background:
+                              i === 0
+                                ? 'var(--color-lime)'
+                                : 'rgba(197, 255, 58, 0.55)',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-3 text-[9px] leading-relaxed text-zinc-500">
+                Share of 81 grid cells where each competitor appears in
+                the 3-pack. Names unlock with your full report.
+              </p>
+            </>
           )}
         </TeaserCard>
 
