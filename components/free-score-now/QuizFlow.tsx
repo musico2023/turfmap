@@ -40,16 +40,20 @@ import {
   Check,
   Compass,
   Crosshair,
+  Crown,
   Flame,
   Hammer,
   Home,
   Layers,
   Mail,
   MapPin,
+  Megaphone,
   PaintBucket,
+  Search,
   Sparkles,
   Star,
   Trees,
+  Users,
   Wrench,
 } from 'lucide-react';
 import { TurnstileWidget } from '@/components/security/TurnstileWidget';
@@ -152,10 +156,30 @@ const VISIBILITY_OPTIONS = [
 ];
 
 const OWNER_OPTIONS = [
-  { slug: 'owner', label: 'Yes, I own / run the business', sub: "I'm the operator" },
-  { slug: 'manager', label: 'I run marketing for it', sub: "Owner-adjacent, makes calls on this" },
-  { slug: 'agency', label: "I'm a freelancer or agency", sub: 'Doing this for a client' },
-  { slug: 'no', label: 'No, not me', sub: 'Just curious / researching' },
+  {
+    slug: 'owner',
+    label: 'Yes, I own / run the business',
+    sub: "I'm the operator",
+    Icon: Crown,
+  },
+  {
+    slug: 'manager',
+    label: 'I run marketing for it',
+    sub: 'Owner-adjacent, makes calls on this',
+    Icon: Megaphone,
+  },
+  {
+    slug: 'agency',
+    label: "I'm a freelancer or agency",
+    sub: 'Doing this for a client',
+    Icon: Users,
+  },
+  {
+    slug: 'no',
+    label: 'No, not me',
+    sub: 'Just curious / researching',
+    Icon: Search,
+  },
 ];
 
 // ────────────────────────────────────────────────────────────────────
