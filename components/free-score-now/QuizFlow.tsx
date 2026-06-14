@@ -40,7 +40,6 @@ import {
   Check,
   Compass,
   Crosshair,
-  Droplets,
   Flame,
   Hammer,
   Home,
@@ -52,7 +51,6 @@ import {
   Star,
   Trees,
   Wrench,
-  Zap,
 } from 'lucide-react';
 import { TurnstileWidget } from '@/components/security/TurnstileWidget';
 import {
@@ -130,12 +128,15 @@ const TRADES: TradeOption[] = [
   { slug: 'hvac', label: 'HVAC', Icon: Flame },
   { slug: 'renovation', label: 'Renovation & Remodeling', Icon: Hammer },
   { slug: 'painting', label: 'Painting', Icon: PaintBucket },
-  { slug: 'electrical', label: 'Electrical', Icon: Zap },
-  { slug: 'pool_spa', label: 'Pool & Spa', Icon: Droplets },
   { slug: 'landscaping', label: 'Landscaping', Icon: Trees },
   { slug: 'insulation', label: 'Insulation', Icon: Layers },
   { slug: 'other', label: 'Something else', Icon: Briefcase },
 ];
+// (Electrical + Pool & Spa removed 2026-06-13 — keeping the list
+//  to 7 rows so the full picker fits on one mobile screen without
+//  scroll. Both verticals are still served by Fourdots Digital
+//  more broadly; buyers in those trades land in 'other' and route
+//  to the softer nurture path.)
 
 // ────────────────────────────────────────────────────────────────────
 // VISIBILITY SELF-ASSESSMENT OPTIONS (Q3)
@@ -1750,14 +1751,10 @@ function exampleKeyword(trade: string | null, city: string | null): string {
           ? 'home renovation'
           : trade === 'painting'
             ? 'house painter'
-            : trade === 'electrical'
-              ? 'electrician'
-              : trade === 'pool_spa'
-                ? 'pool installation'
-                : trade === 'landscaping'
-                  ? 'lawn care'
-                  : trade === 'insulation'
-                    ? 'attic insulation'
-                    : 'home services';
+            : trade === 'landscaping'
+              ? 'lawn care'
+              : trade === 'insulation'
+                ? 'attic insulation'
+                : 'home services';
   return `${tradeKw} ${c.toLowerCase()}`;
 }
