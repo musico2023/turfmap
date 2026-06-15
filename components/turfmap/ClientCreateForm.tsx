@@ -2,7 +2,15 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Check, ChevronRight, MapPin, X } from 'lucide-react';
+import {
+  Activity,
+  Check,
+  ChevronRight,
+  MapPin,
+  Phone as PhoneIcon,
+  Search as SearchIcon,
+  X,
+} from 'lucide-react';
 import { extractPostcodeFromAddress } from '@/lib/geocoding/parsePostcode';
 import { Button } from '@/components/ui/Button';
 import { InfoTooltip } from './InfoTooltip';
@@ -10,6 +18,11 @@ import {
   AddressAutocomplete,
   type AddressFields,
 } from './AddressAutocomplete';
+import {
+  GoogleBusinessAutocomplete,
+  type ResolvedPlace,
+} from '@/components/marketing/scan/GoogleBusinessAutocomplete';
+import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
 
 // Grouped industry options for the <select>. Each group corresponds
 // to a BrightLocal directory profile (lib/brightlocal/directories.ts):
@@ -125,6 +138,12 @@ type Form = {
    *  pre-fill Stripe Checkout's customer_email so the buyer doesn't
    *  retype. Required for Stripe plans, ignored for agency-managed. */
   buyer_email: string;
+  /** Google Place ID from the GBP autocomplete pick. When set, the
+   *  /api/clients POST stamps it on client_locations directly and
+   *  the enrichment hook runs selectMatchManually (operator-
+   *  confirmed) instead of the fuzzy back-matcher. Empty string in
+   *  manual-entry mode. */
+  google_place_id: string;
 };
 
 const initial: Form = {
@@ -146,6 +165,7 @@ const initial: Form = {
   tier_for_agency: 'pulse_plus',
   trial_days: '14',
   buyer_email: '',
+  google_place_id: '',
 };
 
 type GeocodeState =
@@ -166,6 +186,17 @@ export function ClientCreateForm() {
   const [geocode, setGeocode] = useState<GeocodeState>({ status: 'idle' });
   const [manualOverride, setManualOverride] = useState(false);
 
+  // Business-match mode. 'gbp' (default) renders the
+  // GoogleBusinessAutocomplete and treats a picked place as the
+  // source of truth for business_name / phone / address / NAP /
+  // lat-lng. 'manual' is the escape hatch for new businesses
+  // without a GBP listing yet (rare) — falls through to the
+  // legacy AddressAutocomplete + freeform fields. Once the
+  // operator picks a GBP, gbpResolved is non-null and the form
+  // surfaces a "matched to" card with a Clear affordance.
+  const [gbpMode, setGbpMode] = useState<'gbp' | 'manual'>('gbp');
+  const [gbpResolved, setGbpResolved] = useState<ResolvedPlace | null>(null);
+
   // Post-create state for the Stripe-plan path. When the API returns
   // a checkout_url, we surface it in a dedicated success state so
   // the operator can copy/forward it to the buyer instead of being
@@ -176,6 +207,65 @@ export function ClientCreateForm() {
 
   const update = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((s) => ({ ...s, [k]: v }));
+
+  // Fan a GoogleBusinessAutocomplete pick into all the dependent
+  // Form fields in one shot. Mirrors the QuizFlow + ScanIntakeForm
+  // pattern so the agency form behaves identically to the lander
+  // surfaces. Industry auto-suggests from the GBP primaryType when
+  // we have a clean mapping; operator can still override via the
+  // dropdown.
+  const applyGbpPick = (place: ResolvedPlace) => {
+    setGbpResolved(place);
+    const components = place.addressComponents;
+    const suggestedIndustry = primaryTypeToIndustry(place.primaryType);
+    setForm((s) => ({
+      ...s,
+      business_name: place.businessName,
+      phone: place.phone || s.phone,
+      address: place.formattedAddress,
+      street_address: components?.streetAddress ?? '',
+      city: components?.city ?? '',
+      region: components?.region ?? '',
+      postcode: components?.postcode ?? '',
+      country_code:
+        components?.countryCode?.toUpperCase() === 'CA'
+          ? 'CAN'
+          : components?.countryCode?.toUpperCase() === 'US'
+            ? 'USA'
+            : (components?.countryCode?.toUpperCase() ?? s.country_code),
+      latitude: place.latitude != null ? String(place.latitude) : '',
+      longitude: place.longitude != null ? String(place.longitude) : '',
+      google_place_id: place.placeId,
+      industry: suggestedIndustry ?? s.industry,
+    }));
+    if (place.latitude != null && place.longitude != null) {
+      setGeocode({
+        status: 'found',
+        lat: place.latitude,
+        lng: place.longitude,
+        formatted: place.formattedAddress,
+      });
+    }
+  };
+
+  const clearGbpPick = () => {
+    setGbpResolved(null);
+    setForm((s) => ({
+      ...s,
+      business_name: '',
+      phone: '',
+      address: '',
+      street_address: '',
+      city: '',
+      region: '',
+      postcode: '',
+      latitude: '',
+      longitude: '',
+      google_place_id: '',
+      // Keep industry — operator may have tweaked it after pick.
+    }));
+    setGeocode({ status: 'idle' });
+  };
 
   // ─── Auto-geocode on address change (debounced) ────────────────────────
   useEffect(() => {
@@ -324,6 +414,11 @@ export function ClientCreateForm() {
           }),
     };
     if (form.industry) body.industry = form.industry;
+    // Forward the GBP place_id only when the operator picked one
+    // via the autocomplete. /api/clients short-circuits the fuzzy
+    // back-matcher when this is present and runs selectMatchManually
+    // instead.
+    if (form.google_place_id) body.google_place_id = form.google_place_id;
 
     setSubmitting(true);
     try {
@@ -443,120 +538,192 @@ export function ClientCreateForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-6 max-w-3xl">
-      {/* Business basics — the structured citation fields (street/city/state/
-          zip/country) live in form state but are filled silently from the
-          Nominatim geocode below. They're stored on the row and used by the
-          NAP audit pipeline. The operator only sees: name, phone, address. */}
+      {/* Business basics — GBP-first match (2026-06-15). The operator
+       *  picks the client's Google Business Profile from the
+       *  autocomplete; that pick is the source of truth for
+       *  business_name / phone / address / NAP / lat-lng. Skips the
+       *  Nominatim back-lookup that the legacy manual-entry flow
+       *  requires, and forwards the picked place_id so /api/clients
+       *  can stamp client_locations.google_place_id directly +
+       *  trigger the operator-confirmed enrichment path.
+       *
+       *  Escape hatch: "Can't find this business on Google?" link
+       *  flips gbpMode to 'manual' and renders the legacy
+       *  AddressAutocomplete + freeform fields for the rare case
+       *  the business has no GBP listing yet. */}
       <Section title="Business">
-        <Field label="Business name" required>
-          <input
-            type="text"
-            value={form.business_name}
-            onChange={(e) => update('business_name', e.target.value)}
-            placeholder="Mr. Rooter Plumbing of Toronto"
-            required
-            autoFocus
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Phone" required help="E.164 preferred, e.g. +1-416-555-0100">
-          <input
-            type="tel"
-            value={form.phone}
-            onChange={(e) => update('phone', e.target.value)}
-            placeholder="+1-416-555-0100"
-            required
-            className={inputClass}
-          />
-        </Field>
-        <Field
-          label="Address"
-          required
-          help="Start typing — pick from the dropdown to auto-fill the structured NAP fields below."
-        >
-          <AddressAutocomplete
-            value={form.address}
-            onChange={(next) => update('address', next)}
-            onSelect={(fields: AddressFields) => {
-              // Operator picked a Mapbox suggestion — populate the
-              // structured NAP fields + lat/lng directly. Skips the
-              // /api/geocode round-trip for selected results; the
-              // existing debounced geocode still runs as a fallback
-              // for typed-but-not-selected addresses.
-              update('address', fields.formatted);
-              update('street_address', fields.street_address);
-              update('city', fields.city);
-              update('region', fields.region);
-              update('postcode', fields.postcode);
-              update(
-                'country_code',
-                fields.country_code.toUpperCase() === 'CA'
-                  ? 'CAN'
-                  : fields.country_code.toUpperCase() === 'US'
-                    ? 'USA'
-                    : fields.country_code.toUpperCase()
-              );
-              update('latitude', String(fields.latitude));
-              update('longitude', String(fields.longitude));
-              setGeocode({
-                status: 'found',
-                lat: fields.latitude,
-                lng: fields.longitude,
-                formatted: fields.formatted,
-              });
+        {gbpMode === 'gbp' && !gbpResolved && (
+          <>
+            <Field
+              label="Find on Google"
+              required
+              help="We'll auto-fill name, phone, address, and coordinates from the listing."
+            >
+              <GoogleBusinessAutocomplete
+                onResolved={applyGbpPick}
+                onClear={clearGbpPick}
+                placeholder="Mr. Rooter Plumbing of Toronto"
+                countryCode={null}
+                required
+              />
+            </Field>
+            <button
+              type="button"
+              onClick={() => {
+                setGbpMode('manual');
+                setGbpResolved(null);
+                update('google_place_id', '');
+              }}
+              className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors -mt-1"
+            >
+              Can&apos;t find this business on Google? Enter manually →
+            </button>
+          </>
+        )}
+
+        {gbpMode === 'gbp' && gbpResolved && (
+          <GbpMatchedCard
+            place={gbpResolved}
+            onClear={() => {
+              clearGbpPick();
+              // Keep the operator in GBP mode after Clear so they can
+              // pick a different listing without an extra click.
             }}
-            placeholder="100 Queen St W, Toronto"
-            required
-            inputClassName={inputClass}
           />
-        </Field>
+        )}
 
-        {/* Geocode status — always rendered, content varies by state */}
-        <GeocodeStatus
-          state={geocode}
-          manualOverride={manualOverride}
-          onToggleOverride={() => setManualOverride((v) => !v)}
-        />
-
-        {/* Lat/lng inputs only show in manual-override mode */}
-        {manualOverride && (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Latitude" required>
+        {gbpMode === 'manual' && (
+          <>
+            <Field label="Business name" required>
               <input
-                type="number"
-                step="0.0000001"
-                value={form.latitude}
-                onChange={(e) => update('latitude', e.target.value)}
-                placeholder="43.6532"
+                type="text"
+                value={form.business_name}
+                onChange={(e) => update('business_name', e.target.value)}
+                placeholder="Mr. Rooter Plumbing of Toronto"
+                required
+                autoFocus
+                className={inputClass}
+              />
+            </Field>
+            <Field
+              label="Phone"
+              required
+              help="E.164 preferred, e.g. +1-416-555-0100"
+            >
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => update('phone', e.target.value)}
+                placeholder="+1-416-555-0100"
                 required
                 className={inputClass}
               />
             </Field>
             <Field
-              label="Longitude"
+              label="Address"
               required
-              help={
-                <a
-                  href="https://www.latlong.net/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-zinc-500 hover:text-zinc-300 inline-flex items-center gap-1"
-                >
-                  <MapPin size={11} /> find lat/lng
-                </a>
-              }
+              help="Start typing — pick from the dropdown to auto-fill the structured NAP fields below."
             >
-              <input
-                type="number"
-                step="0.0000001"
-                value={form.longitude}
-                onChange={(e) => update('longitude', e.target.value)}
-                placeholder="-79.3832"
+              <AddressAutocomplete
+                value={form.address}
+                onChange={(next) => update('address', next)}
+                onSelect={(fields: AddressFields) => {
+                  // Operator picked a Mapbox suggestion — populate the
+                  // structured NAP fields + lat/lng directly. Skips the
+                  // /api/geocode round-trip for selected results; the
+                  // existing debounced geocode still runs as a fallback
+                  // for typed-but-not-selected addresses.
+                  update('address', fields.formatted);
+                  update('street_address', fields.street_address);
+                  update('city', fields.city);
+                  update('region', fields.region);
+                  update('postcode', fields.postcode);
+                  update(
+                    'country_code',
+                    fields.country_code.toUpperCase() === 'CA'
+                      ? 'CAN'
+                      : fields.country_code.toUpperCase() === 'US'
+                        ? 'USA'
+                        : fields.country_code.toUpperCase()
+                  );
+                  update('latitude', String(fields.latitude));
+                  update('longitude', String(fields.longitude));
+                  setGeocode({
+                    status: 'found',
+                    lat: fields.latitude,
+                    lng: fields.longitude,
+                    formatted: fields.formatted,
+                  });
+                }}
+                placeholder="100 Queen St W, Toronto"
                 required
-                className={inputClass}
+                inputClassName={inputClass}
               />
             </Field>
-          </div>
+
+            {/* Geocode status — always rendered, content varies by state */}
+            <GeocodeStatus
+              state={geocode}
+              manualOverride={manualOverride}
+              onToggleOverride={() => setManualOverride((v) => !v)}
+            />
+
+            {/* Lat/lng inputs only show in manual-override mode */}
+            {manualOverride && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Latitude" required>
+                  <input
+                    type="number"
+                    step="0.0000001"
+                    value={form.latitude}
+                    onChange={(e) => update('latitude', e.target.value)}
+                    placeholder="43.6532"
+                    required
+                    className={inputClass}
+                  />
+                </Field>
+                <Field
+                  label="Longitude"
+                  required
+                  help={
+                    <a
+                      href="https://www.latlong.net/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-500 hover:text-zinc-300 inline-flex items-center gap-1"
+                    >
+                      <MapPin size={11} /> find lat/lng
+                    </a>
+                  }
+                >
+                  <input
+                    type="number"
+                    step="0.0000001"
+                    value={form.longitude}
+                    onChange={(e) => update('longitude', e.target.value)}
+                    placeholder="-79.3832"
+                    required
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setGbpMode('gbp');
+                // Don't wipe the manually-typed fields — operator
+                // might want to keep what they typed if they're
+                // toggling back-and-forth. The GBP picker is empty
+                // until they pick something, and a pick will
+                // override the typed fields.
+              }}
+              className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors -mt-1"
+            >
+              ← Back to Google Business Profile match
+            </button>
+          </>
         )}
 
         <div className="grid grid-cols-2 gap-3">
@@ -821,6 +988,94 @@ function GeocodeStatus({
       >
         {manualOverride ? '← back to auto-locate' : 'override coordinates manually →'}
       </button>
+    </div>
+  );
+}
+
+/** Renders a confirmation card after the operator picks a GBP from
+ *  the autocomplete. Shows business name, phone, address, and
+ *  matched primary_type so the operator can visually verify before
+ *  hitting Create. Clear button wipes the pick + business/address
+ *  state so the operator can pick a different listing or fall
+ *  back to manual entry. Mirrors the post-pick affirmation
+ *  pattern used by the QuizFlow + ScanIntakeForm landers. */
+function GbpMatchedCard({
+  place,
+  onClear,
+}: {
+  place: ResolvedPlace;
+  onClear: () => void;
+}) {
+  const address = place.formattedAddress.trim();
+  return (
+    <div
+      className="border rounded-md p-4"
+      style={{
+        background: 'rgba(197, 255, 58, 0.04)',
+        borderColor: 'rgba(197, 255, 58, 0.35)',
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] font-mono font-semibold mb-2">
+            <Check
+              size={11}
+              strokeWidth={3}
+              style={{ color: 'var(--color-lime)' }}
+            />
+            <span style={{ color: 'var(--color-lime)' }}>
+              Matched on Google
+            </span>
+            {place.primaryType && (
+              <>
+                <span className="text-zinc-700">·</span>
+                <span className="text-zinc-500 normal-case tracking-normal">
+                  {place.primaryType}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="text-sm font-semibold text-zinc-100 leading-tight">
+            {place.businessName}
+          </div>
+          <div className="mt-2 space-y-1 text-xs text-zinc-400 font-mono leading-relaxed">
+            <div className="flex items-start gap-1.5 min-w-0">
+              <MapPin
+                size={11}
+                className="flex-shrink-0 mt-0.5 text-zinc-600"
+              />
+              <span className="truncate">{address}</span>
+            </div>
+            {place.phone && (
+              <div className="flex items-start gap-1.5">
+                <PhoneIcon
+                  size={11}
+                  className="flex-shrink-0 mt-0.5 text-zinc-600"
+                />
+                <span>{place.phone}</span>
+              </div>
+            )}
+            {place.latitude != null && place.longitude != null && (
+              <div className="flex items-start gap-1.5">
+                <SearchIcon
+                  size={11}
+                  className="flex-shrink-0 mt-0.5 text-zinc-600"
+                />
+                <span style={{ color: 'var(--color-lime)' }}>
+                  {place.latitude.toFixed(5)}, {place.longitude.toFixed(5)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 inline-flex items-center gap-1"
+        >
+          <X size={11} /> Clear
+        </button>
+      </div>
     </div>
   );
 }

@@ -22,7 +22,10 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { getStripe } from '@/lib/stripe/client';
 import { sendStripeSetupLink } from '@/lib/email/resend';
-import { enrichLocationFromOnboarding } from '@/lib/google/enrich';
+import {
+  enrichLocationFromOnboarding,
+  selectMatchManually,
+} from '@/lib/google/enrich';
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
 import { agencyClientUrl } from '@/lib/urls';
 
@@ -49,6 +52,13 @@ const CreateClientBody = z.object({
     .nullable(),
   industry: z.string().max(80).optional().nullable(),
   service_radius_miles: z.number().min(0.1).max(10).optional(),
+  // Google Place ID from the agency form's GBP autocomplete pick.
+  // When present, the create flow stamps it on client_locations
+  // directly and short-circuits the fuzzy back-matcher
+  // (enrichLocationFromOnboarding) in favor of the
+  // operator-confirmed path (selectMatchManually). Optional — the
+  // legacy Mapbox/manual-entry flow is still supported.
+  google_place_id: z.string().min(4).max(300).optional().nullable(),
   primary_color: z
     .string()
     .regex(HEX_COLOR, 'must be hex like #c5ff3a')
@@ -181,6 +191,14 @@ export async function POST(req: Request) {
       latitude: parsed.latitude,
       longitude: parsed.longitude,
       service_radius_miles: parsed.service_radius_miles ?? 1.6,
+      // Stamp the GBP id directly when the operator picked one
+      // from the autocomplete. The enrichment hook below detects
+      // this and runs the operator-confirmed path
+      // (selectMatchManually) instead of the fuzzy back-lookup
+      // (enrichLocationFromOnboarding) — saves a Places Search
+      // round-trip and avoids the risk of the back-matcher
+      // disagreeing with the operator's pick.
+      google_place_id: parsed.google_place_id ?? null,
     })
     .select('id')
     .single<{ id: string }>();
@@ -195,15 +213,32 @@ export async function POST(req: Request) {
   }
 
   // Google Places enrichment for the primary location — fire-and-forget.
-  // Looks up the GBP listing, stores place_id + initial signals snapshot.
-  // Soft-fails on every branch.
+  // Two paths, soft-fails on every branch:
+  //
+  //   - When the operator picked a GBP from the agency form's
+  //     autocomplete, the place_id is already stamped on the row;
+  //     selectMatchManually just fetches Place Details and lands
+  //     the gbp_signals snapshot. Skips the fuzzy back-matcher
+  //     entirely.
+  //
+  //   - When no place_id is on the row (legacy/manual-entry flow),
+  //     enrichLocationFromOnboarding runs the original name +
+  //     coords back-lookup so the location still gets a GBP match
+  //     attempt.
   after(async () => {
-    await enrichLocationFromOnboarding(supabase, {
-      locationId: location.id,
-      businessName: parsed.business_name,
-      latitude: parsed.latitude,
-      longitude: parsed.longitude,
-    });
+    if (parsed.google_place_id) {
+      await selectMatchManually(supabase, {
+        locationId: location.id,
+        placeId: parsed.google_place_id,
+      });
+    } else {
+      await enrichLocationFromOnboarding(supabase, {
+        locationId: location.id,
+        businessName: parsed.business_name,
+        latitude: parsed.latitude,
+        longitude: parsed.longitude,
+      });
+    }
   });
 
   // 3. Insert primary keyword, scoped to the location we just created.
