@@ -52,10 +52,6 @@
     {
       "path": "/api/cron/gc-preview-clients",
       "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/free-score-daily-recap",
-      "schedule": "0 0 * * *"
     }
   ]
 }

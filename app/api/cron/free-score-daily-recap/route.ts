@@ -2,7 +2,17 @@
  * Vercel Cron — daily 8pm Eastern recap of free-score leads to
  * #llm-leads.
  *
- * Schedule (vercel.json): 0 0 * * * UTC.
+ * ⚠ PAUSED 2026-06-14 — ad spend paused. The cron entry was
+ *   removed from vercel.json so this handler no longer auto-fires.
+ *   To re-enable when paid traffic resumes, add back the entry:
+ *
+ *     { "path": "/api/cron/free-score-daily-recap",
+ *       "schedule": "0 0 * * *" }
+ *
+ *   Manual fire still works via `vercel crons run` or curl with
+ *   Authorization: Bearer ${CRON_SECRET}.
+ *
+ * Schedule (when re-enabled): 0 0 * * * UTC.
  *   - June–Oct (EDT, UTC-4): fires at 8:00 PM Toronto.
  *   - Nov–Mar (EST, UTC-5): fires at 7:00 PM Toronto.
  * Anthony accepts the 1h DST drift over building a DST-aware
