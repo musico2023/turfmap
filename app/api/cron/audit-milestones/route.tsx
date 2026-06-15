@@ -905,15 +905,41 @@ async function sweepUnbookedNudge(
       // the buyer is at the end of the automated sequence and
       // personal outreach is the next move. Fail-soft — if the
       // webhook isn't configured the nudge email still went out.
+      //
+      // Loads the real audit + keyword rows so the alert carries
+      // the triage data Anthony actually needs (starting TurfScore,
+      // LLM Fit score, tracked keyword as the trade label) instead
+      // of placeholder zeros. Fix 2026-06-15 — original call site
+      // hardcoded 0/0/empty trade which made the alert useless for
+      // ranking which unbooked buyer to chase first.
       if (cfg.fireSlackEscalation) {
+        const [{ data: audit }, { data: keyword }] = await Promise.all([
+          supabase
+            .from('visibility_audits')
+            .select('starting_turfscore, llm_fit_score')
+            .eq('client_id', row.client_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle<{
+              starting_turfscore: number | null;
+              llm_fit_score: number | null;
+            }>(),
+          supabase
+            .from('tracked_keywords')
+            .select('keyword')
+            .eq('client_id', row.client_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle<{ keyword: string }>(),
+        ]);
         await notifyAuditUnscheduled({
           businessName: client.business_name,
-          trade: '',
+          trade: keyword?.keyword ?? '',
           market: [client.city, client.region]
             .filter(Boolean)
             .join(', ') || client.address || '',
-          currentTurfScore: 0,
-          llmFitScore: 0,
+          currentTurfScore: audit?.starting_turfscore ?? 0,
+          llmFitScore: audit?.llm_fit_score ?? 0,
           auditDashboardUrl: agencyClientUrl(appOrigin(), client.public_id),
         }).catch((e) => {
           console.error(
