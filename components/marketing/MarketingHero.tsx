@@ -172,20 +172,20 @@ export function MarketingHero() {
             .
           </h1>
           {/* Positioning sub-headline — sits between H1 and the descriptive
-           *  subhead. Italic to flag it as the strategic frame ("what is
-           *  this product, in one line?") rather than a continuation of
-           *  the description. */}
-          <p className="font-display text-xl md:text-2xl text-zinc-300 italic leading-snug mb-8 max-w-xl">
+           *  subhead. Matches the standard body-paragraph treatment used
+           *  by the other marketing sections (Section.tsx and the /scan
+           *  hero subhead) — sans-serif body font, no italics. The
+           *  earlier display+italic styling read as quoted/editorial and
+           *  visually broke from the rest of the page. */}
+          <p className="text-lg md:text-xl text-zinc-300 leading-relaxed mb-8 max-w-xl">
             We run{' '}
-            <strong className="font-semibold text-zinc-100">
+            <strong className="font-bold text-zinc-100">
               81 real Google searches
             </strong>{' '}
             across your service area and show you, cell by cell, where
             you show up — and where a competitor is taking the call.
             Most local businesses are invisible to{' '}
-            <strong className="font-semibold text-zinc-100">
-              two-thirds
-            </strong>{' '}
+            <strong className="font-bold text-zinc-100">two-thirds</strong>{' '}
             of the people searching nearby.
           </p>
           <div className="flex flex-wrap items-center gap-3">
