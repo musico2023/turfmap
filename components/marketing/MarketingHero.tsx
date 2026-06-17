@@ -174,10 +174,13 @@ export function MarketingHero() {
           {/* Positioning sub-headline — sits between H1 and the descriptive
            *  subhead. Matches the standard body-paragraph treatment used
            *  by the other marketing sections (Section.tsx and the /scan
-           *  hero subhead) — sans-serif body font, no italics. The
-           *  earlier display+italic styling read as quoted/editorial and
-           *  visually broke from the rest of the page. */}
-          <p className="text-lg md:text-xl text-zinc-300 leading-relaxed mb-8 max-w-xl">
+           *  hero subhead) — Geist body sans, no italics. The earlier
+           *  font-display + italic styling read as a quoted pull-quote
+           *  and visually broke from the rest of the page. font-sans is
+           *  explicit here (it's also the body default via app/layout.tsx)
+           *  so future class collisions can't drag the paragraph back
+           *  into the display family. */}
+          <p className="font-sans text-lg md:text-xl text-zinc-300 leading-relaxed mb-8 max-w-xl">
             We run{' '}
             <strong className="font-bold text-zinc-100">
               81 real Google searches
