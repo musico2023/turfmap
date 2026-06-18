@@ -368,7 +368,7 @@ export default async function YourMapLandingPage({
              *  to the rest of the line.
              *  Parent has no font-bold so individual span weights
              *  apply; would otherwise be overridden. */}
-            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl leading-[1.04] tracking-tight mb-4 text-zinc-100">
+            <h1 className="font-sans text-2xl md:text-3xl leading-snug mb-4 text-zinc-100">
               {personalization ? (
                 <>
                   <span className="font-normal text-zinc-300">
@@ -564,6 +564,13 @@ export default async function YourMapLandingPage({
             )}
             <HeroTrustLines />
           </div>
+        </div>
+      </section>
+
+      {/* Trust strip — moved up to just under the hero */}
+      <section className="px-6 md:px-10 pb-6">
+        <div className="max-w-6xl mx-auto">
+          <TrustStripRow city={personalization?.city ?? null} />
         </div>
       </section>
 
@@ -1011,9 +1018,6 @@ export default async function YourMapLandingPage({
       {/* ─── CLOSING CTA ────────────────────────────────────────────── */}
       <section className="px-6 md:px-10 pb-10">
         <div className="max-w-3xl mx-auto">
-          <div className="max-w-xl mx-auto mb-8">
-            <TrustStripRow city={personalization?.city ?? null} />
-          </div>
           <div
             className="rounded-lg p-7 md:p-9 border text-center"
             style={{
