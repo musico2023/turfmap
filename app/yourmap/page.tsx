@@ -626,6 +626,71 @@ export default async function YourMapLandingPage({
        *  answer BEFORE the fix list reveal. */}
       <TestimonialSection />
 
+      {/* ─── WHY YOU GOT THIS — cold-outreach trust accordion ────────── */}
+      <section id="why-you-got-this" className="px-6 md:px-10 py-16 border-t" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="max-w-3xl mx-auto">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3">
+            <span style={{ color: 'var(--color-lime)' }}>·</span> Why you got
+            this
+          </div>
+          <h2 className="font-display text-2xl md:text-3xl font-bold leading-tight tracking-tight mb-6 max-w-xl">
+            No catch. <em>Here&rsquo;s the honest version.</em>
+          </h2>
+          <FAQAccordion
+            items={[
+              {
+                q: 'Why are you reaching out to me?',
+                a: (
+                  <>
+                    TurfMap is built by{' '}
+                    <strong className="text-zinc-200">Fourdots Digital</strong>{' '}
+                    — a digital marketing agency for home-services businesses.
+                    We research local operators, and when we ran a preview of{' '}
+                    {personalization
+                      ? personalization.business_name
+                      : 'your business'}{' '}
+                    we saw a TurfScore that told us we might be able to help.
+                    Rather than cold-pitch you, we wanted to lead with
+                    something genuinely useful: your actual map. If it&rsquo;s
+                    valuable and you&rsquo;d like to talk, great — if not, the
+                    scan is yours either way, no strings.
+                  </>
+                ),
+              },
+              {
+                q: "What's the catch?",
+                a: (
+                  <>
+                    None — the full scan is free because it&rsquo;s how we
+                    introduce ourselves. No subscription, no auto-enrollment,
+                    no credit card. You keep the heatmap, competitor map, and
+                    fix list. If you later want help executing the fixes,
+                    that&rsquo;s a separate conversation you&rsquo;re free to
+                    decline.
+                  </>
+                ),
+              },
+              {
+                q: 'How did you get my information?',
+                a: (
+                  <>
+                    We use publicly-available business data to identify
+                    operators with significant local SEO weakness. Your
+                    business name, address, and phone are listed publicly on
+                    Google Business Profile, Yelp, and similar directories. We
+                    ran a preview scan against this public data, identified
+                    that you were missing visibility across your service area,
+                    and reached out. No private data was accessed. If
+                    you&rsquo;d prefer not to receive further outreach, simply
+                    unsubscribe at the link in our email.
+                  </>
+                ),
+              },
+            ]}
+          />
+        </div>
+      </section>
+
       {/* ─── WHAT YOU'LL GET (mirrors /fourdots Section 03) ─────────── */}
       <section
         className="px-6 md:px-10 py-16 border-t"
@@ -896,28 +961,8 @@ export default async function YourMapLandingPage({
           <h2 className="font-display text-2xl md:text-3xl font-bold leading-tight tracking-tight mb-6 max-w-xl">
             Things people ask before <em>they buy.</em>
           </h2>
-          {/* "How did you get my information?" leads — handles the
-           *  cold-outreach trust objection up front. FAQAccordion
-           *  auto-expands the first item. */}
           <FAQAccordion
             items={[
-              {
-                q: 'How did you get my information?',
-                a: (
-                  <>
-                    We use publicly-available business data to identify
-                    operators with significant local SEO weakness. Your
-                    business name, address, and phone are listed publicly
-                    on Google Business Profile, Yelp, and similar
-                    directories. We ran a preview scan against this public
-                    data, identified that you were missing visibility
-                    across your service area, and reached out. No private
-                    data was accessed. If you&rsquo;d prefer not to receive
-                    further outreach, simply unsubscribe at the link in
-                    our email.
-                  </>
-                ),
-              },
               {
                 q: 'What if I find out my visibility is bad?',
                 a: (
