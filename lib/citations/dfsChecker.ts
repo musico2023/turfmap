@@ -543,6 +543,43 @@ function findMatchingSibling(
 }
 
 /**
+ * Authoritative-NAP override for the Google Business Profile directory.
+ *
+ * Why: the canonical NAP this audit compares against was itself stamped
+ * from Google Place Details, so for `google_business` the listing's NAP
+ * IS the canonical NAP — you can't be "inconsistent with Google" on
+ * Google's own listing. The probe for this directory is `local_pack`,
+ * which confirms the GBP exists (name + cid match) but does NOT expose
+ * phone/address on local_pack items, so the snippet extractors return
+ * null. Left as-is, a present, well-ranked GBP gets falsely classified
+ * `unverified` with no phone/address (the AI Coach then renders that as
+ * "the GBP is unverified with no phone or address on record" — a false,
+ * client-facing claim). For google_business, substitute the
+ * authoritative NAP so classification reflects reality.
+ *
+ * Found 2026-06-18 (Payless Kitchen Cabinets: real GBP w/ 650 reviews +
+ * phone + address surfaced as "unverified, no NAP").
+ *
+ * Returns the [phone, address] tuple to classify with. No-op for every
+ * other directory — only the google_business listing is authoritatively
+ * ours; third-party directories must still be probed for real.
+ */
+export function resolveFoundNapForDirectory(
+  directoryId: string,
+  business: Pick<CitationBusinessProfile, 'telephone' | 'street_address'>,
+  extractedPhone: string | null,
+  extractedAddress: string | null
+): [string | null, string | null] {
+  if (directoryId === 'google_business') {
+    return [
+      business.telephone ?? extractedPhone,
+      business.street_address || extractedAddress,
+    ];
+  }
+  return [extractedPhone, extractedAddress];
+}
+
+/**
  * Run a DFS-backed citation audit against the given directory set.
  *
  * Returns NapAuditFindings shaped for storage in nap_audits.findings
@@ -627,8 +664,17 @@ export async function runDfsCitationAudit(
     }
 
     // Name matched — extract NAP fragments and classify.
-    const foundPhone = extractPhoneFromSnippet(probe.found_snippet);
-    const foundAddress = extractAddressFromSnippet(probe.found_snippet);
+    let foundPhone = extractPhoneFromSnippet(probe.found_snippet);
+    let foundAddress = extractAddressFromSnippet(probe.found_snippet);
+    // Authoritative-source override: google_business uses our Google
+    // Place Details NAP (the local_pack probe can't see phone/address),
+    // so a present GBP isn't falsely flagged 'unverified' with no NAP.
+    [foundPhone, foundAddress] = resolveFoundNapForDirectory(
+      probe.directory.id,
+      business,
+      foundPhone,
+      foundAddress
+    );
     const canonicalStatus: CitationStatus = classifyCitation(
       {
         name: business.name,
