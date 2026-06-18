@@ -66,7 +66,7 @@ export type TriggerNapAuditResult =
 export async function triggerNapAuditAtAuditInit(
   supabase: SupabaseClientLike,
   auditId: string,
-  options: { operatorOrigin?: string } = {}
+  options: { operatorOrigin?: string; force?: boolean } = {}
 ): Promise<TriggerNapAuditResult> {
   // 1. Load the audit + its anchors (client, primary location).
   const { data: audit } = await supabase
@@ -228,7 +228,9 @@ export async function triggerNapAuditAtAuditInit(
   }
 
   // 5. Fire the NAP audit. maybeRunNapAudit handles idempotency on
-  //    the recent-audit window so re-calls inside 30 days are no-ops.
+  //    the recent-audit window so re-calls inside 30 days are no-ops —
+  //    UNLESS options.force is set (deliberate operator regenerate),
+  //    which bypasses the window and runs a fresh audit.
   //
   //    triggered_by MUST be null (or a real users.id UUID) — the
   //    nap_audits.triggered_by column has a FK constraint to
@@ -242,7 +244,8 @@ export async function triggerNapAuditAtAuditInit(
       audit.client_id,
       null,
       location.id,
-      'audit-init'
+      'audit-init',
+      { force: options.force ?? false }
     );
     return {
       ok: true,

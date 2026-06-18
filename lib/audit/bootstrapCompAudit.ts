@@ -706,14 +706,21 @@ async function regenerateForExistingAudit(args: {
   // unavailable"). Forcing the regenerate path to AWAIT the audit
   // gives the operator a deterministic recovery: hit regenerate →
   // DFS audit runs (~5-9s for ~9 directories) → PDF reads the now-
-  // populated findings. Idempotent on the 30-day window — re-clicks
-  // re-use the existing audit row instead of burning DFS credits.
+  // populated findings.
+  //
+  // force: true bypasses the 30-day recent-audit window. A deliberate
+  // operator regenerate must produce FRESH findings (e.g. a NAP-pipeline
+  // fix shipped and we need the audit re-run) — silently reusing a stale
+  // row was a real bug (Payless 2026-06-18: regenerate kept emitting the
+  // pre-fix "GBP unverified, no NAP" finding). Costs one DFS audit
+  // (~$0.09) per regenerate, which is the intended trade for correctness.
   //
   // maxDuration on the calling endpoint is 300s; DFS overhead is
   // ~5-9s so we have plenty of headroom inside the request budget.
   try {
     const napResult = await triggerNapAuditAtAuditInit(supabase, auditId, {
       operatorOrigin: appOrigin,
+      force: true,
     });
     if (!napResult.ok) {
       console.error(

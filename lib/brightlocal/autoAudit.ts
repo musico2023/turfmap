@@ -138,7 +138,12 @@ export async function maybeRunNapAudit(
   clientId: string,
   triggeredBy: string | null,
   locationId: string | null = null,
-  triggerSource: NapAuditTriggerSource | null = null
+  triggerSource: NapAuditTriggerSource | null = null,
+  /** When `force` is true, bypass the 30-day recent-audit window and
+   *  run a fresh audit unconditionally. Set by deliberate operator
+   *  regenerate flows (force_regenerate) where stale findings are the
+   *  exact thing being refreshed. Costs one DFS audit (~$0.09). */
+  opts: { force?: boolean } = {}
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
   // 1. Pull client metadata. The historical billing_mode='one_time' tier
   // gate is GONE — DFS-based audits (default provider) cost ~$0.09 per
@@ -163,22 +168,25 @@ export async function maybeRunNapAudit(
     return { ran: false, reason: 'no location resolved for this client' };
   }
 
-  // 3. Recent audit on this exact location?
-  const since = new Date(
-    Date.now() - AUDIT_REFRESH_WINDOW_MS
-  ).toISOString();
-  const { data: recent } = await supabase
-    .from('nap_audits')
-    .select('id, status, created_at')
-    .eq('client_id', clientId)
-    .eq('location_id', location.id)
-    .in('status', ['pending', 'running', 'complete'])
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle<Pick<NapAuditRow, 'id' | 'status' | 'created_at'>>();
-  if (recent) {
-    return { ran: false, reason: `recent audit already ${recent.status}` };
+  // 3. Recent audit on this exact location? Skipped when force=true
+  //    (deliberate operator regenerate — the whole point is a fresh run).
+  if (!opts.force) {
+    const since = new Date(
+      Date.now() - AUDIT_REFRESH_WINDOW_MS
+    ).toISOString();
+    const { data: recent } = await supabase
+      .from('nap_audits')
+      .select('id, status, created_at')
+      .eq('client_id', clientId)
+      .eq('location_id', location.id)
+      .in('status', ['pending', 'running', 'complete'])
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<Pick<NapAuditRow, 'id' | 'status' | 'created_at'>>();
+    if (recent) {
+      return { ran: false, reason: `recent audit already ${recent.status}` };
+    }
   }
 
   // 4. NAP fields complete on the location?
