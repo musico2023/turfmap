@@ -15,11 +15,11 @@ import {
   Zap,
 } from 'lucide-react';
 import { HeatmapGrid } from '@/components/turfmap/HeatmapGrid';
-import { TheirDataTeaser } from '@/components/yourmap/TheirDataTeaser';
 import { ScanIntakeLinkButton } from '@/components/marketing/scan/ScanIntakeLinkButton';
 import { ColdscanRunButton } from '@/components/marketing/ColdscanRunButton';
 import { FAQAccordion } from '@/components/marketing/FAQAccordion';
 import { buildHeroCells, HERO_METRICS } from '@/components/marketing/heroSeed';
+import { buildRepresentativeCells } from '@/components/marketing/representativeHeatmap';
 import {
   finalPriceCents,
   formatUsd,
@@ -281,6 +281,11 @@ export default async function YourMapLandingPage({
       : `Sample · ${personalization.trade}`
     : 'Sample · Plumber, midtown';
 
+  const heatmapCells =
+    personalization != null && personalization.invisibility_count > 0
+      ? buildRepresentativeCells(personalization.id, personalization.invisibility_count)
+      : cells;
+
   return (
     <div className="min-h-screen w-full text-white">
       {/* Cold-funnel event emitter (Phase 1 — migration 0041). Only
@@ -534,12 +539,35 @@ export default async function YourMapLandingPage({
            *  experience. */}
           <div className="lg:col-span-5">
             {personalization ? (
-              <TheirDataTeaser
-                prospectId={personalization.id}
-                businessName={personalization.business_name}
-                previewScore={personalization.preview_score}
-                invisibilityCount={personalization.invisibility_count}
-              />
+              <>
+                <div className="mb-2 flex">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] uppercase tracking-[0.16em] font-bold" style={{ background: '#27272a', color: '#d4d4d8' }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#a1a1aa' }} />
+                    Representative of your preview
+                  </span>
+                </div>
+                <div className="border rounded-lg p-5 relative" style={{ background: 'var(--color-card)', borderColor: 'var(--color-border-bright)' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold">{heroVisualTitle}</div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-500">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-lime)' }} />
+                      PREVIEW
+                    </div>
+                  </div>
+                  <HeatmapGrid cells={heatmapCells} />
+                  <div className="mt-3 pt-3 border-t flex items-start gap-2.5" style={{ borderColor: 'var(--color-border)' }}>
+                    <Crosshair size={13} strokeWidth={2.5} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-lime)' }} />
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      Your <strong className="text-zinc-200">exact block-by-block heatmap</strong> unlocks when you run the full scan.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 md:gap-4 mt-4">
+                    <ScoreReadout label="TurfReach™" value="— · ·" ariaLabel="TurfReach — unlocks with the full scan" />
+                    <ScoreReadout label="TurfRank™" value="— · ·" ariaLabel="TurfRank — unlocks with the full scan" />
+                    <ScoreReadout label="TurfScore™" value={String(personalization.preview_score)} highlight bandLabel={personalization.band} />
+                  </div>
+                </div>
+              </>
             ) : (
               <>
                 <div className="mb-2 flex">
@@ -1651,14 +1679,17 @@ function ScoreReadout({
   value,
   highlight = false,
   bandLabel,
+  ariaLabel,
 }: {
   label: string;
   value: string;
   highlight?: boolean;
   bandLabel?: string;
+  ariaLabel?: string;
 }) {
   return (
     <div
+      aria-label={ariaLabel}
       className="rounded-md px-2.5 py-3 flex flex-col items-center text-center"
       style={{
         background: highlight ? '#0d130a' : 'var(--color-bg)',
