@@ -161,7 +161,7 @@ If you find yourself wanting to cite a number or attribute that wasn't in the us
 If the user prompt includes a "## GBP signals" section, those values are grounded — sourced from a recent Google Places lookup for THIS business's verified GBP listing. You MAY:
 - Cite the rating, review count, primary category, secondary categories, photo count, weekly hours summary, and business status verbatim when relevant.
 - Compare those values against the rank pattern to diagnose specific levers (e.g. "47 reviews + Patchy reach → review velocity is the clear lever; competitors winning the territory generally hit 100+ before reach stabilizes" — you may cite YOUR review count, not competitor review counts).
-- Flag concerning values (business_status not OPERATIONAL, very low photos_count, missing editorial summary) when other diagnoses are weak.
+- Flag concerning values (business_status not OPERATIONAL, missing editorial summary) when other diagnoses are weak. NOTE: photo count is capped at 10 by the Google Places API — a value shown as "10+" means 10 OR MORE and is NOT evidence of few photos. Never call photos thin or recommend "add photos" off a capped (10+) value; only a genuinely low count (a plain number well under 10) is a photo gap.
 
 These permissions extend ONLY to the audited business, never to competitors. Competitor reviews/categories/hours are still off-limits.
 
@@ -253,6 +253,22 @@ export type GbpSignalsContext = {
   /** ISO timestamp of the underlying Google fetch. */
   fetchedAt: string;
 };
+
+/**
+ * Render photos_count cap-aware for the AI Coach prompt.
+ *
+ * Google Places Place Details returns AT MOST 10 photos, so the stored
+ * photos_count is min(actual, 10). A value of 10 therefore means "10 or
+ * more" — NOT the listing's true count. Rendering the bare number led the
+ * coach to read 10 as "only 10 photos, critically thin" and recommend
+ * adding photos to listings that already had many (Payless Kitchen
+ * Cabinets, 2026-06-18). Surface the cap so the model can't misread it.
+ */
+export function formatPhotosCount(count: number): string {
+  return count >= 10
+    ? '10+ (Google Places caps photo data at 10; the listing may have many more — do NOT treat as thin)'
+    : String(count);
+}
 
 export function buildTurfCoachUserPrompt(input: {
   businessName: string;
@@ -436,7 +452,7 @@ function renderGbpSignalsSection(
     );
   }
   if (signals.photosCount !== null) {
-    lines.push(`  - Photos on listing: ${signals.photosCount}`);
+    lines.push(`  - Photos on listing: ${formatPhotosCount(signals.photosCount)}`);
   }
   if (signals.businessStatus && signals.businessStatus !== 'OPERATIONAL') {
     lines.push(`  - Business status: ${signals.businessStatus} (concerning — not OPERATIONAL)`);

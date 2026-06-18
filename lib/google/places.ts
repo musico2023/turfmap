@@ -273,6 +273,11 @@ export async function getPlaceDetails(
     | undefined;
   const displayName = raw.displayName as { text?: string } | undefined;
   const editorial = raw.editorialSummary as { text?: string } | undefined;
+  // NOTE: Google Places Place Details returns AT MOST 10 photos, so
+  // `photosCount` below is min(actualPhotos, 10). A value of 10 means
+  // "10 or more" — never read it as the listing's true count or as
+  // "thin photos". Consumers (e.g. the AI Coach) must render it
+  // cap-aware. See formatPhotosCount in lib/anthropic/prompts/turfCoach.ts.
   const photos = raw.photos as unknown[] | undefined;
   const types = (raw.types as string[] | undefined) ?? [];
   return {
