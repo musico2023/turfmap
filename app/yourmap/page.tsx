@@ -6,7 +6,9 @@ import {
   Compass,
   Crosshair,
   Crown,
+  Grid3x3,
   HelpCircle,
+  MapPin,
   ShieldCheck,
   Sparkles,
   Target,
@@ -704,11 +706,28 @@ export default async function YourMapLandingPage({
         <div className="max-w-5xl mx-auto">
           <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500 font-mono font-semibold mb-3">
             <span style={{ color: 'var(--color-lime)' }}>·</span>{' '}
-            What you walk away with
+            What&apos;s behind the button
           </div>
           <h2 className="font-display text-3xl md:text-4xl font-bold leading-[1.05] tracking-tight mb-3 max-w-3xl">
-            A prioritized fix list. <em>In plain English.</em>
+            One click reveals the full picture.
           </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            {[
+              { icon: Grid3x3, title: 'Your exact heatmap', now: 'one score', unlocks: 'all 81 cells, block by block' },
+              { icon: MapPin, title: 'Competitor map', now: 'your top competitor', unlocks: 'who owns which cells, every competitor' },
+              { icon: Sparkles, title: 'AI Coach Fix List', now: 'nothing', unlocks: 'your top 3 prioritized actions' },
+            ].map((p) => {
+              const Icon = p.icon;
+              return (
+                <div key={p.title} className="border rounded-lg p-5" style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}>
+                  <Icon size={20} style={{ color: 'var(--color-lime)' }} />
+                  <div className="font-display font-bold text-base mt-3 mb-3 text-zinc-100">{p.title}</div>
+                  <div className="text-xs text-zinc-500 leading-relaxed"><span className="text-zinc-600">Now:</span> {p.now}</div>
+                  <div className="text-xs text-zinc-300 leading-relaxed"><span style={{ color: 'var(--color-lime)' }}>Unlocks:</span> {p.unlocks}</div>
+                </div>
+              );
+            })}
+          </div>
           <p className="text-zinc-400 text-base md:text-lg leading-relaxed max-w-2xl mb-8">
             Three prioritized actions specific to your business and category,
             written by our AI Coach from your real audit data — not generic
