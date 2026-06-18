@@ -6,6 +6,7 @@ import {
   Compass,
   Crosshair,
   Crown,
+  HelpCircle,
   ShieldCheck,
   Sparkles,
   Target,
@@ -598,6 +599,7 @@ export default async function YourMapLandingPage({
                 </div>
               </>
             )}
+            <HeroTrustLines />
           </div>
         </div>
       </section>
@@ -1225,6 +1227,31 @@ function RiskReversalCallout() {
         one of the three fixes moves you into the top 3 for cells
         you&rsquo;re invisible in today — and the calls follow.
       </p>
+    </div>
+  );
+}
+
+/** Two one-line trust teasers under the hero map — each links to the
+ *  "Why you got this" accordion (anchor #why-you-got-this). */
+function HeroTrustLines() {
+  return (
+    <div className="mt-3 flex flex-col gap-2.5">
+      <div className="flex items-start gap-2">
+        <ShieldCheck size={14} strokeWidth={2.25} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-lime)' }} />
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          <strong className="font-semibold text-zinc-300">How do we know all this?</strong>{' '}
+          A preview against your public Google Business Profile — no private data.{' '}
+          <a href="#why-you-got-this" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300 transition-colors">More ›</a>
+        </p>
+      </div>
+      <div className="flex items-start gap-2">
+        <HelpCircle size={14} strokeWidth={2.25} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-lime)' }} />
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          <strong className="font-semibold text-zinc-300">What&rsquo;s the catch?</strong>{' '}
+          None — it&rsquo;s free because it&rsquo;s how we introduce ourselves.{' '}
+          <a href="#why-you-got-this" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300 transition-colors">More ›</a>
+        </p>
+      </div>
     </div>
   );
 }
