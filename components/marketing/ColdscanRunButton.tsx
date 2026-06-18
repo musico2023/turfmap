@@ -123,9 +123,9 @@ export function ColdscanRunButton({
             centered ? 'text-center max-w-sm' : ''
           }`}
         >
-          One click. Your scan runs in
-          ~30-60 seconds and we&rsquo;ll show your TurfMap as soon as
-          it&rsquo;s done.
+          One click — runs in ~30–60 seconds and reveals your exact 81-cell
+          heatmap, full competitor map, and your 3 prioritized fixes. No
+          credit card required.
         </p>
         {error && (
           <p

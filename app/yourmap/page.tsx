@@ -1059,7 +1059,7 @@ export default async function YourMapLandingPage({
             }}
           >
             <div className="font-display text-2xl md:text-3xl font-bold mb-3">
-              Ready to see your map?
+              Ready to see your real map?
             </div>
             <p className="text-sm md:text-base text-zinc-300 mb-1 max-w-md mx-auto leading-relaxed">
               <strong className="font-semibold text-zinc-100">
@@ -1103,7 +1103,7 @@ export default async function YourMapLandingPage({
                 utmSource={utmSource}
                 utmMedium={utmMedium}
                 utmCampaign={utmCampaign}
-                label="Run my free TurfScan"
+                label={fullScanLabel(finalCents)}
                 centered
               />
             ) : (
@@ -1114,11 +1114,7 @@ export default async function YourMapLandingPage({
                 utmCampaign={utmCampaign}
                 gclid={gclid}
                 prospectId={prospectId}
-                label={
-                  finalCents === 0
-                    ? 'Run my free TurfScan'
-                    : `Get my ${formatUsd(finalCents)} TurfScan`
-                }
+                label={fullScanLabel(finalCents)}
                 centered
               />
             )}
@@ -1621,7 +1617,7 @@ function PricePanel({
             utmSource={utmSource}
             utmMedium={utmMedium}
             utmCampaign={utmCampaign}
-            label="Run my free TurfScan"
+            label={fullScanLabel(finalCents)}
           />
         ) : (
           <ScanIntakeLinkButton from="yourmap"
@@ -1631,11 +1627,7 @@ function PricePanel({
             utmCampaign={utmCampaign}
             gclid={gclid}
             prospectId={prospectId}
-            label={
-              finalCents === 0
-                ? 'Run my free TurfScan'
-                : `Get my ${formatUsd(finalCents)} TurfScan`
-            }
+            label={fullScanLabel(finalCents)}
           />
         )}
       </div>
@@ -1772,6 +1764,13 @@ function TrustItem({
 function pickFirst(v: string | string[] | undefined): string | null {
   if (Array.isArray(v)) return v[0] ?? null;
   return v ?? null;
+}
+
+/** Shared price-aware CTA label. "free" on the COLDSCAN $0 path. */
+function fullScanLabel(finalCents: number): string {
+  return finalCents === 0
+    ? 'Run the full scan — free'
+    : `Run the full scan — ${formatUsd(finalCents)}`;
 }
 
 // ─── Sprint-2 cards: Your Preview Score + The Competition ──────────
