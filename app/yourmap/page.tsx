@@ -394,61 +394,6 @@ export default async function YourMapLandingPage({
               )}
             </h1>
 
-            {/* Personalized stat hero (Part B 5.2) — large display
-             *  callout computed from real preview data: invisibility
-             *  percent + city + business name. Omitted entirely when
-             *  any input is missing per the brief's "cut the sentence
-             *  rather than ship a placeholder" rule. */}
-            {personalization && personalization.invisibility_count > 0 && (
-              <PersonalizedStatHero
-                invisiblePct={Math.round(
-                  (personalization.invisibility_count / 81) * 100
-                )}
-                city={personalization.city}
-                businessName={personalization.business_name}
-              />
-            )}
-
-            <p className="font-display text-lg md:text-xl text-zinc-300 italic leading-snug mb-5 max-w-xl">
-              The full Google Maps audit you should run before spending
-              another dollar on local SEO.
-            </p>
-
-            {/* Body paragraph — Sprint-2 Fix 4 streamlined to a
-             *  one-sentence framer. The buyer's actual data
-             *  (score, invisibility count, top competitor) now
-             *  lives in dedicated cards below, so this para's job
-             *  is just to introduce them and get out of the way. */}
-            <p className="text-zinc-300 text-base md:text-lg leading-relaxed max-w-xl mb-6">
-              {personalization ? (
-                <>
-                  Our outreach team ran an 81-point geo-grid preview of{' '}
-                  {personalization.business_name}&rsquo;s{' '}
-                  {personalization.city && personalization.city.trim().length > 0
-                    ? `${personalization.city} service area`
-                    : 'service area'}
-                  . The cards below show what we found — and what the
-                  full scan unlocks. Then you get{' '}
-                  <strong className="font-semibold text-zinc-100 underline underline-offset-4 decoration-2">
-                    three specific actions
-                  </strong>{' '}
-                  &mdash; the ones with the highest impact, in priority
-                  order.
-                </>
-              ) : (
-                <>
-                  Our outreach team ran a preview of your service area
-                  on TurfMap. The cards below show what we found — and
-                  what the full scan unlocks. Then you get{' '}
-                  <strong className="font-semibold text-zinc-100 underline underline-offset-4 decoration-2">
-                    three specific actions
-                  </strong>{' '}
-                  &mdash; the ones with the highest impact, in priority
-                  order.
-                </>
-              )}
-            </p>
-
             {/* Your Preview Score card — Sprint-2 Fix 2. Primary
              *  visual anchor of the hero. Renders nothing when the
              *  fallback path is active (no personalization data); a
@@ -459,6 +404,10 @@ export default async function YourMapLandingPage({
                 score={personalization.preview_score}
                 band={personalization.band}
               />
+            )}
+
+            {personalization && (
+              <InvisibilityStatCard invisibilityCount={personalization.invisibility_count} />
             )}
 
             {/* The Competition card — Sprint-2 Fix 3. Warm-toned
@@ -484,13 +433,6 @@ export default async function YourMapLandingPage({
               />
             )}
 
-            {/* Risk-reversal callout (Part B 5.6) — pulled UP from
-             *  the bottom of the page so it sits adjacent to the
-             *  first CTA. Worst-case/best-case framing reduces the
-             *  perceived risk of clicking through, right at the
-             *  moment of decision. */}
-            <RiskReversalCallout />
-
             {/* CTA section marker + CTA click marker for the cold-
              *  funnel emitter (Phase 1 — migration 0041). */}
             <div
@@ -511,15 +453,6 @@ export default async function YourMapLandingPage({
               />
             </div>
 
-            {/* Trust strip (Part B 5.3) — replaces the previous
-             *  thin "Delivered in a minute · 81 real searches" line
-             *  with a richer 3-card row that signals legitimacy
-             *  before the buyer clicks. Cold traffic is maximally
-             *  skeptical; this strip's job is to answer "is this
-             *  real or another PDF mill?" before the click. */}
-            <TrustStripRow
-              city={personalization?.city ?? null}
-            />
           </div>
 
           {/* Right column. Part B 5.1: for PERSONALIZED prospects,
@@ -1078,6 +1011,9 @@ export default async function YourMapLandingPage({
       {/* ─── CLOSING CTA ────────────────────────────────────────────── */}
       <section className="px-6 md:px-10 pb-10">
         <div className="max-w-3xl mx-auto">
+          <div className="max-w-xl mx-auto mb-8">
+            <TrustStripRow city={personalization?.city ?? null} />
+          </div>
           <div
             className="rounded-lg p-7 md:p-9 border text-center"
             style={{
@@ -1089,19 +1025,7 @@ export default async function YourMapLandingPage({
             <div className="font-display text-2xl md:text-3xl font-bold mb-3">
               Ready to see your real map?
             </div>
-            <p className="text-sm md:text-base text-zinc-300 mb-1 max-w-md mx-auto leading-relaxed">
-              <strong className="font-semibold text-zinc-100">
-                Worst case:
-              </strong>{' '}
-              {finalCents === 0 ? 'this scan' : formatUsd(finalCents)} confirms
-              what you suspect.
-            </p>
-            <p className="text-sm md:text-base text-zinc-300 mb-3 max-w-md mx-auto leading-relaxed">
-              <strong className="font-semibold text-zinc-100">
-                Best case:
-              </strong>{' '}
-              one fix pays for the scan ten times over.
-            </p>
+            <RiskReversalCallout />
             <p className="text-xs md:text-sm text-zinc-500 mb-6 max-w-md mx-auto leading-relaxed">
               {showDiscount && coupon && finalCents === 0 ? (
                 <>
@@ -1206,47 +1130,6 @@ export default async function YourMapLandingPage({
 // on a different keyword (different SKU, different lander).
 
 /* ───────────────────────────────────────────────────────────────────
- * Part B 5.2 — Personalized stat hero.
- *
- * Large display callout under the H1, computed from real prospect
- * data: "{invisible_pct}% of {city} can't find {business_name}."
- * The brief explicitly forbids placeholders — if any input is
- * missing we cut the sentence (caller is expected to gate this
- * with a `personalization && invisibility_count > 0` check). City
- * gracefully degrades to "your service area" when missing.
- * ─────────────────────────────────────────────────────────────────── */
-function PersonalizedStatHero({
-  invisiblePct,
-  city,
-  businessName,
-}: {
-  invisiblePct: number;
-  city: string;
-  businessName: string;
-}) {
-  const cityLabel =
-    city && city.trim().length > 0 ? city : 'your service area';
-  return (
-    <div className="mb-5 max-w-xl">
-      <p
-        className="font-display text-2xl md:text-3xl font-bold leading-tight"
-        style={{ color: 'var(--color-warn)' }}
-      >
-        {invisiblePct}%
-        <span className="text-zinc-200 font-normal"> of </span>
-        <span className="text-zinc-100 font-semibold">{cityLabel}</span>
-        <span className="text-zinc-200 font-normal"> can&rsquo;t find </span>
-        <span className="text-zinc-100 font-semibold">{businessName}</span>
-        <span className="text-zinc-200 font-normal">.</span>
-      </p>
-      <p className="text-[11px] text-zinc-500 font-mono uppercase tracking-[0.16em] mt-2">
-        Computed from your real 81-point preview · not an estimate
-      </p>
-    </div>
-  );
-}
-
-/* ───────────────────────────────────────────────────────────────────
  * Part B 5.6 — Risk-reversal callout (pulled up adjacent to first CTA).
  *
  * Previously lived in the closing-CTA section at the bottom of the
@@ -1295,6 +1178,29 @@ function HeroTrustLines() {
           <a href="#why-you-got-this" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300 transition-colors">More ›</a>
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Invisibility lead stat — count of dark grid points. Hidden when 0.
+ *  Eyebrow copy is count-aware ("most" vs "parts" of your turf). */
+function InvisibilityStatCard({ invisibilityCount }: { invisibilityCount: number }) {
+  if (invisibilityCount <= 0) return null;
+  return (
+    <div className="rounded-lg p-5 md:p-6 border max-w-xl mb-5" style={{ background: '#1a0f0c', borderColor: '#5a2f0a' }}>
+      <div className="flex items-center gap-2 mb-2.5 text-[10px] uppercase tracking-[0.18em] font-mono font-semibold">
+        <span style={{ color: '#ff7a45' }}>●</span>
+        <span style={{ color: '#ff7a45' }}>
+          You&rsquo;re invisible{' '}
+          {invisibilityCount >= 41 ? 'across most of your turf' : 'across parts of your turf'}
+        </span>
+      </div>
+      <div className="font-display text-2xl md:text-3xl font-bold leading-tight text-zinc-100 mb-1.5">
+        <span style={{ color: '#ff5f56' }}>{invisibilityCount}</span> of your 81 search points are dark
+      </div>
+      <p className="text-sm text-zinc-400 leading-relaxed">
+        Customers searching from those areas don&rsquo;t see you in Google&rsquo;s Map Pack at all.
+      </p>
     </div>
   );
 }
@@ -1946,35 +1852,27 @@ function TheCompetitionCard({
       </h3>
       {hasPct ? (
         <p className="text-zinc-200 text-sm md:text-base leading-relaxed mb-3">
-          Currently winning{' '}
+          Showing up in{' '}
           <strong className="font-semibold" style={{ color: 'var(--color-warn)' }}>
-            {sharePct}%
+            {sharePct}% of your service area
           </strong>{' '}
-          of your service area.
+          where you don&rsquo;t — searches you&rsquo;re simply not in.
         </p>
       ) : (
-        <p className="text-zinc-200 text-sm md:text-base leading-relaxed mb-3">
-          A specific competitor is currently outranking you across{' '}
-          <strong className="font-semibold" style={{ color: 'var(--color-warn)' }}>
-            {cityLabel}
-          </strong>
-          .
-        </p>
-      )}
-      <p className="text-zinc-400 text-sm leading-relaxed">
-        {hasName ? (
-          <>
-            Their cells are visible to customers across most of {cityLabel}.
-            The full scan shows you exactly which cells they own — and where
-            the gaps are.
-          </>
-        ) : (
-          <>
+        <>
+          <p className="text-zinc-200 text-sm md:text-base leading-relaxed mb-3">
+            A specific competitor is currently outranking you across{' '}
+            <strong className="font-semibold" style={{ color: 'var(--color-warn)' }}>
+              {cityLabel}
+            </strong>
+            .
+          </p>
+          <p className="text-zinc-400 text-sm leading-relaxed">
             The full scan names them — and shows you exactly which Map Pack
             cells they own, plus where the gaps are.
-          </>
-        )}
-      </p>
+          </p>
+        </>
+      )}
     </div>
   );
 }
