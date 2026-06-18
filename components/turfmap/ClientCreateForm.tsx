@@ -107,6 +107,7 @@ const INDUSTRY_GROUPS: IndustryGroup[] = [
     // to the 'home-services' citation profile (Angi / Houzz / Thumbtack)
     // via the stem regex in lib/brightlocal/directories.ts.
     options: [
+      'general contractor',
       'remodeling',
       'kitchen remodeling',
       'bathroom remodeling',
