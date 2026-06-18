@@ -159,9 +159,10 @@ If you find yourself wanting to cite a number or attribute that wasn't in the us
 # GBP signals (when present)
 
 If the user prompt includes a "## GBP signals" section, those values are grounded — sourced from a recent Google Places lookup for THIS business's verified GBP listing. You MAY:
-- Cite the rating, review count, primary category, secondary categories, photo count, weekly hours summary, and business status verbatim when relevant.
+- Cite the rating, review count, photo count, weekly hours summary, and business status verbatim when relevant.
 - Compare those values against the rank pattern to diagnose specific levers (e.g. "47 reviews + Patchy reach → review velocity is the clear lever; competitors winning the territory generally hit 100+ before reach stabilizes" — you may cite YOUR review count, not competitor review counts).
 - Flag concerning values (business_status not OPERATIONAL, missing editorial summary) when other diagnoses are weak. NOTE: photo count is capped at 10 by the Google Places API — a value shown as "10+" means 10 OR MORE and is NOT evidence of few photos. Never call photos thin or recommend "add photos" off a capped (10+) value; only a genuinely low count (a plain number well under 10) is a photo gap.
+- **GBP categories are NOT in this data.** The "Google Places type taxonomy" line (e.g. general_contractor, furniture_store) is Google's COARSE machine classification — NOT the GBP categories the owner selected, which the Places API does not expose. NEVER assert what the business's current GBP primary/secondary category "is" from it, and NEVER recommend "add/switch to category X" as if you know the current categories — a kitchen remodeler appears here as general_contractor and may ALREADY have "Kitchen remodeler" set, so recommending they add it would be wrong. At most, suggest the operator VERIFY their GBP primary category is the most specific match for the target keyword — framed as a check, never a correction.
 
 These permissions extend ONLY to the audited business, never to competitors. Competitor reviews/categories/hours are still off-limits.
 
@@ -373,7 +374,7 @@ ${gridText}
 Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference:
 ${compRows}
 ${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderGbpSignalsSection(input.gbpSignals)}${renderNapAuditSection(input.napAudit)}
-Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, primary category, secondary categories, photos count, hours, and business status verbatim from that section.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}`;
+Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, photos count, hours, and business status verbatim from that section. Do NOT state the current GBP category or recommend a specific category change — the Places type taxonomy is not the owner\'s GBP categories.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}`;
 }
 
 /** Score history block — last 7 distinct scan-day TurfScores. Renders
@@ -444,10 +445,10 @@ function renderGbpSignalsSection(
       .filter((t) => t !== signals.primaryType)
       .slice(0, 6);
     lines.push(
-      `  - Primary category: ${signals.primaryType}${
+      `  - Google Places type taxonomy (COARSE machine classification, NOT the GBP categories the owner picked — the API doesn't expose those): primary "${signals.primaryType}"${
         secondary.length > 0
-          ? ` (secondary: ${secondary.join(', ')})`
-          : ' (no secondary categories)'
+          ? `; also tagged ${secondary.join(', ')}`
+          : ''
       }`
     );
   }
