@@ -197,8 +197,15 @@ const INDUSTRY_RULES: Array<{ pattern: RegExp; profile: DirectoryProfile }> = [
     // the trades explicitly here, with 'universal' as the new
     // catch-all, keeps the home-services dirs targeted to the
     // businesses that actually want them.
+    // Stem-matched: leading \b, NO trailing \b, so suffixed forms route
+    // here instead of falling through to 'universal'. The old trailing \b
+    // silently misrouted "plumbing"/"roofing"/"landscaping"/"painting"/
+    // "flooring" (the -ing forms don't end on a boundary after the stem).
+    // Also covers the Home improvement & remodeling group (cabinets /
+    // countertops / window & door installers / kitchen & bath remodelers),
+    // which all belong on the same Angi/Houzz/Thumbtack directory set.
     pattern:
-      /\b(plumb|hvac|roof|landscape|lawn|construction|contractor|home ?builder|electric(ian|al)|paint|cleaning|restoration|handyman|garage|window|blinds|carpet|appliance|tree ?service|gutter|deck|fence|pool|pest|septic|driveway|concrete|drywall)\b/i,
+      /\b(plumb|hvac|roof|landscap|lawn|construction|contractor|home ?build|electric|paint|clean|restoration|handyman|garage|locksmith|blind|carpet|appliance|tree|gutter|deck|fenc|pool|pest|septic|driveway|concrete|drywall|pressure|wash|remodel|renovat|cabinet|countertop|floor|tile|window|door)/i,
     profile: 'home-services',
   },
 ];

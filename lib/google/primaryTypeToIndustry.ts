@@ -43,6 +43,18 @@ const PRIMARY_TYPE_TO_INDUSTRY: Record<string, string> = {
   flooring_contractor: 'flooring',
   drywall_contractor: 'drywall',
 
+  // ── Home improvement & remodeling ───────────────────────────────
+  // GBP primaryType enums for the remodeling/cabinetry verticals. Any
+  // that aren't real Places types simply never match (operator picks
+  // manually) — harmless. Slugs MUST equal an INDUSTRY_GROUPS option.
+  general_contractor: 'remodeling',
+  cabinet_store: 'cabinets',
+  kitchen_remodeler: 'kitchen remodeling',
+  bathroom_remodeler: 'bathroom remodeling',
+  countertop_store: 'countertops',
+  window_installation_service: 'windows & doors',
+  door_supplier: 'windows & doors',
+
   // ── Medical & healthcare ────────────────────────────────────────
   doctor: 'medical',
   medical_clinic: 'medical',

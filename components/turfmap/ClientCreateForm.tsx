@@ -101,6 +101,20 @@ const INDUSTRY_GROUPS: IndustryGroup[] = [
     label: 'Automotive',
     options: ['auto repair', 'auto body', 'car wash', 'detailing'],
   },
+  {
+    label: 'Home improvement & remodeling',
+    // Cabinets, remodelers, countertop / window / door installers. Routes
+    // to the 'home-services' citation profile (Angi / Houzz / Thumbtack)
+    // via the stem regex in lib/brightlocal/directories.ts.
+    options: [
+      'remodeling',
+      'kitchen remodeling',
+      'bathroom remodeling',
+      'cabinets',
+      'countertops',
+      'windows & doors',
+    ],
+  },
 ];
 
 type Form = {
