@@ -49,6 +49,9 @@ import { z } from 'zod';
 import { momentumCaption } from '@/lib/metrics/momentum';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import type { NapAuditFindings } from '@/lib/supabase/types';
+// Provenance + caveats for every Google signal cited below live in ONE
+// place — lib/google/gbpSignalProvenance.ts. Add new fields there first.
+import { PLACES_PHOTOS_CAP } from '@/lib/google/gbpSignalProvenance';
 
 export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v11';
 
@@ -270,8 +273,8 @@ export type GbpSignalsContext = {
  * Cabinets, 2026-06-18). Surface the cap so the model can't misread it.
  */
 export function formatPhotosCount(count: number): string {
-  return count >= 10
-    ? '10+ (Google Places caps photo data at 10; the listing may have many more — do NOT treat as thin)'
+  return count >= PLACES_PHOTOS_CAP
+    ? `${PLACES_PHOTOS_CAP}+ (Google Places caps photo data at ${PLACES_PHOTOS_CAP}; the listing may have many more — do NOT treat as thin)`
     : String(count);
 }
 

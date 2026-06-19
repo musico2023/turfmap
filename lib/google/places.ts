@@ -277,7 +277,9 @@ export async function getPlaceDetails(
   // `photosCount` below is min(actualPhotos, 10). A value of 10 means
   // "10 or more" — never read it as the listing's true count or as
   // "thin photos". Consumers (e.g. the AI Coach) must render it
-  // cap-aware. See formatPhotosCount in lib/anthropic/prompts/turfCoach.ts.
+  // cap-aware. Provenance + caveats: lib/google/gbpSignalProvenance.ts
+  // (PLACES_PHOTOS_CAP); rendering: formatPhotosCount in
+  // lib/anthropic/prompts/turfCoach.ts.
   const photos = raw.photos as unknown[] | undefined;
   const types = (raw.types as string[] | undefined) ?? [];
   return {

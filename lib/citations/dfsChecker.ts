@@ -545,6 +545,9 @@ function findMatchingSibling(
 /**
  * Authoritative-NAP override for the Google Business Profile directory.
  *
+ * Signal provenance + caveats (incl. why NAP "missing" is not "absent"):
+ * lib/google/gbpSignalProvenance.ts.
+ *
  * Why: the canonical NAP this audit compares against was itself stamped
  * from Google Place Details, so for `google_business` the listing's NAP
  * IS the canonical NAP — you can't be "inconsistent with Google" on
