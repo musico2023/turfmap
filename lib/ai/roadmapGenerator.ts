@@ -189,6 +189,7 @@ CONSTRAINTS:
 - Use the action categories below. Pick the closest fit; use 'other' sparingly (only for actions that don't map to a named visibility-pillar category — most often that's a demand-pillar landing page or a systems-pillar workflow).
 - THIS ROADMAP IS A VISIBILITY-PILLAR DELIVERABLE. Most actions (8-10 of 12) should be category-driven Visibility work the buyer can execute solo. 1-2 Demand or Systems actions are acceptable and useful — they're the bridge into the strategist call's Local Lead Machine discussion.
 - Do not invent data. If the buyer's NAP audit didn't run, don't reference specific directory names — use generic "claim missing directories on the top-trade-relevant sites" framing.
+- A "missing" directory in the NAP findings means our automated site-search did NOT surface a listing — it is NOT proof the business has none there (listings under a name variant, or pages unindexed for the probe, cause false misses). Frame directory-claiming actions as "confirm, then claim if you're not already listed on X," not as a flat assertion of absence. Do not state an established business (high review count) is absent from a major consumer directory (Yelp, Facebook) as settled fact.
 
 PILLAR ASSIGNMENT (always set the pillar field):
 - VISIBILITY pillar: GBP optimization, GBP photos, NAP consistency, directory claiming, schema integration, long-tail local-SEO content. → category: gbp_optimization | gbp_photos | nap_consistency | directory_claiming | schema_integration (and pillar: 'visibility' for an 'other' action that's pure local-SEO content)
