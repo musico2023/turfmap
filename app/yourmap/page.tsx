@@ -587,6 +587,7 @@ export default async function YourMapLandingPage({
           )}
           city={personalization.city}
           businessName={personalization.business_name}
+          trade={personalization.trade}
         />
       )}
 
@@ -1300,10 +1301,12 @@ function OneOfEightyOneSection({
   invisiblePct,
   city,
   businessName,
+  trade,
 }: {
   invisiblePct: number;
   city: string;
   businessName: string;
+  trade: string;
 }) {
   const cityLabel =
     city && city.trim().length > 0 ? city : 'your service area';
@@ -1322,7 +1325,7 @@ function OneOfEightyOneSection({
           <em>one search</em> out of 81.
         </h2>
         <p className="text-zinc-300 text-base md:text-lg leading-relaxed">
-          When you Google &ldquo;{businessName.split(' ')[0].toLowerCase()}{' '}
+          When you Google &ldquo;{trade.toLowerCase()}{' '}
           near me&rdquo; from your shop, Google centers the search around
           you. You rank #1 — for one cell. The TurfScan ran the other
           80 cells across {cityLabel} and found that{' '}
