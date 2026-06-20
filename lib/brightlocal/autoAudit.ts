@@ -34,6 +34,7 @@ import {
   directoriesForProfile as dfsDirectoriesForProfile,
   inferDfsProfile,
 } from '@/lib/citations/directories';
+import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
 import {
   listLocations,
   locationDisplayLabel,
@@ -198,6 +199,26 @@ export async function maybeRunNapAudit(
     };
   }
 
+  // 4b. Resolve the directory-profile industry. Prefer the operator-set
+  //     client.industry; when it's blank (common — clients onboarded
+  //     without picking one, e.g. CertaPro), derive the vertical from the
+  //     GBP primary type so the audit still selects the right directory
+  //     profile. Without this, a painter with no industry fell through to
+  //     the generic 'universal' profile, so the home-services directories
+  //     (HomeStars / Angi / Houzz) were never checked and the AI Coach
+  //     only had generic dirs (Yelp/Facebook/BBB) to recommend.
+  let effectiveIndustry = client.industry;
+  if (!effectiveIndustry || effectiveIndustry.trim().length === 0) {
+    const { data: sig } = await supabase
+      .from('gbp_signals')
+      .select('primary_type')
+      .eq('client_location_id', location.id)
+      .order('fetched_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ primary_type: string | null }>();
+    effectiveIndustry = primaryTypeToIndustry(sig?.primary_type ?? null);
+  }
+
   // 5. Provider dispatch. Default = DFS (cheap, covers every tier).
   //    Opt in to BrightLocal via env when commercial Data API access is
   //    in place.
@@ -215,7 +236,7 @@ export async function maybeRunNapAudit(
       location.id,
       triggeredBy,
       business,
-      client.industry,
+      effectiveIndustry,
       location.latitude,
       location.longitude,
       triggerSource
@@ -227,7 +248,7 @@ export async function maybeRunNapAudit(
     location.id,
     triggeredBy,
     business,
-    client.industry,
+    effectiveIndustry,
     triggerSource
   );
 }

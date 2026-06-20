@@ -104,7 +104,14 @@ export function directoriesForProfile(
   // Country filter: drop directories that aren't relevant for the
   // buyer's country. Saves DFS calls + avoids surfacing "missing
   // from YellowPages.ca" findings on US buyers.
-  const country = (countryCode ?? 'USA').toUpperCase();
+  //
+  // Normalize to the alpha-3 codes the directory table uses ('USA' /
+  // 'CAN'). Clients enriched from Google Places carry alpha-2 codes
+  // ('US' / 'CA'), and a raw compare ('CA' === 'CAN') silently failed —
+  // so the entire home-services vertical (HomeStars for CAN, Angi /
+  // HomeAdvisor / Thumbtack for USA) was filtered out for those clients.
+  const raw = (countryCode ?? 'USA').toUpperCase();
+  const country = raw === 'CA' ? 'CAN' : raw === 'US' ? 'USA' : raw;
   return dirs.filter((d) => d.countries === 'all' || d.countries === country);
 }
 
@@ -161,8 +168,15 @@ export function inferDfsProfile(industry: string | null): DfsDirectoryProfile {
     return 'medical';
   }
 
+  // Stem-matched: leading \b, NO trailing \b, so suffixed forms route
+  // here instead of falling through to 'universal'. The old trailing \b
+  // silently misrouted "painting"/"plumbing"/"roofing"/"landscaping"
+  // (the -ing forms don't end on a boundary after the stem), so every
+  // home-services client got the generic 'universal' directory set — no
+  // HomeStars/Angi/Houzz. Mirror of the lib/brightlocal/directories.ts
+  // fix. Also covers remodeling/cabinet/countertop verticals.
   if (
-    /\b(plumb|hvac|roof|landscape|lawn|construction|contractor|home ?builder|electric(ian|al)|paint|cleaning|restoration|handyman|garage|window|blinds|carpet|appliance|tree ?service|gutter|deck|fence|pool|pest|septic|driveway|concrete|drywall)\b/.test(
+    /\b(plumb|hvac|roof|landscap|lawn|construction|contractor|home ?build|electric|paint|clean|restoration|handyman|garage|locksmith|blind|carpet|appliance|tree|gutter|deck|fenc|pool|pest|septic|driveway|concrete|drywall|pressure|wash|remodel|renovat|cabinet|countertop|floor|tile|window|door)/.test(
       i
     )
   ) {
