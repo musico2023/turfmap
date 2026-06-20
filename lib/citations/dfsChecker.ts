@@ -202,7 +202,14 @@ function buildSerpQuery(
   business: CitationBusinessProfile,
   directory: DfsDirectory
 ): string {
-  return `site:${directory.domain} "${business.name}" ${business.city}`;
+  // NO exact-phrase quotes around the name. A quoted "{full name}" misses
+  // real listings whose indexed title is a variant — "&" vs "and", a
+  // shortened form, or a dropped location qualifier — confirmed as
+  // false-negatives on CertaPro's real Facebook + BBB profiles (the
+  // quoted query surfaced BBB category pages, not the profile). Recall
+  // comes from the unquoted terms; precision is restored by the
+  // nameMatches gate on the selected result (see probeDirectoryViaSiteSerp).
+  return `site:${directory.domain} ${business.name} ${business.city}`;
 }
 
 /** Map BusinessProfile.country to a DFS location_name string. DFS uses
@@ -296,7 +303,7 @@ async function probeDirectoryViaSiteSerp(
   // Yelp's own search interface, which Google sometimes ranks above
   // actual profile pages when no exact match exists. Counting them as
   // citations is a false positive (smoke test surfaced this for Yelp).
-  const SEARCH_URL_PATTERNS = /\/(search|find|finder|browse|sitemap)|[?&](q|query|find_desc|find_near|find_loc|location|search)=/i;
+  const SEARCH_URL_PATTERNS = /\/(search|find|finder|browse|sitemap|category)|[?&](q|query|find_desc|find_near|find_loc|location|search)=/i;
   // probe='site_serp' directories ALWAYS have a domain set — types
   // make it optional only because probe='local_pack' (GBP) omits it.
   // The dispatcher upstream guarantees we never reach this branch
@@ -320,8 +327,15 @@ async function probeDirectoryViaSiteSerp(
     // Compare against the directory's root domain; tolerate www. and
     // path variants. e.g., "https://www.yelp.com/biz/..." matches "yelp.com".
     if (!it.url.toLowerCase().includes(dirRoot)) return false;
-    // Reject directory-search-page URLs.
+    // Reject directory-search / category / index-page URLs.
     if (SEARCH_URL_PATTERNS.test(it.url)) return false;
+    // Require the title to actually match the business. Without quotes the
+    // SERP can rank a directory's category/index page or the brand's
+    // corporate / other-location profile above the real listing; those
+    // titles fail nameMatches, so we skip them and select the real one.
+    // (Confirmed: this picks CertaPro's Calgary FB/BBB profile over the
+    // corporate "CertaPro Painters" page and BBB category pages.)
+    if (!nameMatches(business.name, it.title ?? null)) return false;
     return true;
   });
 
