@@ -38,7 +38,10 @@ import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { momentum as computeMomentum } from '@/lib/metrics/momentum';
-import { maybeRunNapAudit } from '@/lib/brightlocal/autoAudit';
+import {
+  maybeRunNapAudit,
+  SCAN_AUDIT_REFRESH_WINDOW_MS,
+} from '@/lib/brightlocal/autoAudit';
 import { dispatchScanAlerts } from '@/lib/alerts/postScan';
 import type {
   ClientLocationRow,
@@ -248,7 +251,15 @@ export async function runScanForLocation(
   // trigger_source='scan' tags the resulting nap_audits row so an
   // operator can distinguish post-scan auto-fires from audit-init
   // bootstrap or AI Coach self-heal triggers (migration 0040).
-  await maybeRunNapAudit(supabase, client.id, triggeredBy, location.id, 'scan');
+  //
+  // Short refresh window (not the 30-day default): the AI Coach builds its
+  // recommendations off these NAP findings, so a rescan must refresh the
+  // audit — otherwise the coach surfaces stale "claim these directories"
+  // advice. Debounced to 30 min so a still-running audit or a burst of
+  // test scans doesn't fire duplicate concurrent runs.
+  await maybeRunNapAudit(supabase, client.id, triggeredBy, location.id, 'scan', {
+    refreshWindowMs: SCAN_AUDIT_REFRESH_WINDOW_MS,
+  });
 
   // 8. Dispatch alerts based on score / momentum / competitor / cell
   //    diff against the prior scan. Best-effort — never fails the
