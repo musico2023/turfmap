@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run verify && next build",
+    "build": "npm run verify && npm run lint && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
