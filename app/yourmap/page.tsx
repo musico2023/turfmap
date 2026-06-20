@@ -1053,27 +1053,34 @@ export default async function YourMapLandingPage({
                 </>
               )}
             </p>
-            {useColdscanBypass && prospectId ? (
-              <ColdscanRunButton
-                prospectId={prospectId}
-                utmSource={utmSource}
-                utmMedium={utmMedium}
-                utmCampaign={utmCampaign}
-                label={fullScanLabel(finalCents)}
-                centered
-              />
-            ) : (
-              <ScanIntakeLinkButton from="yourmap"
-                coupon={couponCode}
-                utmSource={utmSource}
-                utmMedium={utmMedium}
-                utmCampaign={utmCampaign}
-                gclid={gclid}
-                prospectId={prospectId}
-                label={fullScanLabel(finalCents)}
-                centered
-              />
-            )}
+            {/* Closing-CTA click marker for the cold-funnel emitter. The
+             *  hero CTA already carries data-funnel-cta="coldscan"; without
+             *  this, a buyer who converts from the bottom of the page was
+             *  invisible to coldscan_cta_click. The delegated listener in
+             *  YourmapFunnelEmitter matches any clicked descendant. */}
+            <div data-funnel-cta="coldscan">
+              {useColdscanBypass && prospectId ? (
+                <ColdscanRunButton
+                  prospectId={prospectId}
+                  utmSource={utmSource}
+                  utmMedium={utmMedium}
+                  utmCampaign={utmCampaign}
+                  label={fullScanLabel(finalCents)}
+                  centered
+                />
+              ) : (
+                <ScanIntakeLinkButton from="yourmap"
+                  coupon={couponCode}
+                  utmSource={utmSource}
+                  utmMedium={utmMedium}
+                  utmCampaign={utmCampaign}
+                  gclid={gclid}
+                  prospectId={prospectId}
+                  label={fullScanLabel(finalCents)}
+                  centered
+                />
+              )}
+            </div>
           </div>
 
           <p className="mt-6 text-xs text-zinc-600 text-center leading-relaxed">
