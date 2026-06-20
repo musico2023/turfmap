@@ -129,6 +129,41 @@ export async function getLeadOrderBySessionId(
   return data ?? null;
 }
 
+/**
+ * Atomically claim a lead_order for fulfillment.
+ *
+ * Delegates to the `claim_lead_order_for_fulfillment` SQL function
+ * (migration 0044), which runs a single conditional UPDATE — flipping
+ * pending|failed → processing (and re-claiming a 'processing' row stale
+ * >15min). Because it's ONE statement, two concurrent /order/success
+ * fulfill requests cannot both win: under READ COMMITTED the second
+ * UPDATE re-evaluates its WHERE against the already-claimed row and
+ * touches zero rows.
+ *
+ * Returns the claimed row when THIS request won the claim; null when
+ * another request already holds it (status 'processing') or it's
+ * already 'fulfilled'. Callers must treat null as "not mine — do NOT
+ * run side effects" and disambiguate via a follow-up read.
+ */
+export async function claimLeadOrderForFulfillment(
+  supabase: SupabaseLike,
+  sessionId: string
+): Promise<LeadOrderRow | null> {
+  const { data, error } = await supabase.rpc(
+    'claim_lead_order_for_fulfillment',
+    { p_session_id: sessionId }
+  );
+  if (error) {
+    console.error('[lead_orders] claimLeadOrderForFulfillment failed', error);
+    return null;
+  }
+  // The SQL function returns the row composite (or null). supabase-js may
+  // hand it back as the object directly or as a single-element array
+  // depending on the PostgREST representation — normalize both.
+  const row = Array.isArray(data) ? (data[0] ?? null) : data;
+  return (row as LeadOrderRow | null) ?? null;
+}
+
 /** Mark a lead_order as fulfilled — writes the client_id we just
  *  created, transitions status from 'pending' → 'fulfilled'.
  *

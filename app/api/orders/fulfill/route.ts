@@ -45,6 +45,7 @@ import {
 } from '@/lib/stripe/session';
 import {
   billingModeForTier,
+  claimLeadOrderForFulfillment,
   getLeadOrderBySessionId,
   keywordCountForTier,
   markLeadOrderFailed,
@@ -192,47 +193,65 @@ export async function POST(req: NextRequest) {
 
   const supabase = getServerSupabase();
 
-  // ─── 2. lead_orders idempotency check ─────────────────────────────────
-  const lead = await getLeadOrderBySessionId(supabase, body.sessionId);
+  // ─── 2. Atomic fulfillment claim (idempotency) ────────────────────────
+  // Flip pending|failed → 'processing' in a SINGLE statement so two
+  // concurrent /order/success loads can't both run the side-effects
+  // below (duplicate clients / scans / emails / API spend — code-review
+  // #3). Only the request whose claim returns a row proceeds. A crashed
+  // claim self-heals: the SQL function re-claims a 'processing' row that
+  // has been stale >15min (migration 0044). The markLeadOrderFailed
+  // early-returns below reset 'processing' → 'failed' (retryable) on
+  // known failures.
+  const lead = await claimLeadOrderForFulfillment(supabase, body.sessionId);
   if (!lead) {
-    // Unusual — /order/success should have created the row on first
-    // load. Could happen if the buyer somehow hit /api/orders/fulfill
-    // directly without visiting the success page. Insert one now so
-    // we still have an audit trail.
-    return NextResponse.json(
-      {
-        error:
-          "Order session not found in our records. Email support@turfmap.ai with your Stripe session id and we'll fire your scan manually.",
-      },
-      { status: 404 }
-    );
-  }
-
-  if (lead.status === 'fulfilled') {
-    // Buyer hit /order/success again — likely refresh, return-from-tab,
-    // or wizard resume. Look up the client so we can hand back the
-    // public_id + current onboarding_step; the frontend uses these to
-    // re-mount the success state (or resume the wizard at the right
-    // step) without forcing a re-fulfill.
-    let publicId: string | null = null;
-    let onboardingStep: string | null = null;
-    if (lead.client_id) {
-      const { data: c } = await supabase
-        .from('clients')
-        .select('public_id, onboarding_step')
-        .eq('id', lead.client_id)
-        .maybeSingle<Pick<ClientRow, 'public_id' | 'onboarding_step'>>();
-      publicId = c?.public_id ?? null;
-      onboardingStep = c?.onboarding_step ?? null;
+    // We did NOT win the claim. Disambiguate: missing row, already
+    // fulfilled, or currently in-flight under a concurrent request.
+    const current = await getLeadOrderBySessionId(supabase, body.sessionId);
+    if (!current) {
+      // Unusual — /order/success should have created the row on first
+      // load. Could happen if the buyer hit /api/orders/fulfill directly
+      // without visiting the success page.
+      return NextResponse.json(
+        {
+          error:
+            "Order session not found in our records. Email support@turfmap.ai with your Stripe session id and we'll fire your scan manually.",
+        },
+        { status: 404 }
+      );
     }
+    if (current.status === 'fulfilled') {
+      // Already done (buyer refreshed /order/success, return-from-tab,
+      // or wizard resume). Hand back the public_id + onboarding_step so
+      // the frontend re-mounts the success state without re-fulfilling.
+      let publicId: string | null = null;
+      let onboardingStep: string | null = null;
+      if (current.client_id) {
+        const { data: c } = await supabase
+          .from('clients')
+          .select('public_id, onboarding_step')
+          .eq('id', current.client_id)
+          .maybeSingle<Pick<ClientRow, 'public_id' | 'onboarding_step'>>();
+        publicId = c?.public_id ?? null;
+        onboardingStep = c?.onboarding_step ?? null;
+      }
+      return NextResponse.json(
+        {
+          error:
+            'This order has already been fulfilled. Check your email for the scan link.',
+          already_fulfilled: true,
+          client_id: current.client_id,
+          public_id: publicId,
+          onboarding_step: onboardingStep,
+        },
+        { status: 409 }
+      );
+    }
+    // status 'processing' — a concurrent request currently owns it.
     return NextResponse.json(
       {
         error:
-          'This order has already been fulfilled. Check your email for the scan link.',
-        already_fulfilled: true,
-        client_id: lead.client_id,
-        public_id: publicId,
-        onboarding_step: onboardingStep,
+          'Your order is already being processed — your scan link will arrive by email within a minute.',
+        already_processing: true,
       },
       { status: 409 }
     );

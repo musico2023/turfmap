@@ -429,7 +429,11 @@ export type ScanPointRow = {
  *  - `failed`    : /api/orders/fulfill threw; surface in the support
  *                  queue for manual recovery.
  */
-export type LeadOrderStatus = 'pending' | 'fulfilled' | 'failed';
+export type LeadOrderStatus =
+  | 'pending'
+  | 'processing'
+  | 'fulfilled'
+  | 'failed';
 
 /** A self-serve buyer's Stripe Checkout session. One row per session;
  *  unique by stripe_session_id. Created idempotently on the
