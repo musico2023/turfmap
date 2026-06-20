@@ -29,6 +29,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { appOrigin } from '@/lib/urls';
 import {
   isDiscountedLeadSource,
   unlockCouponCodeForLeadSource,
@@ -207,8 +208,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const url = new URL(req.url);
-  const origin = req.headers.get('origin') ?? url.origin;
+  const origin = appOrigin();
 
   // ─── 4. Build the Stripe Checkout session ───────────────────────────
   // Metadata is what the webhook reads to know:

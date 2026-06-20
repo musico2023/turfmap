@@ -36,6 +36,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getStripe, STRIPE_NOT_CONFIGURED_ERROR } from '@/lib/stripe/client';
+import { appOrigin } from '@/lib/urls';
 import {
   INTAKE_CADENCES,
   INTAKE_TIERS,
@@ -225,8 +226,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const url = new URL(req.url);
-  const origin = req.headers.get('origin') ?? url.origin;
+  const origin = appOrigin();
 
   // Stamp ALL intake fields onto Stripe metadata so /order/success can
   // fulfill the scan without re-prompting the buyer. Metadata is a flat

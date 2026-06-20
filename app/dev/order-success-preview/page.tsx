@@ -98,7 +98,7 @@ export default async function OrderSuccessPreviewPage({
             Step 2: audit-purchased banner + PulseAttachPanel (post-1-click-accept)
             <br />
             <span className="font-mono text-zinc-300">?accepted=audit&amp;skipPulse=1</span> —
-            Step 3: banner + success card with "View my full TurfMap"
+            Step 3: banner + success card with &ldquo;View my full TurfMap&rdquo;
             <br />
             <span className="font-mono text-zinc-300">?reopen=pulse&amp;extended=1</span> —
             recovery-email landing in 60-day extended trial mode

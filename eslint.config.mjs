@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local/generated tooling output — NOT source. Without these, lint
+    // walked thousands of generated files (esp. git worktrees' own .next
+    // builds under .claude/worktrees/**), burying real source findings
+    // and making `npm run lint` unusable as a quality gate.
+    ".claude/**",
+    ".firecrawl/**",
+    "**/.next/**",
   ]),
 ]);
 

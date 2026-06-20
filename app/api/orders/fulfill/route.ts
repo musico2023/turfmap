@@ -78,7 +78,7 @@ import {
   previewDiagnosis,
   slugifyBusinessName,
 } from '@/lib/audit/tradeClassifier';
-import { agencyClientUrl, portalUrl } from '@/lib/urls';
+import { agencyClientUrl, appOrigin, portalUrl } from '@/lib/urls';
 import { createVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
@@ -432,7 +432,7 @@ export async function POST(req: NextRequest) {
   // runs. The scan-ready email follows after step 8 with the actual
   // dashboard link. Failures here are logged but don't block the
   // pipeline (sendOrderConfirmation already swallows errors).
-  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  const origin = appOrigin();
   // /portal — buyer-facing dashboard. Self-serve buyers can sign in
   // here via magic link; the agency-side /clients/<id> route would
   // redirect them to /login (agency-staff-only). All emails sent

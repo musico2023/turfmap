@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
 import { sendMagicLink } from '@/lib/auth/sendMagicLink';
+import { appOrigin } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 
@@ -126,7 +127,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  const origin = appOrigin();
   const next =
     parsed.next ??
     (route.kind === 'agency'

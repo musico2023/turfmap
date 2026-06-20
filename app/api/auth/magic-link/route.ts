@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { sendMagicLink } from '@/lib/auth/sendMagicLink';
 import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
+import { appOrigin } from '@/lib/urls';
 
 export const runtime = 'nodejs';
 
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
         );
       }
     }
-    const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+    const origin = appOrigin();
     const next = `/portal/${client.public_id}`;
     const result = await sendMagicLink({
       supabase: admin,
@@ -137,7 +138,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  const origin = appOrigin();
   const next = `/portal/${row.clients.public_id}`;
 
   const result = await sendMagicLink({

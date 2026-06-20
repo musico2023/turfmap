@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { appOrigin } from '@/lib/urls';
 
 /**
  * Stripe Checkout session bootstrapper.
@@ -231,10 +232,7 @@ export async function POST(
 
   const stripe = new Stripe(secretKey);
 
-  const origin =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    req.headers.get('origin') ??
-    'https://turfmap.ai';
+  const origin = appOrigin();
 
   const isSubscription = SUBSCRIPTION_TIERS.has(tierParam);
 

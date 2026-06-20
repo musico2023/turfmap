@@ -24,6 +24,26 @@
  * contexts where `req.headers.get('origin')` is the right answer.
  */
 
+/**
+ * Canonical, allowlisted app origin from NEXT_PUBLIC_APP_URL.
+ *
+ * Use this for EVERY credential-bearing or buyer-facing URL — magic-link
+ * emails (token_hash), Stripe success/cancel URLs (CHECKOUT_SESSION_ID),
+ * portal/dashboard links in emails. NEVER derive those from the request
+ * `Origin` header: a forged request controls it, so an origin-built login
+ * or checkout URL can point the token / session-id at an attacker domain
+ * (account-takeover / fulfillment-hijack). Falls back to the prod host
+ * only if the env is unset (preview/cron), which is still a safe,
+ * non-attacker origin.
+ */
+export function appOrigin(): string {
+  const env = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  return (env && env.length > 0 ? env : 'https://www.turfmap.ai').replace(
+    /\/+$/,
+    ''
+  );
+}
+
 /** Buyer-facing portal URL. Magic-link gated; requires a `client_users`
  *  row for the requesting email. Hand cold-outreach prospects a share
  *  URL instead — see /api/cron/ai-coach-nudge for the share-vs-portal

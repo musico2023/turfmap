@@ -209,7 +209,7 @@ export function GoogleBusinessAutocomplete({
           const targetValue = ev.target?.value as
             | { placeId?: string; place_id?: string; id?: string }
             | undefined;
-          let placeId: string | null =
+          const placeId: string | null =
             // Modern: event.placePrediction.placeId
             ev.placePrediction?.placeId ??
             ev.placePrediction?.place_id ??

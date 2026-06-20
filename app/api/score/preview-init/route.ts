@@ -216,10 +216,18 @@ export async function POST(req: Request) {
   // alone — query first.
   if (ip) {
     const ipKey = `ip:${ip}`;
+    // IP-keyed rows are inserted as `ip:<addr>:<ts>` (the ts suffix lets
+    // multiple rows/day coexist under UNIQUE(key, day)). So count by
+    // PREFIX, not exact key — the old `.eq('key', ipKey)` matched the
+    // bare `ip:<addr>` form that is never inserted, so this limit never
+    // fired. IPs contain no LIKE wildcards (`%`/`_`) so the pattern is
+    // safe. (Residual: count-then-insert isn't atomic, so a burst of
+    // concurrent requests can slip a few past — acceptable for the
+    // "casual scraping" threat model this throttle targets.)
     const { count: ipCount } = await supabase
       .from('score_preview_throttle')
       .select('id', { count: 'exact', head: true })
-      .eq('key', ipKey)
+      .like('key', `${ipKey}:%`)
       .eq('day', new Date().toISOString().slice(0, 10));
     if ((ipCount ?? 0) >= RATE_LIMIT_PER_IP_PER_DAY) {
       return NextResponse.json(
