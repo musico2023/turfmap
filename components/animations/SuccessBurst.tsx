@@ -84,6 +84,7 @@ export function SuccessBurst({ active, variant = 'default' }: SuccessBurstProps)
 
   useEffect(() => {
     if (!active) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
     setParticles(generateParticles(PARTICLE_COUNT[variant]));
     const t = setTimeout(() => setParticles(null), TOTAL_LIFETIME_MS);
     return () => clearTimeout(t);

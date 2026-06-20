@@ -337,6 +337,7 @@ function LinkRow({
   // fallback and hydrate after mount to avoid SSR mismatch warnings.
   const [shareUrl, setShareUrl] = useState(`/share/${link.id}`);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
     setShareUrl(`${window.location.origin}/share/${link.id}`);
   }, [link.id]);
 

@@ -164,6 +164,7 @@ export function AddressAutocomplete({
   // plain input so the field doesn't visibly pop in.
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
     setMounted(true);
   }, []);
 

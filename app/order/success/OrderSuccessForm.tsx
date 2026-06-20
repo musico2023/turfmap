@@ -301,6 +301,7 @@ export function OrderSuccessForm({
   // straight to /share/<id> (which now renders in full mode).
   useEffect(() => {
     if (attachState && attachPublicId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
       setPublicId(attachPublicId);
       setDone(true);
       return;
@@ -351,6 +352,7 @@ export function OrderSuccessForm({
   useEffect(() => {
     if (engagedPosted) return;
     if (!done || !publicId || !prospectId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
     setEngagedPosted(true);
     fetch(`/api/prospect/${encodeURIComponent(prospectId)}/engaged`, {
       method: 'POST',

@@ -287,6 +287,7 @@ export function ClientCreateForm() {
     if (manualOverride) return;
     const trimmed = form.address.trim();
     if (trimmed.length < 4) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
       setGeocode({ status: 'idle' });
       return;
     }

@@ -45,6 +45,7 @@ export type StuckProspectsAlertProps = {
 export function StuckProspectsAlert({ stuck }: StuckProspectsAlertProps) {
   if (stuck.length === 0) return null;
 
+  // eslint-disable-next-line react-hooks/purity -- server component renders once per request — request-time clock is intentional (no hydration/memoization concern)
   const now = Date.now();
   const inWindow: StuckProspect[] = [];
   const pastWindow: StuckProspect[] = [];
@@ -139,6 +140,7 @@ function StuckList({
           if (!p.email) missing.push('email');
           if (!p.first_name) missing.push('first_name');
           const engagedAgeHours = Math.round(
+            // eslint-disable-next-line react-hooks/purity -- server component renders once per request — request-time clock is intentional (no hydration/memoization concern)
             (Date.now() - new Date(p.scan_engaged_at).getTime()) / 3_600_000
           );
           const ageStr =

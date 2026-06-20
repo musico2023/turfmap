@@ -96,6 +96,7 @@ export default async function PublicSharePage({
   if (!share) return <ExpiredScreen reason="not_found" />;
 
   if (share.revoked_at) return <ExpiredScreen reason="revoked" />;
+  // eslint-disable-next-line react-hooks/purity -- server component renders once per request — request-time clock is intentional (no hydration/memoization concern)
   if (new Date(share.expires_at).getTime() < Date.now()) {
     return <ExpiredScreen reason="expired" expiresAt={share.expires_at} />;
   }

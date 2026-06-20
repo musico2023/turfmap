@@ -87,6 +87,7 @@ export function HeatmapGrid({
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
     setReducedMotion(mq.matches);
     const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
     mq.addEventListener('change', onChange);
@@ -102,6 +103,7 @@ export function HeatmapGrid({
     if (!effectiveAnimate) {
       // Snap to the fully-revealed end state when animation is
       // disabled (incl. reduced-motion toggled on mid-session).
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
       setRevealedAt(Infinity);
       return;
     }

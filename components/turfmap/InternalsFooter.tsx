@@ -36,6 +36,7 @@ export function InternalsFooter({
   // previously enabled, but no FOUC of the diagnostic content itself.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
     setVisible(window.localStorage.getItem(STORAGE_KEY) === '1');
   }, []);
 

@@ -66,6 +66,7 @@ export default async function PortalLoginPage({
           .maybeSingle<
             Pick<ScanShareLinkRow, 'id' | 'expires_at' | 'revoked_at'>
           >();
+        // eslint-disable-next-line react-hooks/purity -- server component renders once per request — request-time clock is intentional (no hydration/memoization concern)
         if (share && new Date(share.expires_at).getTime() >= Date.now()) {
           redirect(`/share/${share.id}`);
         }

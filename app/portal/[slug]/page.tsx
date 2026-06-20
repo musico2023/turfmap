@@ -111,6 +111,7 @@ export default async function ClientPortalPage({
           .maybeSingle<{ id: string; expires_at: string }>();
         if (
           outreachShare &&
+          // eslint-disable-next-line react-hooks/purity -- server component renders once per request — request-time clock is intentional (no hydration/memoization concern)
           new Date(outreachShare.expires_at).getTime() >= Date.now()
         ) {
           redirect(`/share/${outreachShare.id}`);

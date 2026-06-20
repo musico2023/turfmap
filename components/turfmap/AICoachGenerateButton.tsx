@@ -69,6 +69,7 @@ export function AICoachGenerateButton({
   // through a multi-minute audit-poll wait instead of a frozen spinner.
   useEffect(() => {
     if (!busy || !startedAt) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
       setElapsed(0);
       return;
     }

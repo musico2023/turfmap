@@ -84,6 +84,7 @@ export function ClientBillingPanel({
       summary.status === 'trialing' &&
       !summary.cancelAtPeriodEnd
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
       setCancelModalOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -60,6 +60,7 @@ export function CategoryCombobox({
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
       setHighlight(0);
       requestAnimationFrame(() => inputRef.current?.focus());
     }
