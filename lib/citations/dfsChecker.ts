@@ -212,9 +212,39 @@ function buildSerpQuery(
   return `site:${directory.domain} ${business.name} ${business.city}`;
 }
 
+/** 2-letter province/state code → full subdivision name. DFS's
+ *  `location_name` database is keyed on the spelled-out name
+ *  ("Calgary,Alberta,Canada"), NOT the postal code ("Calgary,AB,Canada"),
+ *  and an unrecognized location_name returns zero results — so a code here
+ *  silently breaks every site_serp probe. Google-Places-enriched clients
+ *  carry 2-letter codes, which is the majority of the book. CA covers
+ *  provinces/territories; US covers all 50 states + DC. */
+const REGION_CODE_TO_NAME: Record<string, string> = {
+  // Canada
+  AB: 'Alberta', BC: 'British Columbia', MB: 'Manitoba', NB: 'New Brunswick',
+  NL: 'Newfoundland and Labrador', NS: 'Nova Scotia', NT: 'Northwest Territories',
+  NU: 'Nunavut', ON: 'Ontario', PE: 'Prince Edward Island', QC: 'Quebec',
+  SK: 'Saskatchewan', YT: 'Yukon',
+  // United States + DC
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi',
+  MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire',
+  NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina',
+  ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania',
+  RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee',
+  TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington',
+  WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming', DC: 'District of Columbia',
+};
+
 /** Map BusinessProfile.country to a DFS location_name string. DFS uses
- *  a "City,Region,Country" format with the country name spelled out. */
-function dfsLocationFromBusiness(business: CitationBusinessProfile): string {
+ *  a "City,Region,Country" format with the country name spelled out, and
+ *  the region spelled out too — 2-letter codes are expanded via
+ *  REGION_CODE_TO_NAME (full names pass through unchanged).
+ *  Exported for the geo guard (scripts/verify-dfs-citation-geo.ts). */
+export function dfsLocationFromBusiness(business: CitationBusinessProfile): string {
   // ISO-3 country code → DFS expected name.
   const countryMap: Record<string, string> = {
     USA: 'United States',
@@ -223,7 +253,31 @@ function dfsLocationFromBusiness(business: CitationBusinessProfile): string {
     AUS: 'Australia',
   };
   const countryName = countryMap[business.country] ?? 'United States';
-  return `${business.city},${business.region},${countryName}`;
+  const rawRegion = (business.region ?? '').trim();
+  const region = REGION_CODE_TO_NAME[rawRegion.toUpperCase()] ?? rawRegion;
+  return `${business.city},${region},${countryName}`;
+}
+
+/** Apply DFS geo-targeting to a SERP task body. Coord-first: when the
+ *  business has lat/lng we pass `location_coordinate` (the robust path the
+ *  GBP local_pack probe already used) and skip location_name entirely.
+ *  This is what fixes the 2-letter-region bug — a coordinate can't be
+ *  malformed the way "Calgary,AB,Canada" was. Only when coords are absent
+ *  do we fall back to the (now region-expanded) location_name string.
+ *  Exported for the geo guard (scripts/verify-dfs-citation-geo.ts). */
+export function applyDfsGeo(
+  body: Record<string, unknown>,
+  business: CitationBusinessProfile
+): void {
+  if (
+    typeof business.latitude === 'number' &&
+    typeof business.longitude === 'number'
+  ) {
+    // "lat,lng,radius_km" — same shape lib/dataforseo/client.ts uses.
+    body.location_coordinate = `${business.latitude},${business.longitude},1`;
+  } else {
+    body.location_name = dfsLocationFromBusiness(business);
+  }
 }
 
 /** Probe one directory. Dispatches to the right strategy based on
@@ -250,9 +304,8 @@ async function probeDirectoryViaSiteSerp(
   business: CitationBusinessProfile,
   directory: DfsDirectory
 ): Promise<DirectoryProbeResult> {
-  const body = {
+  const body: Record<string, unknown> = {
     keyword: buildSerpQuery(business, directory),
-    location_name: dfsLocationFromBusiness(business),
     language_code: 'en',
     device: 'desktop',
     // Cap depth at 10 results — citation listings rank well above
@@ -260,6 +313,11 @@ async function probeDirectoryViaSiteSerp(
     depth: 10,
     tag: `citation:${directory.id}`,
   };
+  // Coord-first geo (see applyDfsGeo). A location_name built from a
+  // 2-letter region code ("Calgary,AB,Canada") is an invalid DFS location
+  // and returned zero results — which made EVERY site_serp probe falsely
+  // report "missing" for ~half the book (Google-Places-enriched clients).
+  applyDfsGeo(body, business);
 
   let task: DfsTask | null = null;
   let lastError: string | null = null;
@@ -373,12 +431,6 @@ async function probeDirectoryViaLocalPack(
   business: CitationBusinessProfile,
   directory: DfsDirectory
 ): Promise<DirectoryProbeResult> {
-  // Centerable when lat/lng are present (typical for clients via
-  // /api/clients/[id]/locations); fall back to location_name string
-  // when they aren't.
-  const hasCoords =
-    typeof business.latitude === 'number' &&
-    typeof business.longitude === 'number';
   const body: Record<string, unknown> = {
     keyword: `${business.name} ${business.city}`,
     language_code: 'en',
@@ -386,13 +438,9 @@ async function probeDirectoryViaLocalPack(
     depth: 10,
     tag: `citation:${directory.id}`,
   };
-  if (hasCoords) {
-    // "lat,lng,radius_km" — same shape lib/dataforseo/client.ts uses.
-    // 1km radius centers tightly on the storefront.
-    body.location_coordinate = `${business.latitude},${business.longitude},1`;
-  } else {
-    body.location_name = dfsLocationFromBusiness(business);
-  }
+  // Coord-first geo (lat/lng → location_coordinate), region-expanded
+  // location_name fallback. Shared with the site_serp probe.
+  applyDfsGeo(body, business);
 
   let task: DfsTask | null = null;
   let lastError: string | null = null;
