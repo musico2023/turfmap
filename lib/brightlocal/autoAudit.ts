@@ -68,7 +68,8 @@ export type NapAuditTriggerSource =
  *   NAP_AUDIT_PROVIDER=brightlocal — use BL Data API (requires
  *                                     250-req trial OR commercial key)
  *   NAP_AUDIT_PROVIDER=dfs        — use DataForSEO SERP scrape
- *                                     (~$0.09/audit; default)
+ *                                     (~$0.02/audit: ~10 directories ×
+ *                                      $0.002 DFS Live Advanced; default)
  *   (anything else / unset)        — defaults to dfs
  */
 type AuditProvider = 'brightlocal' | 'dfs';
@@ -93,7 +94,7 @@ const AUDIT_REFRESH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  *  30 minutes: long enough that a still-running audit (~5-15 min) or a
  *  burst of test scans doesn't fire duplicate concurrent runs, short
  *  enough that any genuine next-session rescan gets fresh citation data.
- *  At ~$0.09/audit this is cheap even under daily-cron scanning. */
+ *  At ~$0.02/audit this is cheap even under daily-cron scanning. */
 export const SCAN_AUDIT_REFRESH_WINDOW_MS = 30 * 60 * 1000;
 
 /** Compose a BrightLocal BusinessProfile from a client (for the brand
@@ -160,11 +161,11 @@ export async function maybeRunNapAudit(
    *  refreshWindowMs: override the staleness window. Scan triggers pass
    *    SCAN_AUDIT_REFRESH_WINDOW_MS so rescans refresh the audit instead
    *    of reusing weeks-old findings. Defaults to AUDIT_REFRESH_WINDOW_MS.
-   *  Either way a fresh run costs one DFS audit (~$0.09). */
+   *  Either way a fresh run costs one DFS audit (~$0.02). */
   opts: { force?: boolean; refreshWindowMs?: number } = {}
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
   // 1. Pull client metadata. The historical billing_mode='one_time' tier
-  // gate is GONE — DFS-based audits (default provider) cost ~$0.09 per
+  // gate is GONE — DFS-based audits (default provider) cost ~$0.02 per
   // audit, sustainable across every buyer tier including $0 free scans.
   // Reverts commit 850a51b's tier gate at the autoAudit level (the gate
   // was specifically a BL trial preservation measure that no longer
