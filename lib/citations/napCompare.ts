@@ -81,14 +81,33 @@ function tokenSetSimilarity(a: string, b: string): number {
  *      3/3 = 100% passes)
  *    - 4+ token canonicals tolerate light pluralization variance
  *      (4/5 = 80% passes; "Honest Plumber & Drain Co" matches "Honest
- *       Plumbers Drain"). */
+ *       Plumbers Drain").
+ *
+ *  Generic connector tokens are dropped before scoring so the 0.75 bar is
+ *  measured against DISTINCTIVE tokens only. Without this, a long legal
+ *  name like "CertaPro Painters OF Calgary AND Central Alberta" (7 tokens,
+ *  2 of them filler) couldn't clear the bar against a directory's
+ *  shortened title ("CertaPro Painters … Calgary, Alberta … Yelp") and the
+ *  real listing was falsely reported "missing". This does NOT weaken
+ *  franchise protection: dropping "of/and" leaves the location tokens
+ *  (calgary/central/alberta) in the denominator, so a sibling franchise
+ *  ("…of Edmonton", "…of Southern Alberta") still fails on the mismatched
+ *  city. */
+const NAME_FILLER = new Set([
+  'of', 'and', 'the', 'at', 'for', 'to', 'in', 'on', 'a', 'an',
+]);
+
 export function nameMatches(
   canonical: string | null | undefined,
   found: string | null | undefined
 ): boolean {
-  const a = normalizeName(canonical).split(/\s+/).filter(Boolean);
+  const a = normalizeName(canonical)
+    .split(/\s+/)
+    .filter((t) => t && !NAME_FILLER.has(t));
   const b = new Set(
-    normalizeName(found).split(/\s+/).filter(Boolean)
+    normalizeName(found)
+      .split(/\s+/)
+      .filter((t) => t && !NAME_FILLER.has(t))
   );
   if (a.length === 0 || b.size === 0) return false;
   const matched = a.filter((t) => b.has(t)).length;

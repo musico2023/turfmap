@@ -55,7 +55,8 @@ export type DfsDirectory = {
  *  in dfsChecker.probeDirectory. */
 const UNIVERSAL: DfsDirectory[] = [
   { id: 'google_business', label: 'Google Business Profile',                              priority: 'high', countries: 'all', probe: 'local_pack' },
-  { id: 'yelp',            label: 'Yelp',                   domain: 'yelp.com',           priority: 'high', countries: 'all' },
+  { id: 'yelp',            label: 'Yelp',                   domain: 'yelp.com',           priority: 'high', countries: 'USA' },
+  { id: 'yelp_ca',         label: 'Yelp',                   domain: 'yelp.ca',            priority: 'high', countries: 'CAN' },
   { id: 'facebook',        label: 'Facebook',               domain: 'facebook.com',       priority: 'high', countries: 'all' },
   { id: 'bbb',             label: 'BBB',                    domain: 'bbb.org',            priority: 'high', countries: 'all' },
   { id: 'apple_maps',      label: 'Apple Maps',             domain: 'maps.apple.com',     priority: 'medium', countries: 'all' },
