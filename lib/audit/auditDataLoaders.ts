@@ -40,10 +40,71 @@ export async function loadNapFindingsSummary(
     .maybeSingle<{ findings: unknown }>();
   if (!data?.findings) return null;
   try {
-    return JSON.stringify(data.findings, null, 2).slice(0, 4000);
+    return summarizeNapFindingsForPrompt(data.findings);
   } catch {
     return null;
   }
+}
+
+/** Frame nap_audit findings for an AI prompt WITHOUT leaking the raw
+ *  null NAP fields that the dump used to expose.
+ *
+ *  Why: a directory citation is matched by NAME, but its phone/address are
+ *  read only from the Google SERP snippet — so they're routinely null even
+ *  when the listing displays them on-page (Facebook came back phone:null
+ *  while the page showed (403) 220-1515). Dumping the raw JSON let the AI
+ *  read "phone": null as "this listing has no phone" and recommend adding a
+ *  phone to a listing that already has one. We list found vs not-surfaced
+ *  directories + real inconsistencies, and teach the model that a blank
+ *  phone/address on a FOUND listing is a read limitation, not a gap. */
+export function summarizeNapFindingsForPrompt(findings: unknown): string {
+  const f = (findings ?? {}) as {
+    citations?: Array<{ directory?: string }>;
+    missing?: Array<{ directory?: string }>;
+    inconsistencies?: Array<{
+      directory?: string;
+      field?: string;
+      found?: string;
+      canonical?: string;
+    }>;
+  };
+  const found = (f.citations ?? [])
+    .map((c) => c?.directory)
+    .filter((d): d is string => Boolean(d));
+  const notFound = (f.missing ?? [])
+    .map((m) => m?.directory)
+    .filter((d): d is string => Boolean(d));
+  const inc = (f.inconsistencies ?? []).filter((i) => i?.directory);
+
+  const lines: string[] = [];
+  lines.push(
+    `Directory listings FOUND (listing exists, name verified): ${found.length ? found.join(', ') : 'none'}`
+  );
+  lines.push(
+    `Not surfaced by the search probe: ${notFound.length ? notFound.join(', ') : 'none'}`
+  );
+  if (inc.length) {
+    lines.push('NAP field conflicts vs the canonical Google Business Profile:');
+    for (const i of inc.slice(0, 8)) {
+      lines.push(
+        `  - ${i.directory} [${i.field ?? 'NAP'}]: directory shows "${i.found ?? '?'}" vs canonical "${i.canonical ?? '?'}"`
+      );
+    }
+  } else {
+    lines.push('NAP field conflicts vs canonical: none detected.');
+  }
+  lines.push('');
+  lines.push('HOW TO READ THIS (important — do not misread):');
+  lines.push(
+    '- "Found" means the listing exists and its NAME matches. Phone and address are read only from the Google search snippet, so they are usually blank even when the listing clearly displays them on its page. A blank phone/address here means "not shown in search results" — NOT that the listing lacks one.'
+  );
+  lines.push(
+    '- Never recommend "add a phone number or address to <directory>", and never state that a FOUND listing is missing NAP fields — that is not something this audit can verify.'
+  );
+  lines.push(
+    '- "Not surfaced by the search probe" means our automated search did not find a listing; it does NOT prove the business has none there. Frame these as "confirm, and claim only if genuinely absent."'
+  );
+  return lines.join('\n').slice(0, 4000);
 }
 
 /** Competitor summary placeholder. The competitor_tracking table has
