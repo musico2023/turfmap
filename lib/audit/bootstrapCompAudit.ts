@@ -38,6 +38,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { createVisibilityAudit, patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
 import { generateAndStoreRoadmapPdf } from '@/lib/audit/generateAndStoreRoadmapPdf';
 import { triggerNapAuditAtAuditInit } from '@/lib/audit/triggerNapAuditAtAuditInit';
+import { runScanForLocation } from '@/lib/scans/runScan';
 import { ensurePortalUser } from '@/lib/auth/ensurePortalUser';
 import { agencyClientUrl } from '@/lib/urls';
 import { sendAuditPurchaseRoadmap } from '@/lib/email/resend';
@@ -49,6 +50,7 @@ import {
   slugifyBusinessName,
 } from '@/lib/audit/tradeClassifier';
 import type {
+  ClientLocationRow,
   ClientRow,
   LeadOrderRow,
   ProspectRow,
@@ -682,6 +684,98 @@ async function resolveClientFromProspectId(
   return { data: data ?? null };
 }
 
+/** Run a fresh geo-grid scan for an existing audit's location + primary
+ *  keyword and repoint the audit row at it, so a regenerate rebuilds the
+ *  PDF off CURRENT data rather than the scan frozen at audit creation.
+ *
+ *  Best-effort by design — every failure path (no location, no keyword,
+ *  scan error) logs and returns without repointing, leaving the audit on
+ *  its prior scan so the PDF still regenerates. Never throws to the
+ *  caller. */
+async function refreshAuditScanForRegenerate(
+  supabase: ReturnType<typeof getServerSupabase>,
+  auditId: string,
+  client: ClientRow
+): Promise<void> {
+  try {
+    const { data: audit } = await supabase
+      .from('visibility_audits')
+      .select('location_id, scan_id')
+      .eq('id', auditId)
+      .maybeSingle<{ location_id: string | null; scan_id: string }>();
+    if (!audit) return;
+
+    // Resolve the audited location: prefer the audit's own location_id,
+    // else fall back to the location the frozen scan ran against.
+    let locationId = audit.location_id;
+    if (!locationId && audit.scan_id) {
+      const { data: oldScan } = await supabase
+        .from('scans')
+        .select('location_id')
+        .eq('id', audit.scan_id)
+        .maybeSingle<{ location_id: string | null }>();
+      locationId = oldScan?.location_id ?? null;
+    }
+    if (!locationId) {
+      console.error('[bootstrapCompAudit/regenerate] no location to rescan');
+      return;
+    }
+
+    const [{ data: location }, { data: keyword }] = await Promise.all([
+      supabase
+        .from('client_locations')
+        .select('id, latitude, longitude, service_radius_miles')
+        .eq('id', locationId)
+        .maybeSingle<
+          Pick<
+            ClientLocationRow,
+            'id' | 'latitude' | 'longitude' | 'service_radius_miles'
+          >
+        >(),
+      supabase
+        .from('tracked_keywords')
+        .select('id, keyword')
+        .eq('client_id', client.id)
+        .eq('is_primary', true)
+        .maybeSingle<Pick<TrackedKeywordRow, 'id' | 'keyword'>>(),
+    ]);
+    if (!location || !keyword) {
+      console.error(
+        '[bootstrapCompAudit/regenerate] missing location/keyword for rescan'
+      );
+      return;
+    }
+
+    const result = await runScanForLocation(supabase, {
+      client: { id: client.id, business_name: client.business_name },
+      location,
+      keyword,
+      scanType: 'on_demand',
+      triggeredBy: null,
+    });
+    if (!result.ok) {
+      console.error(
+        '[bootstrapCompAudit/regenerate] rescan failed',
+        result.error
+      );
+      return;
+    }
+
+    // Repoint the audit at the fresh scan + its live score. The PDF reads
+    // audit.scan_id (heatmap + cells) and audit.starting_turfscore (the
+    // headline score, and the base for the recomputed lift target).
+    await patchVisibilityAudit(supabase, auditId, {
+      scan_id: result.scanId,
+      starting_turfscore: result.turfScore,
+    });
+  } catch (e) {
+    console.error(
+      '[bootstrapCompAudit/regenerate] refreshAuditScanForRegenerate threw',
+      e instanceof Error ? e.message : String(e)
+    );
+  }
+}
+
 /** Refresh the PDF + operator email for an audit that already exists.
  *  Called by bootstrapCompAudit when forceRegenerate=true is set.
  *  Re-runs generateAndStoreRoadmapPdf (Claude + PDF + Storage upload),
@@ -738,6 +832,18 @@ async function regenerateForExistingAudit(args: {
       e instanceof Error ? e.message : String(e)
     );
   }
+
+  // FULL re-run: the PDF is pinned to the scan frozen at audit creation
+  // (audit.scan_id + audit.starting_turfscore), so a regenerate would
+  // otherwise rebuild the deliverable off a stale score/heatmap (CertaPro
+  // 2026-06-21: PDF showed TurfScore 20 from a June-5 snapshot while live
+  // scans read 12-19). A deliberate operator regenerate must reflect
+  // CURRENT reality, so run a fresh geo-grid scan and repoint the audit at
+  // it before the PDF reads the data. Runs AFTER the forced NAP above so
+  // the scan's own NAP trigger no-ops on the 30-min refresh window (no
+  // duplicate audit). Best-effort: a scan failure leaves the audit on its
+  // prior scan and the PDF still regenerates.
+  await refreshAuditScanForRegenerate(supabase, auditId, client);
 
   const pdfResult = await generateAndStoreRoadmapPdf(supabase, auditId);
   if (!pdfResult.ok) {
