@@ -194,6 +194,18 @@ export function ScanIntakeForm({
       selected.street_address === trimmedAddress)
   );
 
+  // Location-lock predicate that gates submit. On the Google
+  // business-autocomplete path a resolved GBP pick IS the lock —
+  // service-area businesses (our ICP) hide their street address on
+  // Google, so Place Details returns no formattedAddress and we
+  // can't gate on address text. The picked listing's place_id +
+  // lat/lng carry the location instead. The Mapbox path still
+  // requires a dropdown pick (addressPicked) since that's the only
+  // way it gets known-good coordinates.
+  const locationLocked = useBusinessAutocomplete
+    ? !!googlePlaceId
+    : addressPicked;
+
   // Lightweight "form looks filled" predicate — gates when the
   // Turnstile widget is rendered in previewMode. We don't validate
   // exhaustively here (server-side Zod is the source of truth), just
@@ -204,7 +216,7 @@ export function ScanIntakeForm({
   // across Safari/Firefox/Chrome).
   const allFieldsLookFilled =
     businessName.trim().length >= 2 &&
-    addressPicked &&
+    locationLocked &&
     keywords.every((k) => k.trim().length >= 2) &&
     email.includes('@') &&
     email.length >= 5 &&
@@ -243,9 +255,11 @@ export function ScanIntakeForm({
     // buyers can't visually verify which Toronto/Plainfield/etc the
     // Mapbox match locked onto. Forcing a pick keeps lat/lng + the
     // structured components anchored to a known-good Mapbox result.
-    if (!addressPicked) {
+    if (!locationLocked) {
       setError(
-        'Please pick your business address from the dropdown — typing freely won\'t lock the right location for your scan.'
+        useBusinessAutocomplete
+          ? 'Please pick your business from the Google dropdown so we can lock the right location for your scan.'
+          : 'Please pick your business address from the dropdown — typing freely won\'t lock the right location for your scan.'
       );
       // Don't fire InitiateCheckout — this isn't a checkout start yet.
       return;
@@ -697,7 +711,7 @@ export function ScanIntakeForm({
           // rejection reasons. The submit handler still has its
           // own gates as defense-in-depth (Enter key, JS-disabled
           // native submit, etc.).
-          disabled={!addressPicked || !turnstileReady}
+          disabled={!locationLocked || !turnstileReady}
         >
           {previewMode
             ? 'Get my free TurfScore'

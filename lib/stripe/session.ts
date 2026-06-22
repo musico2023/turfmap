@@ -285,12 +285,25 @@ export async function loadCheckoutSession(
     const keyword = m.keyword?.trim();
     const intakeEmail = m.intake_email?.trim();
     const phone = m.phone?.trim();
-    // All five fields are required by the /scan/intake form +
+    const placeId = m.google_place_id?.trim();
+    // A GBP-picked service-area business carries no street address
+    // (Google hides it), so the checkout-init route doesn't stamp
+    // `address` for those — the place_id + lat/lng do instead. Treat
+    // that pairing as a valid location so the buyer still auto-fulfills
+    // rather than dropping to the legacy manual form.
+    const hasGbpGeo = !!(placeId && m.latitude?.trim() && m.longitude?.trim());
+    // The remaining fields are required by the /scan/intake form +
     // mirrored in the Zod schema of /api/scan/checkout/init. If any
     // are missing here something stamped the session externally —
     // bail to null so /order/success falls back to the legacy form
     // instead of submitting half-populated fulfill.
-    if (businessName && address && keyword && intakeEmail && phone) {
+    if (
+      businessName &&
+      keyword &&
+      intakeEmail &&
+      phone &&
+      (address || hasGbpGeo)
+    ) {
       // Optional Mapbox-picked geo + structured components. Parsed
       // defensively — if either lat or lng fails Number(), we treat
       // the pick as missing and fulfill falls back to Nominatim.
@@ -329,7 +342,7 @@ export async function loadCheckoutSession(
 
       intake = {
         businessName,
-        address,
+        address: address ?? '',
         keyword,
         keywords,
         email: intakeEmail,

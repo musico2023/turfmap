@@ -1022,7 +1022,15 @@ function GbpMatchedCard({
   place: ResolvedPlace;
   onClear: () => void;
 }) {
-  const address = place.formattedAddress.trim();
+  // Service-area businesses hide their street address on Google, so
+  // formattedAddress comes back empty. Fall back to the city/region,
+  // then a plain-language note so the card never shows a blank line.
+  const address =
+    place.formattedAddress.trim() ||
+    [place.addressComponents?.city, place.addressComponents?.region]
+      .filter(Boolean)
+      .join(', ') ||
+    'Service-area business — no public address on Google';
   return (
     <div
       className="border rounded-md p-4"

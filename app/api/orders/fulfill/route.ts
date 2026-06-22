@@ -106,7 +106,11 @@ const FulfillBody = z.object({
   // it from the Stripe session below — never trust the client.
   tier: z.string().optional(),
   businessName: z.string().min(2).max(200),
-  address: z.string().min(4).max(400),
+  // Optional when a Google Business Profile is picked — service-area
+  // businesses hide their street address on Google. The pick's
+  // lat/lng (below) resolve the scan grid; the superRefine requires a
+  // geocodable address only on the no-GBP path.
+  address: z.string().max(400).optional(),
   keywords: z.array(z.string().min(2).max(160)).min(1).max(3),
   email: z.string().email(),
   // Phone is the P in NAP — required for the citation check across
@@ -151,6 +155,18 @@ const FulfillBody = z.object({
    *  (trade economics inference, AI Coach prompt enrichment).
    *  Optional. */
   google_primary_type: z.string().max(100).optional(),
+}).superRefine((data, ctx) => {
+  // GBP-picked intakes don't require an address (see the `address`
+  // field note above) — the place_id + lat/lng carry the location.
+  // Without a place_id, require a geocodable address.
+  if (!data.google_place_id && (data.address ?? '').trim().length < 4) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['address'],
+      message:
+        'Address is required unless a Google Business Profile is selected.',
+    });
+  }
 });
 
 export async function POST(req: NextRequest) {
@@ -280,7 +296,7 @@ export async function POST(req: NextRequest) {
     geocode = {
       lat: body.latitude,
       lng: body.longitude,
-      display_name: body.address.trim(),
+      display_name: (body.address ?? '').trim(),
       importance: 1,
       components: body.components
         ? {
@@ -293,7 +309,7 @@ export async function POST(req: NextRequest) {
         : undefined,
     };
   } else {
-    geocode = await geocodeAddress(body.address, {
+    geocode = await geocodeAddress((body.address ?? '').trim(), {
       hints: body.components
         ? {
             street: body.components.street_address ?? undefined,
@@ -308,7 +324,7 @@ export async function POST(req: NextRequest) {
     await markLeadOrderFailed(
       supabase,
       body.sessionId,
-      `geocode failed for: ${body.address}`
+      `geocode failed for: ${body.address ?? ''}`
     );
     return NextResponse.json(
       {
@@ -325,7 +341,7 @@ export async function POST(req: NextRequest) {
     .from('clients')
     .insert({
       business_name: body.businessName.trim(),
-      address: body.address.trim(),
+      address: (body.address ?? '').trim(),
       latitude: geocode.lat,
       longitude: geocode.lng,
       phone: body.phone?.trim() || null,
@@ -381,7 +397,7 @@ export async function POST(req: NextRequest) {
       client_id: client.id,
       is_primary: true,
       label: geocode.components?.city ?? null,
-      address: body.address.trim(),
+      address: (body.address ?? '').trim(),
       street_address: geocode.components?.street_address ?? null,
       city: geocode.components?.city ?? null,
       region: geocode.components?.region ?? null,
@@ -825,7 +841,7 @@ export async function POST(req: NextRequest) {
           await notifyLlmFitAudit({
             businessName: body.businessName.trim(),
             trade: body.keywords[0] ?? 'unknown',
-            market: geocode.components?.city ?? body.address.trim(),
+            market: geocode.components?.city ?? (body.address ?? '').trim(),
             currentTurfScore: primaryScanResult.turfScore,
             llmFitScore: fitBreakdown.score,
             auditDashboardUrl: agencyClientUrl(origin, client.public_id),
@@ -862,7 +878,7 @@ export async function POST(req: NextRequest) {
         const buyerPhone = body.phone?.trim() || null;
         const buyerBusinessName = body.businessName.trim();
         const buyerKeyword = body.keywords[0] ?? 'unknown';
-        const buyerMarket = geocode.components?.city ?? body.address.trim();
+        const buyerMarket = geocode.components?.city ?? (body.address ?? '').trim();
         const buyerLlmFit = fitBreakdown.score;
         const agencyDashboardUrl = agencyClientUrl(origin, client.public_id);
         // Human-readable tier label for the operator email subject +

@@ -35,7 +35,12 @@ const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 const CreateClientBody = z.object({
   business_name: z.string().min(2).max(200),
-  address: z.string().min(4).max(400),
+  // Optional when a Google Business Profile is picked — service-area
+  // businesses hide their street address on Google, so the GBP
+  // autocomplete resolves no formattedAddress. lat/lng (required
+  // below) still seed the scan grid; the superRefine requires a typed
+  // address only on the manual-entry path.
+  address: z.string().max(400).optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   // Structured NAP fields — required by BrightLocal Listings API. Optional
@@ -87,6 +92,18 @@ const CreateClientBody = z.object({
   /** Trial length in days for the Stripe Checkout flow. 0 = no
    *  trial. */
   trial_days: z.number().int().min(0).max(90).optional(),
+}).superRefine((data, ctx) => {
+  // GBP-picked clients don't require an address (see the `address`
+  // field note above). The manual-entry path (no place_id) still
+  // needs a typed address for the operator-facing NAP record.
+  if (!data.google_place_id && (data.address ?? '').trim().length < 4) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['address'],
+      message:
+        'Address is required unless a Google Business Profile is selected.',
+    });
+  }
 });
 
 export async function POST(req: Request) {
@@ -138,7 +155,7 @@ export async function POST(req: Request) {
     .from('clients')
     .insert({
       business_name: parsed.business_name,
-      address: parsed.address,
+      address: parsed.address ?? '',
       latitude: parsed.latitude,
       longitude: parsed.longitude,
       phone: parsed.phone ?? null,
@@ -181,7 +198,7 @@ export async function POST(req: Request) {
       client_id: client.id,
       is_primary: true,
       label: parsed.city ?? null,
-      address: parsed.address,
+      address: parsed.address ?? '',
       street_address: parsed.street_address ?? null,
       city: parsed.city ?? null,
       region: parsed.region ?? null,

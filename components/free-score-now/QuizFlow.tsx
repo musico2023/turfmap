@@ -927,7 +927,7 @@ function GbpStep({
       <StepHeader
         eyebrow="QUESTION 4 OF 5"
         title="Pick your business on Google"
-        subtitle="So we lock the right location — city, address, GBP. Pick from the dropdown."
+        subtitle="So we lock the right location and pull your Google listing. Pick from the dropdown — no address needed."
       />
       <GoogleBusinessAutocomplete
         placeholder="Type your business name…"
@@ -947,7 +947,15 @@ function GbpStep({
                 {place.businessName}
               </div>
               <div className="text-[12px] text-zinc-400 mt-1 leading-snug">
-                {place.formattedAddress}
+                {/* Service-area businesses hide their street address on
+                 *  Google, so formattedAddress comes back empty. Fall
+                 *  back to the city/region, then a plain-language note
+                 *  so the card never renders a blank line. */}
+                {place.formattedAddress?.trim() ||
+                  [place.addressComponents?.city, place.addressComponents?.region]
+                    .filter(Boolean)
+                    .join(', ') ||
+                  'Service-area business — no public address on Google'}
               </div>
             </div>
           </div>

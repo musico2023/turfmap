@@ -48,7 +48,12 @@ const SHARE_LINK_DAYS = 90;
 
 export type CreatePreviewClientInput = {
   businessName: string;
-  address: string;
+  /** Freeform address string. Empty when the buyer picked a
+   *  service-area-business GBP (Google hides the street address on
+   *  those listings). When empty, geo is resolved from the picked
+   *  listing's lat/lng; the city label falls back to the picked
+   *  components.city, then the business name. */
+  address?: string;
   keyword: string;
   email: string;
   phone: string;
@@ -124,7 +129,7 @@ export async function createPreviewClient(
   input: CreatePreviewClientInput
 ): Promise<CreatePreviewClientResult> {
   const businessName = input.businessName.trim();
-  const addressText = input.address.trim();
+  const addressText = (input.address ?? '').trim();
   const keywordText = input.keyword.trim();
   const email = input.email.trim().toLowerCase();
   const phone = input.phone.trim();
@@ -143,7 +148,11 @@ export async function createPreviewClient(
   if (hasMapboxPick) {
     latitude = input.latitude!;
     longitude = input.longitude!;
-    city = input.components?.city?.trim() || addressText;
+    // city is the human label on the client/location rows. Prefer the
+    // picked components.city; fall back to the freeform address, then
+    // the business name so an address-less GBP pick never lands a
+    // blank label.
+    city = input.components?.city?.trim() || addressText || businessName;
     countryCode = input.components?.country_code?.trim()?.toUpperCase() || 'USA';
   } else {
     const geocoded = await geocodeAddress(addressText);
