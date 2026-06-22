@@ -67,6 +67,24 @@ check(
   false
 );
 
+// Short-brand guard: a load-bearing stopword must not collapse the name to
+// one token and match an unrelated business (review finding #1).
+check(
+  'rejects unrelated "Point" business for canonical "On Point Plumbing"',
+  nameMatches('On Point Plumbing', 'Point Plumbing Supplies Inc'),
+  false
+);
+check(
+  'rejects "Inn at the Lake" for canonical "The Inn"',
+  nameMatches('The Inn', 'Inn at the Lake'),
+  false
+);
+check(
+  'still matches long franchise name after the guard',
+  nameMatches(CANON, 'CertaPro Painters of Calgary & Central Alberta | Calgary AB'),
+  true
+);
+
 if (failures > 0) {
   console.error(`\nverify-citation-name-match: ${failures} check(s) failed`);
   process.exit(1);

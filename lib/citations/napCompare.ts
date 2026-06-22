@@ -101,16 +101,31 @@ export function nameMatches(
   canonical: string | null | undefined,
   found: string | null | undefined
 ): boolean {
-  const a = normalizeName(canonical)
-    .split(/\s+/)
-    .filter((t) => t && !NAME_FILLER.has(t));
-  const b = new Set(
-    normalizeName(found)
-      .split(/\s+/)
-      .filter((t) => t && !NAME_FILLER.has(t))
-  );
+  const rawA = normalizeName(canonical).split(/\s+/).filter(Boolean);
+  const rawB = normalizeName(found).split(/\s+/).filter(Boolean);
+  // Strip generic connectors so a long legal name still matches a short
+  // directory title — UNLESS stripping collapses the canonical below 2
+  // distinctive tokens (a load-bearing stopword like "On Point" → "point"
+  // would otherwise match any "...point..." listing). In that case keep
+  // the unstripped tokens so the bar stays meaningful.
+  const strippedA = rawA.filter((t) => !NAME_FILLER.has(t));
+  // Require ≥3 distinctive tokens to apply stripping: a 2-token canonical
+  // like "On Point Plumbing" (strips to ['point','plumbing']) still has a
+  // common-word overlap risk with unrelated businesses that share those two
+  // tokens, so we keep the full rawA (including load-bearing fillers) to
+  // make the bar harder to clear.
+  const useStripped = strippedA.length >= 3;
+  const a = useStripped ? strippedA : rawA;
+  const b = new Set(useStripped ? rawB.filter((t) => !NAME_FILLER.has(t)) : rawB);
   if (a.length === 0 || b.size === 0) return false;
   const matched = a.filter((t) => b.has(t)).length;
+  // When canonical is very short (1 raw token after normalization), forward
+  // containment alone is too weak — any listing that includes that one token
+  // would pass. Require bidirectional ≥0.75 so "The Inn" doesn't match
+  // "Inn at the Lake" (backward score = 1/3 = 0.33 → rejected).
+  if (a.length === 1) {
+    return matched / a.length >= 0.75 && matched / b.size >= 0.75;
+  }
   return matched / a.length >= 0.75;
 }
 
