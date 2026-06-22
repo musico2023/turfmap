@@ -48,7 +48,7 @@ const SHARE_LINK_DAYS = 90;
 
 export type CreatePreviewClientInput = {
   businessName: string;
-  address: string;
+  address?: string | null;
   keyword: string;
   email: string;
   phone: string;
@@ -124,7 +124,7 @@ export async function createPreviewClient(
   input: CreatePreviewClientInput
 ): Promise<CreatePreviewClientResult> {
   const businessName = input.businessName.trim();
-  const addressText = input.address.trim();
+  const addressText = input.address?.trim() ?? '';
   const keywordText = input.keyword.trim();
   const email = input.email.trim().toLowerCase();
   const phone = input.phone.trim();

@@ -46,6 +46,7 @@ import {
   type IntakeCadence,
   type IntakeTier,
 } from '@/lib/checkout/intakeTiers';
+import { hasLocatableCenter } from '@/lib/intake/requireLocatable';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -66,7 +67,7 @@ const Body = z.object({
     .enum(INTAKE_CADENCES as readonly [IntakeCadence, ...IntakeCadence[]])
     .default('monthly'),
   businessName: z.string().min(2).max(200),
-  address: z.string().min(4).max(400),
+  address: z.string().max(400).optional().nullable(),
   /** Primary keyword. Always present + always the first element of
    *  the keywords[] array. Kept as a top-level field for back-compat
    *  with any caller that still sends the singular form. */
@@ -155,6 +156,13 @@ export async function POST(req: Request) {
     );
   }
 
+  if (!hasLocatableCenter({ latitude: body.latitude, longitude: body.longitude, address: body.address })) {
+    return NextResponse.json(
+      { error: 'Pick the business on Google or enter a city/address — we need a location to center the scan.' },
+      { status: 400 }
+    );
+  }
+
   const stripe = await getStripe();
   if (!stripe) {
     return NextResponse.json(STRIPE_NOT_CONFIGURED_ERROR, { status: 503 });
@@ -239,7 +247,7 @@ export async function POST(req: Request) {
     tier: body.tier,
     source: 'scan_intake',
     business_name: body.businessName.trim(),
-    address: body.address.trim(),
+    address: body.address?.trim() ?? '',
     // `keyword` (singular) is the primary; we also stamp
     // keyword_1/2/3 so /lib/stripe/session.ts can rebuild the full
     // keywords[] array on the success page without re-querying

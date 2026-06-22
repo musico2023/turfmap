@@ -28,6 +28,7 @@ import {
 } from '@/lib/google/enrich';
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
 import { agencyClientUrl } from '@/lib/urls';
+import { hasLocatableCenter } from '@/lib/intake/requireLocatable';
 
 export const runtime = 'nodejs';
 
@@ -35,7 +36,7 @@ const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 const CreateClientBody = z.object({
   business_name: z.string().min(2).max(200),
-  address: z.string().min(4).max(400),
+  address: z.string().max(400).optional().nullable(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   // Structured NAP fields — required by BrightLocal Listings API. Optional
@@ -104,6 +105,13 @@ export async function POST(req: Request) {
     }
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'invalid body' },
+      { status: 400 }
+    );
+  }
+
+  if (!hasLocatableCenter({ latitude: parsed.latitude, longitude: parsed.longitude, address: parsed.address })) {
+    return NextResponse.json(
+      { error: 'Pick the business on Google or enter a city/address — we need a location to center the scan.' },
       { status: 400 }
     );
   }

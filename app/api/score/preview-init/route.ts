@@ -29,6 +29,7 @@ import {
   sendMetaCapiEvent,
   buildFbcFromFbclid,
 } from '@/lib/marketing/metaCapi';
+import { hasLocatableCenter } from '@/lib/intake/requireLocatable';
 
 export const runtime = 'nodejs';
 // Same ceiling as the paid scan-intake route — DFS + DB inserts +
@@ -38,7 +39,7 @@ export const maxDuration = 300;
 
 const Body = z.object({
   businessName: z.string().min(2).max(200),
-  address: z.string().min(4).max(400),
+  address: z.string().max(400).optional().nullable(),
   keyword: z.string().min(2).max(160),
   email: z.string().email().max(320),
   phone: z.string().min(7).max(40),
@@ -149,6 +150,13 @@ export async function POST(req: Request) {
             ? e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
             : 'invalid request body',
       },
+      { status: 400 }
+    );
+  }
+
+  if (!hasLocatableCenter({ latitude: body.latitude, longitude: body.longitude, address: body.address })) {
+    return NextResponse.json(
+      { error: 'Pick the business on Google or enter a city/address — we need a location to center the scan.' },
       { status: 400 }
     );
   }
