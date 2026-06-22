@@ -119,13 +119,13 @@ export function nameMatches(
   const b = new Set(useStripped ? rawB.filter((t) => !NAME_FILLER.has(t)) : rawB);
   if (a.length === 0 || b.size === 0) return false;
   const matched = a.filter((t) => b.has(t)).length;
-  // When canonical is very short (1 raw token after normalization), forward
-  // containment alone is too weak — any listing that includes that one token
-  // would pass. Require bidirectional ≥0.75 so "The Inn" doesn't match
-  // "Inn at the Lake" (backward score = 1/3 = 0.33 → rejected).
-  if (a.length === 1) {
-    return matched / a.length >= 0.75 && matched / b.size >= 0.75;
-  }
+  // Forward containment only: a single-word brand ("Lululemon") SHOULD match
+  // a qualifier-rich directory title ("Lululemon Athletica | 220 Yonge |
+  // Yelp"), so we do NOT add a backward-containment gate — that would
+  // falsely reject single-word brands whose listings carry lots of extra
+  // tokens. Single-token false positives from a load-bearing stopword (e.g.
+  // "On Point") are handled by the ≥3-distinctive-token strip gate above,
+  // which keeps the stopword in the denominator.
   return matched / a.length >= 0.75;
 }
 

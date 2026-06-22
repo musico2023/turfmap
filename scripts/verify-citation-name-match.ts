@@ -75,13 +75,16 @@ check(
   false
 );
 check(
-  'rejects "Inn at the Lake" for canonical "The Inn"',
-  nameMatches('The Inn', 'Inn at the Lake'),
-  false
-);
-check(
   'still matches long franchise name after the guard',
   nameMatches(CANON, 'CertaPro Painters of Calgary & Central Alberta | Calgary AB'),
+  true
+);
+// No-regression: a single-word brand must still match a qualifier-rich
+// directory title (the guard must NOT add a backward-containment gate that
+// rejects single-word brands).
+check(
+  'single-word brand still matches a qualifier-rich title',
+  nameMatches('Lululemon', 'Lululemon Athletica | 220 Yonge St | Yelp'),
   true
 );
 
