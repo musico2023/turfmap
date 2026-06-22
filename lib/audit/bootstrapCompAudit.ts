@@ -752,6 +752,9 @@ async function refreshAuditScanForRegenerate(
       keyword,
       scanType: 'on_demand',
       triggeredBy: null,
+      // Operator-internal scan (rebuilding the deliverable) — must not fire
+      // client-facing momentum/score alerts for a non-event score change.
+      suppressAlerts: true,
     });
     if (!result.ok) {
       console.error(

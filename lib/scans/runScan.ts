@@ -65,6 +65,11 @@ export type RunScanInput = {
    *  Recorded on the audit row's triggered_by column when the post-scan
    *  audit fires. */
   triggeredBy: string | null;
+  /** Suppress client-facing momentum/score alerts for this scan. Set by
+   *  internal/operator flows (e.g. an audit-PDF regenerate's fresh scan)
+   *  where the scan is a side effect of an operator action, NOT a real
+   *  ranking event the client should be emailed/Slacked about. */
+  suppressAlerts?: boolean;
 };
 
 export type RunScanSuccess = {
@@ -101,7 +106,8 @@ export async function runScanForLocation(
   supabase: SupabaseLike,
   input: RunScanInput
 ): Promise<RunScanResult> {
-  const { client, location, keyword, scanType, triggeredBy } = input;
+  const { client, location, keyword, scanType, triggeredBy, suppressAlerts } =
+    input;
 
   if (location.latitude == null || location.longitude == null) {
     return {
@@ -265,7 +271,10 @@ export async function runScanForLocation(
   //    diff against the prior scan. Best-effort — never fails the
   //    scan return path. Lives behind a separate try so a Resend or
   //    Slack hiccup doesn't poison cron's scan-status reporting.
-  try {
+  //    Skipped when suppressAlerts is set — an operator-internal scan
+  //    (e.g. an audit-PDF regenerate) must not email/Slack the client a
+  //    ranking alert for a score change tied to no real ranking event.
+  if (!suppressAlerts) try {
     await dispatchScanAlerts(supabase, {
       clientId: client.id,
       locationId: location.id,
