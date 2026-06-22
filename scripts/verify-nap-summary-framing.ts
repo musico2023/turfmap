@@ -52,6 +52,18 @@ check(
   /add (a )?(phone|address)/i.test(out)
 );
 
+const f2 = {
+  citations: [{ directory: 'google_business', status: 'matched' }],
+  missing: [
+    { directory: 'yelp', priority: 'high' },
+    { directory: 'nextdoor', priority: 'low', occupied_by_sibling: { sibling_label: 'Downtown', sibling_address: '1 A St' } },
+  ],
+  inconsistencies: [],
+};
+const out2 = summarizeNapFindingsForPrompt(f2);
+check('keeps high-priority grouping', /high-priority[^\n]*yelp/i.test(out2));
+check('flags sibling-occupied directory', /nextdoor[^\n]*sibling/i.test(out2));
+
 if (failures > 0) {
   console.error(`\nverify-nap-summary-framing: ${failures} check(s) failed`);
   process.exit(1);

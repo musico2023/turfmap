@@ -12,7 +12,7 @@
  */
 
 import { getServerSupabase } from '@/lib/supabase/server';
-import type { ClientRow, ScanPointRow } from '@/lib/supabase/types';
+import type { ClientRow, NapAuditFindings, ScanPointRow } from '@/lib/supabase/types';
 
 export type SupabaseClientLike = ReturnType<typeof getServerSupabase>;
 
@@ -58,31 +58,46 @@ export async function loadNapFindingsSummary(
  *  directories + real inconsistencies, and teach the model that a blank
  *  phone/address on a FOUND listing is a read limitation, not a gap. */
 export function summarizeNapFindingsForPrompt(findings: unknown): string {
-  const f = (findings ?? {}) as {
-    citations?: Array<{ directory?: string }>;
-    missing?: Array<{ directory?: string }>;
-    inconsistencies?: Array<{
-      directory?: string;
-      field?: string;
-      found?: string;
-      canonical?: string;
-    }>;
-  };
+  const f = (findings ?? {}) as Partial<NapAuditFindings>;
   const found = (f.citations ?? [])
     .map((c) => c?.directory)
     .filter((d): d is string => Boolean(d));
-  const notFound = (f.missing ?? [])
-    .map((m) => m?.directory)
-    .filter((d): d is string => Boolean(d));
+  const missing = f.missing ?? [];
   const inc = (f.inconsistencies ?? []).filter((i) => i?.directory);
+
+  // Label a missing entry: sibling-occupied entries name the sibling.
+  const labelMissing = (m: NapAuditFindings['missing'][number]) =>
+    m.occupied_by_sibling
+      ? `${m.directory} (sibling "${m.occupied_by_sibling.sibling_label ?? 'unknown'}" already listed at ${m.occupied_by_sibling.sibling_address ?? 'unknown address'})`
+      : m.directory;
+
+  const missingHigh = missing.filter((m) => m.priority === 'high');
+  const missingMedium = missing.filter((m) => m.priority === 'medium');
+  const missingLow = missing.filter((m) => m.priority === 'low');
+
+  const missRows =
+    missing.length === 0
+      ? 'none'
+      : [
+          missingHigh.length > 0
+            ? `  high-priority: ${missingHigh.slice(0, 10).map(labelMissing).join(', ')}${missingHigh.length > 10 ? `, …+${missingHigh.length - 10}` : ''}`
+            : null,
+          missingMedium.length > 0
+            ? `  medium-priority: ${missingMedium.slice(0, 10).map(labelMissing).join(', ')}${missingMedium.length > 10 ? `, …+${missingMedium.length - 10}` : ''}`
+            : null,
+          missingLow.length > 0
+            ? `  low-priority (sibling already listed): ${missingLow.slice(0, 10).map(labelMissing).join(', ')}${missingLow.length > 10 ? `, …+${missingLow.length - 10}` : ''}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join('\n');
 
   const lines: string[] = [];
   lines.push(
     `Directory listings FOUND (listing exists, name verified): ${found.length ? found.join(', ') : 'none'}`
   );
-  lines.push(
-    `Not surfaced by the search probe: ${notFound.length ? notFound.join(', ') : 'none'}`
-  );
+  lines.push(`Not surfaced by the search probe:`);
+  lines.push(missRows);
   if (inc.length) {
     lines.push('NAP field conflicts vs the canonical Google Business Profile:');
     for (const i of inc.slice(0, 8)) {
