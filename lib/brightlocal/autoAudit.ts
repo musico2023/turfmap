@@ -97,6 +97,38 @@ const AUDIT_REFRESH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  *  At ~$0.02/audit this is cheap even under daily-cron scanning. */
 export const SCAN_AUDIT_REFRESH_WINDOW_MS = 30 * 60 * 1000;
 
+/** SAB-tolerant profile for the DFS citation audit. Unlike
+ *  locationToBusinessProfile (which requires the full structured NAP for
+ *  BrightLocal's Listings API), the DFS probes match on name + city +
+ *  coordinates, so a service-area business with no street address still
+ *  gets a real audit. street_address/postcode default to '' and phone to
+ *  null when absent — classifyCitation already treats those as
+ *  "found, unverified" rather than a mismatch. Returns null only when the
+ *  true minimum (name + city + coordinates) is missing. */
+export function locationToCitationProfile(
+  businessName: string,
+  location: Pick<
+    ClientLocationRow,
+    'phone' | 'street_address' | 'city' | 'region' | 'postcode'
+    | 'country_code' | 'latitude' | 'longitude'
+  >
+): CitationBusinessProfile | null {
+  if (!businessName || !location.city || location.latitude == null || location.longitude == null) {
+    return null;
+  }
+  return {
+    name: businessName,
+    street_address: location.street_address ?? '',
+    city: location.city,
+    region: location.region ?? '',
+    postcode: location.postcode ?? '',
+    country: location.country_code ?? 'USA',
+    telephone: location.phone ?? null,
+    latitude: Number(location.latitude),
+    longitude: Number(location.longitude),
+  };
+}
+
 /** Compose a BrightLocal BusinessProfile from a client (for the brand
  *  name + industry context) and one of its locations (for NAP fields).
  *  Returns null when any required field is missing — caller skips audit. */
@@ -207,12 +239,16 @@ export async function maybeRunNapAudit(
     }
   }
 
-  // 4. NAP fields complete on the location?
-  const business = locationToBusinessProfile(client.business_name, location);
-  if (!business) {
+  // 4. Pick provider first so we can apply the right profile gate.
+  const provider = pickProvider();
+  const dfsProfile = locationToCitationProfile(client.business_name, location);
+  const blProfile = locationToBusinessProfile(client.business_name, location);
+  if (provider === 'dfs' ? !dfsProfile : !blProfile) {
     return {
       ran: false,
-      reason: 'location missing structured NAP fields',
+      reason: provider === 'dfs'
+        ? 'location missing name/city/coordinates'
+        : 'location missing structured NAP fields',
     };
   }
 
@@ -239,23 +275,14 @@ export async function maybeRunNapAudit(
   // 5. Provider dispatch. Default = DFS (cheap, covers every tier).
   //    Opt in to BrightLocal via env when commercial Data API access is
   //    in place.
-  const provider = pickProvider();
   if (provider === 'dfs') {
-    // Pass the resolved location's lat/lng through to the DFS path —
-    // the new local_pack GBP probe (added in v1.2) centers on
-    // (lat,lng,1km) when available, virtually guaranteeing the
-    // buyer's own GBP ranks at the top of the local pack if one
-    // exists. Without coords the probe falls back to location_name
-    // string, which is fine but less precise.
     return runDfsAudit(
       supabase,
       clientId,
       location.id,
       triggeredBy,
-      business,
+      dfsProfile!,
       effectiveIndustry,
-      location.latitude,
-      location.longitude,
       triggerSource
     );
   }
@@ -264,7 +291,7 @@ export async function maybeRunNapAudit(
     clientId,
     location.id,
     triggeredBy,
-    business,
+    blProfile!,
     effectiveIndustry,
     triggerSource
   );
@@ -274,6 +301,10 @@ export async function maybeRunNapAudit(
  *  inserts a single nap_audits row stamped as 'complete' on success or
  *  'failed' on exception. Never throws to the caller.
  *
+ *  Accepts a CitationBusinessProfile directly — the SAB-tolerant profile
+ *  built by locationToCitationProfile, which already carries lat/lng and
+ *  defaults street_address/postcode to '' when absent.
+ *
  *  Sibling-aware: pulls every other location of the same client and
  *  passes them to the checker so listings whose NAP matches a sibling
  *  get classified as `sibling_match` instead of false-flagged. */
@@ -282,10 +313,8 @@ async function runDfsAudit(
   clientId: string,
   locationId: string,
   triggeredBy: string | null,
-  business: BusinessProfile,
+  canonical: CitationBusinessProfile,
   industry: string | null,
-  latitude: number | null,
-  longitude: number | null,
   triggerSource: NapAuditTriggerSource | null
 ): Promise<{ ran: boolean; auditId?: string; reason?: string }> {
   // Insert pending row first so the row id is stable even if the audit
@@ -311,19 +340,18 @@ async function runDfsAudit(
 
   try {
     const profile = inferDfsProfile(industry);
-    const directories = dfsDirectoriesForProfile(profile, business.country);
+    const directories = dfsDirectoriesForProfile(profile, canonical.country);
 
     // Sibling locations: every other location of the same brand, in the
-    // SiblingLocation shape DFS expects. BL's BusinessProfile has
-    // country?: string (optional); DFS's CitationBusinessProfile
-    // requires it — default to 'USA' for safety since most clients are
-    // US-based, but the helper that built siblingBp would have set it
-    // explicitly when the location has a country_code populated.
+    // SiblingLocation shape DFS expects. Siblings still require full NAP
+    // for accurate sibling-match classification — SAB siblings without a
+    // street address are skipped, which is fine (they just won't suppress
+    // false-positive mismatch flags for this location).
     const allLocations = await listLocations(supabase, clientId);
     const siblings: DfsSiblingLocation[] = [];
     for (const l of allLocations) {
       if (l.id === locationId) continue;
-      const siblingBp = locationToBusinessProfile(business.name, l);
+      const siblingBp = locationToBusinessProfile(canonical.name, l);
       if (!siblingBp) continue;
       siblings.push({
         ...siblingBp,
@@ -331,18 +359,6 @@ async function runDfsAudit(
         label: locationDisplayLabel(l),
       });
     }
-
-    const canonical: CitationBusinessProfile = {
-      name: business.name,
-      street_address: business.street_address,
-      city: business.city,
-      region: business.region,
-      postcode: business.postcode,
-      country: business.country ?? 'USA',
-      telephone: business.telephone,
-      latitude,
-      longitude,
-    };
 
     const result = await runDfsCitationAudit(canonical, directories, siblings);
 
