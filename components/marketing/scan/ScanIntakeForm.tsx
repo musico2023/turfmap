@@ -170,6 +170,11 @@ export function ScanIntakeForm({
   };
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  // Whether the resolved Google listing actually carried a phone
+  // number. Service-area businesses frequently omit it. When false
+  // after a pick, we surface the phone input so the buyer can supply
+  // it (the server still requires phone for the NAP/citation check).
+  const [googleHasPhone, setGoogleHasPhone] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Cloudflare Turnstile token (preview mode only). Stays an empty
@@ -194,6 +199,27 @@ export function ScanIntakeForm({
       selected.street_address === trimmedAddress)
   );
 
+  // Location-lock predicate that gates submit. On the Google
+  // business-autocomplete path a resolved GBP pick IS the lock —
+  // service-area businesses (our ICP) hide their street address on
+  // Google, so Place Details returns no formattedAddress and we
+  // can't gate on address text. The picked listing's place_id +
+  // lat/lng carry the location instead. The Mapbox path still
+  // requires a dropdown pick (addressPicked) since that's the only
+  // way it gets known-good coordinates.
+  const locationLocked = useBusinessAutocomplete
+    ? !!googlePlaceId
+    : addressPicked;
+
+  // When to render the phone input. The Mapbox path always collects it
+  // (Google isn't in the loop). The Google-autocomplete path normally
+  // hides it (Place Details supplies the phone for ~90% of listings),
+  // but reveals it once a GBP is picked that came back without one —
+  // so the buyer fills the gap instead of failing the server's
+  // phone-required check on submit.
+  const showPhoneField =
+    !useBusinessAutocomplete || (!!googlePlaceId && !googleHasPhone);
+
   // Lightweight "form looks filled" predicate — gates when the
   // Turnstile widget is rendered in previewMode. We don't validate
   // exhaustively here (server-side Zod is the source of truth), just
@@ -204,16 +230,16 @@ export function ScanIntakeForm({
   // across Safari/Firefox/Chrome).
   const allFieldsLookFilled =
     businessName.trim().length >= 2 &&
-    addressPicked &&
+    locationLocked &&
     keywords.every((k) => k.trim().length >= 2) &&
     email.includes('@') &&
     email.length >= 5 &&
-    // Phone-filled is only required when we're collecting it
-    // ourselves. On the Google autocomplete path, phone is auto-
-    // resolved (when Google has it) and rides through invisibly —
-    // missing-phone is acceptable since downstream Meta CAPI
-    // accepts the event without it (just lower match quality).
-    (useBusinessAutocomplete || phone.trim().length >= 7);
+    // Phone is required whenever the field is shown — either the
+    // Mapbox path (we always collect it) or a Google pick that came
+    // back without a phone (the conditional ask). When Google
+    // supplied the phone, the field is hidden and the value rides
+    // through invisibly.
+    (!showPhoneField || phone.trim().length >= 7);
 
   // The Turnstile widget renders only when (a) we're in previewMode,
   // (b) the site key is configured, and (c) every other field looks
@@ -243,9 +269,11 @@ export function ScanIntakeForm({
     // buyers can't visually verify which Toronto/Plainfield/etc the
     // Mapbox match locked onto. Forcing a pick keeps lat/lng + the
     // structured components anchored to a known-good Mapbox result.
-    if (!addressPicked) {
+    if (!locationLocked) {
       setError(
-        'Please pick your business address from the dropdown — typing freely won\'t lock the right location for your scan.'
+        useBusinessAutocomplete
+          ? 'Please pick your business from the Google dropdown so we can lock the right location for your scan.'
+          : 'Please pick your business address from the dropdown — typing freely won\'t lock the right location for your scan.'
       );
       // Don't fire InitiateCheckout — this isn't a checkout start yet.
       return;
@@ -512,6 +540,9 @@ export function ScanIntakeForm({
               // rides through to the submit body. Meta CAPI gets
               // the hashed value for free.
               if (place.phone) setPhone(place.phone);
+              // Track whether Google actually returned a phone — drives
+              // whether the conditional phone input renders below.
+              setGoogleHasPhone(!!place.phone);
               // Persist the canonical Google identifiers. placeId
               // is the lookup key for downstream Place Details
               // calls; primaryType is the trade signal the /share
@@ -524,6 +555,13 @@ export function ScanIntakeForm({
               setBusinessName('');
               setAddress('');
               setSelected(null);
+              // Reset the GBP-derived state so the location lock drops
+              // (locationLocked keys off googlePlaceId on this path) and
+              // a stale pick can't ride through after the buyer clears.
+              setPhone('');
+              setGooglePlaceId(null);
+              setGooglePrimaryType(null);
+              setGoogleHasPhone(false);
             }}
           />
         </div>
@@ -633,13 +671,13 @@ export function ScanIntakeForm({
         required
         hint="Where we send your report."
       />
-      {/* Phone — hidden when the Google business autocomplete is on
-       *  (Google's Place Details supplies the phone for free for ~90%
-       *  of local businesses). Falls back to the typed field for the
-       *  Mapbox path where we don't get phone from the autocomplete.
-       *  On both paths the value is forwarded to the submit body for
-       *  Meta CAPI match quality + downstream lead enrichment. */}
-      {!useBusinessAutocomplete && (
+      {/* Phone — hidden on the Google autocomplete path while Google's
+       *  Place Details supplies it (~90% of listings). Reappears when a
+       *  picked GBP came back without a phone (common for service-area
+       *  businesses) so the buyer can fill it in. Always shown on the
+       *  Mapbox path. The value is forwarded to the submit body for the
+       *  NAP/citation check + Meta CAPI match quality. */}
+      {showPhoneField && (
         <Field
           label="Business phone"
           id="biz-phone"
@@ -649,7 +687,11 @@ export function ScanIntakeForm({
           placeholder="(416) 555-1234"
           autoComplete="tel"
           required
-          hint="The number your business publishes on Google + directories. Not your personal cell."
+          hint={
+            useBusinessAutocomplete
+              ? "We couldn't pull a phone from your Google listing — add it so we can check your business across directories."
+              : 'The number your business publishes on Google + directories. Not your personal cell.'
+          }
         />
       )}
 
@@ -697,7 +739,7 @@ export function ScanIntakeForm({
           // rejection reasons. The submit handler still has its
           // own gates as defense-in-depth (Enter key, JS-disabled
           // native submit, etc.).
-          disabled={!addressPicked || !turnstileReady}
+          disabled={!locationLocked || !turnstileReady}
         >
           {previewMode
             ? 'Get my free TurfScore'

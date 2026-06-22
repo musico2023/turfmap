@@ -66,7 +66,13 @@ const Body = z.object({
     .enum(INTAKE_CADENCES as readonly [IntakeCadence, ...IntakeCadence[]])
     .default('monthly'),
   businessName: z.string().min(2).max(200),
-  address: z.string().min(4).max(400),
+  // Optional when a Google Business Profile is picked — service-area
+  // businesses hide their street address on Google, so the GBP
+  // autocomplete resolves no formattedAddress. The pick's lat/lng +
+  // place_id (stamped on the Stripe session metadata below) carry the
+  // location to the fulfill route. The superRefine still requires a
+  // geocodable address on the no-GBP path.
+  address: z.string().max(400).optional(),
   /** Primary keyword. Always present + always the first element of
    *  the keywords[] array. Kept as a top-level field for back-compat
    *  with any caller that still sends the singular form. */
@@ -126,6 +132,18 @@ const Body = z.object({
    *  Google didn't have their listing). */
   google_place_id: z.string().max(300).optional(),
   google_primary_type: z.string().max(100).optional(),
+}).superRefine((data, ctx) => {
+  // GBP-picked intakes don't require an address (see the `address`
+  // field note above). Without a place_id, require a geocodable
+  // address so the fulfill route can resolve coordinates.
+  if (!data.google_place_id && (data.address ?? '').trim().length < 4) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['address'],
+      message:
+        'Address is required unless a Google Business Profile is selected.',
+    });
+  }
 });
 
 // Coupons that resolve to a $0 charge after the discount applies.
@@ -239,7 +257,6 @@ export async function POST(req: Request) {
     tier: body.tier,
     source: 'scan_intake',
     business_name: body.businessName.trim(),
-    address: body.address.trim(),
     // `keyword` (singular) is the primary; we also stamp
     // keyword_1/2/3 so /lib/stripe/session.ts can rebuild the full
     // keywords[] array on the success page without re-querying
@@ -248,6 +265,12 @@ export async function POST(req: Request) {
     intake_email: body.email.trim(),
     phone: body.phone.trim(),
   };
+  // Stamp address only when present — a GBP-picked service-area
+  // business has no street address, in which case the place_id +
+  // lat/lng below carry the location and fulfill skips geocoding.
+  if (body.address && body.address.trim()) {
+    metadata.address = body.address.trim();
+  }
   // Stamp cadence on subscription tiers so /order/success + the
   // fulfill pipeline + the Stripe dashboard can tell monthly from
   // annual without re-querying the Price object. Mirrors the same

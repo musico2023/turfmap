@@ -38,7 +38,14 @@ export const maxDuration = 300;
 
 const Body = z.object({
   businessName: z.string().min(2).max(200),
-  address: z.string().min(4).max(400),
+  // Address is optional when a Google Business Profile is picked.
+  // Service-area businesses (plumbers, HVAC, roofers — our ICP) hide
+  // their street address on their GBP, so Place Details returns no
+  // formattedAddress and the buyer can't supply one. The picked
+  // listing's lat/lng seed the 81-point grid instead. The superRefine
+  // below still requires a geocodable address on the no-GBP path
+  // (homepage /score buyers who typed without picking a listing).
+  address: z.string().max(400).optional(),
   keyword: z.string().min(2).max(160),
   email: z.string().email().max(320),
   phone: z.string().min(7).max(40),
@@ -120,6 +127,19 @@ const Body = z.object({
   visibility_self_rating: z
     .enum(['top', 'mixed', 'unknown', 'invisible'])
     .optional(),
+}).superRefine((data, ctx) => {
+  // GBP-picked intakes don't require an address (see the `address`
+  // field note above) — the place_id + coordinates that ride along
+  // with the pick are enough to seed the scan. Without a place_id we
+  // fall back to requiring a geocodable address string.
+  if (!data.google_place_id && (data.address ?? '').trim().length < 4) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['address'],
+      message:
+        'Address is required unless a Google Business Profile is selected.',
+    });
+  }
 });
 
 const RATE_LIMIT_PER_EMAIL_PER_DAY = 1;
@@ -253,7 +273,7 @@ export async function POST(req: Request) {
   // ─── Create preview client + run scan ──────────────────────────────
   const result = await createPreviewClient(supabase, {
     businessName: body.businessName,
-    address: body.address,
+    address: body.address ?? '',
     keyword: body.keyword,
     email,
     phone: body.phone,

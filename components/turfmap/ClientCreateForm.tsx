@@ -608,6 +608,25 @@ export function ClientCreateForm() {
           />
         )}
 
+        {/* Conditional phone — Google omits it on many service-area
+         *  listings. When the pick came back without one, ask for it
+         *  here so the BrightLocal NAP audit has a number to check
+         *  (GBP mode otherwise has no phone input). */}
+        {gbpMode === 'gbp' && gbpResolved && !gbpResolved.phone && (
+          <Field
+            label="Phone"
+            help="Google didn't list a phone for this business — add it for the NAP audit."
+          >
+            <input
+              type="tel"
+              value={form.phone}
+              onChange={(e) => update('phone', e.target.value)}
+              placeholder="+1-416-555-0100"
+              className={inputClass}
+            />
+          </Field>
+        )}
+
         {gbpMode === 'manual' && (
           <>
             <Field label="Business name" required>
@@ -1022,7 +1041,15 @@ function GbpMatchedCard({
   place: ResolvedPlace;
   onClear: () => void;
 }) {
-  const address = place.formattedAddress.trim();
+  // Service-area businesses hide their street address on Google, so
+  // formattedAddress comes back empty. Fall back to the city/region,
+  // then a plain-language note so the card never shows a blank line.
+  const address =
+    place.formattedAddress.trim() ||
+    [place.addressComponents?.city, place.addressComponents?.region]
+      .filter(Boolean)
+      .join(', ') ||
+    'Service-area business — no public address on Google';
   return (
     <div
       className="border rounded-md p-4"

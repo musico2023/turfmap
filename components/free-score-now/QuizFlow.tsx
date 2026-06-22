@@ -49,6 +49,7 @@ import {
   MapPin,
   Megaphone,
   PaintBucket,
+  Phone,
   Search,
   Sparkles,
   Star,
@@ -218,6 +219,11 @@ export function QuizFlow({
   const [keyword, setKeyword] = useState('');
   const [place, setPlace] = useState<ResolvedPlace | null>(null);
   const [email, setEmail] = useState('');
+  // Buyer-typed phone — only collected when the picked Google listing
+  // came back without one (service-area businesses often omit it). The
+  // server requires a phone for the NAP/citation check, so we ask
+  // rather than submit an empty value.
+  const [phone, setPhone] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
 
   // ─── Attribution (UTMs + Meta cookies) ──────────────────────────
@@ -314,6 +320,13 @@ export function QuizFlow({
       );
       return;
     }
+    // When Google had no phone for the listing we asked the buyer for
+    // one on the contact step — require it here too (the server's
+    // phone-required check would otherwise 400 the submit).
+    if (!place.phone && phone.trim().length < 7) {
+      setSubmitError('Add your business phone so we can check your listing.');
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     goTo('loading');
@@ -343,7 +356,7 @@ export function QuizFlow({
         businessName: place.businessName,
         keyword: keyword.trim(),
         email: email.trim(),
-        phone: place.phone || '',
+        phone: place.phone || phone.trim(),
         address: place.formattedAddress,
         latitude: place.latitude,
         longitude: place.longitude,
@@ -571,6 +584,8 @@ export function QuizFlow({
             <ContactStep
               email={email}
               onEmailChange={setEmail}
+              phone={phone}
+              onPhoneChange={setPhone}
               onTurnstileToken={setTurnstileToken}
               onSubmit={submitPreview}
               submitting={submitting}
@@ -927,7 +942,7 @@ function GbpStep({
       <StepHeader
         eyebrow="QUESTION 4 OF 5"
         title="Pick your business on Google"
-        subtitle="So we lock the right location — city, address, GBP. Pick from the dropdown."
+        subtitle="So we lock the right location and pull your Google listing. Pick from the dropdown — no address needed."
       />
       <GoogleBusinessAutocomplete
         placeholder="Type your business name…"
@@ -947,7 +962,15 @@ function GbpStep({
                 {place.businessName}
               </div>
               <div className="text-[12px] text-zinc-400 mt-1 leading-snug">
-                {place.formattedAddress}
+                {/* Service-area businesses hide their street address on
+                 *  Google, so formattedAddress comes back empty. Fall
+                 *  back to the city/region, then a plain-language note
+                 *  so the card never renders a blank line. */}
+                {place.formattedAddress?.trim() ||
+                  [place.addressComponents?.city, place.addressComponents?.region]
+                    .filter(Boolean)
+                    .join(', ') ||
+                  'Service-area business — no public address on Google'}
               </div>
             </div>
           </div>
@@ -964,6 +987,8 @@ function GbpStep({
 function ContactStep({
   email,
   onEmailChange,
+  phone,
+  onPhoneChange,
   onTurnstileToken,
   onSubmit,
   submitting,
@@ -972,13 +997,19 @@ function ContactStep({
 }: {
   email: string;
   onEmailChange: (v: string) => void;
+  phone: string;
+  onPhoneChange: (v: string) => void;
   onTurnstileToken: (token: string) => void;
   onSubmit: () => void;
   submitting: boolean;
   submitError: string | null;
   place: ResolvedPlace | null;
 }) {
-  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  // Google omits the phone on many service-area listings. When it did,
+  // collect it here so the scan's NAP check has a number to verify.
+  const needsPhone = !place?.phone;
+  const valid = emailValid && (!needsPhone || phone.trim().length >= 7);
 
   return (
     <StepShell>
@@ -1021,6 +1052,46 @@ function ContactStep({
           "
         />
       </div>
+
+      {/* Conditional phone — only when the picked Google listing had no
+       *  phone. The scan's NAP/citation check needs a number to verify,
+       *  and the server requires it, so we ask rather than submit empty. */}
+      {needsPhone && (
+        <div className="mt-4">
+          <label
+            htmlFor="quizflow-phone"
+            className="block text-[13px] font-semibold text-zinc-300 mb-1.5"
+          >
+            Business phone
+          </label>
+          <div className="relative">
+            <Phone
+              size={16}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600"
+            />
+            <input
+              id="quizflow-phone"
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => onPhoneChange(e.target.value)}
+              placeholder="(416) 555-1234"
+              autoComplete="tel"
+              className="
+                w-full bg-[#0d0d0d] border-2 border-zinc-800 rounded-xl
+                pl-10 pr-4 py-3.5 text-[16px] text-zinc-100 placeholder:text-zinc-600
+                focus:outline-none focus:border-[color:var(--color-lime,#c5ff3a)]
+                focus:shadow-[0_0_0_4px_rgba(197,255,58,0.12)]
+                transition-[border-color,box-shadow] duration-150
+              "
+            />
+          </div>
+          <p className="mt-1.5 text-[11.5px] text-zinc-500 leading-snug">
+            Google didn&rsquo;t list a phone for your business — add it so we
+            can check your listing across directories.
+          </p>
+        </div>
+      )}
 
       {/* Cloudflare Turnstile site key — read from the public env
        *  var that's already wired into the rest of the funnel
