@@ -608,6 +608,25 @@ export function ClientCreateForm() {
           />
         )}
 
+        {/* Conditional phone — Google omits it on many service-area
+         *  listings. When the pick came back without one, ask for it
+         *  here so the BrightLocal NAP audit has a number to check
+         *  (GBP mode otherwise has no phone input). */}
+        {gbpMode === 'gbp' && gbpResolved && !gbpResolved.phone && (
+          <Field
+            label="Phone"
+            help="Google didn't list a phone for this business — add it for the NAP audit."
+          >
+            <input
+              type="tel"
+              value={form.phone}
+              onChange={(e) => update('phone', e.target.value)}
+              placeholder="+1-416-555-0100"
+              className={inputClass}
+            />
+          </Field>
+        )}
+
         {gbpMode === 'manual' && (
           <>
             <Field label="Business name" required>
