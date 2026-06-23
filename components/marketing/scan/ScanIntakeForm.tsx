@@ -144,6 +144,15 @@ export function ScanIntakeForm({
   // entirely for picked addresses — that's the address path that
   // produced the Hendricks / Meadowview wrong-city matches before.
   const [selected, setSelected] = useState<AddressFields | null>(null);
+  // Manual-entry escape hatch for the Google-autocomplete path. Google's
+  // Places Autocomplete does NOT surface address-hidden service-area
+  // businesses (confirmed: a Reno SAB with a real GBP returns zero
+  // predictions, by name/address/phone, even location-biased). Without
+  // this, a SAB prospect hits a dead end on the lander. Toggling this on
+  // swaps the GBP picker for the same manual name + address + phone path
+  // the non-autocomplete surfaces use — the address geocodes to coords,
+  // which is all the scan needs.
+  const [manualEntry, setManualEntry] = useState(false);
   // Strategy + Pulse+ = 3 keywords (comparative scan + 3-keyword
   // subscription); scan / audit / pulse = 1. Preview mode always
   // collects 1 — the free score targets one primary keyword, the
@@ -213,7 +222,7 @@ export function ScanIntakeForm({
     // resolved (when Google has it) and rides through invisibly —
     // missing-phone is acceptable since downstream Meta CAPI
     // accepts the event without it (just lower match quality).
-    (useBusinessAutocomplete || phone.trim().length >= 7);
+    ((useBusinessAutocomplete && !manualEntry) || phone.trim().length >= 7);
 
   // The Turnstile widget renders only when (a) we're in previewMode,
   // (b) the site key is configured, and (c) every other field looks
@@ -472,7 +481,7 @@ export function ScanIntakeForm({
   return (
     <>
     <form onSubmit={onSubmit} className="space-y-4">
-      {useBusinessAutocomplete ? (
+      {useBusinessAutocomplete && !manualEntry ? (
         // Single-field Google Places autocomplete — replaces the
         // separate Business name + Mapbox address pair. Picking
         // from the dropdown auto-fills businessName, address,
@@ -526,6 +535,16 @@ export function ScanIntakeForm({
               setSelected(null);
             }}
           />
+          <button
+            type="button"
+            onClick={() => {
+              setManualEntry(true);
+              setSelected(null);
+            }}
+            className="mt-2 text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            Can&apos;t find your business on Google? Enter it manually →
+          </button>
         </div>
       ) : (
         <>
@@ -564,6 +583,15 @@ export function ScanIntakeForm({
               setError(null);
             }}
           />
+          {useBusinessAutocomplete && (
+            <button
+              type="button"
+              onClick={() => setManualEntry(false)}
+              className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              ← Back to Google search
+            </button>
+          )}
         </>
       )}
       {keywordSlotCount === 1 ? (
@@ -639,7 +667,7 @@ export function ScanIntakeForm({
        *  Mapbox path where we don't get phone from the autocomplete.
        *  On both paths the value is forwarded to the submit body for
        *  Meta CAPI match quality + downstream lead enrichment. */}
-      {!useBusinessAutocomplete && (
+      {(!useBusinessAutocomplete || manualEntry) && (
         <Field
           label="Business phone"
           id="biz-phone"
