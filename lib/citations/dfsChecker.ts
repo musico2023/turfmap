@@ -112,6 +112,16 @@ type DirectoryProbeResult = {
   /** Captured if the DFS call errored. Doesn't fail the audit; that
    *  directory just classifies as 'unverified'. */
   error: string | null;
+  /** Diagnostic snapshot of what DFS returned (site_serp probe only).
+   *  Lets a "missing" be diagnosed without guessing: total_items=0 → DFS
+   *  returned nothing; on_domain=[] with total_items>0 → the directory's
+   *  profile wasn't in DFS's site: results (recall); on_domain populated →
+   *  the profile WAS returned but rejected by the URL/name filters
+   *  (matching). Persisted into per_directory_summary for missing rows. */
+  debug?: {
+    total_items: number;
+    on_domain: Array<{ type?: string; url?: string; title?: string }>;
+  } | null;
 };
 
 function getDfsAuthHeader(): string {
@@ -373,6 +383,24 @@ async function probeDirectoryViaSiteSerp(
     return true;
   });
 
+  // Diagnostic snapshot — only assembled when there's no match (the case we
+  // need to debug). Captures every on-domain result DFS returned so a
+  // "missing" can be classified as recall (profile not returned) vs
+  // matching (returned but filtered out).
+  const debug = match
+    ? null
+    : {
+        total_items: items.length,
+        on_domain: items
+          .filter((it) => it.url && it.url.toLowerCase().includes(dirRoot))
+          .slice(0, 6)
+          .map((it) => ({
+            type: it.type,
+            url: it.url,
+            title: it.title?.slice(0, 120),
+          })),
+      };
+
   return {
     directory,
     url: match?.url ?? null,
@@ -380,6 +408,7 @@ async function probeDirectoryViaSiteSerp(
     found_snippet: match?.description ?? null,
     cost_dollars: task.cost ?? 0,
     error: null,
+    debug,
   };
 }
 
@@ -556,6 +585,11 @@ export type DfsCitationAuditResult = {
     status: 'matched' | 'mismatch' | 'unverified' | 'missing';
     url: string | null;
     error: string | null;
+    /** Site_serp diagnostic for missing rows (see DirectoryProbeResult.debug). */
+    debug?: {
+      total_items: number;
+      on_domain: Array<{ type?: string; url?: string; title?: string }>;
+    } | null;
   }>;
 };
 
@@ -677,6 +711,7 @@ export async function runDfsCitationAudit(
         status: 'missing',
         url: null,
         error: probe.error,
+        debug: probe.debug ?? null,
       });
       continue;
     }
@@ -700,6 +735,7 @@ export async function runDfsCitationAudit(
         status: 'missing',
         url: null,
         error: `result name "${(probe.found_name ?? '').slice(0, 40)}" doesn't match canonical`,
+        debug: probe.debug ?? null,
       });
       continue;
     }
