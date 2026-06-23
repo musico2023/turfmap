@@ -284,16 +284,23 @@ async function probeDirectoryViaSiteSerp(
     keyword: buildSerpQuery(business, directory),
     language_code: 'en',
     device: 'desktop',
-    // Cap depth at 10 results — citation listings rank well above
-    // that floor on direct site: filters; no value in fetching 100.
-    depth: 10,
+    // Depth 30 (not 10): a directory's own category/index pages can rank
+    // ahead of the specific profile on a site: query, pushing the real
+    // listing past the top 10. Anew Bathtub Repair's BBB + Angi profiles
+    // exist and are indexed but came back "missing" at depth 10 — they sit
+    // below the directory's own pages. One DFS SERP call covers up to 100
+    // results regardless of depth, so this is free recall.
+    depth: 30,
     tag: `citation:${directory.id}`,
   };
-  // Coord-first geo (see applyDfsGeo). A location_name built from a
-  // 2-letter region code ("Calgary,AB,Canada") is an invalid DFS location
-  // and returned zero results — which made EVERY site_serp probe falsely
-  // report "missing" for ~half the book (Google-Places-enriched clients).
-  applyDfsGeo(body, business);
+  // City-level location_name (NOT a 1km coordinate). Coordinates are right
+  // for the GBP local_pack probe (center on the business pin), but for an
+  // organic site: query a tight 1km radius over-localizes and drops lower-
+  // ranked directory profiles out of recall. The 2-letter-region bug that
+  // originally forced coords here is now fixed at the source by expandRegion
+  // (lib/geo/regionNames) inside dfsLocationFromBusiness, so location_name is
+  // valid for every client again.
+  body.location_name = dfsLocationFromBusiness(business);
 
   let task: DfsTask | null = null;
   let lastError: string | null = null;
