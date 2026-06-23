@@ -37,6 +37,7 @@
 import type { NapAuditFindings, NapAuditCitation, NapAuditInconsistency, NapAuditMissing } from '@/lib/supabase/types';
 import { classifyCitation, nameMatches, addressMatches, phoneMatches, type CitationStatus } from './napCompare';
 import type { DfsDirectory } from './directories';
+import { expandRegion } from '@/lib/geo/regionNames';
 
 const DFS_BASE_URL = 'https://api.dataforseo.com';
 const DFS_LIVE_ADVANCED = '/v3/serp/google/organic/live/advanced';
@@ -212,37 +213,13 @@ function buildSerpQuery(
   return `site:${directory.domain} ${business.name} ${business.city}`;
 }
 
-/** 2-letter province/state code → full subdivision name. DFS's
- *  `location_name` database is keyed on the spelled-out name
- *  ("Calgary,Alberta,Canada"), NOT the postal code ("Calgary,AB,Canada"),
- *  and an unrecognized location_name returns zero results — so a code here
- *  silently breaks every site_serp probe. Google-Places-enriched clients
- *  carry 2-letter codes, which is the majority of the book. CA covers
- *  provinces/territories; US covers all 50 states + DC. */
-const REGION_CODE_TO_NAME: Record<string, string> = {
-  // Canada
-  AB: 'Alberta', BC: 'British Columbia', MB: 'Manitoba', NB: 'New Brunswick',
-  NL: 'Newfoundland and Labrador', NS: 'Nova Scotia', NT: 'Northwest Territories',
-  NU: 'Nunavut', ON: 'Ontario', PE: 'Prince Edward Island', QC: 'Quebec',
-  SK: 'Saskatchewan', YT: 'Yukon',
-  // United States + DC
-  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
-  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
-  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
-  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
-  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi',
-  MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire',
-  NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina',
-  ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania',
-  RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee',
-  TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington',
-  WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming', DC: 'District of Columbia',
-};
-
 /** Map BusinessProfile.country to a DFS location_name string. DFS uses
  *  a "City,Region,Country" format with the country name spelled out, and
  *  the region spelled out too — 2-letter codes are expanded via
- *  REGION_CODE_TO_NAME (full names pass through unchanged).
+ *  expandRegion (lib/geo/regionNames; full names pass through unchanged).
+ *  DFS's location database returns zero results for an unrecognized
+ *  location ("Calgary,AB,Canada"), so the expansion is load-bearing for
+ *  the ~half of clients carrying Google-Places 2-letter region codes.
  *  Exported for the geo guard (scripts/verify-dfs-citation-geo.ts). */
 export function dfsLocationFromBusiness(business: CitationBusinessProfile): string {
   // ISO-3 country code → DFS expected name.
@@ -253,8 +230,7 @@ export function dfsLocationFromBusiness(business: CitationBusinessProfile): stri
     AUS: 'Australia',
   };
   const countryName = countryMap[business.country] ?? 'United States';
-  const rawRegion = (business.region ?? '').trim();
-  const region = REGION_CODE_TO_NAME[rawRegion.toUpperCase()] ?? rawRegion;
+  const region = expandRegion(business.region);
   return `${business.city},${region},${countryName}`;
 }
 
