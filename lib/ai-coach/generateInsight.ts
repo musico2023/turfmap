@@ -357,36 +357,33 @@ export async function generateInsight(
           .eq('location_id', scanLocation.id)
           .returns<Array<{ id: string; keyword: string; is_primary: boolean }>>();
         if (!kws || kws.length <= 1) return null;
-        const rows: Array<{
-          keyword: string;
-          isPrimary: boolean;
-          turfScore: number | null;
-          turfReach: number | null;
-          turfRank: number | null;
-        }> = [];
-        for (const kw of kws) {
-          const { data: latest } = await supabase
-            .from('scans')
-            .select('turf_score, turf_reach, turf_rank')
-            .eq('location_id', scanLocation.id)
-            .eq('keyword_id', kw.id)
-            .eq('status', 'complete')
-            .order('completed_at', { ascending: false })
-            .limit(1)
-            .maybeSingle<{
-              turf_score: number | null;
-              turf_reach: number | null;
-              turf_rank: number | null;
-            }>();
-          rows.push({
-            keyword: kw.keyword,
-            isPrimary: kw.is_primary,
-            turfScore: latest?.turf_score != null ? Number(latest.turf_score) : null,
-            turfReach: latest?.turf_reach ?? null,
-            turfRank: latest?.turf_rank != null ? Number(latest.turf_rank) : null,
-          });
-        }
-        return rows;
+        // Parallel + capped: one latest-scan lookup per keyword. Keywords-
+        // per-location is small (tier-capped at 3), but cap defensively and
+        // fan out rather than awaiting sequentially.
+        return Promise.all(
+          kws.slice(0, 8).map(async (kw) => {
+            const { data: latest } = await supabase
+              .from('scans')
+              .select('turf_score, turf_reach, turf_rank')
+              .eq('location_id', scanLocation.id)
+              .eq('keyword_id', kw.id)
+              .eq('status', 'complete')
+              .order('completed_at', { ascending: false })
+              .limit(1)
+              .maybeSingle<{
+                turf_score: number | null;
+                turf_reach: number | null;
+                turf_rank: number | null;
+              }>();
+            return {
+              keyword: kw.keyword,
+              isPrimary: kw.is_primary,
+              turfScore: latest?.turf_score != null ? Number(latest.turf_score) : null,
+              turfReach: latest?.turf_reach ?? null,
+              turfRank: latest?.turf_rank != null ? Number(latest.turf_rank) : null,
+            };
+          })
+        );
       })()
     : null;
 
