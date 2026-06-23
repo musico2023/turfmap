@@ -329,6 +329,25 @@ export function buildTurfCoachUserPrompt(input: {
    *  data instead of generic recommendations. Null when no place_id
    *  was matched at onboarding or no signals row exists yet. */
   gbpSignals?: GbpSignalsContext | null;
+  /** Review velocity from GBP review-count snapshots over time. The
+   *  highest-leverage prominence lever — the coach needs the RATE of new
+   *  reviews, not just the total. null when too few snapshots. */
+  reviewVelocity?: {
+    latestCount: number;
+    added: number;
+    spanDays: number;
+    perMonth: number;
+  } | null;
+  /** Every tracked keyword for this location + its latest score, so the
+   *  coach can recommend keyword strategy (drop dead queries, focus
+   *  winnable ones). null/single-entry for single-keyword clients. */
+  crossKeyword?: Array<{
+    keyword: string;
+    isPrimary: boolean;
+    turfScore: number | null;
+    turfReach: number | null;
+    turfRank: number | null;
+  }> | null;
 }): string {
   const center = Math.floor(input.rankGrid.length / 2);
   const gridText = input.rankGrid
@@ -380,8 +399,10 @@ ${gridText}
 
 Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference:
 ${compRows}
-${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderGbpSignalsSection(input.gbpSignals)}${renderNapAuditSection(input.napAudit)}
-Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, photos count, hours, and business status verbatim from that section. Do NOT state the current GBP category or recommend a specific category change — the Places type taxonomy is not the owner\'s GBP categories.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}`;
+${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderGbpSignalsSection(input.gbpSignals)}${renderReviewVelocitySection(input.reviewVelocity)}${renderCrossKeywordSection(input.crossKeyword, input.keyword)}${renderNapAuditSection(input.napAudit)}
+Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, photos count, hours, and business status verbatim from that section. Do NOT state the current GBP category or recommend a specific category change — the Places type taxonomy is not the owner\'s GBP categories.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}${input.reviewVelocity ? ' Review velocity is present — weight review-generation advice by the actual pace: a STALLED or slow pace is a top-priority lever, a strong pace means reviews are NOT the gap (don\'t lead with them).' : ''}${(input.crossKeyword?.length ?? 0) > 1 ? ' Cross-keyword data is present — if a tracked keyword sits at score 0 / reach 0%, call it out as the wrong battle (recommend dropping or replacing it) and concentrate effort on the winnable keyword(s).' : ''}
+
+LEVER PRIORITIZATION (apply before writing actions): rank the levers by the business's actual bottleneck, not by what's easiest to name. High TurfRank + low TurfReach = a REACH problem (push review velocity, proximity/neighborhood content, satellite coverage) — do NOT lead with citation cleanup. A thin/inconsistent citation footprint = a prominence FOUNDATION gap (citations matter). A decent footprint that's already winning where it appears = citations are LOW leverage; don't recommend them just because the audit lists a few missing directories.`;
 }
 
 /** Score history block — last 7 distinct scan-day TurfScores. Renders
@@ -483,6 +504,64 @@ function renderGbpSignalsSection(
 Snapshot fetched ${signals.fetchedAt}. These values are grounded; you may cite them verbatim.
 ${lines.join('\n')}
 `;
+}
+
+/** Review-velocity block — the rate of new reviews over the snapshot
+ *  window. Renders empty when velocity couldn't be derived. */
+function renderReviewVelocitySection(
+  v:
+    | { latestCount: number; added: number; spanDays: number; perMonth: number }
+    | null
+    | undefined
+): string {
+  if (!v) return '';
+  const pace =
+    v.perMonth <= 0
+      ? 'STALLED — no net new reviews in this window'
+      : v.perMonth < 2
+        ? 'slow'
+        : v.perMonth < 5
+          ? 'moderate'
+          : 'strong';
+  return `
+
+## Review velocity (audited business)
+- ${v.added >= 0 ? '+' : ''}${v.added} reviews over the last ${v.spanDays} days (~${v.perMonth}/month) · current total ${v.latestCount} · pace: ${pace}.
+- Review velocity is a primary prominence lever for TurfReach. A stalled/slow pace is a concrete high-leverage gap; a strong pace means reviews are NOT the bottleneck and you should look elsewhere.`;
+}
+
+/** Cross-keyword block — every tracked keyword for this location + its
+ *  latest score, so the coach can recommend keyword strategy. Renders
+ *  empty for single-keyword clients. */
+function renderCrossKeywordSection(
+  rows:
+    | Array<{
+        keyword: string;
+        isPrimary: boolean;
+        turfScore: number | null;
+        turfReach: number | null;
+        turfRank: number | null;
+      }>
+    | null
+    | undefined,
+  activeKeyword: string
+): string {
+  if (!rows || rows.length <= 1) return '';
+  const lines = rows
+    .map((r) => {
+      const active = r.keyword === activeKeyword ? ' (THIS scan)' : '';
+      const score =
+        r.turfScore == null
+          ? 'no completed scan yet'
+          : `score ${r.turfScore}, reach ${r.turfReach ?? '?'}%, rank ${r.turfRank != null ? r.turfRank.toFixed(1) : 'n/a'}`;
+      return `  - "${r.keyword}"${r.isPrimary ? ' [primary]' : ''}${active}: ${score}`;
+    })
+    .join('\n');
+  return `
+
+## Cross-keyword performance (this location's tracked keywords)
+${lines}
+- Use this for keyword strategy: a keyword stuck at score 0 / reach 0% is the wrong battle (recommend dropping or replacing it), not a fixable gap. Concentrate effort on the winnable keyword(s) rather than spreading thin. Never recommend chasing a query the business has no realistic path to rank for.`;
 }
 
 /** Compact rendering of NAP findings for the user prompt. Caps each list

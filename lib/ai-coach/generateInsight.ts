@@ -312,6 +312,84 @@ export async function generateInsight(
       })()
     : null;
 
+  // Review velocity — the RATE of new reviews, derived from gbp_signals
+  // count snapshots over time. The single highest-leverage prominence lever;
+  // a static total tells the coach nothing about whether the review profile
+  // is growing or stale. null when <2 snapshots or too short a span.
+  const reviewVelocity = scanLocation
+    ? await (async () => {
+        const { data } = await supabase
+          .from('gbp_signals')
+          .select('user_ratings_total, fetched_at')
+          .eq('client_location_id', scanLocation.id)
+          .not('user_ratings_total', 'is', null)
+          .order('fetched_at', { ascending: false })
+          .limit(60)
+          .returns<Array<{ user_ratings_total: number; fetched_at: string }>>();
+        if (!data || data.length < 2) return null;
+        const latest = data[0];
+        const oldest = data[data.length - 1];
+        const spanDays = Math.round(
+          (new Date(latest.fetched_at).getTime() -
+            new Date(oldest.fetched_at).getTime()) /
+            86_400_000
+        );
+        if (spanDays < 14) return null;
+        const added = Number(latest.user_ratings_total) - Number(oldest.user_ratings_total);
+        return {
+          latestCount: Number(latest.user_ratings_total),
+          added,
+          spanDays,
+          perMonth: Math.round((added / spanDays) * 30 * 10) / 10,
+        };
+      })()
+    : null;
+
+  // Cross-keyword performance — every tracked keyword for this location with
+  // its latest score, so the coach can recommend keyword strategy (kill dead
+  // queries, focus winnable ones) instead of being blind to sibling keywords.
+  const crossKeyword = scanLocation
+    ? await (async () => {
+        const { data: kws } = await supabase
+          .from('tracked_keywords')
+          .select('id, keyword, is_primary')
+          .eq('client_id', client.id)
+          .eq('location_id', scanLocation.id)
+          .returns<Array<{ id: string; keyword: string; is_primary: boolean }>>();
+        if (!kws || kws.length <= 1) return null;
+        const rows: Array<{
+          keyword: string;
+          isPrimary: boolean;
+          turfScore: number | null;
+          turfReach: number | null;
+          turfRank: number | null;
+        }> = [];
+        for (const kw of kws) {
+          const { data: latest } = await supabase
+            .from('scans')
+            .select('turf_score, turf_reach, turf_rank')
+            .eq('location_id', scanLocation.id)
+            .eq('keyword_id', kw.id)
+            .eq('status', 'complete')
+            .order('completed_at', { ascending: false })
+            .limit(1)
+            .maybeSingle<{
+              turf_score: number | null;
+              turf_reach: number | null;
+              turf_rank: number | null;
+            }>();
+          rows.push({
+            keyword: kw.keyword,
+            isPrimary: kw.is_primary,
+            turfScore: latest?.turf_score != null ? Number(latest.turf_score) : null,
+            turfReach: latest?.turf_reach ?? null,
+            turfRank: latest?.turf_rank != null ? Number(latest.turf_rank) : null,
+          });
+        }
+        return rows;
+      })()
+    : null;
+
   const userPrompt = buildTurfCoachUserPrompt({
     businessName: businessLabel,
     industry: client.industry,
@@ -330,6 +408,8 @@ export async function generateInsight(
     competitors: competitorList,
     napAudit,
     gbpSignals,
+    reviewVelocity,
+    crossKeyword,
   });
 
   // 3. Call Sonnet with structured output + prompt caching.
