@@ -171,15 +171,18 @@ export async function generateInsight(
     client.business_name.split(/\s+/)[0] ?? '',
     'i'
   );
-  type Stats = { ranks: number[] };
+  type Stats = { ranks: number[]; rating: number | null; reviews: number | null };
   const compStats = new Map<string, Stats>();
   for (const p of points) {
     const list = (p.competitors ?? []) as Array<{
       name: string | null;
       rank_group: number | null;
       rank_absolute: number | null;
+      rating?: number | null;
+      reviews?: number | null;
     }>;
     const cellBest = new Map<string, number>();
+    const cellSignals = new Map<string, { rating: number | null; reviews: number | null }>();
     for (const c of list) {
       if (!c?.name) continue;
       if (ownNamePattern.test(c.name)) continue;
@@ -187,10 +190,20 @@ export async function generateInsight(
       if (rank === null || rank > 3) continue;
       const prev = cellBest.get(c.name);
       if (prev === undefined || rank < prev) cellBest.set(c.name, rank);
+      cellSignals.set(c.name, { rating: c.rating ?? null, reviews: c.reviews ?? null });
     }
     for (const [name, rank] of cellBest.entries()) {
-      const s = compStats.get(name) ?? { ranks: [] };
+      const s = compStats.get(name) ?? { ranks: [], rating: null, reviews: null };
       s.ranks.push(rank);
+      // A competitor's rating/reviews is the same listing across cells;
+      // keep the highest review count seen (best-quality snapshot).
+      const sig = cellSignals.get(name);
+      if (sig) {
+        if (sig.rating != null) s.rating = sig.rating;
+        if (sig.reviews != null && (s.reviews == null || sig.reviews > s.reviews)) {
+          s.reviews = sig.reviews;
+        }
+      }
       compStats.set(name, s);
     }
   }
@@ -202,6 +215,8 @@ export async function generateInsight(
       avgRank: s.ranks.reduce((a, b) => a + b, 0) / s.ranks.length,
       bestRank: Math.min(...s.ranks),
       sharePct: Math.round((s.ranks.length / totalPointsForShare) * 100),
+      rating: s.rating,
+      reviews: s.reviews,
     }))
     .filter((c) => c.sharePct >= MIN_SHARE_PCT)
     .sort((a, b) => b.appearances - a.appearances || a.avgRank - b.avgRank)

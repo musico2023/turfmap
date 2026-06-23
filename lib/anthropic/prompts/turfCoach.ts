@@ -297,12 +297,17 @@ export function buildTurfCoachUserPrompt(input: {
   failedPoints: number;
   /** 9×9 array of nullable client ranks, indexed [y][x] (y=0 north). */
   rankGrid: Array<Array<number | null>>;
-  /** Up to ~10 competitor brands actually observed, with stats. */
+  /** Up to ~10 competitor brands actually observed, with stats. rating +
+   *  reviews are the competitor's GBP prominence signals (from the local
+   *  pack), present for scans run after that capture shipped; null on
+   *  older scans. */
   competitors: Array<{
     name: string;
     appearances: number;
     avgRank: number;
     bestRank: number;
+    rating?: number | null;
+    reviews?: number | null;
   }>;
   /** Optional findings from the most recent complete NAP audit. When
    *  present, the prompt renders a "## NAP audit" section so Claude
@@ -368,7 +373,7 @@ export function buildTurfCoachUserPrompt(input: {
       : input.competitors
           .map(
             (c) =>
-              `  - ${c.name}: ${c.appearances} cells, avg rank ${c.avgRank.toFixed(1)}, best rank ${c.bestRank}`
+              `  - ${c.name}: ${c.appearances} cells, avg rank ${c.avgRank.toFixed(1)}, best rank ${c.bestRank}${c.rating != null ? `, ${c.rating.toFixed(1)}★ (${c.reviews ?? '?'} reviews)` : ''}`
           )
           .join('\n');
 
@@ -397,10 +402,10 @@ ${momentumLine}
 Per-cell rank grid (rows = north→south, cols = west→east; numbers are the business's rank 1-3, '·' means not in 3-pack, [X] is the center cell on the pin):
 ${gridText}
 
-Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference:
+Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference. Where a competitor shows a ★ rating + review count, that is real data — use it to quantify the prominence gap (e.g. "they have 340 reviews to your 12"):
 ${compRows}
 ${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderGbpSignalsSection(input.gbpSignals)}${renderReviewVelocitySection(input.reviewVelocity)}${renderCrossKeywordSection(input.crossKeyword, input.keyword)}${renderNapAuditSection(input.napAudit)}
-Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR review counts, ratings, photo counts, GBP age, or competitor names not in the list above.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, photos count, hours, and business status verbatim from that section. Do NOT state the current GBP category or recommend a specific category change — the Places type taxonomy is not the owner\'s GBP categories.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}${input.reviewVelocity ? ' Review velocity is present — weight review-generation advice by the actual pace: a STALLED or slow pace is a top-priority lever, a strong pace means reviews are NOT the gap (don\'t lead with them).' : ''}${(input.crossKeyword?.length ?? 0) > 1 ? ' Cross-keyword data is present — if a tracked keyword sits at score 0 / reach 0%, call it out as the wrong battle (recommend dropping or replacing it) and concentrate effort on the winnable keyword(s).' : ''}
+Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR photo counts, GBP age, or competitor names not in the list above. Competitor ratings + review counts ARE listed where available — cite those to quantify the prominence gap, but never invent a competitor rating/review count that isn't shown.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, photos count, hours, and business status verbatim from that section. Do NOT state the current GBP category or recommend a specific category change — the Places type taxonomy is not the owner\'s GBP categories.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}${input.reviewVelocity ? ' Review velocity is present — weight review-generation advice by the actual pace: a STALLED or slow pace is a top-priority lever, a strong pace means reviews are NOT the gap (don\'t lead with them).' : ''}${(input.crossKeyword?.length ?? 0) > 1 ? ' Cross-keyword data is present — if a tracked keyword sits at score 0 / reach 0%, call it out as the wrong battle (recommend dropping or replacing it) and concentrate effort on the winnable keyword(s).' : ''}
 
 LEVER PRIORITIZATION (apply before writing actions): rank the levers by the business's actual bottleneck, not by what's easiest to name. High TurfRank + low TurfReach = a REACH problem (push review velocity, proximity/neighborhood content, satellite coverage) — do NOT lead with citation cleanup. A thin/inconsistent citation footprint = a prominence FOUNDATION gap (citations matter). A decent footprint that's already winning where it appears = citations are LOW leverage; don't recommend them just because the audit lists a few missing directories.`;
 }

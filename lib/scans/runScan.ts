@@ -186,6 +186,10 @@ export async function runScanForLocation(
       rank_group: it.rank_group ?? null,
       rank_absolute: it.rank_absolute ?? null,
       place_id: it.cid ?? null,
+      // Prominence signals — let the AI Coach quantify the gap vs each
+      // competitor (their rating + review count, from the local_pack item).
+      rating: it.rating?.value ?? null,
+      reviews: it.rating?.votes_count ?? null,
     })),
     raw_response: r.raw,
   }));
