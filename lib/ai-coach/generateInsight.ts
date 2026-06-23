@@ -195,13 +195,17 @@ export async function generateInsight(
     for (const [name, rank] of cellBest.entries()) {
       const s = compStats.get(name) ?? { ranks: [], rating: null, reviews: null };
       s.ranks.push(rank);
-      // A competitor's rating/reviews is the same listing across cells;
-      // keep the highest review count seen (best-quality snapshot).
+      // A competitor's rating/reviews is the same listing across cells.
+      // Keep the highest review count seen and the rating from THAT same
+      // snapshot (most reliable), so one anomalous cell can't skew the
+      // rating. Fall back to any rating when no review count is available.
       const sig = cellSignals.get(name);
       if (sig) {
-        if (sig.rating != null) s.rating = sig.rating;
         if (sig.reviews != null && (s.reviews == null || sig.reviews > s.reviews)) {
           s.reviews = sig.reviews;
+          if (sig.rating != null) s.rating = sig.rating;
+        } else if (s.reviews == null && s.rating == null && sig.rating != null) {
+          s.rating = sig.rating;
         }
       }
       compStats.set(name, s);
@@ -344,13 +348,19 @@ export async function generateInsight(
         if (!data || data.length < 2) return null;
         const latest = data[0];
         const oldest = data[data.length - 1];
-        const spanDays = Math.round(
-          (new Date(latest.fetched_at).getTime() -
-            new Date(oldest.fetched_at).getTime()) /
-            86_400_000
-        );
-        if (spanDays < 14) return null;
-        const added = Number(latest.user_ratings_total) - Number(oldest.user_ratings_total);
+        const spanMs =
+          new Date(latest.fetched_at).getTime() -
+          new Date(oldest.fetched_at).getTime();
+        // Guard on raw ms (not rounded days) so a sub-2-week window can't
+        // slip through and inflate perMonth.
+        if (spanMs < 14 * 86_400_000) return null;
+        const spanDays = Math.round(spanMs / 86_400_000);
+        const added =
+          Number(latest.user_ratings_total) - Number(oldest.user_ratings_total);
+        // Negative = review count dropped (removed reviews or a mis-fetch in
+        // the oldest snapshot). Don't feed the coach an unreliable negative
+        // "velocity" — suppress rather than mislead.
+        if (added < 0) return null;
         return {
           latestCount: Number(latest.user_ratings_total),
           added,
