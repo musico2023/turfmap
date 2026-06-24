@@ -700,22 +700,22 @@ async function refreshAuditScanForRegenerate(
   try {
     const { data: audit } = await supabase
       .from('visibility_audits')
-      .select('location_id, scan_id')
+      .select('scan_id')
       .eq('id', auditId)
-      .maybeSingle<{ location_id: string | null; scan_id: string }>();
-    if (!audit) return;
+      .maybeSingle<{ scan_id: string }>();
+    if (!audit?.scan_id) return;
 
-    // Resolve the audited location: prefer the audit's own location_id,
-    // else fall back to the location the frozen scan ran against.
-    let locationId = audit.location_id;
-    if (!locationId && audit.scan_id) {
-      const { data: oldScan } = await supabase
-        .from('scans')
-        .select('location_id')
-        .eq('id', audit.scan_id)
-        .maybeSingle<{ location_id: string | null }>();
-      locationId = oldScan?.location_id ?? null;
-    }
+    // visibility_audits has NO location_id column — the audited location is
+    // resolved from the scan the audit is pinned to. (The prior version
+    // selected a non-existent `location_id`, which made PostgREST error,
+    // returned null, and silently bailed before ever running the rescan —
+    // so every regenerate rebuilt the PDF off the frozen scan.)
+    const { data: pinnedScan } = await supabase
+      .from('scans')
+      .select('location_id')
+      .eq('id', audit.scan_id)
+      .maybeSingle<{ location_id: string | null }>();
+    const locationId = pinnedScan?.location_id ?? null;
     if (!locationId) {
       console.error('[bootstrapCompAudit/regenerate] no location to rescan');
       return;
