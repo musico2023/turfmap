@@ -44,6 +44,9 @@ import { LinkButton } from '@/components/ui/Button';
 import { buttonStyles } from '@/components/ui/buttonStyles';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { CitationsPanel } from '@/components/turfmap/CitationsPanel';
+import { GbpScorecardCard } from '@/components/turfmap/GbpScorecardCard';
+import { getLatestSignals } from '@/lib/google/enrich';
+import { scoreGbpProfile } from '@/lib/metrics/gbpScore';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
 import { canAccessCitations, resolveTier } from '@/lib/subscription/tier';
@@ -258,6 +261,29 @@ export default async function ClientDashboardPage({
           .limit(1)
           .maybeSingle<CitationOrderRow>()
       : { data: null };
+
+  // GBP Optimization Scorecard — Pulse+ feature. Score the latest captured
+  // Google Business Profile signals (gbp_signals) into a 0–100 completeness
+  // score + per-dimension gaps so the dashboard surfaces concrete GBP actions
+  // (the lever the AI Coach leads with for reach-bound businesses). Gated to
+  // the same Pulse+ tier as the citations panel.
+  const gbpSignals =
+    showCitationsPanel && activeLocation
+      ? await getLatestSignals(supabase, activeLocation.id)
+      : null;
+  const gbpScore = gbpSignals
+    ? scoreGbpProfile({
+        rating: gbpSignals.rating,
+        reviewCount: gbpSignals.user_ratings_total,
+        primaryType: gbpSignals.primary_type,
+        types: gbpSignals.types,
+        businessStatus: gbpSignals.business_status,
+        photosCount: gbpSignals.photos_count,
+        hoursSummary:
+          (gbpSignals.regular_opening_hours as { weekdayDescriptions?: string[] } | null)
+            ?.weekdayDescriptions ?? null,
+      })
+    : null;
 
   // Competitors: automatic discovery by default; per-location manual
   // override when the operator has explicitly added competitors via the
@@ -590,6 +616,14 @@ export default async function ClientDashboardPage({
             allowRegenerate
           />
         </div>
+
+        {/* GBP Optimization Scorecard — Pulse+ only. Renders nothing when
+         *  there are no GBP signals captured yet for the active location. */}
+        {gbpScore && (
+          <div className="lg:col-span-12">
+            <GbpScorecardCard result={gbpScore} />
+          </div>
+        )}
 
         {/* Citations panel — Pulse+ / agency-managed clients only.
          *  When no citation order exists yet, the panel surfaces a
