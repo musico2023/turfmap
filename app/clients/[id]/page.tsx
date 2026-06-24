@@ -45,8 +45,13 @@ import { buttonStyles } from '@/components/ui/buttonStyles';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
 import { CitationsPanel } from '@/components/turfmap/CitationsPanel';
 import { GbpScorecardCard } from '@/components/turfmap/GbpScorecardCard';
+import { CompetitorIntelCard } from '@/components/turfmap/CompetitorIntelCard';
+import { KeywordOpportunityCard } from '@/components/turfmap/KeywordOpportunityCard';
 import { getLatestSignals } from '@/lib/google/enrich';
 import { scoreGbpProfile } from '@/lib/metrics/gbpScore';
+import { computeCompetitorIntel } from '@/lib/metrics/competitorIntel';
+import { strikingDistance } from '@/lib/metrics/strikingDistance';
+import { rankKeywordOpportunities } from '@/lib/metrics/keywordOpportunity';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
 import { canAccessCitations, resolveTier } from '@/lib/subscription/tier';
@@ -326,6 +331,61 @@ export default async function ClientDashboardPage({
   const heatmapCompetitors = isCurated
     ? competitors.filter((c) => (c as { top3Pct: number }).top3Pct > 0)
     : competitors;
+
+  // Competitor Intel card — Pulse+ only. Reuses the already-loaded scan
+  // points + the client's own GBP signals to surface the top rivals by
+  // grid share with their reviews/rating gaps (the prominence levers the
+  // AI Coach leads with). Null when no competitor holds meaningful share.
+  const competitorIntel = showCitationsPanel
+    ? computeCompetitorIntel({
+        points: points.map((p) => ({ rank: p.rank ?? null, competitors: p.competitors })),
+        own: {
+          name: client.business_name,
+          rating: gbpSignals?.rating ?? null,
+          reviews: gbpSignals?.user_ratings_total ?? null,
+        },
+      })
+    : null;
+
+  // Keyword Opportunity Finder — Pulse+ only. Striking distance uses the
+  // active scan's points (works for single-keyword locations); the
+  // cross-keyword ranking does one latest-scan lookup per tracked keyword
+  // (capped, mirrors the AI Coach's cross-keyword section) and only when
+  // the location tracks more than one keyword.
+  const strikingActive =
+    showCitationsPanel && points.length > 0
+      ? strikingDistance(points.map((p) => p.rank ?? null), points.length)
+      : null;
+  const keywordOpportunity =
+    showCitationsPanel && activeLocation && keywordList.length > 1
+      ? await (async () => {
+          const perf = await Promise.all(
+            keywordList.slice(0, 8).map(async (kw) => {
+              const { data: latest } = await supabase
+                .from('scans')
+                .select('turf_score, turf_reach, turf_rank')
+                .eq('location_id', activeLocation.id)
+                .eq('keyword_id', kw.id)
+                .eq('status', 'complete')
+                .order('completed_at', { ascending: false })
+                .limit(1)
+                .maybeSingle<{
+                  turf_score: number | null;
+                  turf_reach: number | null;
+                  turf_rank: number | null;
+                }>();
+              return {
+                keyword: kw.keyword,
+                isPrimary: Boolean(kw.is_primary),
+                turfScore: latest?.turf_score != null ? Number(latest.turf_score) : null,
+                turfReach: latest?.turf_reach ?? null,
+                turfRank: latest?.turf_rank != null ? Number(latest.turf_rank) : null,
+              };
+            })
+          );
+          return rankKeywordOpportunities(perf);
+        })()
+      : null;
 
   return (
     <div className="min-h-screen w-full text-white">
@@ -622,6 +682,27 @@ export default async function ClientDashboardPage({
         {gbpScore && (
           <div className="lg:col-span-12">
             <GbpScorecardCard result={gbpScore} />
+          </div>
+        )}
+
+        {/* Keyword Opportunity Finder — Pulse+ only. Shows striking
+         *  distance for the active keyword, plus a cross-keyword focus
+         *  ranking when the location tracks more than one keyword. */}
+        {strikingActive && (
+          <div className="lg:col-span-12">
+            <KeywordOpportunityCard
+              activeKeyword={activeKeyword?.keyword ?? ''}
+              striking={strikingActive}
+              cross={keywordOpportunity}
+            />
+          </div>
+        )}
+
+        {/* Competitor Intel — Pulse+ only. Hidden when no rival holds
+         *  meaningful grid share on this keyword. */}
+        {competitorIntel && (
+          <div className="lg:col-span-12">
+            <CompetitorIntelCard result={competitorIntel} />
           </div>
         )}
 
