@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "verify": "tsx scripts/verify-gbp-signal-provenance.ts && tsx scripts/verify-photos-count-cap.ts && tsx scripts/verify-google-business-nap.ts && tsx scripts/verify-representative-heatmap.ts && tsx scripts/verify-dfs-citation-geo.ts && tsx scripts/verify-citation-name-match.ts && tsx scripts/verify-nap-summary-framing.ts && tsx scripts/verify-citation-profile.ts && tsx scripts/verify-require-locatable.ts",
+    "verify": "tsx scripts/verify-gbp-signal-provenance.ts && tsx scripts/verify-photos-count-cap.ts && tsx scripts/verify-google-business-nap.ts && tsx scripts/verify-representative-heatmap.ts && tsx scripts/verify-dfs-citation-geo.ts && tsx scripts/verify-citation-name-match.ts && tsx scripts/verify-gbp-score.ts && tsx scripts/verify-nap-summary-framing.ts && tsx scripts/verify-citation-profile.ts && tsx scripts/verify-require-locatable.ts",
     "test-scan": "tsx scripts/test-scan.ts",
     "scan:ivys-touch": "tsx scripts/scan-ivys-touch.ts",
     "seed:ivys-competitors": "tsx scripts/seed-ivys-touch-competitors.ts",
