@@ -16,10 +16,14 @@
 
 /** Reach at/above which a keyword is effectively won — defend, don't chase. */
 const DEFEND_REACH = 60;
-/** Reach at/above which a keyword has a real foothold worth pushing. */
+/** Reach at/above which a keyword has a real foothold worth pushing — the
+ *  band that constitutes a genuine "winnable, focus here" opportunity. */
 const PUSH_REACH = 15;
-/** Reach below which (but > 0) a keyword is still being built. */
-const BUILD_REACH = 1;
+/** Reach at/above which a keyword has early, real traction worth nurturing.
+ *  Below this (incl. the common 0–1% "appeared in a cell or two" noise) a
+ *  keyword has no foothold — it's a wrong battle to reconsider, not an
+ *  opportunity to celebrate. */
+const BUILD_REACH = 5;
 
 export type KeywordPerf = {
   keyword: string;
@@ -91,10 +95,11 @@ export function rankKeywordOpportunities(
       return (b.turfReach ?? 0) - (a.turfReach ?? 0);
     });
 
-  const topOpportunity =
-    entries.find((e) => e.tier === 'push') ??
-    entries.find((e) => e.tier === 'build') ??
-    null;
+  // The "focus this to break through" pick is a genuine foothold only — a
+  // push-tier keyword. A build-tier keyword is early traction worth
+  // nurturing, not a headline opportunity; below that there's nothing to
+  // focus, and we say so honestly rather than promoting a near-zero query.
+  const topOpportunity = entries.find((e) => e.tier === 'push') ?? null;
 
   const dead = entries.filter((e) => e.tier === 'reconsider').map((e) => e.keyword);
 
@@ -119,11 +124,22 @@ function buildHeadline(
         : '';
     return `Focus "${top.keyword}" — ${reach}% reach and the closest to the 3-pack.${deadNote}`;
   }
-  if (entries.every((e) => e.tier === 'defend')) {
+
+  const winners = entries.filter((e) => e.tier === 'defend').length;
+  const building = entries.filter((e) => e.tier === 'build').length;
+
+  if (winners === entries.length) {
     return `You're winning every tracked keyword — hold position and add new queries to expand.`;
   }
   if (dead.length === entries.length) {
     return `No keyword has traction yet — these are the wrong battles; reconsider the target queries.`;
   }
-  return `Hold your winning keywords and rework the ${dead.length} that are stuck at zero.`;
+
+  // Mixed, with no clear breakout opportunity — describe the real picture.
+  const parts: string[] = [];
+  if (winners > 0) parts.push(`hold your ${winners} winning keyword${winners === 1 ? '' : 's'}`);
+  if (building > 0) parts.push(`keep building ${building}`);
+  if (dead.length > 0) parts.push(`rework ${dead.length} stuck without traction`);
+  const sentence = parts.join('; ');
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1) + '.';
 }

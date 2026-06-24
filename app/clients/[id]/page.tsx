@@ -50,7 +50,6 @@ import { KeywordOpportunityCard } from '@/components/turfmap/KeywordOpportunityC
 import { getLatestSignals } from '@/lib/google/enrich';
 import { scoreGbpProfile } from '@/lib/metrics/gbpScore';
 import { computeCompetitorIntel } from '@/lib/metrics/competitorIntel';
-import { strikingDistance } from '@/lib/metrics/strikingDistance';
 import { rankKeywordOpportunities } from '@/lib/metrics/keywordOpportunity';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import { getRescanCapStatus, shouldBypassRescanCap } from '@/lib/scans/rateLimit';
@@ -347,15 +346,12 @@ export default async function ClientDashboardPage({
       })
     : null;
 
-  // Keyword Opportunity Finder — Pulse+ only. Striking distance uses the
-  // active scan's points (works for single-keyword locations); the
-  // cross-keyword ranking does one latest-scan lookup per tracked keyword
-  // (capped, mirrors the AI Coach's cross-keyword section) and only when
-  // the location tracks more than one keyword.
-  const strikingActive =
-    showCitationsPanel && points.length > 0
-      ? strikingDistance(points.map((p) => p.rank ?? null), points.length)
-      : null;
+  // Keyword Opportunity Finder — Pulse+ only. One latest-scan lookup per
+  // tracked keyword (capped, mirrors the AI Coach's cross-keyword section),
+  // ranking which keyword is most winnable. Only when the location tracks
+  // more than one keyword — there's nothing to compare otherwise. (We don't
+  // surface per-cell "striking distance": the Local Pack scan only returns
+  // pack positions, so ranks below the 3-pack are unmeasured.)
   const keywordOpportunity =
     showCitationsPanel && activeLocation && keywordList.length > 1
       ? await (async () => {
@@ -685,16 +681,11 @@ export default async function ClientDashboardPage({
           </div>
         )}
 
-        {/* Keyword Opportunity Finder — Pulse+ only. Shows striking
-         *  distance for the active keyword, plus a cross-keyword focus
-         *  ranking when the location tracks more than one keyword. */}
-        {strikingActive && (
+        {/* Keyword Opportunity Finder — Pulse+ only. A cross-keyword focus
+         *  ranking; renders only when the location tracks >1 keyword. */}
+        {keywordOpportunity && (
           <div className="lg:col-span-12">
-            <KeywordOpportunityCard
-              activeKeyword={activeKeyword?.keyword ?? ''}
-              striking={strikingActive}
-              cross={keywordOpportunity}
-            />
+            <KeywordOpportunityCard result={keywordOpportunity} />
           </div>
         )}
 
