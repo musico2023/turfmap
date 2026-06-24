@@ -638,8 +638,11 @@ export type RoadmapPdfAction = {
 };
 
 export type RoadmapPdfNapFinding = {
-  /** Status pill text, e.g., "MISSING", "INCONSISTENT", "LIVE". */
-  status: 'MISSING' | 'INCONSISTENT' | 'LIVE';
+  /** Status pill text. LIVE = listing found AND NAP verified; FOUND =
+   *  listing exists (name matched) but NAP couldn't be confirmed from the
+   *  search snippet — NOT missing; MISSING = no listing surfaced;
+   *  INCONSISTENT = NAP conflict. */
+  status: 'MISSING' | 'INCONSISTENT' | 'LIVE' | 'FOUND';
   /** Free-text body, e.g., "Yelp — phone differs from GBP". */
   text: string;
 };
@@ -758,6 +761,7 @@ function napStatusStyle(s: RoadmapPdfNapFinding['status']): {
   fg: string;
 } {
   if (s === 'LIVE') return { bg: '#1a3a14', fg: C.lime };
+  if (s === 'FOUND') return { bg: '#1c2a38', fg: '#7ca8c4' };
   if (s === 'INCONSISTENT') return { bg: '#3a2614', fg: C.warn };
   return { bg: '#3a1a1a', fg: C.bad };
 }

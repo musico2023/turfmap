@@ -488,7 +488,7 @@ async function loadNapFindingsForPdf(
     if (!m.directory) continue;
     rows.push({ status: 'MISSING', text: m.directory });
   }
-  // Live citations close the section — proof of progress.
+  // Live citations — listing found AND NAP verified.
   for (const c of (f.citations ?? [])
     .filter((c) => c.status === 'matched')
     .slice(0, 3)) {
@@ -496,6 +496,20 @@ async function loadNapFindingsForPdf(
     rows.push({
       status: 'LIVE',
       text: `${c.directory} — NAP consistent`,
+    });
+  }
+  // Found-but-unverified — the listing EXISTS (name matched) but its
+  // phone/address couldn't be confirmed from the search snippet. These were
+  // previously dropped entirely, making a business with several real
+  // listings look like it had only the one "matched" GBP. Show them as
+  // FOUND so the deliverable reflects actual directory coverage.
+  for (const c of (f.citations ?? [])
+    .filter((c) => c.status === 'unverified')
+    .slice(0, 5)) {
+    if (!c.directory) continue;
+    rows.push({
+      status: 'FOUND',
+      text: `${c.directory} — listing found (NAP not verified in search)`,
     });
   }
   return rows;
