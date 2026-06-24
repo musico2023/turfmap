@@ -223,7 +223,8 @@ export type RoadmapKeywordStats = {
   turfScore: number;
   /** TurfReach % (cells where buyer appears in pack, 0-100). */
   turfReach: number | null;
-  /** TurfRank (avg pack position when present, 0-3). */
+  /** TurfRank — rank quality where present, 0-3 (3.0 = always #1 in the
+   *  pack, 1.0 = always #3; higher is better, NOT a position number). */
   turfRank: number | null;
 };
 
@@ -243,7 +244,8 @@ export type RoadmapInput = {
   currentTurfScore: number;
   /** TurfReach % (cells where buyer appears in pack, 0-100). */
   turfReach: number | null;
-  /** TurfRank (avg pack position when present, 0-3). */
+  /** TurfRank — rank quality where present, 0-3 (3.0 = always #1 in the
+   *  pack, 1.0 = always #3; higher is better, NOT a position number). */
   turfRank: number | null;
   /** NAP audit summary, if available. Free-form bullet list of
    *  findings — the prompt parses it as context. NULL when the
@@ -266,7 +268,7 @@ export type RoadmapInput = {
   secondaryKeywords?: RoadmapKeywordStats[] | null;
 };
 
-function buildUserPrompt(input: RoadmapInput): string {
+export function buildUserPrompt(input: RoadmapInput): string {
   const parts: string[] = [
     `BUYER: ${input.businessName} — ${input.trade} in ${input.market}`,
     `PRIMARY KEYWORD: "${input.keyword}"`,
@@ -279,7 +281,16 @@ function buildUserPrompt(input: RoadmapInput): string {
     parts.push(`- TurfReach: ${input.turfReach.toFixed(1)}% (cells where buyer appears in pack)`);
   }
   if (input.turfRank != null) {
-    parts.push(`- TurfRank: ${input.turfRank.toFixed(2)}/3 (avg pack position when present)`);
+    // TurfRank is a 0–3 QUALITY score, NOT a map position. 3.0 = the buyer
+    // is always #1 in the pack where they appear; 2.0 = always #2; 1.0 =
+    // always #3. HIGHER IS BETTER. Do NOT describe a high TurfRank as
+    // "position 3" / "third" / "dead-last" — that inverts it. A high
+    // TurfRank with low TurfReach means the buyer ranks STRONGLY where they
+    // show up but appears in too few cells: the gap is coverage/reach
+    // (proximity), not rank/prominence.
+    parts.push(
+      `- TurfRank: ${input.turfRank.toFixed(2)}/3 (rank quality where the buyer appears — 3.0 = always #1 in the pack, 1.0 = always #3; HIGHER IS BETTER, it is NOT a position number)`
+    );
   }
   if (input.cellPatternSummary) {
     parts.push(`- Cell pattern: ${input.cellPatternSummary}`);

@@ -664,7 +664,8 @@ export type RoadmapPdfKeywordRow = {
   /** TurfReach % (cells where buyer appears in pack). NULL when
    *  scan stats aren't computed yet. */
   turfReach: number | null;
-  /** TurfRank (avg pack position when present, 0-3). */
+  /** TurfRank — rank quality where present, 0-3 (3.0 = always #1 in the
+   *  pack, 1.0 = always #3; higher is better, NOT a position number). */
   turfRank: number | null;
   /** Brief operator-facing note rendered alongside the row — e.g.,
    *  "Strongest current visibility" / "Largest opportunity gap" /
