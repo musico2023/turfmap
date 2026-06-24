@@ -153,6 +153,17 @@ const TIERS: MonitoringSpec[] = [
         ],
       },
       {
+        // Intelligence cards on the dashboard — added 2026-06-24. These
+        // surface the levers the AI Coach reasons over so the operator can
+        // see them directly, not just in the written playbook.
+        group: 'Intelligence & diagnostics',
+        items: [
+          'GBP Optimization Scorecard — your Google Business Profile scored 0–100 with the exact gaps to close',
+          'Competitor Intel — top rivals ranked by map share, with the review and rating gaps separating you',
+          'Keyword Opportunity Finder — your keywords ranked by winnability, pointing at the one to focus next',
+        ],
+      },
+      {
         group: 'Citations + maintenance',
         items: [
           'Initial citation building across ~25 industry directories',
