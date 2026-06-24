@@ -13,8 +13,10 @@
  * components/turfmap/CitationsPanel.tsx.
  *
  * For each citation_orders row in queued/in_progress state (and not
- * paused), polls BL for the latest per-directory status, rewrites
- * per_directory + status on the row, and stamps updated_at.
+ * paused) — plus any 'failed' row that still carries a BL campaign id, so
+ * an order prematurely marked failed can heal once BL completes it —
+ * polls BL for the latest per-directory status, rewrites per_directory +
+ * status on the row, and stamps updated_at.
  *
  * Auth: `Authorization: Bearer ${CRON_SECRET}` — same pattern as the
  * weekly-scans cron. Vercel Cron sets this header automatically when
@@ -49,16 +51,27 @@ export async function GET(req: Request) {
 
   const supabase = getServerSupabase();
 
-  // Pull all open (non-paused, non-terminal) orders. Closed orders
-  // (status complete/failed) don't change once terminal — no point
-  // polling them. Maintenance-paused orders also skip (they keep
-  // their existing per_directory snapshot frozen).
+  // Pull open orders (queued/in_progress) PLUS recovery candidates:
+  // orders stuck on 'failed' that nonetheless carry a BL campaign id.
+  //
+  // Why recover 'failed': our create→confirm flow can stamp status='failed'
+  // *after* BrightLocal already created the campaign (e.g. our checkout step
+  // errored, then the campaign was paid/completed manually in the BL
+  // dashboard). Because 'failed' is terminal, such an order would never
+  // heal — the dashboard shows a phantom failure for a campaign that's
+  // actually live (this happened to Sugar Daddy Doughnuts / BL 965489).
+  // Re-checking failed-with-id orders lets BrightLocal's source of truth
+  // pull them back to complete/in_progress. Failed orders with NO campaign
+  // id are excluded — there's nothing to poll. Maintenance-paused orders
+  // skip (their per_directory snapshot stays frozen).
   const { data: openOrders, error: listErr } = await supabase
     .from('citation_orders')
-    .select('id, brightlocal_order_id')
-    .in('status', ['queued', 'in_progress'])
+    .select('id, brightlocal_order_id, status')
+    .or(
+      'status.in.(queued,in_progress),and(status.eq.failed,brightlocal_order_id.not.is.null)'
+    )
     .eq('maintenance_paused', false)
-    .returns<Pick<CitationOrderRow, 'id' | 'brightlocal_order_id'>[]>();
+    .returns<Pick<CitationOrderRow, 'id' | 'brightlocal_order_id' | 'status'>[]>();
   if (listErr) {
     return NextResponse.json(
       { error: `list failed: ${listErr.message}` },
@@ -68,6 +81,7 @@ export async function GET(req: Request) {
   const orders = openOrders ?? [];
 
   let transitioned = 0;
+  let recovered = 0;
   const errors: Array<{ orderId: string; message: string }> = [];
 
   for (const row of orders) {
@@ -78,8 +92,13 @@ export async function GET(req: Request) {
       continue;
     }
 
+    const isRecoveryCandidate = row.status === 'failed';
     const result = await pollCitationOrder(row.brightlocal_order_id);
     if (!result.ok) {
+      // For a recovery candidate, a not_found just means BL has no campaign
+      // for this id (a genuinely-dead order) — leave it failed, no error
+      // spam each run.
+      if (result.kind === 'not_found' && isRecoveryCandidate) continue;
       // 'not_configured' surfaces during the gated rollout window —
       // log + continue so the rest of the run still completes when
       // CITATION_BUILDER_ENABLED=false.
@@ -88,6 +107,7 @@ export async function GET(req: Request) {
       }
       continue;
     }
+    if (isRecoveryCandidate) recovered += 1;
 
     const { error: updateErr } = await supabase
       .from('citation_orders')
@@ -108,6 +128,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     polled: orders.length,
     transitioned,
+    recovered,
     errors,
   });
 }
