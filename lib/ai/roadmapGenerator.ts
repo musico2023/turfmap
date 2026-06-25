@@ -190,6 +190,7 @@ CONSTRAINTS:
 - THIS ROADMAP IS A VISIBILITY-PILLAR DELIVERABLE. Most actions (8-10 of 12) should be category-driven Visibility work the buyer can execute solo. 1-2 Demand or Systems actions are acceptable and useful — they're the bridge into the strategist call's Local Lead Machine discussion.
 - Do not invent data. If the buyer's NAP audit didn't run, don't reference specific directory names — use generic "claim missing directories on the top-trade-relevant sites" framing.
 - A "missing" directory in the NAP findings means our automated site-search did NOT surface a listing — it is NOT proof the business has none there (listings under a name variant, or pages unindexed for the probe, cause false misses). Frame directory-claiming actions as "confirm, then claim if you're not already listed on X," not as a flat assertion of absence. Do not state an established business (high review count) is absent from a major consumer directory (Yelp, Facebook) as settled fact.
+- REVIEW VELOCITY IS NOT ALWAYS A LEVER. Weigh the buyer's "GBP reviews" input before prescribing any review-generation work. If the buyer already has a SUBSTANTIAL review base (roughly 100+ reviews) at a healthy rating (4.3★+), their review prominence is ESTABLISHED — do NOT make review generation a primary or HIGH-priority action, and do NOT claim a "review-count gap vs competitors". At most include one LOW/MEDIUM "maintain review cadence / respond to recent reviews" action, and never frame the diagnosis around reviews. Spend the roadmap on REACH levers instead (citation breadth, GBP service-area config, GBP categories, schema, local content). Only treat review generation as a real lever when the base is thin (under ~50 reviews) or the rating is dragging (under 4.3★).
 
 PILLAR ASSIGNMENT (always set the pillar field):
 - VISIBILITY pillar: GBP optimization, GBP photos, NAP consistency, directory claiming, schema integration, long-tail local-SEO content. → category: gbp_optimization | gbp_photos | nap_consistency | directory_claiming | schema_integration (and pillar: 'visibility' for an 'other' action that's pure local-SEO content)
@@ -247,6 +248,13 @@ export type RoadmapInput = {
   /** TurfRank — rank quality where present, 0-3 (3.0 = always #1 in the
    *  pack, 1.0 = always #3; higher is better, NOT a position number). */
   turfRank: number | null;
+  /** Buyer's GBP review count (from gbp_signals). Lets the prompt judge
+   *  whether review generation is actually a lever — a buyer with a strong
+   *  existing base shouldn't be told to "close the review gap". NULL when
+   *  GBP signals haven't been captured. */
+  reviewCount: number | null;
+  /** Buyer's GBP star rating (from gbp_signals), NULL when unknown. */
+  rating: number | null;
   /** NAP audit summary, if available. Free-form bullet list of
    *  findings — the prompt parses it as context. NULL when the
    *  NAP audit didn't run or isn't complete yet. */
@@ -290,6 +298,11 @@ export function buildUserPrompt(input: RoadmapInput): string {
     // (proximity), not rank/prominence.
     parts.push(
       `- TurfRank: ${input.turfRank.toFixed(2)}/3 (rank quality where the buyer appears — 3.0 = always #1 in the pack, 1.0 = always #3; HIGHER IS BETTER, it is NOT a position number)`
+    );
+  }
+  if (input.reviewCount != null) {
+    parts.push(
+      `- GBP reviews: ${input.reviewCount}${input.rating != null ? ` at ${input.rating.toFixed(1)}★` : ''} (the buyer's EXISTING review base — weigh this before prescribing any review-generation work)`
     );
   }
   if (input.cellPatternSummary) {

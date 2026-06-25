@@ -69,6 +69,8 @@ const FIXTURES: Record<string, FixtureProfile> = {
       currentTurfScore: 38,
       turfReach: 22.2,
       turfRank: 2.4,
+      reviewCount: 218,
+      rating: 4.6,
       napFindingsSummary:
         '- Apple Maps Connect: missing\n- Yelp: NAP inconsistency (phone differs from GBP)\n- BBB: missing\n- Angi: live, NAP consistent\n- HomeAdvisor: live, but address unit-number missing',
       competitorSummary:
@@ -98,6 +100,8 @@ const FIXTURES: Record<string, FixtureProfile> = {
       currentTurfScore: 22,
       turfReach: 11.1,
       turfRank: 2.8,
+      reviewCount: 24,
+      rating: 4.4,
       napFindingsSummary:
         '- Yelp: missing\n- BBB: missing\n- Angi: missing\n- HomeAdvisor: missing',
       competitorSummary:
@@ -127,6 +131,8 @@ const FIXTURES: Record<string, FixtureProfile> = {
       currentTurfScore: 47,
       turfReach: 31.0,
       turfRank: 2.1,
+      reviewCount: 82,
+      rating: 4.7,
       napFindingsSummary:
         '- Yelp: live, NAP consistent\n- BBB: missing\n- Angi: live, NAP consistent\n- HomeAdvisor: NAP inconsistency (different street suffix)',
       competitorSummary:

@@ -24,6 +24,8 @@ const prompt = buildUserPrompt({
   currentTurfScore: 4,
   turfReach: 4,
   turfRank: 3, // perfect quality — always #1 where present
+  reviewCount: 696, // strong existing base — reviews are NOT the lever
+  rating: 4.8,
   napFindingsSummary: null,
   competitorSummary: null,
   cellPatternSummary: null,
@@ -37,6 +39,20 @@ check('TurfRank line states higher is better / always #1',
   /higher is better/i.test(turfRankLine) || /always #1/i.test(turfRankLine), turfRankLine);
 check('TurfReach is present so reach-vs-rank is distinguishable',
   /TurfReach/.test(prompt));
+
+// Review base must reach the model so it can decide reviews aren't the lever.
+const reviewLine = prompt.split('\n').find((l) => /GBP reviews/i.test(l)) ?? '';
+check('prompt surfaces the buyer GBP review base', /696/.test(reviewLine), reviewLine);
+check('review line carries the rating', /4\.8/.test(reviewLine), reviewLine);
+
+// When review count is unknown, no review line should appear (no phantom data).
+const noReviews = buildUserPrompt({
+  businessName: 'X', trade: 'Y', keyword: 'z', market: 'M',
+  currentTurfScore: 10, turfReach: 10, turfRank: 1,
+  reviewCount: null, rating: null,
+  napFindingsSummary: null, competitorSummary: null, cellPatternSummary: null,
+});
+check('no GBP reviews line when review count is null', !/GBP reviews/i.test(noReviews));
 
 if (failures > 0) { console.error(`\nverify-roadmap-turfrank-framing: ${failures} check(s) failed`); process.exit(1); }
 console.log('\nverify-roadmap-turfrank-framing: all checks passed');

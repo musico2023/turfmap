@@ -49,6 +49,7 @@ import {
   type RoadmapPdfNapFinding,
 } from '@/components/pdf/RoadmapPdf';
 import { aggregateCompetitors } from '@/lib/metrics/competitors';
+import { getLatestSignals } from '@/lib/google/enrich';
 import {
   formatMarket,
   loadCellPatternSummary,
@@ -212,6 +213,14 @@ export async function generateAndStoreRoadmapPdf(
       }))
     : null;
 
+  // Buyer's GBP signals — so the roadmap prompt can judge whether review
+  // generation is actually a lever. A business with a strong existing
+  // review base (e.g. CertaPro's 696) should NOT be told to "close the
+  // review gap"; the prompt uses this to focus on reach instead.
+  const buyerSignals = scan.location_id
+    ? await getLatestSignals(supabase, scan.location_id)
+    : null;
+
   let roadmap: Awaited<ReturnType<typeof generateRoadmap>>;
   try {
     roadmap = await generateRoadmap({
@@ -222,6 +231,8 @@ export async function generateAndStoreRoadmapPdf(
       currentTurfScore: startingTurfScore,
       turfReach: scan.turf_reach ?? null,
       turfRank: scan.turf_rank ?? null,
+      reviewCount: buyerSignals?.user_ratings_total ?? null,
+      rating: buyerSignals?.rating ?? null,
       napFindingsSummary,
       competitorSummary,
       cellPatternSummary,
