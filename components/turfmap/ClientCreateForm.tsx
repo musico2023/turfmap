@@ -23,6 +23,7 @@ import {
   type ResolvedPlace,
 } from '@/components/marketing/scan/GoogleBusinessAutocomplete';
 import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
+import { rankLocalKeywordCandidates } from '@/lib/keywords/suggestions';
 
 // Grouped industry options for the <select>. Each group corresponds
 // to a BrightLocal directory profile (lib/brightlocal/directories.ts):
@@ -223,6 +224,9 @@ export function ClientCreateForm() {
   const update = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((s) => ({ ...s, [k]: v }));
 
+  // Keyword suggestion chips, derived from the picked GBP's category.
+  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
+
   // Fan a GoogleBusinessAutocomplete pick into all the dependent
   // Form fields in one shot. Mirrors the QuizFlow + ScanIntakeForm
   // pattern so the agency form behaves identically to the lander
@@ -233,6 +237,15 @@ export function ClientCreateForm() {
     setGbpResolved(place);
     const components = place.addressComponents;
     const suggestedIndustry = primaryTypeToIndustry(place.primaryType);
+    // Keyword candidates from the GBP category + city (pure, no API) — same
+    // selection feeder as the lander forms. Prefills the keyword only when
+    // empty; chips below the input surface the alternatives.
+    const keywordCandidates = rankLocalKeywordCandidates(
+      suggestedIndustry,
+      components?.city ?? null,
+      { limit: 5 }
+    );
+    setKeywordSuggestions(keywordCandidates.map((c) => c.keyword));
     setForm((s) => ({
       ...s,
       business_name: place.businessName,
@@ -252,6 +265,7 @@ export function ClientCreateForm() {
       longitude: place.longitude != null ? String(place.longitude) : '',
       google_place_id: place.placeId,
       industry: suggestedIndustry ?? s.industry,
+      keyword: s.keyword.trim() ? s.keyword : keywordCandidates[0]?.keyword ?? s.keyword,
     }));
     if (place.latitude != null && place.longitude != null) {
       setGeocode({
@@ -279,6 +293,7 @@ export function ClientCreateForm() {
       google_place_id: '',
       // Keep industry — operator may have tweaked it after pick.
     }));
+    setKeywordSuggestions([]);
     setGeocode({ status: 'idle' });
   };
 
@@ -798,6 +813,33 @@ export function ClientCreateForm() {
             required
             className={`${inputClass} font-mono`}
           />
+          {keywordSuggestions.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-mono">
+                Suggested:
+              </span>
+              {keywordSuggestions.map((kw) => {
+                const active = form.keyword.trim().toLowerCase() === kw;
+                return (
+                  <button
+                    key={kw}
+                    type="button"
+                    onClick={() => update('keyword', kw)}
+                    className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                    style={{
+                      background: active ? 'rgba(197,255,58,0.1)' : '#0d0d10',
+                      borderColor: active
+                        ? 'rgba(197,255,58,0.4)'
+                        : 'var(--color-border)',
+                      color: active ? 'var(--color-lime)' : '#a1a1aa',
+                    }}
+                  >
+                    {kw}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </Field>
         <Field label="Scan frequency">
           <select

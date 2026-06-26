@@ -61,6 +61,8 @@ import {
   GoogleBusinessAutocomplete,
   type ResolvedPlace,
 } from '@/components/marketing/scan/GoogleBusinessAutocomplete';
+import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
+import { rankLocalKeywordCandidates } from '@/lib/keywords/suggestions';
 import {
   trackMetaCustomEvent,
   trackMetaEvent,
@@ -216,6 +218,11 @@ export function QuizFlow({
   const [trade, setTrade] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
+  // Auto-suggested keyword candidates derived from the resolved GBP
+  // category + city (pure, client-side — no API/cost). Populated when the
+  // business resolves on the GBP step; surfaced as one-tap chips on Q5.
+  // Mirrors the /score ScanIntakeForm behaviour. See lib/keywords/suggestions.
+  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
   const [place, setPlace] = useState<ResolvedPlace | null>(null);
   const [email, setEmail] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -541,11 +548,29 @@ export function QuizFlow({
               place={place}
               onResolved={(p) => {
                 setPlace(p);
+                // Derive grid-appropriate keyword candidates from the GBP
+                // category + city (pure, no API). Prefill the keyword only
+                // when the buyer hasn't typed one — never clobber input.
+                const industry = primaryTypeToIndustry(p.primaryType);
+                const candidates = rankLocalKeywordCandidates(
+                  industry,
+                  p.addressComponents?.city ?? null,
+                  { limit: 5 }
+                );
+                setKeywordSuggestions(candidates.map((c) => c.keyword));
+                if (candidates.length > 0) {
+                  setKeyword((prev) =>
+                    prev.trim().length > 0 ? prev : candidates[0].keyword
+                  );
+                }
                 // Auto-advance after a brief beat so the buyer sees
                 // their pick land before the step transitions.
                 window.setTimeout(() => goTo('keyword'), 450);
               }}
-              onClear={() => setPlace(null)}
+              onClear={() => {
+                setPlace(null);
+                setKeywordSuggestions([]);
+              }}
             />
           )}
           {step === 'keyword' && (
@@ -562,6 +587,8 @@ export function QuizFlow({
               onContinue={() => goTo('info_deliverable')}
               continueDisabled={keyword.trim().length < 2}
               continueLabel="Continue →"
+              suggestions={keywordSuggestions}
+              onSuggestionPick={setKeyword}
             />
           )}
           {step === 'info_deliverable' && (
@@ -865,6 +892,8 @@ function TextInputStep({
   continueDisabled,
   continueLabel,
   autoComplete,
+  suggestions,
+  onSuggestionPick,
 }: {
   eyebrow: string;
   title: string;
@@ -876,6 +905,9 @@ function TextInputStep({
   continueDisabled: boolean;
   continueLabel: string;
   autoComplete?: string;
+  /** Optional one-tap keyword chips (free-score-now Q5). Absent → no chips. */
+  suggestions?: string[];
+  onSuggestionPick?: (v: string) => void;
 }) {
   return (
     <StepShell>
@@ -900,6 +932,33 @@ function TextInputStep({
         }}
         autoFocus
       />
+      {suggestions && suggestions.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-mono">
+            Suggested:
+          </span>
+          {suggestions.map((kw) => {
+            const active = value.trim().toLowerCase() === kw;
+            return (
+              <button
+                key={kw}
+                type="button"
+                onClick={() => onSuggestionPick?.(kw)}
+                className="text-[13px] px-2.5 py-1 rounded-full border transition-colors"
+                style={{
+                  background: active ? 'rgba(197,255,58,0.1)' : '#0d0d10',
+                  borderColor: active
+                    ? 'rgba(197,255,58,0.4)'
+                    : 'rgb(39,39,42)',
+                  color: active ? 'var(--color-lime, #c5ff3a)' : '#a1a1aa',
+                }}
+              >
+                {kw}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <FooterBar>
         <CtaButton onClick={onContinue} disabled={continueDisabled}>
           {continueLabel}
