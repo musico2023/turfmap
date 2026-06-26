@@ -307,8 +307,9 @@ export type CompetitorKeyword = {
 
 export type KeywordsForSiteResult = {
   keywords: CompetitorKeyword[];
-  /** DFS-reported cost in integer cents (mirrors scans.dfs_cost_cents). */
-  costCents: number;
+  /** DFS-reported cost in dollars (full precision — callers accumulate
+   *  then round once, so sub-cent calls aren't lost to rounding). */
+  costDollars: number;
 };
 
 /**
@@ -335,8 +336,8 @@ export async function keywordsForSite(
     // the intersection step filters to local-intent regardless.
     include_serp_info: false,
   });
-  const costCents = Math.round((task.cost ?? 0) * 100);
-  if (task.status_code !== 20000) return { keywords: [], costCents };
+  const costDollars = task.cost ?? 0;
+  if (task.status_code !== 20000) return { keywords: [], costDollars };
 
   const items = (task.result?.[0]?.items ?? []) as Array<Record<string, unknown>>;
   const keywords: CompetitorKeyword[] = items
@@ -354,13 +355,14 @@ export async function keywordsForSite(
     })
     .filter((k) => k.keyword.length > 0);
 
-  return { keywords, costCents };
+  return { keywords, costDollars };
 }
 
 export type LocalPackGateResult = {
   /** True when the keyword's SERP at this pin shows a local pack / map. */
   present: boolean;
-  costCents: number;
+  /** DFS-reported cost in dollars (accumulate then round once). */
+  costDollars: number;
 };
 
 /**
@@ -383,8 +385,8 @@ export async function localPackPresence(
     language_code: opts.languageCode ?? 'en',
     device: opts.device ?? 'desktop',
   });
-  const costCents = Math.round((task.cost ?? 0) * 100);
-  if (task.status_code !== 20000) return { present: false, costCents };
+  const costDollars = task.cost ?? 0;
+  if (task.status_code !== 20000) return { present: false, costDollars };
 
   const items = (task.result?.[0]?.items ?? []) as Array<Record<string, unknown>>;
   const present = items.some(
@@ -393,7 +395,7 @@ export async function localPackPresence(
       it.type === 'map' ||
       it.type === 'local_services'
   );
-  return { present, costCents };
+  return { present, costDollars };
 }
 
 // ─── Internal DFS response types ───────────────────────────────────────────
