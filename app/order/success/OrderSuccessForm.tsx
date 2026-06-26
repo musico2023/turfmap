@@ -13,6 +13,7 @@ import { AuditUpgradePanel } from '@/components/marketing/AuditUpgradePanel';
 import { SuccessBurst } from '@/components/animations/SuccessBurst';
 import { ScanProgress } from '@/components/turfmap/ScanProgress';
 import type { OnboardingStep } from '@/lib/supabase/types';
+import { rankLocalKeywordCandidates } from '@/lib/keywords/suggestions';
 
 /**
  * Post-checkout business-details form.
@@ -233,6 +234,13 @@ export function OrderSuccessForm({
   });
   const [email, setEmail] = useState(prefillEmail ?? '');
   const [phone, setPhone] = useState('');
+  // Keyword suggestion chips. This form is the Mapbox legacy path (no GBP
+  // category), so we derive candidates from the prospect's trade
+  // (prefillKeyword, e.g. "hvac") + the city the buyer picks on the address
+  // autocomplete. Lower-fidelity than the GBP-category suggestion on the
+  // landers, but the same selection feeder. Empty when there's no trade or
+  // no city yet, so the keyword field behaves exactly as before.
+  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1316,6 +1324,18 @@ export function OrderSuccessForm({
             // but a Mapbox-resolved address effectively guarantees a
             // clean Nominatim hit.
             setAddress(fields.formatted);
+            // Now that we know the city, derive keyword chips from the
+            // prospect's trade (1-keyword path only). Chips don't auto-fill
+            // — slot 0 already carries the trade; this just offers better
+            // city-scoped variants the buyer can one-tap.
+            if (keywordCount === 1 && prefillKeyword) {
+              const candidates = rankLocalKeywordCandidates(
+                prefillKeyword,
+                fields.city ?? null,
+                { limit: 5 }
+              );
+              setKeywordSuggestions(candidates.map((c) => c.keyword));
+            }
           }}
           placeholder="123 Main St, Toronto"
           required
@@ -1336,6 +1356,33 @@ export function OrderSuccessForm({
             required
             className="w-full px-3 py-2 rounded-md border bg-[var(--color-bg)] border-[var(--color-border)] text-base sm:text-sm font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
           />
+          {keywordSuggestions.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-mono">
+                Suggested:
+              </span>
+              {keywordSuggestions.map((kw) => {
+                const active = keywords[0]?.trim().toLowerCase() === kw;
+                return (
+                  <button
+                    key={kw}
+                    type="button"
+                    onClick={() => setKeywordAt(0, kw)}
+                    className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                    style={{
+                      background: active ? 'rgba(197,255,58,0.1)' : 'var(--color-bg)',
+                      borderColor: active
+                        ? 'rgba(197,255,58,0.4)'
+                        : 'var(--color-border)',
+                      color: active ? 'var(--color-lime)' : '#a1a1aa',
+                    }}
+                  >
+                    {kw}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </Field>
       ) : (
         <Field
