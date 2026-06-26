@@ -233,17 +233,27 @@ const INDUSTRY_PATTERNS: Array<{
   { pattern: /\bappliance/i, key: 'appliancerepair' },
 ];
 
-export function getKeywordStems(industry: string | null): string[] {
-  if (!industry || industry.trim().length === 0) return [];
+/** Resolve an industry/category string to its INDUSTRY_STEMS key, or null
+ *  when no pattern matches (novel vertical). Extracted so both the legacy
+ *  stem helper and the local-candidate ranker share one resolver. */
+export function matchIndustryKey(
+  industry: string | null
+): keyof typeof INDUSTRY_STEMS | null {
+  if (!industry || industry.trim().length === 0) return null;
   const trimmed = industry.trim();
   for (const rule of INDUSTRY_PATTERNS) {
-    if (rule.pattern.test(trimmed)) {
-      return INDUSTRY_STEMS[rule.key] ?? [];
-    }
+    if (rule.pattern.test(trimmed)) return rule.key;
   }
+  return null;
+}
+
+export function getKeywordStems(industry: string | null): string[] {
+  if (!industry || industry.trim().length === 0) return [];
+  const key = matchIndustryKey(industry);
+  if (key) return INDUSTRY_STEMS[key] ?? [];
   // No pattern matched — fall back to the literal industry word as a
   // single stem so suggestions still surface for novel verticals.
-  return [trimmed.toLowerCase()];
+  return [industry.trim().toLowerCase()];
 }
 
 /**
@@ -261,4 +271,89 @@ export function buildKeywordSuggestions(
   return stems
     .slice(0, 6)
     .map((s) => `${s} ${place}`.toLowerCase().replace(/\s+/g, ' '));
+}
+
+// ─── Local keyword candidate ranking (geo-grid selection feeder) ──────
+//
+// Powers the free-scan auto-suggestion: given a resolved business's
+// category + city, produce a ranked list of grid-appropriate keyword
+// candidates and let the intake auto-select the top one.
+//
+// DESIGN (deliberate, per the "grid already simulates location" rule
+// documented at the top of this file): we do NOT fan out geo-suffixes
+// ("near me" / "{neighborhood}" / "best {x}"). Those scan IDENTICALLY
+// from each grid pin and would just multiply expensive grid runs for the
+// same heatmap. The axis that actually varies the local pack is the
+// SERVICE term (attic vs spray-foam vs removal) and the intent type — so
+// we fan out on service × intent. The city is a DISPLAY label on the
+// keyword, not a separate candidate.
+//
+// MVP only emits 'service'-intent candidates: a commercial "{x} cost"
+// query usually does NOT trigger a local pack, so it's the wrong thing to
+// put on a grid. The intent field exists so v1 competitor-mined keywords
+// (which need classification + the SERP local-pack gate) slot in without a
+// schema change.
+
+export type LocalKeywordIntent = 'service' | 'commercial' | 'informational';
+
+/** Intent → weight in the Priority score. Core service = the only kind
+ *  worth a grid run; commercial/info kept for forward-compat scoring. */
+const INTENT_SCORE: Record<LocalKeywordIntent, number> = {
+  service: 1.0,
+  commercial: 0.5,
+  informational: 0.1,
+};
+
+export type LocalKeywordCandidate = {
+  /** Display form: "{stem} {city}" (lowercased), or just the stem when no
+   *  city is known. This is what gets tracked + put on the grid. */
+  keyword: string;
+  /** The underlying service stem (geo-independent). */
+  stem: string;
+  intent: LocalKeywordIntent;
+  /** Whether the business category matched a known vertical (vs the
+   *  literal-word fallback) — a confidence signal, not a gate. */
+  categoryMatch: boolean;
+  /** Internal ordering score — NOT TurfScore. Higher = better starter
+   *  keyword. MVP inputs: intent + category match + the stem's curated
+   *  rank (INDUSTRY_STEMS lists the headline service first). v1+ folds in
+   *  competitor_ranked + metro volume. */
+  priority: number;
+};
+
+/**
+ * Rank grid-appropriate keyword candidates for a resolved business.
+ * Returns highest-priority first; the caller auto-selects `[0]` for the
+ * free scan and surfaces the rest as alternatives. Empty when no industry
+ * is resolvable (caller falls back to the user-typed keyword field).
+ */
+export function rankLocalKeywordCandidates(
+  industry: string | null,
+  city: string | null,
+  opts?: { limit?: number }
+): LocalKeywordCandidate[] {
+  const key = matchIndustryKey(industry);
+  const stems = getKeywordStems(industry);
+  if (stems.length === 0) return [];
+  const categoryMatch = key !== null;
+  const place = (city ?? '').trim();
+
+  const candidates = stems.map((stem, i) => {
+    // Curated-rank prior: INDUSTRY_STEMS lists the headline service first,
+    // so earlier stems are stronger defaults. Normalized to (0,1].
+    const stemPrior = (stems.length - i) / stems.length;
+    const intent: LocalKeywordIntent = 'service';
+    const priority =
+      INTENT_SCORE[intent] + (categoryMatch ? 0.25 : 0) + stemPrior;
+    const keyword = (place ? `${stem} ${place}` : stem)
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    return { keyword, stem, intent, categoryMatch, priority };
+  });
+
+  candidates.sort((a, b) => b.priority - a.priority);
+  return typeof opts?.limit === 'number'
+    ? candidates.slice(0, Math.max(0, opts.limit))
+    : candidates;
 }

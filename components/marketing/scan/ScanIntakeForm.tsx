@@ -9,6 +9,8 @@ import {
   readCookie,
 } from '@/components/marketing/scan/MetaPixel';
 import { GoogleBusinessAutocomplete } from '@/components/marketing/scan/GoogleBusinessAutocomplete';
+import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
+import { rankLocalKeywordCandidates } from '@/lib/keywords/suggestions';
 import {
   AddressAutocomplete,
   type AddressFields,
@@ -177,6 +179,12 @@ export function ScanIntakeForm({
       return next;
     });
   };
+  // Auto-suggested keyword candidates, derived from the resolved
+  // business's GBP category (Google Places `primaryType`) + city. Pure +
+  // client-side (no API/cost). Populated only on the Google-autocomplete
+  // path; empty otherwise, so the keyword field behaves exactly as before
+  // on the Mapbox / manual-entry paths. See lib/keywords/suggestions.ts.
+  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -528,11 +536,30 @@ export function ScanIntakeForm({
               setGooglePlaceId(place.placeId);
               setGooglePrimaryType(place.primaryType);
               setError(null);
+              // Derive grid-appropriate keyword candidates from the GBP
+              // category + city (pure, no API). Auto-fill the keyword only
+              // when the buyer hasn't typed one — never clobber their input.
+              const industry = primaryTypeToIndustry(place.primaryType);
+              const candidates = rankLocalKeywordCandidates(
+                industry,
+                place.addressComponents?.city ?? null,
+                { limit: 5 }
+              );
+              setKeywordSuggestions(candidates.map((c) => c.keyword));
+              if (candidates.length > 0) {
+                setKeywords((prev) => {
+                  if ((prev[0] ?? '').trim().length > 0) return prev;
+                  const next = [...prev];
+                  next[0] = candidates[0].keyword;
+                  return next;
+                });
+              }
             }}
             onClear={() => {
               setBusinessName('');
               setAddress('');
               setSelected(null);
+              setKeywordSuggestions([]);
             }}
           />
           <button
@@ -595,15 +622,44 @@ export function ScanIntakeForm({
         </>
       )}
       {keywordSlotCount === 1 ? (
-        <Field
-          label="Keyword to scan"
-          id="biz-keyword"
-          value={keywords[0] ?? ''}
-          onChange={(v) => setKeywordAt(0, v)}
-          placeholder='e.g. "plumber toronto" or "ac repair calgary"'
-          required
-          hint="The search your highest-value customers actually type. Not your business name — what someone searching for what you do would enter."
-        />
+        <div>
+          <Field
+            label="Keyword to scan"
+            id="biz-keyword"
+            value={keywords[0] ?? ''}
+            onChange={(v) => setKeywordAt(0, v)}
+            placeholder='e.g. "plumber toronto" or "ac repair calgary"'
+            required
+            hint="The search your highest-value customers actually type. Not your business name — what someone searching for what you do would enter."
+          />
+          {keywordSuggestions.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-mono">
+                Suggested:
+              </span>
+              {keywordSuggestions.map((kw) => {
+                const active = (keywords[0] ?? '').trim().toLowerCase() === kw;
+                return (
+                  <button
+                    key={kw}
+                    type="button"
+                    onClick={() => setKeywordAt(0, kw)}
+                    className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                    style={{
+                      background: active ? 'rgba(197,255,58,0.1)' : '#0d0d10',
+                      borderColor: active
+                        ? 'rgba(197,255,58,0.4)'
+                        : 'var(--color-border)',
+                      color: active ? 'var(--color-lime)' : '#a1a1aa',
+                    }}
+                  >
+                    {kw}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       ) : (
         // Strategy: 3 keywords. We frame as a primary + two service
         // angles so the buyer understands what each slot is for — the
