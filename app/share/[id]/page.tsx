@@ -76,6 +76,8 @@ import {
   SHARE_FINAL_SENTINEL_ID,
 } from '@/components/turfmap/StickyShareUnlockBar';
 import { UnlockShareButton } from '@/components/turfmap/UnlockShareButton';
+import { LockedKeywordReveal } from '@/components/turfmap/LockedKeywordReveal';
+import type { KeywordCandidateRow } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -215,6 +217,19 @@ export default async function PublicSharePage({
       actions: AICoachAction[];
       projected_impact: string | null;
     }>();
+
+  // Competitor keyword reveal — preview-cohort conversion hook. Populated
+  // by the after() builder in createPreviewClient (gated by
+  // COMPETITOR_REVEAL_ENABLED). Empty until that job lands, or always when
+  // the flag is off — the reveal card self-hides on no competitor-ranked
+  // rows, so no placeholder churn.
+  const { data: keywordCandidates } = client.is_preview
+    ? await supabase
+        .from('keyword_candidates')
+        .select('*')
+        .eq('scan_id', scan.id)
+        .returns<KeywordCandidateRow[]>()
+    : { data: null };
 
   const expiresAtFormatted = new Date(share.expires_at).toLocaleDateString(
     'en-US',
@@ -693,6 +708,22 @@ export default async function PublicSharePage({
         {client.is_preview && (
           <div className="lg:col-span-12">
             <PreviewTestimonial />
+          </div>
+        )}
+
+        {/* Competitor keyword reveal — preview-only conversion hook. Self-
+         *  hides when there are no competitor-ranked candidates. */}
+        {client.is_preview && keywordCandidates && keywordCandidates.length > 0 && (
+          <div className="lg:col-span-12">
+            <LockedKeywordReveal
+              candidates={keywordCandidates}
+              cta={
+                <UnlockShareButton
+                  shareId={shareId}
+                  label="Unlock the full map →"
+                />
+              }
+            />
           </div>
         )}
 

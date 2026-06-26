@@ -32,8 +32,11 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { after } from 'next/server';
 import { runScanForLocation } from '@/lib/scans/runScan';
 import { geocodeAddress } from '@/lib/geocoding/nominatim';
+import { buildCompetitorReveal } from '@/lib/keywords/competitorReveal';
+import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -365,6 +368,36 @@ export async function createPreviewClient(
       kind: 'scan',
       message: `scan failed: ${scanResult.error}`,
     };
+  }
+
+  // ─── 6a. Competitor keyword reveal (flagged, fire-and-forget) ───────
+  // Mine the top competitor's keyword gap for the /share reveal. Runs in
+  // after() so it never delays the buyer's redirect, and only when
+  // COMPETITOR_REVEAL_ENABLED=true so DFS spend stays off until we flip
+  // it. Failures are swallowed — the reveal is additive; the scan + share
+  // never depend on it.
+  if (
+    process.env.COMPETITOR_REVEAL_ENABLED === 'true' &&
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude)
+  ) {
+    const revealScanId = scanResult.scanId;
+    after(async () => {
+      try {
+        await buildCompetitorReveal(supabase, {
+          scanId: revealScanId,
+          ownName: businessName,
+          industry: primaryTypeToIndustry(input.googlePrimaryType ?? null),
+          city: city || null,
+          lat: latitude,
+          lng: longitude,
+          countryCode: countryCode || null,
+          scannedKeyword: keywordText,
+        });
+      } catch (e) {
+        console.error('[competitor-reveal] build failed:', e);
+      }
+    });
   }
 
   // ─── 7. Share link (90-day TTL, same as paid shares) ────────────────
