@@ -20,6 +20,12 @@ import type { GridPoint } from './grid';
 
 const DFS_BASE_URL = 'https://api.dataforseo.com';
 const DFS_LIVE_ADVANCED = '/v3/serp/google/organic/live/advanced';
+/** DataForSEO Labs — keywords a domain ranks for (competitor mining). */
+const DFS_LABS_KEYWORDS_FOR_SITE =
+  '/v3/dataforseo_labs/google/keywords_for_site/live';
+
+/** Numeric DFS location codes for the markets we operate in. */
+export const DFS_LOCATION_CODE = { USA: 2840, CAN: 2124 } as const;
 
 /** Max concurrent in-flight requests during a scan. */
 const DFS_CONCURRENCY = 10;
@@ -111,11 +117,12 @@ function getAuthHeader(): string {
   return `Basic ${token}`;
 }
 
-/** POST one task to DFS Live Advanced. Returns the single task object. */
+/** POST one task to a DFS Live endpoint. Returns the single task object. */
 async function postSingleTask(
+  endpoint: string,
   task: Record<string, unknown>
 ): Promise<DfsTask> {
-  const res = await fetch(`${DFS_BASE_URL}${DFS_LIVE_ADVANCED}`, {
+  const res = await fetch(`${DFS_BASE_URL}${endpoint}`, {
     method: 'POST',
     headers: {
       Authorization: getAuthHeader(),
@@ -207,7 +214,7 @@ export async function runLiveLocalPackScan(
       };
       let lastTask: DfsTask | null = null;
       for (let attempt = 1; attempt <= DFS_MAX_ATTEMPTS; attempt++) {
-        const task = await postSingleTask(body);
+        const task = await postSingleTask(DFS_LIVE_ADVANCED, body);
         lastTask = task;
         if (task.status_code === 20000) return task;
         if (!DFS_RETRYABLE_TASK_CODES.has(task.status_code)) return task;
@@ -288,6 +295,105 @@ export async function runLiveLocalPackScan(
     dfsCostCents: Math.round(totalCostDollars * 100),
     failedPoints,
   };
+}
+
+// ─── v1 Competitor Keyword Reveal wrappers ────────────────────────────────
+
+export type CompetitorKeyword = {
+  keyword: string;
+  /** Monthly search volume (national — Labs metric), null when absent. */
+  searchVolume: number | null;
+};
+
+export type KeywordsForSiteResult = {
+  keywords: CompetitorKeyword[];
+  /** DFS-reported cost in integer cents (mirrors scans.dfs_cost_cents). */
+  costCents: number;
+};
+
+/**
+ * DataForSEO Labs — the keywords a competitor DOMAIN ranks for, with
+ * national search volume. The raw input to the competitor reveal: we
+ * intersect this against the business's local-intent candidate set, then
+ * local-pack-gate the matches (a domain ranking organically for a term
+ * does NOT mean the term triggers a local pack).
+ *
+ * Cost ~$0.01 + small per-item; cached by domain (competitor_keyword_cache)
+ * so we pay once per unique competitor.
+ */
+export async function keywordsForSite(
+  domain: string,
+  opts: { locationCode?: number; languageCode?: string; limit?: number } = {}
+): Promise<KeywordsForSiteResult> {
+  if (!domain) throw new Error('domain is required');
+  const task = await postSingleTask(DFS_LABS_KEYWORDS_FOR_SITE, {
+    target: domain,
+    location_code: opts.locationCode ?? DFS_LOCATION_CODE.USA,
+    language_code: opts.languageCode ?? 'en',
+    limit: opts.limit ?? 1000,
+    // exclude branded/own-domain noise upstream where the API supports it;
+    // the intersection step filters to local-intent regardless.
+    include_serp_info: false,
+  });
+  const costCents = Math.round((task.cost ?? 0) * 100);
+  if (task.status_code !== 20000) return { keywords: [], costCents };
+
+  const items = (task.result?.[0]?.items ?? []) as Array<Record<string, unknown>>;
+  const keywords: CompetitorKeyword[] = items
+    .map((it) => {
+      // keywords_for_site nests the term under keyword_data on some plan
+      // tiers and at the top level on others — read both defensively.
+      const kd = (it.keyword_data ?? it) as Record<string, unknown>;
+      const keyword = String(kd.keyword ?? '').trim().toLowerCase();
+      const info = (kd.keyword_info ?? {}) as Record<string, unknown>;
+      const vol = info.search_volume;
+      return {
+        keyword,
+        searchVolume: typeof vol === 'number' ? vol : null,
+      };
+    })
+    .filter((k) => k.keyword.length > 0);
+
+  return { keywords, costCents };
+}
+
+export type LocalPackGateResult = {
+  /** True when the keyword's SERP at this pin shows a local pack / map. */
+  present: boolean;
+  costCents: number;
+};
+
+/**
+ * Local-pack gate — does `keyword` trigger a local pack / Maps result at
+ * this location? This is THE filter that makes a keyword grid-worthy: a
+ * term that ranks the same everywhere (no local pack) is wasted grid spend.
+ * One organic SERP task at the business centroid; we only inspect
+ * item_types, not rank.
+ */
+export async function localPackPresence(
+  keyword: string,
+  lat: number,
+  lng: number,
+  opts: { languageCode?: string; device?: 'desktop' | 'mobile' } = {}
+): Promise<LocalPackGateResult> {
+  if (!keyword) throw new Error('keyword is required');
+  const task = await postSingleTask(DFS_LIVE_ADVANCED, {
+    keyword,
+    location_coordinate: `${lat},${lng},${DFS_QUERY_RADIUS_KM}`,
+    language_code: opts.languageCode ?? 'en',
+    device: opts.device ?? 'desktop',
+  });
+  const costCents = Math.round((task.cost ?? 0) * 100);
+  if (task.status_code !== 20000) return { present: false, costCents };
+
+  const items = (task.result?.[0]?.items ?? []) as Array<Record<string, unknown>>;
+  const present = items.some(
+    (it) =>
+      it.type === 'local_pack' ||
+      it.type === 'map' ||
+      it.type === 'local_services'
+  );
+  return { present, costCents };
 }
 
 // ─── Internal DFS response types ───────────────────────────────────────────

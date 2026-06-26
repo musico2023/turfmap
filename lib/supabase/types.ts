@@ -705,6 +705,42 @@ export type CitationOrderRow = {
   updated_at: string;
 };
 
+// ─── Competitor keyword reveal (migration 0045) ───────────────────────
+
+export type KeywordCandidateIntent = 'service' | 'commercial' | 'informational';
+export type KeywordCandidateStatus =
+  | 'suggested'
+  | 'selected'
+  | 'tracked'
+  | 'excluded_no_localpack';
+
+/** One ranked keyword candidate for a free scan's /share reveal. The
+ *  scanned keyword is status='tracked'; competitor_ranked 'suggested' rows
+ *  render locked. See lib/keywords/competitorReveal.ts + migration 0045. */
+export type KeywordCandidateRow = {
+  id: string;
+  scan_id: string;
+  keyword: string;
+  stem: string | null;
+  intent: KeywordCandidateIntent;
+  local_pack_present: boolean | null;
+  competitor_ranked: boolean;
+  competitor_domain: string | null;
+  priority: number | null;
+  status: KeywordCandidateStatus;
+  created_at: string;
+};
+
+/** Cache of DFS keywords_for_site results keyed by competitor domain so
+ *  repeat scans / shared competitors don't re-pay. Migration 0045. */
+export type CompetitorKeywordCacheRow = {
+  domain: string;
+  payload: unknown;
+  source_api: string;
+  fetch_cost_cents: number | null;
+  fetched_at: string;
+};
+
 // ─── Abandoned checkouts (cart recovery, migration 0034) ──────────────
 
 /** One row per expired-unpaid scan-funnel Stripe Checkout session.
