@@ -49,8 +49,8 @@ export function LockedKeywordReveal({
         We scanned <span className="text-zinc-200 font-medium">1</span> keyword. Your top
         local competitor also ranks for{' '}
         <span className="text-zinc-200 font-medium">{locked.length}</span> more service
-        search{locked.length === 1 ? '' : 'es'} across your service area — and you&rsquo;re
-        only tracking the one. Unlock to map your visibility on each.
+        search{locked.length === 1 ? '' : 'es'}{' '}across your service area — and
+        you&rsquo;re only tracking the one. Unlock to map your visibility on each.
       </p>
 
       <div className="space-y-1.5 md:ml-7">
