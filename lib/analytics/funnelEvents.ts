@@ -32,6 +32,7 @@
  */
 
 import { getServerSupabase } from '@/lib/supabase/server';
+import { fireScanViewedFanout } from '@/lib/analytics/scanViewedFanout';
 
 export type FunnelEventType =
   | 'yourmap_view'
@@ -150,5 +151,13 @@ export function logFunnelEvent(input: FunnelEventInput): void {
       input.event_type,
       e instanceof Error ? e.message : String(e)
     );
+  }
+
+  // Fan-out side-effects for high-signal events (v2.2 §P0.2). Only
+  // yourmap_view fans out for now (P0.2a = Slack ping). GHL upsert
+  // (P0.2b) and SMS trigger (P0.2c) will attach to this same branch
+  // when they land. Fire-and-forget; the fanout function is void.
+  if (input.event_type === 'yourmap_view') {
+    fireScanViewedFanout(input.prospect_id ?? null);
   }
 }
