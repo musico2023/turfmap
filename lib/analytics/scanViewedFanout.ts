@@ -29,6 +29,7 @@
 
 import { getServerSupabase } from '@/lib/supabase/server';
 import { postOperatorSlack } from '@/lib/audit/operatorSlack';
+import { upsertScanViewedToGhl } from '@/lib/integrations/highlevel';
 
 /**
  * Window (in milliseconds) within which a re-view by the same
@@ -44,10 +45,12 @@ type ProspectSlice = {
   business_name: string | null;
   trade: string | null;
   city: string | null;
-  state: string | null;
-  invisible_count: number | null;
+  invisibility_count: number | null;
   top_competitor_name: string | null;
-  lost_rev_display: string | null;
+  first_name: string | null;
+  email: string | null;
+  address: string | null;
+  cohort: string | null;
 };
 
 /**
@@ -103,13 +106,16 @@ async function runFanout(prospectId: string): Promise<void> {
     return;
   }
 
-  // Fetch the prospect slice we need for the ping. RLS should already
-  // permit service-role reads; this hits the same `prospects` table
-  // that the /yourmap page reads at render time.
+  // Fetch the prospect slice we need for the ping AND for the GHL
+  // upsert. RLS should already permit service-role reads; this hits
+  // the same `prospects` table that the /yourmap page reads at render
+  // time. Column names verified against lib/supabase/types.ts —
+  // invisibility_count (NOT invisible_count), no `state`, no
+  // `lost_rev_display` (P0.1 output, not shipped yet).
   const { data: prospect, error: fetchErr } = await supabase
     .from('prospects')
     .select(
-      'id,business_name,trade,city,state,invisible_count,top_competitor_name,lost_rev_display'
+      'id,business_name,trade,city,invisibility_count,top_competitor_name,first_name,email,address,cohort'
     )
     .eq('id', prospectId)
     .maybeSingle<ProspectSlice>();
@@ -132,29 +138,44 @@ async function runFanout(prospectId: string): Promise<void> {
     return;
   }
 
+  // Round 1: Slack ping — Anthony sees the raised hand.
   await pingSlack(prospect);
+
+  // Round 2 (P0.2b): GHL upsert into Cold Outbound Q3 2026 → Scan Viewed
+  // stage with cohort tag enforced. Fire-and-forget-in-caller but
+  // awaited here so a network failure logs + doesn't tank the Slack
+  // side. The upsert function itself swallows errors.
+  await upsertScanViewedToGhl({
+    prospect_id: prospect.id,
+    email: prospect.email,
+    first_name: prospect.first_name,
+    business_name: prospect.business_name,
+    trade: prospect.trade,
+    city: prospect.city,
+    address: prospect.address,
+    invisibility_count: prospect.invisibility_count,
+    top_competitor_name: prospect.top_competitor_name,
+  });
 }
 
 async function pingSlack(p: ProspectSlice): Promise<void> {
   const businessName = p.business_name?.trim() || '(unnamed prospect)';
   const trade = p.trade?.trim() || 'home service';
-  const location = [p.city, p.state].filter(Boolean).join(', ') || 'unknown market';
+  const location = p.city || 'unknown market';
 
   // Text is what shows in the channel preview + push notification.
   // Keep it tight — feed, not dashboard.
   const text = `👀 Scan viewed — *${businessName}* (${trade}, ${location})`;
 
   // Blocks add the pitch context Anthony wants at a glance if he
-  // opens the message: invisible cells, top competitor, dollar hook.
+  // opens the message: invisible cells + top competitor. Dollar hook
+  // adds automatically once P0.1 lands lost_rev_display on prospects.
   const contextParts: string[] = [];
-  if (p.invisible_count !== null && p.invisible_count !== undefined) {
-    contextParts.push(`${p.invisible_count}/81 invisible`);
+  if (p.invisibility_count !== null && p.invisibility_count !== undefined) {
+    contextParts.push(`${p.invisibility_count}/81 invisible`);
   }
   if (p.top_competitor_name) {
     contextParts.push(`vs *${p.top_competitor_name}*`);
-  }
-  if (p.lost_rev_display) {
-    contextParts.push(`est. ${p.lost_rev_display} lost/mo`);
   }
 
   const blocks: unknown[] = [
