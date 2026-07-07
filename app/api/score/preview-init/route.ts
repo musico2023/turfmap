@@ -30,6 +30,7 @@ import {
   buildFbcFromFbclid,
 } from '@/lib/marketing/metaCapi';
 import { hasLocatableCenter } from '@/lib/intake/requireLocatable';
+import { notifyFreeScoreLead } from '@/lib/audit/operatorSlack';
 
 export const runtime = 'nodejs';
 // Same ceiling as the paid scan-intake route — DFS + DB inserts +
@@ -376,6 +377,18 @@ export async function POST(req: Request) {
   const dripLeadSource = body.lead_source ?? null;
 
   after(async () => {
+    // Real-time #llm-leads ping for every inbound free-score lead — the
+    // live replacement for the paused daily-recap cron. Fail-soft (never
+    // throws), so a Slack hiccup can't block the drip sends below.
+    await notifyFreeScoreLead({
+      businessName: body.businessName.trim(),
+      keyword: body.keyword.trim(),
+      turfScore: result.turfScore,
+      turfBand: band?.label ?? null,
+      email,
+      shareUrl: previewUrl,
+      leadSource: dripLeadSource,
+    });
     const t1 = await sendScoreUnlockNudge({
       to: email,
       businessName: body.businessName.trim(),

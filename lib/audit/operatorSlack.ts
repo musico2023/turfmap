@@ -326,6 +326,52 @@ export async function notifyColdscanCompleted(
   });
 }
 
+export type FreeScoreLeadContext = {
+  /** Buyer's business name (from the lander form / GBP pick). */
+  businessName: string;
+  /** The keyword they scanned. */
+  keyword: string;
+  /** TurfScore from the just-run 81-point scan. */
+  turfScore: number;
+  /** Band label ("Invisible", "Solid", …) or null. */
+  turfBand: string | null;
+  /** Buyer's email — the lead. */
+  email: string;
+  /** Preview /share URL for one-click drill-down. */
+  shareUrl: string;
+  /** Lander slug: 'score' | 'free_score' | 'free_score_now' | null. */
+  leadSource: string | null;
+};
+
+/** "🎯 New free-score lead" — fires in /api/score/preview-init's after()
+ *  for EVERY free-score lead (the /score, /free-score, and /free-score-now
+ *  landers all post there). Real-time replacement for the paused daily
+ *  recap cron, so Anthony gets a live #llm-leads feed of inbound leads. */
+export async function notifyFreeScoreLead(
+  ctx: FreeScoreLeadContext
+): Promise<boolean> {
+  const src = ctx.leadSource ? ` · ${ctx.leadSource}` : '';
+  const band = ctx.turfBand ? ` — ${ctx.turfBand}` : '';
+  return postOperatorSlack({
+    text: `🎯 New free-score lead: ${ctx.businessName} (TurfScore ${ctx.turfScore})`,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*🎯 New free-score lead*\n*${ctx.businessName}* — "${ctx.keyword}"\nTurfScore: ${ctx.turfScore}${band}${src}\n📧 ${ctx.email}`,
+        },
+      },
+      {
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: `<${ctx.shareUrl}|Preview share page →>` },
+        ],
+      },
+    ],
+  });
+}
+
 // ─── Comp audit booking notification ──────────────────────────────────
 //
 // Fires when a cold-outreach prospect books a Visibility Audit Cal.com
