@@ -498,6 +498,10 @@ export type CitationDirectoryEntry = {
 };
 
 export type CitationOrderStatus =
+  /** Campaign created + persisted on BL, not yet confirmed/paid — waiting
+   *  on BrightLocal's async citation lookup before confirm can succeed.
+   *  The poll-citations cron finalizes these once the lookup completes. */
+  | 'awaiting_confirm'
   | 'queued'
   | 'in_progress'
   | 'complete'
@@ -576,6 +580,16 @@ export type ProspectRow = {
   address: string | null;
   latitude: number | null;
   longitude: number | null;
+  // ─── Lost-revenue estimate (migration 0046, v2.2 §P0.1) ───────────
+  // Populated by lib/lost_rev.py at row-build time. NULL on pre-
+  // 2026-07-01 rows; /yourmap dollar-headline block gates on non-null
+  // lost_rev_display.
+  lost_rev_low: number | null;
+  lost_rev_high: number | null;
+  lost_rev_display: string | null;
+  /** "high" | "medium" | "low" — render "estimated" more prominently
+   *  on the /yourmap methodology block when this is "low". */
+  lost_rev_confidence: string | null;
 };
 
 // ─── Visibility Audits (migration 0022) ───────────────────────────────

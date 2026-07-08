@@ -23,6 +23,7 @@ const STATUS_COPY: Record<
   CitationOrderRow['status'],
   { label: string; tone: 'pending' | 'progress' | 'success' | 'warn' | 'fail' }
 > = {
+  awaiting_confirm: { label: 'Verifying', tone: 'pending' },
   queued: { label: 'Queued', tone: 'pending' },
   in_progress: { label: 'Submitting', tone: 'progress' },
   complete: { label: 'All live', tone: 'success' },

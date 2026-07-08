@@ -166,16 +166,33 @@ export async function POST(req: Request) {
     message: null,
   }));
 
+  // Map the confirm outcome to a persisted status. The campaign was
+  // CREATED on BL either way, so we always persist (never orphan it):
+  //   confirmed        → queued (paid, submissions queued)
+  //   awaiting_confirm → BL's citation lookup is still running; the
+  //                      poll-citations cron finalizes it once it's done
+  //   confirm_failed   → a real confirm error; store it for follow-up
+  const orderStatus =
+    result.confirmState === 'confirmed'
+      ? 'queued'
+      : result.confirmState === 'awaiting_confirm'
+        ? 'awaiting_confirm'
+        : 'failed';
+
   const { data: row, error: insertErr } = await supabase
     .from('citation_orders')
     .insert({
       client_id: parsed.client_id,
       location_id: parsed.location_id,
       brightlocal_order_id: result.orderId,
-      status: 'queued',
+      status: orderStatus,
       per_directory: initialPerDirectory,
       wholesale_cents: result.wholesaleCents,
       submitted_profile: parsed.profile,
+      error:
+        result.confirmState === 'confirm_failed'
+          ? (result.confirmMessage ?? 'confirm failed')
+          : null,
     })
     .select('*')
     .single<CitationOrderRow>();
@@ -212,7 +229,29 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, order: row });
+  // confirm_failed is a real error — surface it (order persisted as
+  // 'failed' so it's not lost). awaiting/confirmed both succeed; awaiting
+  // gets a "finalizing" note so the operator knows it's not instant.
+  if (result.confirmState === 'confirm_failed') {
+    return NextResponse.json(
+      {
+        ok: false,
+        order: row,
+        error: `Campaign ${result.orderId} created but confirm failed: ${result.confirmMessage ?? 'unknown'}`,
+      },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    order: row,
+    confirm_state: result.confirmState,
+    message:
+      result.confirmState === 'awaiting_confirm'
+        ? "Submitted. BrightLocal is verifying citations — the order finalizes automatically within the hour (no re-submit needed)."
+        : 'Citations submitted.',
+  });
 }
 
 /** Split a free-form full name into first + last. Single-word names

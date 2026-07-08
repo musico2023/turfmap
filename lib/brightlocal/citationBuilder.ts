@@ -99,6 +99,17 @@ const FALLBACK_CATEGORY_ID = 605;
  *  the full set. */
 const DEFAULT_PACKAGE_ID = 'cb25';
 
+// In-request confirm retry budget. BL's async citation lookup often
+// finishes within ~30s of create; we retry the confirm on 'not_ready' for
+// ~28s (well inside the route's 60s maxDuration). Slower lookups fall
+// through to 'awaiting_confirm' and are finalized by the poll cron.
+const CONFIRM_MAX_ATTEMPTS = 5;
+const CONFIRM_RETRY_MS = 7000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 // ─── Public types ──────────────────────────────────────────────────────────
 
 export type SubmitOrderInput = {
@@ -129,6 +140,8 @@ export type SubmitOrderInput = {
 
 export type SubmitOrderResult =
   | {
+      // ok:true means the BL campaign was CREATED (so it must be persisted,
+      // even when not yet confirmed) — confirmState says how far it got.
       ok: true;
       /** BL's campaign id, persisted to citation_orders.brightlocal_order_id. */
       orderId: string;
@@ -137,8 +150,19 @@ export type SubmitOrderResult =
        *  case). */
       directories: string[];
       wholesaleCents: number;
+      /** Outcome of the confirm/pay step:
+       *   - 'confirmed'        → paid + queued (persist status 'queued')
+       *   - 'awaiting_confirm' → BL's async citation lookup isn't done yet;
+       *                          the poll cron finalizes it (status
+       *                          'awaiting_confirm')
+       *   - 'confirm_failed'   → a real confirm error (persist 'failed',
+       *                          surface confirmMessage) */
+      confirmState: 'confirmed' | 'awaiting_confirm' | 'confirm_failed';
+      /** Error/context message when confirmState !== 'confirmed'. */
+      confirmMessage?: string;
     }
   | {
+      // ok:false means NO campaign was created (nothing to persist).
       ok: false;
       kind:
         | 'not_configured'
@@ -264,13 +288,39 @@ export async function submitCitationOrder(
   // old endpoint was silently 4xx'ing, leaving campaigns in "Saved"
   // state and never queuing submissions — see confirmCampaignManageV1
   // header for the full incident note).
-  const confirm = await confirmCampaignManageV1(config.apiKey, campaignId, {
-    packageId: config.packageId,
-    countryCode3: input.profile.country_code ?? 'USA',
-    directories: input.directories,
-    notes: null,
-  });
-  if (!confirm.ok) return confirm.error;
+  // Retry the confirm on BL's 'not_ready' (async citation lookup still
+  // running). Any other error, or exhausting the retries, maps to a
+  // confirmState the caller persists — the campaign was created either way,
+  // so it must never be dropped/orphaned.
+  let confirmState: 'confirmed' | 'awaiting_confirm' | 'confirm_failed' =
+    'awaiting_confirm';
+  let confirmMessage: string | undefined;
+  for (let attempt = 1; attempt <= CONFIRM_MAX_ATTEMPTS; attempt++) {
+    const confirm = await confirmCampaignManageV1(config.apiKey, campaignId, {
+      packageId: config.packageId,
+      countryCode3: input.profile.country_code ?? 'USA',
+      directories: input.directories,
+      notes: null,
+    });
+    if (confirm.ok) {
+      confirmState = 'confirmed';
+      confirmMessage = undefined;
+      break;
+    }
+    if (confirm.error.kind === 'not_ready') {
+      confirmState = 'awaiting_confirm';
+      confirmMessage = confirm.error.message;
+      if (attempt < CONFIRM_MAX_ATTEMPTS) {
+        await sleep(CONFIRM_RETRY_MS);
+        continue;
+      }
+      break; // lookup still running after the in-request budget → defer
+    }
+    // A real confirm error (remote_error / rate_limited): stop retrying.
+    confirmState = 'confirm_failed';
+    confirmMessage = confirm.error.message;
+    break;
+  }
 
   // BL doesn't return a wholesale price on confirm-and-pay — it bills
   // per package. Stamp a placeholder; the dashboard's cost rollup
@@ -281,6 +331,37 @@ export async function submitCitationOrder(
     orderId: campaignId,
     directories: input.directories ?? [],
     wholesaleCents: estimatePackageCostCents(config.packageId),
+    confirmState,
+    confirmMessage,
+  };
+}
+
+/**
+ * Confirm/pay an already-created BL campaign. Used by the poll cron to
+ * finalize 'awaiting_confirm' orders once BL's citation lookup completes.
+ * Returns notReady=true when the lookup is still running (caller leaves the
+ * order awaiting_confirm and retries next tick).
+ */
+export async function confirmCitationOrder(
+  campaignId: string,
+  args: { countryCode3: string; directories?: string[] | null }
+): Promise<
+  | { ok: true }
+  | { ok: false; notReady: boolean; message: string }
+> {
+  const config = getConfig();
+  if (!config.ok) return { ok: false, notReady: false, message: config.message };
+  const confirm = await confirmCampaignManageV1(config.apiKey, campaignId, {
+    packageId: config.packageId,
+    countryCode3: args.countryCode3,
+    directories: args.directories ?? null,
+    notes: null,
+  });
+  if (confirm.ok) return { ok: true };
+  return {
+    ok: false,
+    notReady: confirm.error.kind === 'not_ready',
+    message: confirm.error.message,
   };
 }
 
@@ -752,7 +833,14 @@ async function confirmCampaignManageV1(
   }
 ): Promise<
   | { ok: true }
-  | { ok: false; error: { ok: false; kind: 'remote_error' | 'rate_limited'; message: string } }
+  | {
+      ok: false;
+      error: {
+        ok: false;
+        kind: 'remote_error' | 'rate_limited' | 'not_ready';
+        message: string;
+      };
+    }
 > {
   const publishers = publishersForCountry(args.countryCode3);
   const explicitDirs =
@@ -802,11 +890,16 @@ async function confirmCampaignManageV1(
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    // BL returns 400 { errors: { not_ready: "Citation Tracker is searching
+    // for citations for the campaign..." } } while its async lookup runs.
+    // That's transient, not a real failure — flag it so the caller retries
+    // / defers rather than marking the order failed.
+    const notReady = /not_ready|searching for citations/i.test(text);
     return {
       ok: false,
       error: {
         ok: false,
-        kind: 'remote_error',
+        kind: notReady ? 'not_ready' : 'remote_error',
         message: `BL PUT /manage/v1/citation-builder/${campaignId}/confirm ${res.status}: ${truncate(text, 240)}`,
       },
     };

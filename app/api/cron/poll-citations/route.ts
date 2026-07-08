@@ -27,8 +27,14 @@
 
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { pollCitationOrder } from '@/lib/brightlocal/citationBuilder';
-import type { CitationOrderRow } from '@/lib/supabase/types';
+import {
+  pollCitationOrder,
+  confirmCitationOrder,
+} from '@/lib/brightlocal/citationBuilder';
+import type {
+  CitationOrderRow,
+  CitationSubmittedProfile,
+} from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 // Citation status polls are quick (~1-2s each via BL) but we may have
@@ -50,6 +56,46 @@ export async function GET(req: Request) {
   }
 
   const supabase = getServerSupabase();
+
+  // ─── Step 0: finalize 'awaiting_confirm' orders ─────────────────────
+  // These are campaigns created on BL but not yet confirmed/paid because
+  // BL's async citation lookup hadn't finished at submit time. Re-attempt
+  // the confirm; once BL's lookup completes it succeeds and the order
+  // becomes 'queued' (then the poll step below tracks it). While the
+  // lookup is still running the confirm returns notReady and we leave the
+  // order to retry next tick.
+  let confirmed = 0;
+  const { data: awaiting } = await supabase
+    .from('citation_orders')
+    .select('id, brightlocal_order_id, submitted_profile')
+    .eq('status', 'awaiting_confirm')
+    .eq('maintenance_paused', false)
+    .not('brightlocal_order_id', 'is', null)
+    .returns<
+      Pick<CitationOrderRow, 'id' | 'brightlocal_order_id' | 'submitted_profile'>[]
+    >();
+  for (const row of awaiting ?? []) {
+    if (!row.brightlocal_order_id) continue;
+    const profile = row.submitted_profile as CitationSubmittedProfile | null;
+    const res = await confirmCitationOrder(row.brightlocal_order_id, {
+      countryCode3: profile?.country_code ?? 'USA',
+    });
+    if (res.ok) {
+      await supabase
+        .from('citation_orders')
+        .update({ status: 'queued', error: null, updated_at: new Date().toISOString() })
+        .eq('id', row.id);
+      confirmed += 1;
+    } else if (!res.notReady) {
+      // A real confirm error (not the transient lookup-still-running).
+      // Leave the order awaiting_confirm but stamp the error for triage.
+      await supabase
+        .from('citation_orders')
+        .update({ error: res.message, updated_at: new Date().toISOString() })
+        .eq('id', row.id);
+    }
+    // notReady → leave untouched; retry next tick.
+  }
 
   // Pull open orders (queued/in_progress) PLUS recovery candidates:
   // orders stuck on 'failed' that nonetheless carry a BL campaign id.
@@ -126,6 +172,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({
+    confirmed,
     polled: orders.length,
     transitioned,
     recovered,
