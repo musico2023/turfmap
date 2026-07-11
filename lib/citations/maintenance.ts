@@ -30,7 +30,11 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { pauseMaintenance } from '@/lib/brightlocal/citationBuilder';
-import type { CitationOrderRow } from '@/lib/supabase/types';
+import { postOperatorSlack } from '@/lib/audit/operatorSlack';
+import type {
+  CitationOrderRow,
+  CitationSubmittedProfile,
+} from '@/lib/supabase/types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseLike = SupabaseClient<any, any, any>;
@@ -50,17 +54,26 @@ export async function pauseClientCitationMaintenance(
 ): Promise<PauseResult> {
   const { data: openOrders } = await supabase
     .from('citation_orders')
-    .select('id, brightlocal_order_id')
+    .select('id, provider, brightlocal_order_id, ghl_location_id, submitted_profile')
     .eq('client_id', clientId)
     .eq('maintenance_paused', false)
-    .returns<Pick<CitationOrderRow, 'id' | 'brightlocal_order_id'>[]>();
+    .returns<
+      Pick<
+        CitationOrderRow,
+        | 'id'
+        | 'provider'
+        | 'brightlocal_order_id'
+        | 'ghl_location_id'
+        | 'submitted_profile'
+      >[]
+    >();
 
   const orders = openOrders ?? [];
   const blFailures: PauseResult['blFailures'] = [];
 
   // Update local rows first so the UI reflects the paused state
-  // immediately. BL pause is best-effort — even if it fails, our
-  // billing surface (citation_orders.maintenance_paused) is correct.
+  // immediately. Vendor-side stops are best-effort — even if they fail,
+  // our billing surface (citation_orders.maintenance_paused) is correct.
   if (orders.length > 0) {
     await supabase
       .from('citation_orders')
@@ -74,10 +87,28 @@ export async function pauseClientCitationMaintenance(
       );
   }
 
-  // Call BL pause per order so they stop billing us for sync. Errors
-  // are logged + collected but don't block the operation — the
-  // local pause is the source of truth for "should we keep paying."
   for (const o of orders) {
+    if (o.provider === 'ghl_listings') {
+      // GHL bills $30/mo wholesale for as long as Listings is toggled ON
+      // for the sub-account, and there's no public API for the toggle —
+      // ping the operator so the wholesale spend actually stops. Fail-soft
+      // (the local pause already happened; the ping is the money-saver).
+      const name =
+        (o.submitted_profile as CitationSubmittedProfile | null)
+          ?.business_name ?? 'unknown business';
+      try {
+        await postOperatorSlack({
+          text: `🛑 Citations churn: ${name} paused. Toggle Listings OFF for GHL sub-account ${o.ghl_location_id ?? '(id unknown — find by name)'} to stop the $30/mo wholesale.`,
+        });
+      } catch {
+        console.error(
+          `[citations/maintenance] Slack ping failed for GHL order ${o.id} — Listings must be toggled OFF manually`
+        );
+      }
+      continue;
+    }
+    // BrightLocal rows: call BL pause so they stop billing us for sync.
+    // Errors are logged + collected but don't block the operation.
     if (!o.brightlocal_order_id) continue;
     const result = await pauseMaintenance(o.brightlocal_order_id);
     if (!result.ok && result.kind !== 'not_configured') {

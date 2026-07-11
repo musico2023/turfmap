@@ -199,6 +199,101 @@ export async function provisionGhlListingsLocation(
   return { ok: true, ghlLocationId: json.id };
 }
 
+/** Pure — build the NAP-only PUT body for a sub-account update (profile
+ *  re-sync path). Only the high-churn fields the settings form can edit;
+ *  everything else on the sub-account is left untouched. Exported for the
+ *  verify guard. */
+export function buildGhlNapUpdateBody(
+  profile: Pick<
+    CitationSubmittedProfile,
+    | 'business_name'
+    | 'street_address'
+    | 'city'
+    | 'region'
+    | 'postcode'
+    | 'country_code'
+    | 'phone'
+  >,
+  companyId: string
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    companyId, // required by GHL on PUT, same as POST
+    name: profile.business_name,
+    country: countryAlpha3To2(profile.country_code),
+  };
+  if (profile.phone) body.phone = profile.phone;
+  if (profile.street_address) body.address = profile.street_address;
+  if (profile.city) body.city = profile.city;
+  if (profile.region) body.state = profile.region;
+  if (profile.postcode) body.postalCode = profile.postcode;
+  return body;
+}
+
+export type UpdateResult =
+  | { ok: true }
+  | {
+      ok: false;
+      kind: 'not_configured' | 'remote_error';
+      message: string;
+    };
+
+/**
+ * Push a NAP change to an existing GHL sub-account (PUT /locations/{id},
+ * contract verified against the v2 docs 2026-07-11 — same body shape and
+ * agency-token requirement as create). Called by /api/citations/resync for
+ * ghl_listings orders: unlike BL (per-directory re-submission fees), a GHL
+ * update is one API call and the listings network propagates it at no
+ * marginal cost.
+ */
+export async function updateGhlListingsLocation(
+  ghlLocationId: string,
+  profile: Parameters<typeof buildGhlNapUpdateBody>[0]
+): Promise<UpdateResult> {
+  if (process.env.GHL_LISTINGS_ENABLED !== 'true') {
+    return { ok: false, kind: 'not_configured', message: 'GHL Listings gated off.' };
+  }
+  const token = process.env.HIGHLEVEL_AGENCY_PIT_TOKEN;
+  const companyId = process.env.HIGHLEVEL_COMPANY_ID;
+  if (!token || !companyId) {
+    return {
+      ok: false,
+      kind: 'not_configured',
+      message: 'HIGHLEVEL_AGENCY_PIT_TOKEN / HIGHLEVEL_COMPANY_ID not set.',
+    };
+  }
+  let res: Response;
+  try {
+    res = await fetch(
+      `${GHL_API_BASE}/locations/${encodeURIComponent(ghlLocationId)}`,
+      {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          version: GHL_API_VERSION,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(buildGhlNapUpdateBody(profile, companyId)),
+      }
+    );
+  } catch (e) {
+    return {
+      ok: false,
+      kind: 'remote_error',
+      message: e instanceof Error ? e.message : String(e),
+    };
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return {
+      ok: false,
+      kind: 'remote_error',
+      message: `GHL PUT /locations/${ghlLocationId} ${res.status}: ${truncate(text, 240)}`,
+    };
+  }
+  return { ok: true };
+}
+
 function truncate(s: string, n: number): string {
   return s.length <= n ? s : s.slice(0, n);
 }

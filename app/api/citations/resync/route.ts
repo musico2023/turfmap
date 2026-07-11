@@ -30,6 +30,7 @@ import {
   consumeFreeResync,
   estimateResyncCost,
 } from '@/lib/citations/resync';
+import { updateGhlListingsLocation } from '@/lib/ghl/listings';
 import type {
   CitationOrderRow,
   CitationSubmittedProfile,
@@ -181,22 +182,37 @@ export async function POST(req: Request) {
     );
   }
 
-  // ─── 5. Trigger BL update (TODO when API surface verified) ────────────
-  // The BL Citation Builder wrapper currently exposes submit / poll /
-  // pause primitives. The "update existing order with new profile"
-  // primitive needs to be added once we confirm the endpoint path
-  // against BL developer docs. Until then this route's effect is
-  // confined to the local DB — citation_orders.submitted_profile and
-  // the quota counter are correct, but the directories themselves
-  // won't see the new NAP until BL gets the call.
+  // ─── 5. Push the change to the fulfilment vendor ──────────────────────
+  // GHL Listings (provider v2): one PUT to the sub-account; the listings
+  // network propagates the new NAP across directories automatically at no
+  // marginal cost. Fail-soft — the local snapshot is already updated, and
+  // a failed push is stamped on the order for operator triage (retryable
+  // by re-saving the form; re-sync stays idempotent on the GHL side).
   //
-  // const updateResult = await updateCitationOrder(
-  //   order.brightlocal_order_id,
-  //   updatedProfile
-  // );
-  // if (!updateResult.ok && updateResult.kind !== 'not_configured') {
-  //   ...rollback or surface error...
-  // }
+  // BrightLocal (legacy): still a TODO — BL's wrapper exposes submit /
+  // poll / pause primitives only, and the "update existing campaign"
+  // endpoint was never verified before the vendor pivot. BL rows keep the
+  // local-DB-only behavior.
+  if (order.provider === 'ghl_listings' && order.ghl_location_id) {
+    const push = await updateGhlListingsLocation(order.ghl_location_id, {
+      business_name: updatedProfile.business_name,
+      street_address: updatedProfile.street_address,
+      city: updatedProfile.city,
+      region: updatedProfile.region,
+      postcode: updatedProfile.postcode,
+      country_code: updatedProfile.country_code,
+      phone: updatedProfile.phone,
+    });
+    if (!push.ok && push.kind !== 'not_configured') {
+      await supabase
+        .from('citation_orders')
+        .update({
+          error: `NAP push to GHL failed: ${push.message}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', order.id);
+    }
+  }
 
   return NextResponse.json({
     ok: true,

@@ -345,8 +345,8 @@ function NoOrderCard({
         <div>
           <h3 className="font-display text-lg font-bold">Citations</h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Pulse+ includes citation building across ~25 directories. Finish
-            the citation profile for{' '}
+            Pulse+ includes business listings built + kept in sync across
+            70+ directories. Finish the listings profile for{' '}
             <span className="text-zinc-300">{locationLabel}</span> to kick
             it off.
           </p>

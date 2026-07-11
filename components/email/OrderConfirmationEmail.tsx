@@ -53,7 +53,7 @@ const TIER_BLURB: Record<OrderConfirmationEmailProps['tier'], string> = {
   audit: 'an 81-point geo-grid scan + your 90-day Visibility Roadmap, built by a TurfMap strategist',
   strategy: 'three keywords scanned + a written diagnosis + a 90-min strategist deep-dive',
   pulse: 'weekly geo-grid scans + score-movement alerts',
-  pulse_plus: 'weekly geo-grid scans across 10 keywords + citation building + Slack delivery',
+  pulse_plus: 'weekly geo-grid scans across 10 keywords + listings sync across 70+ directories + Slack delivery',
 };
 
 /**

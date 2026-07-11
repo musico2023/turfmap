@@ -164,26 +164,23 @@ const TIERS: MonitoringSpec[] = [
         ],
       },
       {
-        group: 'Citations + maintenance',
+        group: 'Citations + listings sync',
+        // Copy updated 2026-07-11 for the citations vendor pivot
+        // (BrightLocal one-time builds → GHL Listings/Uberall continuous
+        // sync). The promise is now ALWAYS-ON sync — NAP edits propagate
+        // automatically from one profile, which is stronger than the old
+        // build-then-resync-on-demand model and matches what we deliver.
         items: [
-          'Initial citation building across ~25 industry directories',
-          // "Active maintenance and sync" was misleading — implied
-          // automatic NAP-drift correction, which we don't do. We
-          // surface per-directory status in real time and let the
-          // operator trigger resyncs on demand (3 free per quarter,
-          // then $8/directory over-cap). Updated 2026-05-17.
-          'Real-time directory status tracking + on-demand resync',
-          'Per-directory live status in your dashboard',
-          // Localeze is now branded as Neustar Localeze after the 2015
-          // Neustar acquisition. We use the BrightLocal `neustar`
-          // publisher which IS that platform; renaming for accuracy.
-          'Aggregator push (Data Axle, Foursquare, Neustar) for downstream propagation',
+          'Business listings built + kept in sync across 70+ directories',
+          'Google, Apple Maps, Bing, Facebook + the major data networks',
+          'NAP corrections propagate automatically from one profile update',
+          'Listings stay synced for as long as your subscription is active',
         ],
       },
     ],
     honestyRail: {
-      title: 'How citations propagate',
-      body: 'First wave of citations goes live within 2 weeks. Full propagation across all directories takes 6–8 weeks. Score lift typically visible in scans starting week 4 onward.',
+      title: 'How listings propagate',
+      body: 'Major platforms (Google, Apple Maps, Bing, Facebook) sync within days. Full propagation across the long-tail directories takes 4–6 weeks. Score lift typically visible in scans starting week 4 onward.',
     },
     cta: 'Start Pulse+',
     popular: true,

@@ -595,9 +595,9 @@ export default function MarketingLanding() {
               We track your visibility weekly, alert you when it shifts,
               and (on Pulse+){' '}
               <strong className="font-semibold text-zinc-100">
-                build and maintain citations
+                build and sync your business listings
               </strong>{' '}
-              across ~25 industry directories on your behalf.
+              across 70+ directories on your behalf.
             </>
           }
         />
@@ -748,8 +748,8 @@ export default function MarketingLanding() {
                     <strong className="font-semibold text-zinc-200">
                       Pulse+
                     </strong>{' '}
-                    ($99/mo, 3-month minimum) adds citation-building on
-                    top. We also offer fully managed monthly services
+                    ($99/mo, 3-month minimum) adds always-on business
+                    listings sync across 70+ directories on top. We also offer fully managed monthly services
                     where we don&rsquo;t just measure the map, we act on
                     it; the right fit depends on your category and how
                     much of this you want to handle yourself.

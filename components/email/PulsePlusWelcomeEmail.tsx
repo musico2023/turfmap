@@ -1,11 +1,12 @@
 /**
  * Pulse+ welcome — sent after a successful Pulse+ subscription
  * is created. Routes the buyer to the citation-onboarding form
- * (categories, hours, photos) needed for the BrightLocal Citation
- * Builder integration.
+ * (categories, hours, photos) needed for the listings-sync
+ * integration (GHL Listings / Uberall as of 2026-07-11; formerly
+ * BrightLocal Citation Builder).
  *
- * Operationally important: without those fields, citations can't
- * be submitted, so we surface the next-step CTA prominently +
+ * Operationally important: without those fields, listings can't
+ * be distributed, so we surface the next-step CTA prominently +
  * give the buyer concrete expectations on what they're filling
  * out and why.
  */
@@ -35,11 +36,11 @@ export function PulsePlusWelcomeEmail({
       </P>
       <H1>Welcome to Pulse+.</H1>
       <P>
-        Pulse+ tracks your visibility weekly and builds + maintains
-        your citations across ~25 industry directories. Your first
+        Pulse+ tracks your visibility weekly and keeps your business
+        listings built + in sync across 70+ directories. Your first
         scan is on its way; in the meantime, your account team will
-        reach out to gather the extra details we need for the
-        citation build (categories, hours, photos).
+        reach out to gather the extra details we need for your
+        listings profile (categories, hours, photos).
       </P>
 
       <PrimaryButton href={onboardingUrl}>
@@ -47,9 +48,10 @@ export function PulsePlusWelcomeEmail({
       </PrimaryButton>
 
       <PSmall>
-        First wave of citations goes live within 2 weeks of providing
-        those details. Full propagation takes 6–8 weeks. We&rsquo;ll
-        send progress updates as listings activate.
+        Major platforms (Google, Apple Maps, Bing, Facebook) sync
+        within days of providing those details. Full propagation
+        across the long-tail directories takes 4–6 weeks — and your
+        listings stay synced for as long as Pulse+ is active.
       </PSmall>
     </EmailLayout>
   );
