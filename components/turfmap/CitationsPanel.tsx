@@ -1,10 +1,11 @@
-import { Activity, AlertTriangle, Check, Clock, ExternalLink } from 'lucide-react';
+import { Activity, AlertTriangle, Check, Clock, ExternalLink, Globe } from 'lucide-react';
 import Link from 'next/link';
 import type {
   CitationDirectoryEntry,
   CitationOrderRow,
 } from '@/lib/supabase/types';
 import { PollCitationsNowButton } from '@/components/turfmap/PollCitationsNowButton';
+import { MarkListingsActivatedButton } from '@/components/turfmap/MarkListingsActivatedButton';
 
 /**
  * Pulse+ "Citations" panel rendered on the agency dashboard.
@@ -24,6 +25,8 @@ const STATUS_COPY: Record<
   { label: string; tone: 'pending' | 'progress' | 'success' | 'warn' | 'fail' }
 > = {
   awaiting_confirm: { label: 'Verifying', tone: 'pending' },
+  awaiting_activation: { label: 'Setting up', tone: 'pending' },
+  active: { label: 'Syncing', tone: 'success' },
   queued: { label: 'Queued', tone: 'pending' },
   in_progress: { label: 'Submitting', tone: 'progress' },
   complete: { label: 'All live', tone: 'success' },
@@ -77,6 +80,13 @@ export function CitationsPanel({
         locationLabel={locationLabel}
       />
     );
+  }
+
+  // GHL Listings orders (provider v2) have no per-directory status feed —
+  // the network syncs continuously. Render the sync-state card instead of
+  // the BL submission grid.
+  if (order.provider === 'ghl_listings') {
+    return <GhlListingsCard order={order} />;
   }
 
   const dirs = order.per_directory ?? [];
@@ -211,6 +221,104 @@ function DirRow({ entry }: { entry: CitationDirectoryEntry }) {
       >
         {DIR_LABEL[entry.status]}
       </span>
+    </div>
+  );
+}
+
+/**
+ * GHL Listings (Uberall engine) order card. Two states:
+ *   awaiting_activation → operator hasn't flipped Listings ON in the GHL
+ *                         dashboard yet; show the Mark-activated button
+ *   active              → sync is running; show the always-on promise
+ */
+function GhlListingsCard({ order }: { order: CitationOrderRow }) {
+  const statusInfo = STATUS_COPY[order.status] ?? STATUS_COPY.failed;
+  const awaiting = order.status === 'awaiting_activation';
+  return (
+    <div
+      id="citations"
+      className="border rounded-lg p-5 scroll-mt-6"
+      style={{
+        background: 'var(--color-card)',
+        borderColor: 'var(--color-border)',
+      }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="font-display text-lg font-bold">Citations</h3>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {awaiting
+              ? 'Profile received — listings sync is being set up.'
+              : 'Business profile syncing across 70+ directories.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {awaiting && <MarkListingsActivatedButton orderId={order.id} />}
+          <span
+            className="text-[10px] uppercase tracking-[0.18em] font-semibold px-2 py-1 rounded font-mono whitespace-nowrap"
+            style={{
+              color: TONE_COLOR[statusInfo.tone],
+              border: `1px solid ${TONE_COLOR[statusInfo.tone]}33`,
+              background: `${TONE_COLOR[statusInfo.tone]}10`,
+            }}
+          >
+            {statusInfo.label}
+          </span>
+        </div>
+      </div>
+
+      <div
+        className="flex items-center gap-3 px-4 py-3 rounded border text-sm mb-4"
+        style={{
+          background: 'var(--color-bg)',
+          borderColor: 'var(--color-border)',
+        }}
+      >
+        <Globe
+          size={16}
+          className="flex-shrink-0"
+          style={{
+            color: awaiting ? '#a1a1aa' : 'var(--color-lime)',
+          }}
+        />
+        <div className="text-xs text-zinc-400 leading-relaxed">
+          {awaiting ? (
+            <>
+              Your business details (name, address, hours, categories,
+              description) are queued for distribution. Syncing typically
+              starts within 1 business day — this panel flips to{' '}
+              <span className="text-zinc-200 font-semibold">Syncing</span>{' '}
+              automatically.
+            </>
+          ) : (
+            <>
+              Name, address, phone, hours, categories and description are
+              kept consistent across Google, Apple Maps, Bing, Facebook and
+              70+ other directories — updates propagate automatically while
+              your subscription is active.
+            </>
+          )}
+        </div>
+      </div>
+
+      {order.error && (
+        <div
+          className="rounded-md border px-3 py-2 mb-3 text-xs"
+          style={{
+            background: 'rgba(255, 159, 58, 0.06)',
+            borderColor: 'rgba(255, 159, 58, 0.3)',
+            color: '#ffcf99',
+          }}
+        >
+          <strong className="font-semibold">Setup note:</strong> {order.error}
+        </div>
+      )}
+
+      <p className="text-[11px] text-zinc-600 leading-relaxed">
+        Listings stay synced for as long as your Pulse+ subscription is
+        active. Data corrections land on all directories from a single
+        update — no per-site logins needed.
+      </p>
     </div>
   );
 }

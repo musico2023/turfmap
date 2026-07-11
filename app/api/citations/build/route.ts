@@ -30,6 +30,8 @@ import { z } from 'zod';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import { submitCitationOrder } from '@/lib/brightlocal/citationBuilder';
+import { provisionGhlListingsLocation } from '@/lib/ghl/listings';
+import { postOperatorSlack } from '@/lib/audit/operatorSlack';
 import type {
   CitationOrderRow,
   CitationSubmittedProfile,
@@ -120,12 +122,21 @@ export async function POST(req: Request) {
     );
   }
 
-  // ─── Submit to BL ─────────────────────────────────────────────────────
-  // BL requires contact name + email on every campaign — derive them
-  // from the agency operator submitting the order (we don't collect
-  // a buyer-side contact in the onboarding form).
+  // Operator contact — required by both vendors (BL campaign contact /
+  // GHL sub-account prospect info). Derived from the agency user
+  // submitting the order (we don't collect a buyer-side contact).
   const contact = splitContactName(auth.full_name, auth.email);
 
+  // ─── GHL Listings path (citations vendor v2, flag-gated) ──────────────
+  // When GHL_LISTINGS_ENABLED=true, orders fulfil via GoHighLevel Listings
+  // (Uberall engine, no location cap) instead of BrightLocal (walled at 1
+  // active location on our plan). The BL code below stays intact as the
+  // flag-off path / rollback.
+  if (process.env.GHL_LISTINGS_ENABLED === 'true') {
+    return handleGhlListingsBuild(supabase, parsed, contact);
+  }
+
+  // ─── Submit to BL ─────────────────────────────────────────────────────
   const result = await submitCitationOrder({
     profile: parsed.profile,
     industry: parsed.industry ?? null,
@@ -251,6 +262,109 @@ export async function POST(req: Request) {
       result.confirmState === 'awaiting_confirm'
         ? "Submitted. BrightLocal is verifying citations — the order finalizes automatically within the hour (no re-submit needed)."
         : 'Citations submitted.',
+  });
+}
+
+/**
+ * GHL Listings build: provision a GHL sub-account carrying the profile,
+ * persist the order as 'awaiting_activation', and ping the operator to
+ * flip Listings ON (no public API for that toggle — one UI click). The
+ * order NEVER fails just because provisioning is plan-gated or the agency
+ * token is missing: it persists with ghl_location_id=null and the ping
+ * asks the operator to create the sub-account manually (available on
+ * every GHL plan).
+ */
+async function handleGhlListingsBuild(
+  supabase: ReturnType<typeof getServerSupabase>,
+  parsed: z.infer<typeof Body>,
+  contact: { firstname: string; lastname: string; email: string }
+): Promise<NextResponse> {
+  const provision = await provisionGhlListingsLocation({
+    profile: parsed.profile,
+    contact,
+    locationReference: parsed.location_id,
+  });
+
+  // Hard failures only: a bad profile or the flag being off. Everything
+  // else (plan gate, remote hiccup) degrades to manual provisioning so
+  // the buyer-facing flow never blocks on GHL.
+  if (!provision.ok && provision.kind === 'invalid_profile') {
+    return NextResponse.json({ error: provision.message }, { status: 400 });
+  }
+  if (!provision.ok && provision.kind === 'not_configured') {
+    return NextResponse.json({ error: provision.message }, { status: 503 });
+  }
+  const ghlLocationId = provision.ok ? provision.ghlLocationId : null;
+
+  const { data: row, error: insertErr } = await supabase
+    .from('citation_orders')
+    .insert({
+      client_id: parsed.client_id,
+      location_id: parsed.location_id,
+      provider: 'ghl_listings',
+      ghl_location_id: ghlLocationId,
+      brightlocal_order_id: null,
+      status: 'awaiting_activation',
+      per_directory: [],
+      // Monthly wholesale (GHL bills $30/mo per sub-account with Listings
+      // enabled). Semantics differ from BL's one-time campaign cost — the
+      // dashboard cost rollup reads this as "current monthly COGS".
+      wholesale_cents: 3000,
+      submitted_profile: parsed.profile,
+      error: provision.ok ? null : provision.message,
+    })
+    .select('*')
+    .single<CitationOrderRow>();
+
+  if (insertErr || !row) {
+    const code = (insertErr as { code?: string } | null)?.code;
+    if (code === '23P01') {
+      const { data: existing } = await supabase
+        .from('citation_orders')
+        .select('id, status, provider')
+        .eq('location_id', parsed.location_id)
+        .eq('maintenance_paused', false)
+        .neq('status', 'failed')
+        .maybeSingle<Pick<CitationOrderRow, 'id' | 'status' | 'provider'>>();
+      return NextResponse.json(
+        {
+          error:
+            'An open citation order already exists for this location. Pause or wait for the existing order before submitting another.',
+          existing_order: existing,
+        },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(
+      {
+        error: `Local insert failed: ${insertErr?.message ?? 'unknown'}${ghlLocationId ? ` (GHL sub-account ${ghlLocationId} was created — operator follow-up required)` : ''}`,
+      },
+      { status: 500 }
+    );
+  }
+
+  // Operator ping — the activation step is manual by necessity. Fail-soft:
+  // a Slack hiccup must not fail the order (the dashboard panel shows the
+  // same "awaiting activation" state as backstop).
+  const p = parsed.profile;
+  const napLine = [p.street_address, p.city, p.region, p.postcode]
+    .filter(Boolean)
+    .join(', ');
+  try {
+    await postOperatorSlack({
+      text: ghlLocationId
+        ? `📇 Citations: GHL sub-account created for ${p.business_name} (${napLine}). Next: toggle Listings ON for sub-account ${ghlLocationId} in the GHL agency dashboard, then hit "Mark activated" on the TurfMap citations panel.`
+        : `📇 Citations: order queued for ${p.business_name} (${napLine}) but the GHL sub-account needs MANUAL creation (${provision.ok ? '' : provision.message}). Create it in the GHL agency dashboard, toggle Listings ON, then hit "Mark activated" on the TurfMap citations panel.`,
+    });
+  } catch {
+    /* fail-soft */
+  }
+
+  return NextResponse.json({
+    ok: true,
+    order: row,
+    message:
+      'Listings order submitted. Your profile is being set up across 70+ directories — the panel updates once syncing is activated.',
   });
 }
 

@@ -69,6 +69,11 @@ export async function GET(req: Request) {
     .from('citation_orders')
     .select('id, brightlocal_order_id, submitted_profile')
     .eq('status', 'awaiting_confirm')
+    // BL-only sweep: GHL Listings orders (provider='ghl_listings', 0049)
+    // have no confirm step or per-directory feed on the public API — their
+    // lifecycle (awaiting_activation → active) is operator-driven via
+    // /api/citations/activate, never cron-driven.
+    .eq('provider', 'brightlocal')
     .eq('maintenance_paused', false)
     .not('brightlocal_order_id', 'is', null)
     .returns<
@@ -116,6 +121,7 @@ export async function GET(req: Request) {
     .or(
       'status.in.(queued,in_progress),and(status.eq.failed,brightlocal_order_id.not.is.null)'
     )
+    .eq('provider', 'brightlocal')
     .eq('maintenance_paused', false)
     .returns<Pick<CitationOrderRow, 'id' | 'brightlocal_order_id' | 'status'>[]>();
   if (listErr) {

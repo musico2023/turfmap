@@ -502,11 +502,23 @@ export type CitationOrderStatus =
    *  on BrightLocal's async citation lookup before confirm can succeed.
    *  The poll-citations cron finalizes these once the lookup completes. */
   | 'awaiting_confirm'
+  /** GHL Listings (migration 0049): sub-account provisioned (or queued
+   *  for manual creation when the GHL plan gates the API); the operator
+   *  hasn't toggled Listings ON for it yet. */
+  | 'awaiting_activation'
+  /** GHL Listings: operator confirmed activation — the listings network
+   *  is syncing the profile across directories for as long as the
+   *  subscription runs. Terminal-ish (until churn/pause). */
+  | 'active'
   | 'queued'
   | 'in_progress'
   | 'complete'
   | 'partial'
   | 'failed';
+
+/** Which vendor fulfils a citation order (migration 0049). BL rows are
+ *  the legacy one-time builds; ghl_listings rows are ongoing syncs. */
+export type CitationOrderProvider = 'brightlocal' | 'ghl_listings';
 
 /** Snapshot of the buyer's onboarding profile at submit time. Stored on
  *  citation_orders.submitted_profile so a NAP edit on the client row
@@ -707,7 +719,12 @@ export type CitationOrderRow = {
   id: string;
   client_id: string;
   location_id: string;
+  /** Fulfilment vendor (0049). Defaults 'brightlocal' for legacy rows. */
+  provider: CitationOrderProvider;
   brightlocal_order_id: string | null;
+  /** GHL sub-account id when provider='ghl_listings' and API provisioning
+   *  succeeded; null while awaiting manual sub-account creation. */
+  ghl_location_id: string | null;
   status: CitationOrderStatus;
   per_directory: CitationDirectoryEntry[];
   wholesale_cents: number | null;
