@@ -697,7 +697,7 @@ async function sendEmailWithId(args: SendArgs): Promise<SendResult> {
  * Pulse+ welcome email — sent after a successful Pulse+ subscription
  * is created. Points the buyer at the dashboard while the operator
  * follows up to gather the categories/hours/photos needed for the
- * citation build.
+ * listings profile (GHL Listings sync).
  */
 export async function sendPulsePlusWelcome(args: {
   to: string;

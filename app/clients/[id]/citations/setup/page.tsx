@@ -76,12 +76,13 @@ export default async function CitationSetupPage({
           <ChevronLeft size={12} /> Back to {client.business_name}
         </Link>
         <div className="mb-6">
-          <h1 className="font-display text-2xl font-bold">Citation setup</h1>
+          <h1 className="font-display text-2xl font-bold">Listings setup</h1>
           <p className="text-xs text-zinc-500 mt-1 max-w-xl leading-relaxed">
-            We need a few extra fields before we can build your
-            citations. Your NAP and address are pre-filled from settings —
-            just add categories, hours, and a description. First wave goes
-            live within 2 weeks; full propagation takes 6–8 weeks.
+            We need a few extra fields before we can distribute your
+            business listings. Your NAP and address are pre-filled from
+            settings — just add categories, hours, and a description. Major
+            platforms (Google, Apple Maps, Bing, Facebook) sync within
+            days; full propagation across 70+ directories takes 4–6 weeks.
           </p>
         </div>
 

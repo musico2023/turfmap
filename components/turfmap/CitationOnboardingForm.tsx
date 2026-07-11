@@ -8,7 +8,8 @@ import { CategoryCombobox } from '@/components/turfmap/CategoryCombobox';
 import { GBP_CATEGORIES } from '@/lib/citations/gbp-categories';
 
 /**
- * Pulse+ citation-build onboarding form. Collects the BrightLocal-
+ * Pulse+ listings-sync onboarding form (GHL Listings/Uberall as of
+ * 2026-07-11; formerly BrightLocal). Collects the vendor-
  * specific fields beyond the standard NAP that lives on
  * client_locations: primary + additional GBP categories, description,
  * weekly hours, photo URLs, website.
@@ -525,7 +526,7 @@ export function CitationOnboardingForm({
           loadingLabel="Submitting…"
           rightIcon={<ChevronRight size={14} />}
         >
-          Submit citation order
+          Start listings sync
         </Button>
       </div>
     </form>

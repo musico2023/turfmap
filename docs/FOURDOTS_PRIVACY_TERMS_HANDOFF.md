@@ -10,7 +10,7 @@ You're updating the privacy policy and terms of service on **fourdots.io** to ac
 
 **The single legal entity is Fourdots Digital.** TurfMap is one of its products — not a separate company. Privacy policy and terms describe the *operating entity*'s obligations across all properties (fourdots.io, turfmap.ai, anything else). Don't create separate `turfmap.ai/privacy` pages; consolidate everything at fourdots.io.
 
-**What TurfMap actually is**: a geo-grid local-SEO product. Buyers (typically home-services businesses — plumbers, HVAC, roofers, restaurants) pay through Stripe Checkout; we run an 81-cell grid scan of their territory using DataForSEO's Local Pack API, generate a heatmap + AI Coach playbook, and either deliver a one-shot report (TurfScan / Audit / Strategy tiers) or recurring scans (Pulse / Pulse+ subscriptions). Pulse+ also includes citation building via BrightLocal.
+**What TurfMap actually is**: a geo-grid local-SEO product. Buyers (typically home-services businesses — plumbers, HVAC, roofers, restaurants) pay through Stripe Checkout; we run an 81-cell grid scan of their territory using DataForSEO's Local Pack API, generate a heatmap + AI Coach playbook, and either deliver a one-shot report (TurfScan / Audit / Strategy tiers) or recurring scans (Pulse / Pulse+ subscriptions). Pulse+ also includes business-listings sync across 70+ directories via GoHighLevel Listings (Uberall engine; replaced BrightLocal Citation Builder 2026-07-11 — note for the subprocessor list: GoHighLevel/LeadConnector and Uberall receive client business NAP data; BrightLocal remains a subprocessor for NAP audits via Citation Tracker).
 
 **Tier matrix:**
 
@@ -20,7 +20,7 @@ You're updating the privacy policy and terms of service on **fourdots.io** to ac
 | Visibility Audit | $499 | one-time | Above + per-vertical NAP audit + competitor analysis + 30-min strategist call |
 | Strategy Session | $1,497 | one-time | Above + 3-keyword scan + competitor deep-dives + 90-min strategist session |
 | Pulse | $39/mo + $25/mo per additional location | subscription | Weekly automated scans, score-movement alerts, basic competitor tracking |
-| Pulse+ | $99/mo + $35/mo per additional location | subscription | Above + citation building + Slack delivery + 10 keywords/location + granular alerts |
+| Pulse+ | $99/mo + $35/mo per additional location | subscription | Above + listings sync across 70+ directories + Slack delivery + 10 keywords/location + granular alerts |
 
 **Pulse+ monthly has a 3-month minimum commitment** (Stripe Subscription Schedule). Pulse+ annual and Pulse don't.
 

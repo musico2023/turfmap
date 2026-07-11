@@ -719,18 +719,35 @@ function ResyncConfirmModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-display text-lg font-bold mb-2">
-          Citation re-sync
+          Listings re-sync
         </h3>
         <p className="text-sm text-zinc-300 leading-relaxed mb-4">
           You&rsquo;re changing{' '}
           <span className="text-zinc-100 font-semibold">
             {estimate.changedFields.join(', ')}
           </span>
-          . We&rsquo;ll push the new values to{' '}
-          <span className="font-mono text-zinc-100">
-            {estimate.directoryCount} citation{estimate.directoryCount === 1 ? '' : 's'}
-          </span>
-          .
+          .{' '}
+          {/* GHL Listings orders carry no per-directory roster
+              (directoryCount 0) — the sync network propagates from a
+              single profile update. Only legacy BL orders show a count;
+              without this branch the modal would read "push to 0
+              citations". */}
+          {estimate.directoryCount > 0 ? (
+            <>
+              We&rsquo;ll push the new values to{' '}
+              <span className="font-mono text-zinc-100">
+                {estimate.directoryCount} citation
+                {estimate.directoryCount === 1 ? '' : 's'}
+              </span>
+              .
+            </>
+          ) : (
+            <>
+              The new values sync automatically across your listings
+              network (Google, Apple Maps, Bing, Facebook + 70+
+              directories).
+            </>
+          )}
         </p>
 
         {estimate.free ? (

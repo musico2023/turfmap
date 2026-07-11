@@ -215,7 +215,7 @@ export const INTAKE_TIER_CONFIGS: Record<IntakeTier, IntakeTierConfig> = {
     requiresMonthlyScanSetup: true,
     pageTitle: 'Tell us where to start Pulse+.',
     pageSubtitle:
-      'Seven fields — three keywords so weekly scans + citation building start the moment you check out.',
+      'Seven fields — three keywords so weekly scans + listings sync start the moment you check out.',
   },
 };
 
