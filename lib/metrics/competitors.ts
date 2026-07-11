@@ -39,6 +39,12 @@
  */
 
 import { cleanCompetitorName } from '@/lib/dataforseo/cleanCompetitorName';
+import {
+  competitorState,
+  isOutOfRegion,
+  normalizeUsState,
+  usStateFromText,
+} from '@/lib/metrics/geoRegion';
 
 export type RawCompetitor = {
   name?: string | null;
@@ -46,6 +52,10 @@ export type RawCompetitor = {
   rank_absolute?: number | null;
   domain?: string | null;
   place_id?: string | null;
+  /** US state parsed from the local-pack title/description at scan time
+   *  (newer scans). Older rows leave this undefined and fall back to
+   *  parsing the name. Used for geo-sanity filtering. */
+  region?: string | null;
 };
 
 export type CompetitorAggregate = {
@@ -68,9 +78,17 @@ export const MIN_SHARE_PCT = 2;
 export function aggregateCompetitors(
   scanPoints: Array<{ competitors: unknown }>,
   totalPoints: number,
-  options: { excludeNamePattern?: RegExp; topN?: number } = {}
+  options: {
+    excludeNamePattern?: RegExp;
+    topN?: number;
+    /** Client's NAP region (full name or 2-letter). When set, competitors
+     *  whose detected state is a KNOWN US state different from this are
+     *  dropped as out-of-region geo noise (the "painter dayton" → Dayton OH
+     *  problem). Competitors with no detectable state are always kept. */
+    clientRegion?: string | null;
+  } = {}
 ): CompetitorAggregate[] {
-  const { excludeNamePattern, topN = 3 } = options;
+  const { excludeNamePattern, topN = 3, clientRegion } = options;
   const stats = new Map<string, number[]>();
 
   for (const sp of scanPoints) {
@@ -90,6 +108,13 @@ export function aggregateCompetitors(
       const name = cleanCompetitorName(c.name);
       if (!name) continue;
       if (excludeNamePattern && excludeNamePattern.test(name)) continue;
+      // Geo-sanity: drop an out-of-state business (ambiguous-keyword noise).
+      if (
+        clientRegion &&
+        isOutOfRegion(competitorState({ name: c.name, region: c.region }), clientRegion)
+      ) {
+        continue;
+      }
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
       const prev = cellBest.get(name);
@@ -132,4 +157,45 @@ export function aggregateCompetitors(
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+export type GeoAmbiguity = {
+  /** True when a real competitor (above the noise floor) resolves to a
+   *  different US state than the client — the tell that the keyword pulled
+   *  in a same-name city elsewhere and the score is not market-meaningful. */
+  ambiguous: boolean;
+  /** The client's normalized region (2-letter), or null if not resolvable. */
+  clientState: string | null;
+  /** Out-of-region competitor names surfaced (for the warning copy). */
+  outOfRegion: string[];
+};
+
+/**
+ * Detect a geographically-ambiguous keyword: run the SAME aggregation the
+ * dashboard uses but WITHOUT the region filter, then check whether any
+ * surfaced (above-floor) competitor sits in a different US state than the
+ * client. Used to render a "this score may not reflect your real market"
+ * warning next to an inflated score (e.g. "painter dayton" for Dayton, MN).
+ */
+export function detectGeoAmbiguity(
+  scanPoints: Array<{ competitors: unknown }>,
+  totalPoints: number,
+  options: { excludeNamePattern?: RegExp; clientRegion?: string | null } = {}
+): GeoAmbiguity {
+  const clientState = normalizeUsState(options.clientRegion);
+  if (!clientState) {
+    return { ambiguous: false, clientState: null, outOfRegion: [] };
+  }
+  // Unfiltered aggregate (no clientRegion) so we can SEE the out-of-region
+  // competitors rather than having already dropped them.
+  const unfiltered = aggregateCompetitors(scanPoints, totalPoints, {
+    excludeNamePattern: options.excludeNamePattern,
+    topN: 8,
+  });
+  const outOfRegion: string[] = [];
+  for (const c of unfiltered) {
+    const st = usStateFromText(c.name);
+    if (st && st !== clientState) outOfRegion.push(c.name);
+  }
+  return { ambiguous: outOfRegion.length > 0, clientState, outOfRegion };
 }

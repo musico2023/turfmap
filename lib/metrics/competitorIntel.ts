@@ -18,6 +18,8 @@
  * dashboard render path over already-loaded points.
  */
 
+import { competitorState, isOutOfRegion } from '@/lib/metrics/geoRegion';
+
 /** Minimum grid share (% of cells in the 3-pack) for a competitor to
  *  surface — filters one-off appearances. Matches the coach's floor. */
 const MIN_SHARE_PCT = 5;
@@ -37,6 +39,9 @@ export type CompetitorIntelInput = {
   totalCells?: number;
   /** how many top competitors to return. */
   topN?: number;
+  /** Client's NAP region. When set, out-of-state competitors (ambiguous-
+   *  keyword geo noise) are excluded — see lib/metrics/geoRegion.ts. */
+  clientRegion?: string | null;
 };
 
 export type CompetitorIntelEntry = {
@@ -78,6 +83,7 @@ type RawComp = {
   rank_absolute?: number | null;
   rating?: number | null;
   reviews?: number | null;
+  region?: string | null;
 };
 
 export function computeCompetitorIntel(
@@ -108,6 +114,14 @@ export function computeCompetitorIntel(
     for (const c of list) {
       if (!c?.name) continue;
       if (ownNamePattern.test(c.name)) continue;
+      // Geo-sanity: drop out-of-state businesses pulled in by an ambiguous
+      // city keyword (e.g. Dayton, OH painters for a Dayton, MN client).
+      if (
+        input.clientRegion &&
+        isOutOfRegion(competitorState({ name: c.name, region: c.region }), input.clientRegion)
+      ) {
+        continue;
+      }
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
       const prev = cellBest.get(c.name);

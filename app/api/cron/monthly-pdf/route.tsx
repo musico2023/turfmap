@@ -67,7 +67,7 @@ export async function GET(req: Request) {
   // toggle (alert_prefs.monthly_pdf_email).
   const { data: clients } = await supabase
     .from('clients')
-    .select('id, public_id, business_name, billing_mode, status, alert_prefs')
+    .select('id, public_id, business_name, region, billing_mode, status, alert_prefs')
     .in('billing_mode', ['agency_managed', 'self_serve_subscription'])
     .neq('status', 'churned')
     .returns<
@@ -191,6 +191,7 @@ async function sendMonthlyPdfForClient(
   );
   const competitors = aggregateCompetitors(points, points.length || 1, {
     excludeNamePattern: ownNamePattern,
+    clientRegion: (client as { region?: string | null }).region ?? null,
   });
 
   const { data: insightRow } = await supabase

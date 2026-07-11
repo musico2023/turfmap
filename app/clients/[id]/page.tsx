@@ -5,7 +5,7 @@ import Link from 'next/link';
 // every scan. force-dynamic also kills any Next.js Data Cache layer that
 // might serve stale Supabase responses after a metric-definition change.
 export const dynamic = 'force-dynamic';
-import { Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
+import { AlertTriangle, Compass, Crown, Download, History, MapPin, Settings, Sparkles, Target } from 'lucide-react';
 import { getServerSupabase } from '@/lib/supabase/server';
 import {
   listLocations,
@@ -24,7 +24,10 @@ import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank, turfRankCaption } from '@/lib/metrics/turfRank';
 import { composeTurfScore } from '@/lib/metrics/turfScoreComposite';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
-import { aggregateCompetitors } from '@/lib/metrics/competitors';
+import {
+  aggregateCompetitors,
+  detectGeoAmbiguity,
+} from '@/lib/metrics/competitors';
 import { aggregateCuratedCompetitors } from '@/lib/metrics/curatedCompetitors';
 import { Header } from '@/components/turfmap/Header';
 import type { HeatmapCell } from '@/components/turfmap/HeatmapGrid';
@@ -318,10 +321,25 @@ export default async function ClientDashboardPage({
     'i'
   );
   const isCurated = curatedNames.length > 0;
+  // Client's NAP state — used to drop out-of-region competitors that an
+  // ambiguous city keyword ("painter dayton" for a Dayton, MN client) pulls
+  // in from a prominent same-name city (Dayton, OH). Only in auto-discovery
+  // mode; curated competitors are operator-chosen and trusted as-is.
+  const clientRegion = activeLocation?.region ?? null;
   const competitors = isCurated
     ? aggregateCuratedCompetitors(points, curatedNames, points.length || 1)
     : aggregateCompetitors(points, points.length || 1, {
         excludeNamePattern: ownNamePattern,
+        clientRegion,
+      });
+  // Geo-ambiguity warning: does the keyword pull in a real competitor from
+  // another state? (Computed on the UNFILTERED set so we can name the
+  // offender.) Drives a "score may not reflect your real market" notice.
+  const geoAmbiguity = isCurated
+    ? { ambiguous: false, clientState: null, outOfRegion: [] as string[] }
+    : detectGeoAmbiguity(points, points.length || 1, {
+        excludeNamePattern: ownNamePattern,
+        clientRegion,
       });
   // Heatmap toggle: only show competitors actually in some cells —
   // toggling to a 0%-share competitor renders an empty grid which
@@ -343,6 +361,7 @@ export default async function ClientDashboardPage({
           rating: gbpSignals?.rating ?? null,
           reviews: gbpSignals?.user_ratings_total ?? null,
         },
+        clientRegion,
       })
     : null;
 
@@ -531,6 +550,40 @@ export default async function ClientDashboardPage({
           </div>
         </div>
       </div>
+
+      {geoAmbiguity.ambiguous && (
+        <div className="px-4 md:px-8 pt-2">
+          <div
+            className="rounded-lg border px-4 py-3 text-sm flex items-start gap-3"
+            style={{
+              background: 'rgba(255, 159, 58, 0.08)',
+              borderColor: 'rgba(255, 159, 58, 0.35)',
+              color: '#ffcf99',
+            }}
+          >
+            <AlertTriangle
+              size={18}
+              className="flex-shrink-0 mt-0.5"
+              style={{ color: '#ff9f3a' }}
+            />
+            <div className="leading-relaxed">
+              <span className="font-semibold text-[#ffb765]">
+                Geographically ambiguous keyword.
+              </span>{' '}
+              Google returned out-of-state businesses for
+              {activeKeyword?.keyword ? ` “${activeKeyword.keyword}”` : ' this keyword'}
+              {geoAmbiguity.outOfRegion.length > 0 &&
+                ` — e.g. ${geoAmbiguity.outOfRegion.slice(0, 2).join(', ')}`}
+              . That happens when your city name matches a bigger city
+              elsewhere, so this score reflects a different market
+              {geoAmbiguity.clientState ? `, not ${geoAmbiguity.clientState}` : ''}.
+              Out-of-state results are hidden below; for a meaningful score,
+              track a keyword tied to your real service area (your metro, or a
+              &ldquo;near me&rdquo;-style term).
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 p-4 md:p-8">
         {/* Heatmap */}

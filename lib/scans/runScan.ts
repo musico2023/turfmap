@@ -33,6 +33,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { runLiveLocalPackScan } from '@/lib/dataforseo/client';
 import { cleanCompetitorName } from '@/lib/dataforseo/cleanCompetitorName';
+import { usStateFromText } from '@/lib/metrics/geoRegion';
 import { generateGridCoordinates } from '@/lib/dataforseo/grid';
 import { turfReach } from '@/lib/metrics/turfReach';
 import { turfRank } from '@/lib/metrics/turfRank';
@@ -190,6 +191,13 @@ export async function runScanForLocation(
       // competitor (their rating + review count, from the local_pack item).
       rating: it.rating?.value ?? null,
       reviews: it.rating?.votes_count ?? null,
+      // US state parsed from title+description ("... of Dayton, OH" / "·
+      // Dayton, MN"), so the dashboard can drop out-of-region competitors
+      // pulled in by an ambiguous city keyword. Parsed once at scan time;
+      // older rows fall back to parsing the name at read time.
+      region: usStateFromText(
+        `${it.title ?? ''} ${it.description ?? ''}`
+      ),
     })),
     raw_response: r.raw,
   }));
