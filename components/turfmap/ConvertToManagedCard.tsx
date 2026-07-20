@@ -9,18 +9,21 @@ import type { SubscriptionTier } from '@/lib/supabase/types';
 /**
  * Agency-side "convert to agency-managed" card.
  *
- * Renders only on self_serve_subscription clients with a Stripe
- * subscription. Lets the operator wind down the Stripe sub and flip
- * the row to agency_managed in one shot — for the case where a
- * self-serve buyer (Pulse / Pulse+) gets upgraded to a custom
- * agency contract billed outside Stripe.
+ * Renders on self_serve_subscription clients with a Stripe
+ * subscription AND on one_time buyers (2026-07-19 — audit/scan buyers
+ * like CertaPro Calgary moving onto an agency contract previously had
+ * NO upgrade path in the UI; the Plan tab was near-empty for them).
+ * Flips the row to agency_managed and sets tier in one shot; for
+ * self-serve it also winds down the Stripe sub so the buyer isn't
+ * double-billed. one_time buyers have no subscription, so the
+ * cancel-timing controls are hidden and the endpoint skips Stripe.
  *
  * Two-step UX: button → inline confirmation form (tier + cancel
  * timing) → destructive-styled confirm. We don't show a modal; the
  * inline expansion mirrors the same pattern as DeleteClientCard +
  * the rest of the agency settings cards.
  *
- * Cancellation timing:
+ * Cancellation timing (self-serve only):
  *   - "period_end": buyer keeps their paid period, sub auto-ends at
  *     next billing date. Cleanest, no refund. Default.
  *   - "now": cancel immediately. Operator handles any prorated
@@ -32,12 +35,18 @@ export type ConvertToManagedCardProps = {
   /** Current tier — used as the default in the picker. NULL falls
    *  back to 'pulse_plus' (the typical agency-contract bundle). */
   currentTier: SubscriptionTier | null;
+  /** Which conversion this is. Drives the copy + whether the Stripe
+   *  cancel-timing controls render. Defaults to the original
+   *  self-serve behavior so existing call sites are unchanged. */
+  billingMode?: 'self_serve_subscription' | 'one_time';
 };
 
 export function ConvertToManagedCard({
   clientId,
   currentTier,
+  billingMode = 'self_serve_subscription',
 }: ConvertToManagedCardProps) {
+  const isOneTime = billingMode === 'one_time';
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
@@ -93,11 +102,23 @@ export function ConvertToManagedCard({
             Convert to agency-managed
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed max-w-xl">
-            For when this self-serve buyer is now on a custom contract
-            billed outside Stripe. Cancels their Stripe subscription,
-            flips billing_mode to agency_managed, and sets tier
-            explicitly. The Stripe webhook stops overwriting tier
-            post-conversion.
+            {isOneTime ? (
+              <>
+                For when this one-time buyer (audit/scan) is now on a
+                custom contract billed outside Stripe. Flips them to
+                agency-managed and unlocks the recurring-tier features
+                (weekly scans, alerts, citations on Pulse+). No Stripe
+                subscription exists, so nothing is cancelled.
+              </>
+            ) : (
+              <>
+                For when this self-serve buyer is now on a custom contract
+                billed outside Stripe. Cancels their Stripe subscription,
+                flips billing_mode to agency_managed, and sets tier
+                explicitly. The Stripe webhook stops overwriting tier
+                post-conversion.
+              </>
+            )}
           </p>
         </div>
         {!expanded && (
@@ -147,6 +168,7 @@ export function ConvertToManagedCard({
             </div>
           </div>
 
+          {!isOneTime && (
           <div>
             <label className="block text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-semibold mb-1.5">
               Cancel Stripe subscription
@@ -188,6 +210,7 @@ export function ConvertToManagedCard({
               </label>
             </div>
           </div>
+          )}
 
           <div
             className="rounded-md border px-3 py-2 text-xs"
@@ -197,9 +220,20 @@ export function ConvertToManagedCard({
               color: '#ffb86b',
             }}
           >
-            This is one-way. To return the client to self-serve
-            billing later, you&rsquo;d need them to complete a fresh
-            Stripe Checkout.
+            {isOneTime ? (
+              <>
+                You&rsquo;re taking over billing for this client —
+                TurfMap won&rsquo;t charge them. To move them to
+                self-serve later, they&rsquo;d complete a Stripe
+                Checkout.
+              </>
+            ) : (
+              <>
+                This is one-way. To return the client to self-serve
+                billing later, you&rsquo;d need them to complete a fresh
+                Stripe Checkout.
+              </>
+            )}
           </div>
 
           {error && (

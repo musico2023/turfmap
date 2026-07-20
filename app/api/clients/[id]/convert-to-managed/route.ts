@@ -1,18 +1,25 @@
 /**
  * POST /api/clients/[id]/convert-to-managed
  *
- * One-click conversion of a self-serve buyer to an agency-managed
- * client. Required when the operator decides to take a Stripe-paying
- * buyer onto a custom Local Lead Machine contract — the client's
- * Stripe sub needs to wind down so they're not double-billed, the
- * row needs to flip to billing_mode='agency_managed', and tier needs
- * to be set explicitly (since the Stripe webhook will no longer be
- * the source of truth post-conversion).
+ * One-click conversion of a buyer to an agency-managed client. Two
+ * starting points:
+ *
+ *   - self_serve_subscription: a Stripe-paying buyer moving onto a
+ *     custom Local Lead Machine contract. Their Stripe sub winds down
+ *     so they're not double-billed, billing_mode flips, and tier is
+ *     set explicitly (the Stripe webhook stops being the source of
+ *     truth post-conversion).
+ *   - one_time: an audit/scan buyer (no subscription at all) being
+ *     taken onto an agency contract (2026-07-19, CertaPro Calgary /
+ *     Justin). Same flip + tier set; there's no Stripe subscription
+ *     to cancel, so the Stripe step is skipped entirely and
+ *     cancel_timing is ignored.
  *
  * Body:
  *   {
  *     tier: 'pulse' | 'pulse_plus',
- *     cancel_timing: 'now' | 'period_end'
+ *     cancel_timing?: 'now' | 'period_end'   // default 'period_end';
+ *                                            // irrelevant for one_time
  *   }
  *
  * Order of operations matters here:
@@ -42,13 +49,14 @@ import {
 } from '@/lib/auth/agency';
 import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { getStripe } from '@/lib/stripe/client';
-import type { ClientRow } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
 const Body = z.object({
   tier: z.enum(['pulse', 'pulse_plus']),
-  cancel_timing: z.enum(['now', 'period_end']),
+  // Optional because one_time clients have no subscription to cancel;
+  // defaulted for self-serve so older card payloads keep working.
+  cancel_timing: z.enum(['now', 'period_end']).default('period_end'),
 });
 
 export async function POST(
@@ -94,19 +102,27 @@ export async function POST(
     return NextResponse.json({ error: 'client not found' }, { status: 404 });
   }
 
-  // Only self-serve subscriptions are conversion targets. one_time
-  // and already-agency_managed clients have nothing to convert.
-  if (client.billing_mode !== 'self_serve_subscription') {
+  // Conversion targets: self-serve subscribers (wind down Stripe) and
+  // one_time buyers (nothing to wind down). Already-agency_managed
+  // clients have nothing to convert.
+  if (
+    client.billing_mode !== 'self_serve_subscription' &&
+    client.billing_mode !== 'one_time'
+  ) {
     return NextResponse.json(
       {
-        error: `Client billing mode is "${client.billing_mode}". Only self-serve subscription clients can be converted to agency-managed.`,
+        error: `Client billing mode is "${client.billing_mode}". Only self-serve subscription or one-time clients can be converted to agency-managed.`,
       },
       { status: 400 }
     );
   }
 
-  const stripe = await getStripe();
-  if (!stripe) {
+  // Stripe is only needed when there's a subscription to cancel. A
+  // one_time client (or a self-serve row that never completed
+  // Checkout) has no sub — don't let missing Stripe config block a
+  // conversion that wouldn't touch Stripe anyway.
+  const stripe = client.stripe_subscription_id ? await getStripe() : null;
+  if (client.stripe_subscription_id && !stripe) {
     return NextResponse.json(
       { error: 'STRIPE_SECRET_KEY is not set' },
       { status: 503 }
@@ -142,7 +158,7 @@ export async function POST(
     note?: string;
   } = { canceled: false };
 
-  if (client.stripe_subscription_id) {
+  if (client.stripe_subscription_id && stripe) {
     try {
       if (parsed.cancel_timing === 'now') {
         const canceled = await stripe.subscriptions.cancel(

@@ -368,14 +368,24 @@ export default async function ClientSettingsPage({
               clientPublicId={client.public_id}
               users={portalUsers ?? []}
             />
-            {/* Convert self-serve → agency-managed. Domain-gated to
-             *  agency-owner emails on top of the agency-staff check. */}
-            {showSubscriptionPanel && isAgencyOwnerEmail(me.email) && (
-              <ConvertToManagedCard
-                clientId={client.id}
-                currentTier={client.tier}
-              />
-            )}
+            {/* Convert self-serve OR one-time → agency-managed. Domain-
+             *  gated to agency-owner emails on top of the agency-staff
+             *  check. For one_time buyers (audit/scan) this is the ONLY
+             *  card besides portal users — without it the Plan tab was
+             *  a dead end for exactly the client you'd want to upgrade
+             *  (2026-07-19, CertaPro Calgary). */}
+            {(showSubscriptionPanel || client.billing_mode === 'one_time') &&
+              isAgencyOwnerEmail(me.email) && (
+                <ConvertToManagedCard
+                  clientId={client.id}
+                  currentTier={client.tier}
+                  billingMode={
+                    client.billing_mode === 'one_time'
+                      ? 'one_time'
+                      : 'self_serve_subscription'
+                  }
+                />
+              )}
             {/* Mirror — agency-managed → self-serve. Same gate. */}
             {client.billing_mode === 'agency_managed' &&
               isAgencyOwnerEmail(me.email) && (
