@@ -160,11 +160,24 @@ export function ClientCreateForm() {
       { limit: 5 }
     );
     setKeywordSuggestions(keywordCandidates.map((c) => c.keyword));
+    // Service-area businesses (SABs) hide their address on Google — the
+    // resolve payload comes back with formattedAddress '' and no street
+    // component (Painter Bros of Indianapolis, 2026-07-23). Fall back to a
+    // city/region display string so the form (and clients.address, which
+    // is NOT NULL in the DB) still carries something meaningful; the scan
+    // centers on the listing's lat/lng pin either way.
+    const sabFallbackAddress = [components?.city, components?.region]
+      .filter(Boolean)
+      .join(', ');
     setForm((s) => ({
       ...s,
       business_name: place.businessName,
       phone: place.phone || s.phone,
-      address: place.formattedAddress,
+      address:
+        place.formattedAddress.trim() ||
+        (sabFallbackAddress
+          ? `${sabFallbackAddress} (service-area business)`
+          : ''),
       street_address: components?.streetAddress ?? '',
       city: components?.city ?? '',
       region: components?.region ?? '',
@@ -566,8 +579,7 @@ export function ClientCreateForm() {
             </Field>
             <Field
               label="Address"
-              required
-              help="Start typing — pick from the dropdown to auto-fill the structured NAP fields below."
+              help="Pick from the dropdown to auto-fill the NAP fields below. Service-area business with no street address? Type just the city + state (e.g. 'Indianapolis, IN') — that's enough to center the scan — or use manual coordinates below."
             >
               <AddressAutocomplete
                 value={form.address}
@@ -600,8 +612,7 @@ export function ClientCreateForm() {
                     formatted: fields.formatted,
                   });
                 }}
-                placeholder="100 Queen St W, Toronto"
-                required
+                placeholder="100 Queen St W, Toronto — or just: Indianapolis, IN"
                 inputClassName={inputClass}
               />
             </Field>
@@ -978,7 +989,12 @@ function GbpMatchedCard({
   place: ResolvedPlace;
   onClear: () => void;
 }) {
-  const address = place.formattedAddress.trim();
+  // SABs hide their address — show an honest note instead of a blank
+  // line so the operator knows the pick is still valid (scan centers
+  // on the listing's map pin).
+  const address =
+    place.formattedAddress.trim() ||
+    'Service-area business — no public address; scan centers on the map pin';
   return (
     <div
       className="border rounded-md p-4"

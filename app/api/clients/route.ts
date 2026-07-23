@@ -139,6 +139,16 @@ export async function POST(req: Request) {
 
   const supabase = getServerSupabase();
 
+  // Display address. clients.address is NOT NULL in the schema, and
+  // service-area businesses (SABs) legitimately have none — Google hides
+  // it on the listing (Painter Bros of Indianapolis, 2026-07-23). Fall
+  // back to a city/region string so SAB creates don't 500; the scan
+  // centers on lat/lng regardless.
+  const displayAddress =
+    parsed.address?.trim() ||
+    [parsed.city, parsed.region].filter(Boolean).join(', ') ||
+    'Service-area business';
+
   // 1. Insert clients row. Location columns are dual-written here as
   //    deprecated mirrors so existing read sites don't break; the
   //    canonical location data also goes into client_locations below.
@@ -146,7 +156,7 @@ export async function POST(req: Request) {
     .from('clients')
     .insert({
       business_name: parsed.business_name,
-      address: parsed.address,
+      address: displayAddress,
       latitude: parsed.latitude,
       longitude: parsed.longitude,
       phone: parsed.phone ?? null,
@@ -189,7 +199,7 @@ export async function POST(req: Request) {
       client_id: client.id,
       is_primary: true,
       label: parsed.city ?? null,
-      address: parsed.address,
+      address: displayAddress,
       street_address: parsed.street_address ?? null,
       city: parsed.city ?? null,
       region: parsed.region ?? null,
