@@ -25,99 +25,13 @@ import {
 import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
 import { rankLocalKeywordCandidates } from '@/lib/keywords/suggestions';
 
-// Grouped industry options for the <select>. Each group corresponds
-// to a BrightLocal directory profile (lib/brightlocal/directories.ts):
-// home-services, medical-healthcare, legal, food-restaurant,
-// real-estate, automotive. Within a group, every option string
-// matches the BL inference regex and routes to the same profile —
-// so the granular value (e.g. "hvac" vs "plumbing") survives in
-// AI Coach prompts but the NAP audit fires the right directory set
-// regardless of pick.
-//
-// Closed set, no free-text. Operators previously typed unsupported
-// categories (e.g. "desserts") that silently fell back to home-
-// services. The <select> makes that impossible — every choice
-// produces a correct audit.
-type IndustryGroup = {
-  label: string;
-  options: string[];
-};
-
-const INDUSTRY_GROUPS: IndustryGroup[] = [
-  {
-    label: 'Home services',
-    options: [
-      'plumbing',
-      'hvac',
-      'roofing',
-      'electrical',
-      'landscaping',
-      'pest control',
-      'cleaning',
-      'garage doors',
-      'locksmith',
-      'septic services',
-      'pool maintenance',
-      'tree care',
-      'appliance repair',
-      'concrete',
-      'fencing',
-      'pressure washing',
-      'window cleaning',
-      'painting',
-      'flooring',
-      'drywall',
-    ],
-  },
-  {
-    label: 'Medical & healthcare',
-    options: [
-      'medical',
-      'dental',
-      'chiropractic',
-      'veterinary',
-      'pediatric',
-      'optometry',
-      'physical therapy',
-      'home healthcare',
-    ],
-  },
-  {
-    label: 'Legal',
-    options: ['law firm', 'attorney'],
-  },
-  {
-    label: 'Food & restaurant',
-    // Note: "dessert cafe" / "ice cream parlor" buyers should pick
-    // 'cafe' or 'bakery' — the BL regex matches those tokens and
-    // routes to the food-restaurant profile (TripAdvisor, OpenTable,
-    // Foursquare, Zomato, DoorDash, Grubhub).
-    options: ['restaurant', 'cafe', 'bakery', 'catering', 'pizza'],
-  },
-  {
-    label: 'Real estate',
-    options: ['real estate', 'realtor'],
-  },
-  {
-    label: 'Automotive',
-    options: ['auto repair', 'auto body', 'car wash', 'detailing'],
-  },
-  {
-    label: 'Home improvement & remodeling',
-    // Cabinets, remodelers, countertop / window / door installers. Routes
-    // to the 'home-services' citation profile (Angi / Houzz / Thumbtack)
-    // via the stem regex in lib/brightlocal/directories.ts.
-    options: [
-      'general contractor',
-      'remodeling',
-      'kitchen remodeling',
-      'bathroom remodeling',
-      'cabinets',
-      'countertops',
-      'windows & doors',
-    ],
-  },
-];
+// Grouped industry options for the <select>. Closed set, no free-text —
+// operators previously typed unsupported categories (e.g. "desserts")
+// that silently fell back to home-services. The list moved to
+// lib/industries/options.ts (2026-07-22) so the verify-industry-coverage
+// build guard can assert every option resolves to keyword stems and the
+// right BrightLocal directory profile without importing this component.
+import { INDUSTRY_GROUPS } from '@/lib/industries/options';
 
 type Form = {
   business_name: string;

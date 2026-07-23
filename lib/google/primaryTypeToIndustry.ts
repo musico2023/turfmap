@@ -55,6 +55,32 @@ const PRIMARY_TYPE_TO_INDUSTRY: Record<string, string> = {
   window_installation_service: 'windows & doors',
   door_supplier: 'windows & doors',
 
+  // ── Moving & hauling ────────────────────────────────────────────
+  // (2026-07-22 — a moving company had NO industry mapping at all.)
+  moving_company: 'moving',
+  moving_and_storage_service: 'moving',
+  mover: 'moving',
+  storage: 'storage',
+  self_storage_facility: 'storage',
+  junk_removal_service: 'junk removal',
+  garbage_collection_service: 'junk removal',
+
+  // ── More home services (coverage sweep, 2026-07-22) ─────────────
+  handyman: 'handyman',
+  insulation_contractor: 'insulation',
+  solar_energy_contractor: 'solar',
+  siding_contractor: 'siding',
+  gutter_cleaning_service: 'gutters',
+  snow_removal_service: 'snow removal',
+  chimney_sweep: 'chimney services',
+  masonry_contractor: 'masonry',
+  paving_contractor: 'paving',
+  excavating_contractor: 'excavation',
+  water_damage_restoration_service: 'restoration',
+  fire_damage_restoration_service: 'restoration',
+  carpet_cleaning_service: 'carpet cleaning',
+  security_system_installer: 'security systems',
+
   // ── Medical & healthcare ────────────────────────────────────────
   doctor: 'medical',
   medical_clinic: 'medical',
@@ -90,6 +116,52 @@ const PRIMARY_TYPE_TO_INDUSTRY: Record<string, string> = {
   auto_body_shop: 'auto body',
   car_wash: 'car wash',
   auto_detailing_service: 'detailing',
+  towing_service: 'towing',
+
+  // ── Beauty, fitness, pets, education, events (2026-07-22) ───────
+  hair_salon: 'hair salon',
+  beauty_salon: 'hair salon',
+  barber_shop: 'barber',
+  nail_salon: 'nail salon',
+  spa: 'spa',
+  day_spa: 'spa',
+  massage: 'massage therapy',
+  tattoo_parlor: 'tattoo',
+  gym: 'gym',
+  fitness_center: 'gym',
+  yoga_studio: 'yoga',
+  pilates_studio: 'yoga',
+  martial_arts_school: 'martial arts',
+  dance_school: 'dance school',
+  pet_groomer: 'pet grooming',
+  pet_boarding_service: 'pet boarding',
+  dog_trainer: 'dog training',
+  child_care_agency: 'daycare',
+  day_care_center: 'daycare',
+  preschool: 'preschool',
+  tutoring_service: 'tutoring',
+  driving_school: 'driving school',
+  music_school: 'music school',
+  event_planner: 'event planning',
+  wedding_venue: 'wedding venue',
+  banquet_hall: 'wedding venue',
+  photographer: 'photography',
+  wedding_photographer: 'photography',
+
+  // ── Finance / professional (2026-07-22) ─────────────────────────
+  accounting_firm: 'accounting',
+  accountant: 'accounting',
+  insurance_agency: 'insurance',
+  mortgage_broker: 'mortgage',
+  property_management_company: 'property management',
+
+  // ── Other local services (2026-07-22) ───────────────────────────
+  funeral_home: 'funeral home',
+  florist: 'florist',
+  hotel: 'hotel',
+  bar: 'bar',
+  ice_cream_shop: 'dessert shop',
+  dessert_shop: 'dessert shop',
 };
 
 export function primaryTypeToIndustry(

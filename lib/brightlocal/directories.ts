@@ -183,7 +183,7 @@ const INDUSTRY_RULES: Array<{ pattern: RegExp; profile: DirectoryProfile }> = [
   },
   {
     pattern:
-      /\b(automotive|car ?(dealer|lot|sale|repair|wash)|auto ?(repair|body|sales|parts)|mechanic|tire|transmission|detailing)\b/i,
+      /\b(automotive|car ?(dealer|lot|sale|repair|wash)|auto ?(repair|body|sales|parts)|mechanic|tire|transmission|detailing|towing)\b/i,
     profile: 'automotive',
   },
   {
@@ -205,7 +205,7 @@ const INDUSTRY_RULES: Array<{ pattern: RegExp; profile: DirectoryProfile }> = [
     // countertops / window & door installers / kitchen & bath remodelers),
     // which all belong on the same Angi/Houzz/Thumbtack directory set.
     pattern:
-      /\b(plumb|hvac|roof|landscap|lawn|construction|contractor|home ?build|electric|paint|clean|restoration|handyman|garage|locksmith|blind|carpet|appliance|tree|gutter|deck|fenc|pool|pest|septic|driveway|concrete|drywall|pressure|wash|remodel|renovat|cabinet|countertop|floor|tile|window|door)/i,
+      /\b(plumb|hvac|roof|landscap|lawn|construction|contractor|home ?build|electric|paint|clean|restoration|handyman|garage|locksmith|blind|carpet|appliance|tree|gutter|deck|fenc|pool|pest|septic|driveway|concrete|drywall|pressure|wash|remodel|renovat|cabinet|countertop|floor|tile|window|door|moving|mover|junk|hauling|storage|insulat|solar|siding|snow|chimney|mason|paving|excavat|foundation|waterproof|security system|alarm)/i,
     profile: 'home-services',
   },
 ];

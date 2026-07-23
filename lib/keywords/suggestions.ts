@@ -81,6 +81,45 @@ const INDUSTRY_STEMS: Record<string, string[]> = {
   poolservice: ['pool service', 'pool cleaning', 'pool repair'],
   septic: ['septic service', 'septic tank pumping', 'septic repair'],
   appliancerepair: ['appliance repair', 'refrigerator repair', 'washer repair', 'dryer repair'],
+  moving: [
+    'movers',
+    'moving company',
+    'local movers',
+    'long distance movers',
+    'moving and storage',
+    'packing services',
+  ],
+  junkremoval: ['junk removal', 'junk hauling', 'debris removal', 'estate cleanout'],
+  storage: ['self storage', 'storage units', 'storage facility'],
+  handyman: ['handyman', 'handyman services', 'home repair'],
+  remodeling: [
+    'kitchen remodeling',
+    'bathroom remodeling',
+    'home remodeling',
+    'general contractor',
+    'basement finishing',
+  ],
+  windowsdoors: ['window replacement', 'window installation', 'door installation', 'window company'],
+  insulation: ['insulation contractor', 'attic insulation', 'spray foam insulation'],
+  solar: ['solar installer', 'solar panel installation', 'solar company'],
+  restoration: [
+    'water damage restoration',
+    'fire damage restoration',
+    'mold remediation',
+    'restoration company',
+  ],
+  gutters: ['gutter cleaning', 'gutter installation', 'gutter guards'],
+  siding: ['siding contractor', 'siding installation', 'siding repair'],
+  snowremoval: ['snow removal', 'snow plowing'],
+  chimney: ['chimney sweep', 'chimney repair', 'chimney cleaning'],
+  masonry: ['masonry contractor', 'brick repair', 'stone mason'],
+  paving: ['paving contractor', 'asphalt paving', 'driveway paving'],
+  excavation: ['excavating contractor', 'excavation', 'land grading'],
+  foundation: ['foundation repair', 'basement waterproofing'],
+  carpetcleaning: ['carpet cleaning', 'upholstery cleaning', 'rug cleaning'],
+  drywall: ['drywall contractor', 'drywall repair', 'drywall installation'],
+  securitysystems: ['security system installer', 'home security', 'alarm installation'],
+  treecare: ['tree service', 'tree removal', 'tree trimming', 'stump grinding'],
 
   // ─── Medical / Healthcare ──────────────────────────────────────────
   pediatric: [
@@ -123,6 +162,10 @@ const INDUSTRY_STEMS: Record<string, string[]> = {
   ],
   dermatology: ['dermatologist', 'skin doctor', 'dermatology clinic'],
   urgentcare: ['urgent care', 'walk in clinic', 'after hours clinic'],
+  mentalhealth: ['therapist', 'counselor', 'mental health counseling', 'couples counseling'],
+  massage: ['massage therapist', 'massage', 'deep tissue massage'],
+  audiology: ['audiologist', 'hearing test', 'hearing aids'],
+  podiatry: ['podiatrist', 'foot doctor'],
   // Catch-all medical when the more specific patterns don't match
   medical: [
     'doctor',
@@ -130,6 +173,22 @@ const INDUSTRY_STEMS: Record<string, string[]> = {
     'walk in clinic',
     'medical clinic',
   ],
+
+  // ─── Beauty & wellness ─────────────────────────────────────────────
+  salon: ['hair salon', 'haircut', 'hair stylist', 'balayage'],
+  barber: ['barber shop', 'barber', 'mens haircut'],
+  nails: ['nail salon', 'manicure', 'pedicure'],
+  spa: ['spa', 'day spa', 'facial', 'med spa'],
+  tattoo: ['tattoo shop', 'tattoo artist', 'piercing shop'],
+
+  // ─── Fitness ───────────────────────────────────────────────────────
+  fitness: ['gym', 'fitness center', 'personal trainer'],
+  yoga: ['yoga studio', 'yoga classes', 'pilates studio'],
+  martialarts: ['martial arts', 'karate classes', 'bjj gym'],
+  dance: ['dance school', 'dance classes', 'dance studio'],
+
+  // ─── Pet services (veterinary is its own key above) ────────────────
+  petcare: ['pet groomer', 'dog grooming', 'pet boarding', 'dog training'],
 
   // ─── Legal ──────────────────────────────────────────────────────────
   personalinjury: [
@@ -152,6 +211,9 @@ const INDUSTRY_STEMS: Record<string, string[]> = {
   pizza: ['pizza', 'pizza delivery', 'pizzeria'],
   cafe: ['cafe', 'coffee shop', 'breakfast'],
   bakery: ['bakery', 'cake shop', 'wedding cakes'],
+  dessert: ['dessert shop', 'ice cream shop', 'desserts'],
+  bar: ['bar', 'sports bar', 'cocktail bar', 'happy hour'],
+  catering: ['catering', 'caterer', 'wedding catering'],
 
   // ─── Real estate ───────────────────────────────────────────────────
   realestate: [
@@ -160,6 +222,8 @@ const INDUSTRY_STEMS: Record<string, string[]> = {
     'homes for sale',
     'real estate broker',
   ],
+  propertymanagement: ['property management', 'property manager'],
+  mortgage: ['mortgage broker', 'mortgage lender', 'home loans'],
 
   // ─── Automotive ────────────────────────────────────────────────────
   automotive: [
@@ -170,6 +234,25 @@ const INDUSTRY_STEMS: Record<string, string[]> = {
   ],
   autobody: ['auto body shop', 'collision repair', 'car painting'],
   tireshop: ['tire shop', 'tire repair', 'tire installation'],
+  cardetailing: ['car detailing', 'car wash', 'auto detailing', 'mobile detailing'],
+  towing: ['towing service', 'tow truck', 'roadside assistance'],
+
+  // ─── Professional services ─────────────────────────────────────────
+  accounting: ['accountant', 'tax preparation', 'bookkeeping', 'cpa'],
+  insurance: ['insurance agency', 'insurance agent', 'auto insurance', 'home insurance'],
+  photography: ['photographer', 'wedding photographer', 'family photographer'],
+  eventplanning: ['event planner', 'wedding planner', 'wedding venue', 'banquet hall'],
+
+  // ─── Education & childcare ─────────────────────────────────────────
+  childcare: ['daycare', 'preschool', 'child care center'],
+  tutoring: ['tutoring', 'math tutor', 'tutoring center'],
+  drivingschool: ['driving school', 'driving lessons'],
+  musicschool: ['music school', 'music lessons', 'piano lessons'],
+
+  // ─── Other local services ──────────────────────────────────────────
+  funeral: ['funeral home', 'cremation services', 'funeral services'],
+  florist: ['florist', 'flower delivery', 'flower shop'],
+  hotel: ['hotel', 'boutique hotel', 'bed and breakfast'],
 };
 
 /** Pattern → stem-key. Order matters: more specific matches must come
@@ -181,56 +264,125 @@ const INDUSTRY_PATTERNS: Array<{
   // Medical specifics first
   { pattern: /\bpediatric/i, key: 'pediatric' },
   { pattern: /\borthodont/i, key: 'orthodontic' },
-  { pattern: /\b(dental|dentist)/i, key: 'dental' },
+  { pattern: /\b(dental|dentist|endodont|periodont|oral surgeon)/i, key: 'dental' },
   { pattern: /\bchiropract/i, key: 'chiropractic' },
   { pattern: /\b(veterinar|vet\b|animal hospital)/i, key: 'veterinary' },
-  { pattern: /\b(optometr|eye care|eye doctor)/i, key: 'optometry' },
+  // Pet services before childcare — "Dog day care center" must not hit
+  // the /day ?care/ childcare pattern.
+  { pattern: /\b(pet (groom|board|sit|store|supply)|dog (groom|day ?care|train)|pet care)/i, key: 'petcare' },
+  { pattern: /\b(optometr|ophthalmolog|eye care|eye doctor|eyewear)/i, key: 'optometry' },
   { pattern: /\b(physical therap|physiotherap|rehab)/i, key: 'physicaltherapy' },
   { pattern: /\b(dermatolog|skin)/i, key: 'dermatology' },
   { pattern: /\b(urgent ?care|walk[- ]in)/i, key: 'urgentcare' },
-  { pattern: /\b(medical|health|clinic|doctor|therapy|physician|nurs)/i, key: 'medical' },
+  { pattern: /\b(psychia|psycholog|counsel|mental health|addiction)/i, key: 'mentalhealth' },
+  { pattern: /\bmassage/i, key: 'massage' },
+  { pattern: /\b(audiolog|hearing)/i, key: 'audiology' },
+  { pattern: /\b(podiat|foot doctor)/i, key: 'podiatry' },
+  // `health(?! food)` — "Health food store" is retail, not a clinic.
+  { pattern: /\b(medical|health(?! food)|clinic|doctor|therapy|physician|nurs|pharmac|surg|hospital|acupunct|naturopath|internist)/i, key: 'medical' },
 
   // Legal specifics
   { pattern: /\b(personal injury|car accident|injury)/i, key: 'personalinjury' },
   { pattern: /\b(family lawyer|divorce|child custody)/i, key: 'family' },
   { pattern: /\b(criminal|dui)/i, key: 'criminaldefense' },
   { pattern: /\b(estate planning|wills)/i, key: 'estateplanning' },
-  { pattern: /\b(real estate law)/i, key: 'realestate_legal' },
-  { pattern: /\b(law(yer|firm)?|attorney|legal|paralegal)/i, key: 'legal' },
+  { pattern: /\b(real estate law|real estate attorney)/i, key: 'realestate_legal' },
+  { pattern: /\b(law(yer|firm)?|attorney|legal|paralegal|notary)/i, key: 'legal' },
+
+  // Professional services (after legal so "tax attorney" stays legal)
+  { pattern: /\b(accountant|accounting|bookkeep|tax prep|tax consult|cpa\b)/i, key: 'accounting' },
+  { pattern: /\binsurance/i, key: 'insurance' },
+  { pattern: /\bmortgage/i, key: 'mortgage' },
+  { pattern: /\bproperty manage/i, key: 'propertymanagement' },
+  { pattern: /\b(photograph|videograph)/i, key: 'photography' },
+  { pattern: /\b(event plan|wedding plan|wedding venue|banquet|party (equipment|rental)|dj service)/i, key: 'eventplanning' },
 
   // Food specifics
   { pattern: /\b(pizza|pizzeria)/i, key: 'pizza' },
-  { pattern: /\b(caf[eé]|coffee)/i, key: 'cafe' },
+  { pattern: /\b(dessert|ice cream|frozen yogurt)/i, key: 'dessert' },
+  { pattern: /\b(caf[eé]|coffee|juice|smoothie|tea house|doughnut|donut|bagel)/i, key: 'cafe' },
   { pattern: /\bbakery/i, key: 'bakery' },
-  { pattern: /\b(restaurant|bistro|diner|grill|pub|tavern)/i, key: 'restaurant' },
+  { pattern: /\bcater/i, key: 'catering' },
+  { pattern: /\b(bar|pub|brewery|taproom)\b/i, key: 'bar' },
+  { pattern: /\b(restaurant|bistro|diner|grill|tavern|steakhouse|seafood|sandwich shop|food truck|deli|buffet|eatery)\b/i, key: 'restaurant' },
 
   // Real estate
   { pattern: /\b(real ?estate|realt(or|y))/i, key: 'realestate' },
 
   // Automotive specifics
-  { pattern: /\b(auto body|collision)/i, key: 'autobody' },
+  { pattern: /\b(auto body|collision|auto glass)/i, key: 'autobody' },
   { pattern: /\btire\b/i, key: 'tireshop' },
-  { pattern: /\b(automotive|auto|mechanic|car repair)/i, key: 'automotive' },
+  { pattern: /\b(towing|tow truck|roadside)/i, key: 'towing' },
+  { pattern: /\b(car wash|detailing)/i, key: 'cardetailing' },
+  { pattern: /\b(automotive|auto|mechanic|car repair|transmission|brake|oil change|car dealer|truck repair|motorcycle)/i, key: 'automotive' },
+
+  // Beauty & wellness
+  { pattern: /\bbarber/i, key: 'barber' },
+  { pattern: /\b(nail salon|manicure|pedicure)/i, key: 'nails' },
+  { pattern: /\b(spa\b|facial|hair removal|waxing|laser hair)/i, key: 'spa' },
+  { pattern: /\b(tattoo|piercing)/i, key: 'tattoo' },
+  { pattern: /\b(hair salon|hair styl|beauty salon|salon\b|eyebrow|eyelash|tanning|cosmetolog)/i, key: 'salon' },
+
+  // Fitness
+  { pattern: /\b(yoga|pilates)/i, key: 'yoga' },
+  { pattern: /\b(martial arts|karate|jiu[- ]?jitsu|taekwondo|mma\b|boxing)/i, key: 'martialarts' },
+  { pattern: /\bdance/i, key: 'dance' },
+  { pattern: /\b(gym|fitness|personal train|crossfit)/i, key: 'fitness' },
+
+  // Education & childcare (petcare pattern above already claimed dog daycare)
+  { pattern: /\b(day ?care|preschool|child ?care)/i, key: 'childcare' },
+  { pattern: /\btutor/i, key: 'tutoring' },
+  { pattern: /\bdriving school/i, key: 'drivingschool' },
+  { pattern: /\b(music school|music lessons|piano lessons)/i, key: 'musicschool' },
+
+  // Other local services
+  { pattern: /\b(funeral|cremation|cemetery)/i, key: 'funeral' },
+  { pattern: /\bflorist/i, key: 'florist' },
+  { pattern: /\b(hotel|motel|bed & breakfast|bed and breakfast|resort)/i, key: 'hotel' },
 
   // Home services specifics
   { pattern: /\bplumb/i, key: 'plumbing' },
-  { pattern: /\b(hvac|heating|air condition|cooling|furnace)/i, key: 'hvac' },
+  { pattern: /\b(hvac|heating|air condition|cooling|furnace|air duct|boiler)/i, key: 'hvac' },
+  { pattern: /\bgutter/i, key: 'gutters' },
   { pattern: /\broof/i, key: 'roofing' },
-  { pattern: /\belectric/i, key: 'electrical' },
-  { pattern: /\b(landscape|lawn|tree care)/i, key: 'landscaping' },
-  { pattern: /\b(pest|exterminat)/i, key: 'pestcontrol' },
+  { pattern: /\bsolar/i, key: 'solar' },
+  { pattern: /\b(electric|lighting contractor)/i, key: 'electrical' },
+  { pattern: /\b(tree service|tree care|arborist|tree removal|stump)/i, key: 'treecare' },
+  { pattern: /\b(landscap|lawn|garden center)/i, key: 'landscaping' },
+  { pattern: /\bsnow/i, key: 'snowremoval' },
+  { pattern: /\b(pest|exterminat|wildlife|animal removal)/i, key: 'pestcontrol' },
+  { pattern: /\b(moving|mover)/i, key: 'moving' },
+  { pattern: /\b(junk|debris|hauling|garbage)/i, key: 'junkremoval' },
+  { pattern: /\bstorage/i, key: 'storage' },
+  { pattern: /\b(restoration|water damage|fire damage|mold)/i, key: 'restoration' },
+  // Specific cleaning verticals BEFORE the generic /\bcleaning/ catch-all.
+  // (The guard caught "Window cleaning service" resolving to generic
+  // 'cleaning' — a pre-existing ordering bug.)
+  { pattern: /\b(carpet|upholstery) clean/i, key: 'carpetcleaning' },
+  { pattern: /\bwindow (cleaning|washing)/i, key: 'windowcleaning' },
   { pattern: /\bcleaning/i, key: 'cleaning' },
   { pattern: /\bgarage door/i, key: 'garagedoor' },
   { pattern: /\block/i, key: 'locksmith' },
-  { pattern: /\bpaint/i, key: 'painting' },
-  { pattern: /\bfloor/i, key: 'flooring' },
+  { pattern: /\b(security system|alarm)/i, key: 'securitysystems' },
+  { pattern: /\b(paint|wallpaper)/i, key: 'painting' },
+  { pattern: /\b(floor|carpet|tile)/i, key: 'flooring' },
+  { pattern: /\bdrywall/i, key: 'drywall' },
   { pattern: /\bfence|fencing/i, key: 'fencing' },
   { pattern: /\bconcrete/i, key: 'concrete' },
-  { pattern: /\bpressure washing/i, key: 'pressurewashing' },
-  { pattern: /\bwindow cleaning/i, key: 'windowcleaning' },
-  { pattern: /\bpool/i, key: 'poolservice' },
-  { pattern: /\bseptic/i, key: 'septic' },
-  { pattern: /\bappliance/i, key: 'appliancerepair' },
+  { pattern: /\bmason/i, key: 'masonry' },
+  { pattern: /\b(paving|asphalt)/i, key: 'paving' },
+  { pattern: /\b(excavat|grading)/i, key: 'excavation' },
+  { pattern: /\b(foundation|waterproof)/i, key: 'foundation' },
+  { pattern: /\b(pressure|power) wash/i, key: 'pressurewashing' },
+  { pattern: /\binsulat/i, key: 'insulation' },
+  { pattern: /\b(window|door)/i, key: 'windowsdoors' },
+  { pattern: /\bchimney/i, key: 'chimney' },
+  { pattern: /\b(pool|hot tub)/i, key: 'poolservice' },
+  { pattern: /\bseptic|sewage|drainage/i, key: 'septic' },
+  { pattern: /\b(appliance|refrigerator repair)/i, key: 'appliancerepair' },
+  { pattern: /\bhandyman/i, key: 'handyman' },
+  { pattern: /\bsiding/i, key: 'siding' },
+  { pattern: /\b(remodel|renovat|general contractor|construction|home ?build|cabinet|countertop|carpenter|deck|home improvement)/i, key: 'remodeling' },
 ];
 
 /** Resolve an industry/category string to its INDUSTRY_STEMS key, or null
