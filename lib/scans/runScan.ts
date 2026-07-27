@@ -147,6 +147,11 @@ export async function runScanForLocation(
     gridSize: 9,
     radiusMiles: Number(location.service_radius_miles ?? 1.6),
   });
+  // Max share of grid points allowed to fail before the run is judged
+  // unscoreable (see the integrity gate below). A handful of transient
+  // per-point errors barely move an 81-cell score; a fifth of the grid
+  // missing does. 0.2 = up to 16 of 81 points may fail.
+  const MAX_FAILED_POINT_RATIO = 0.2;
   const firstWord = client.business_name.split(/\s+/)[0]?.toLowerCase() ?? '';
   const ownPattern = new RegExp(firstWord || '___never_match___', 'i');
 
@@ -165,6 +170,42 @@ export async function runScanForLocation(
       .update({ status: 'failed', completed_at: new Date().toISOString() })
       .eq('id', scanId);
     return { ok: false, error: `DFS scan failed: ${msg}`, scanId };
+  }
+
+  // 2b. Integrity gate — a point that ERRORED is "no data", not "the
+  // business isn't visible here". The score family below treats every
+  // result over the full 81-cell denominator, so failed points deflate
+  // TurfReach exactly like genuine absences. During a DFS outage on
+  // 2026-07-27 (11:01–14:56 UTC) all 81 points threw on every scan and
+  // each one was still written as status='complete' with turf_score=0 —
+  // indistinguishable from a real zero, and poisonous to momentum,
+  // trends, and the AI Coach's recommendations.
+  //
+  // Refuse to score a run whose data is too incomplete to trust. The
+  // scan row is marked 'failed' so the dashboard shows an honest error
+  // instead of a fabricated zero, and the operator can simply re-run.
+  const failedRatio =
+    scan.results.length > 0 ? scan.failedPoints / scan.results.length : 1;
+  if (failedRatio > MAX_FAILED_POINT_RATIO) {
+    await supabase
+      .from('scans')
+      .update({
+        status: 'failed',
+        total_points: scan.results.length,
+        failed_points: scan.failedPoints,
+        dfs_cost_cents: scan.dfsCostCents,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', scanId);
+    const pct = Math.round(failedRatio * 100);
+    return {
+      ok: false,
+      error:
+        scan.failedPoints === scan.results.length
+          ? 'Every grid point failed to return data (upstream SERP API error) — no score recorded. Re-run the scan.'
+          : `${pct}% of grid points failed to return data — too incomplete to score reliably. Re-run the scan.`,
+      scanId,
+    };
   }
 
   // 3. Persist scan_points (one row per grid cell with rank + competitors).
