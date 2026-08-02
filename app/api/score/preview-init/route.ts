@@ -81,6 +81,11 @@ const Body = z.object({
   // in the form). The client-side Pixel fires the SAME event_id, so
   // Facebook dedupes the two events.
   meta_event_id: z.string().max(120).optional(),
+  // Client-generated submission id (uuid). Stamped on the preview
+  // lead_orders row so the browser can poll /api/score/preview-status
+  // and recover its share link if this long-held request drops
+  // mid-scan (mobile). The scan still completes server-side.
+  submission_id: z.string().max(120).optional(),
   // _fbp browser cookie value, read client-side from document.cookie.
   // Format: 'fb.<idx>.<creationTime>.<random>'. Forwarded raw for
   // CAPI user_data matching.
@@ -277,6 +282,7 @@ export async function POST(req: Request) {
     // inference (much more reliable than keyword regex matching).
     googlePlaceId: body.google_place_id ?? null,
     googlePrimaryType: body.google_primary_type ?? null,
+    submissionId: body.submission_id ?? null,
     attribution: {
       utm_source: body.utm_source ?? null,
       utm_medium: body.utm_medium ?? null,

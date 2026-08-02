@@ -90,6 +90,12 @@ export type CreatePreviewClientInput = {
    *  it's the actual Google category, not a buyer-typed search term.
    *  Null when the buyer used the legacy Mapbox path. */
   googlePrimaryType?: string | null;
+  /** Client-generated submission id (uuid) from the lander form.
+   *  Stamped on the preview lead_orders row's stripe_metadata so the
+   *  browser can poll /api/score/preview-status and recover its share
+   *  link if the long-held preview-init request drops mid-scan (common
+   *  on mobile connections — the scan still completes server-side). */
+  submissionId?: string | null;
   /** Attribution payload forwarded from the upstream lander. Captured
    *  to `lead_orders.stripe_metadata.attribution_*` for funnel
    *  reporting and downstream Conversion API dedup. */
@@ -317,6 +323,13 @@ export async function createPreviewClient(
   }
   if (input.leadSource) {
     stripeMetadata.lead_source = input.leadSource;
+  }
+  // Stamp the client-generated submission id so the browser can poll
+  // /api/score/preview-status for the finished share link if its
+  // preview-init request dropped mid-scan. Inserted here (before the
+  // ~60s scan) so the lookup key exists the moment the scan completes.
+  if (input.submissionId) {
+    stripeMetadata.submission_id = input.submissionId;
   }
   // Stamp attribution for downstream funnel reporting + Meta CAPI
   // dedup. Skip falsy fields so the metadata stays compact (Stripe
