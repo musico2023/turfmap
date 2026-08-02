@@ -306,6 +306,16 @@ export function ScanIntakeForm({
         ? crypto.randomUUID()
         : undefined;
 
+    // Submission id — preview-mode only. Sent to preview-init and
+    // stamped on the lead_orders row so that if this request drops
+    // mid-scan (mobile connections sever the ~60s hold), we can poll
+    // /api/score/preview-status and still land the buyer on their
+    // finished /share page instead of a "Network error" dead end.
+    const submissionId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
     // _fbp + _fbc cookies (set by the Meta pixel). Sent server-side so
     // CAPI's user_data match-quality stays high. Both can be null —
     // CAPI tolerates partial user_data and Facebook still tries to
@@ -332,6 +342,64 @@ export function ScanIntakeForm({
       });
     }
 
+    // Fire the preview-mode Lead + dedicated FreeScoreSubmit pixels.
+    // Extracted so BOTH the fast-path success and the drop-recovery
+    // poll below fire attribution exactly once. Reuses metaEventId so
+    // each event dedupes against its CAPI twin (dedup is per
+    // event_name + event_id, so sharing the id across the two event
+    // names is safe).
+    const firePreviewLead = () => {
+      const leadParams = {
+        content_name: 'TurfScore Free Preview',
+        content_category: 'score_preview_submit',
+        utm_source: utmSource ?? undefined,
+        utm_medium: utmMedium ?? undefined,
+        utm_campaign: utmCampaign ?? undefined,
+        ...(leadSource ? { lead_source: leadSource } : {}),
+      };
+      trackMetaEvent(
+        'Lead',
+        leadParams,
+        metaEventId ? { eventID: metaEventId } : undefined
+      );
+      trackMetaCustomEvent(
+        'FreeScoreSubmit',
+        leadParams,
+        metaEventId ? { eventID: metaEventId } : undefined
+      );
+    };
+
+    // Recovery poll — preview-init holds the request open for the full
+    // ~60s scan, and mobile connections frequently drop it before the
+    // share_url comes back even though the scan completes server-side.
+    // When the fetch below fails/aborts, we poll this by submission_id
+    // to pick up the finished share link and still land the buyer on
+    // their /share page instead of a dead-end error.
+    const pollPreviewStatus = async (): Promise<string | null> => {
+      const deadline = Date.now() + 100_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          const r = await fetch(
+            `/api/score/preview-status?submission_id=${encodeURIComponent(
+              submissionId
+            )}`,
+            { cache: 'no-store' }
+          );
+          if (r.ok) {
+            const d = (await r.json()) as {
+              status?: string;
+              share_url?: string;
+            };
+            if (d.status === 'ready' && d.share_url) return d.share_url;
+          }
+        } catch {
+          // transient network blip — keep polling until the deadline
+        }
+      }
+      return null;
+    };
+
     try {
       // Forward the Mapbox pick — guaranteed non-null by the
       // addressPicked gate above. lat/lng + structured components
@@ -342,9 +410,19 @@ export function ScanIntakeForm({
       const endpoint = previewMode
         ? '/api/score/preview-init'
         : '/api/scan/checkout/init';
+      // Backstop for mobile sockets that hang without ever delivering
+      // the ~60s preview-init response: abort at 120s so we fall
+      // through to the recovery poll rather than spinning forever. The
+      // server (maxDuration 300s) keeps running the scan regardless of
+      // this client-side abort.
+      const controller = new AbortController();
+      const abortTimer = previewMode
+        ? setTimeout(() => controller.abort(), 120_000)
+        : null;
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           tier,
           // Only send cadence when defined — subscription tiers
@@ -370,6 +448,7 @@ export function ScanIntakeForm({
           ...(previewMode && metaEventId
             ? { meta_event_id: metaEventId }
             : {}),
+          ...(previewMode ? { submission_id: submissionId } : {}),
           ...(previewMode && fbpCookie ? { fbp_cookie: fbpCookie } : {}),
           ...(previewMode && fbcCookie ? { fbc_cookie: fbcCookie } : {}),
           ...(previewMode && typeof window !== 'undefined'
@@ -417,6 +496,7 @@ export function ScanIntakeForm({
             : undefined,
         }),
       });
+      if (abortTimer) clearTimeout(abortTimer);
       // Paid path returns { url } (Stripe Checkout URL); preview
       // path returns { share_url } (the in-app /share/<id> route).
       // Both are absolute or root-relative URLs the browser can
@@ -437,50 +517,32 @@ export function ScanIntakeForm({
         setLoading(false);
         return;
       }
-      // Preview-mode success — fire the client-side Lead event NOW
-      // (post-success, so a failed scan doesn't orphan an attribution
-      // signal). Tagged with the same metaEventId we sent to the
-      // server, so Facebook dedupes against the CAPI Lead the server
-      // just kicked off in after().
-      if (previewMode) {
-        const leadParams = {
-          content_name: 'TurfScore Free Preview',
-          content_category: 'score_preview_submit',
-          utm_source: utmSource ?? undefined,
-          utm_medium: utmMedium ?? undefined,
-          utm_campaign: utmCampaign ?? undefined,
-          ...(leadSource ? { lead_source: leadSource } : {}),
-        };
-        trackMetaEvent(
-          'Lead',
-          leadParams,
-          metaEventId ? { eventID: metaEventId } : undefined
-        );
-        // Dedicated custom conversion for the free-score funnel, fired
-        // ALONGSIDE the standard Lead (not instead of it) so we keep
-        // generic Lead reporting but also get a clean, purpose-built
-        // 'FreeScoreSubmit' event to build a Custom Conversion on and
-        // optimize the lander campaign toward. Reuses metaEventId —
-        // dedup is per (event_name, event_id), so sharing the id with
-        // the Lead event above is safe (different event names). The
-        // server fires the matching CAPI FreeScoreSubmit in after().
-        trackMetaCustomEvent(
-          'FreeScoreSubmit',
-          leadParams,
-          metaEventId ? { eventID: metaEventId } : undefined
-        );
-      }
+      // Preview-mode success — fire attribution now (post-success, so
+      // a failed scan never orphans a Lead event).
+      if (previewMode) firePreviewLead();
       // Hard navigation — Stripe Checkout is cross-origin, and even
       // the in-app share-page redirect benefits from a full nav so
       // the server component renders fresh with the new scan.
       window.location.assign(destination);
     } catch (err) {
+      // Preview path: the long request frequently drops on mobile even
+      // though the scan completes server-side. Before showing any
+      // error, poll for the finished share link and recover the buyer
+      // into their /share page in-session.
+      if (previewMode) {
+        const recovered = await pollPreviewStatus();
+        if (recovered) {
+          firePreviewLead();
+          window.location.assign(recovered);
+          return;
+        }
+      }
       setLoading(false);
       setError(
-        err instanceof Error
-          ? `Network error: ${err.message}`
-          : previewMode
-            ? "We couldn't reach our scan service. Try again, or email hello@turfmap.ai."
+        previewMode
+          ? `Your scan is taking longer than usual — we've also emailed your results to ${email.trim()}. You can reopen this page in a minute, or email hello@turfmap.ai.`
+          : err instanceof Error
+            ? `Network error: ${err.message}`
             : "We couldn't reach Stripe. Try again, or email hello@turfmap.ai."
       );
     }
