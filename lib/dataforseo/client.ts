@@ -34,14 +34,33 @@ const DFS_CONCURRENCY = 10;
 const DFS_QUERY_RADIUS_KM = 1;
 
 /**
- * DFS task-level error codes that are worth one automatic retry.
+ * DFS task-level error codes that are worth an automatic retry.
  *
  * 40207 ("IP not whitelisted") shows up sporadically on dual-stack networks
  * even when the IP IS whitelisted — outbound connections briefly egress over
  * IPv6, then settle on IPv4. A single retry clears the vast majority of these.
+ *
+ * 40101 ("Internal SE Server Error") is DFS's own upstream-fetch failure. It
+ * is PURELY TRANSIENT and concurrency-sensitive: on 2026-07-30 a scan for
+ * "painter herndon" failed 77-80% of its 81 points across four consecutive
+ * runs, while the identical query issued SEQUENTIALLY succeeded 5/5 with full
+ * local packs. Because 40101 was absent from this set, every affected point
+ * died on first contact with no retry — which is also the most likely
+ * explanation for the 11:01-14:56 UTC blackout the same morning, where every
+ * point of every scan failed and each run was still recorded (see the
+ * integrity gate in lib/scans/runScan.ts, which now refuses to score them).
+ *
+ * NOT retried: 40102 ("No Search Results") — a legitimate empty SERP, not a
+ * failure. Retrying it would burn budget re-asking a question already
+ * answered.
  */
-const DFS_RETRYABLE_TASK_CODES = new Set<number>([40207]);
-const DFS_MAX_ATTEMPTS = 2;
+const DFS_RETRYABLE_TASK_CODES = new Set<number>([40207, 40101]);
+/** Attempts per point. Measured on 2026-07-30 against a live DFS capacity
+ *  dip: 1 attempt (the old behaviour, since 40101 wasn't retryable) failed
+ *  11/12 points; 3 attempts cut that to 3/12; 4 clears it. The backoff below
+ *  caps the added wall-clock at roughly 8s for a point that needs every
+ *  attempt, and only the failing minority pay it. */
+const DFS_MAX_ATTEMPTS = 4;
 
 /**
  * Shape of a single local_pack item in DFS's parsed SERP response.
@@ -219,8 +238,16 @@ export async function runLiveLocalPackScan(
         if (task.status_code === 20000) return task;
         if (!DFS_RETRYABLE_TASK_CODES.has(task.status_code)) return task;
         if (attempt < DFS_MAX_ATTEMPTS) {
-          // brief jittered backoff so concurrent retries don't stampede
-          await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+          // Exponential jittered backoff. A flat ~350ms wait was too short
+          // for 40101 (DFS capacity dip): all ten in-flight points retried
+          // almost simultaneously and hit the same overloaded upstream.
+          // 500ms -> 1s -> 2s, each jittered, spreads the retry wave out.
+          // Deliberately capped: the scan route's maxDuration is 300s and a
+          // fully-degraded 81-point grid must still finish inside it, so we
+          // trade a little retry headroom for a bounded worst case (~3.5s of
+          // sleep for a point that exhausts every attempt).
+          const base = 500 * Math.pow(2, attempt - 1);
+          await new Promise((r) => setTimeout(r, base + Math.random() * 300));
         }
       }
       return lastTask!;
@@ -396,6 +423,78 @@ export async function localPackPresence(
       it.type === 'local_services'
   );
   return { present, costDollars };
+}
+
+// ─── Google Business Profile lookup (service-area-business fallback) ───────
+
+const DFS_MY_BUSINESS_INFO = '/v3/business_data/google/my_business_info/live';
+
+export type DfsBusinessLookup = {
+  placeId: string | null;
+  title: string | null;
+  phone: string | null;
+  costDollars: number;
+};
+
+/**
+ * Resolve a business's Google place_id via DataForSEO's My Business Info.
+ *
+ * Why this exists: Google's Places **text search** silently omits PURE
+ * SERVICE-AREA BUSINESSES (`pureServiceAreaBusiness: true` — contractors
+ * with no public storefront address). Both of TurfMap's GBP-linking paths
+ * are built on that search — the operator autocomplete and the
+ * back-matcher in lib/google/places.ts#findAndVerifyPlace — so an SAB is
+ * invisible to both and its client gets created with google_place_id NULL.
+ * The downstream damage is silent and severe: the NAP audit reports "no
+ * GBP found" and the AI Coach's #1 recommendation becomes "create a Google
+ * Business Profile" for a business that has a claimed, well-reviewed one.
+ * Hit three times in a row (Painter Bros of Indianapolis, Detailed Home
+ * Improvement, Diversified Tree Service — 2026-07/08).
+ *
+ * DFS's my_business_info reads Google's business data directly rather than
+ * the Places search index, so it DOES return SABs. We use it only as a
+ * fallback and only for the place_id — the authoritative profile fields
+ * still come from Google Place Details, which resolves an SAB fine once
+ * you have its id. Costs ~$0.005/lookup and runs at most once per client
+ * creation.
+ *
+ * Soft-fails to a null placeId on every branch — never throws into an
+ * onboarding flow.
+ */
+export async function findBusinessPlaceIdViaDfs(input: {
+  businessName: string;
+  /** "City,Region,Country" — DFS's location_name format, e.g.
+   *  "Grand Rapids,Michigan,United States". */
+  locationName: string;
+}): Promise<DfsBusinessLookup> {
+  const empty: DfsBusinessLookup = {
+    placeId: null,
+    title: null,
+    phone: null,
+    costDollars: 0,
+  };
+  if (!process.env.DFS_LOGIN || !process.env.DFS_PASSWORD) return empty;
+  try {
+    const task = await postSingleTask(DFS_MY_BUSINESS_INFO, {
+      keyword: input.businessName,
+      location_name: input.locationName,
+      language_code: 'en',
+    });
+    const costDollars = task.cost ?? 0;
+    if (task.status_code !== 20000) return { ...empty, costDollars };
+    const item = ((task.result ?? [])[0]?.items ?? [])[0] as
+      | { place_id?: string; title?: string; phone?: string }
+      | undefined;
+    return {
+      placeId: item?.place_id ?? null,
+      title: item?.title ?? null,
+      phone: item?.phone ?? null,
+      costDollars,
+    };
+  } catch {
+    // Never let a fallback lookup break onboarding.
+    return empty;
+  }
 }
 
 // ─── Internal DFS response types ───────────────────────────────────────────

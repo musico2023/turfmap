@@ -42,6 +42,41 @@ export type GbpMatchStatus =
   | 'rejected'
   | 'no_match';
 
+/** ISO-3166 alpha-3 (our storage format) → the country word DFS expects
+ *  in its "City,Region,Country" location_name string. */
+const DFS_COUNTRY_WORD: Record<string, string> = {
+  USA: 'United States',
+  CAN: 'Canada',
+  GBR: 'United Kingdom',
+  AUS: 'Australia',
+};
+
+/**
+ * Build DFS's "City,Region,Country" location string for a stored
+ * location, or null when the row lacks a city (the fallback is
+ * city-scoped, so without one we'd be guessing).
+ */
+async function buildDfsLocationName(
+  supabase: SupabaseLike,
+  locationId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('client_locations')
+    .select('city, region, country_code')
+    .eq('id', locationId)
+    .maybeSingle<{
+      city: string | null;
+      region: string | null;
+      country_code: string | null;
+    }>();
+  const city = data?.city?.trim();
+  const region = data?.region?.trim();
+  if (!city || !region) return null;
+  const country = DFS_COUNTRY_WORD[(data?.country_code ?? 'USA').toUpperCase()];
+  if (!country) return null;
+  return `${city},${region},${country}`;
+}
+
 /**
  * Look up the GBP listing for a freshly-created location and persist
  * place_id + initial signals. Designed for fire-and-forget use from
@@ -67,12 +102,19 @@ export async function enrichLocationFromOnboarding(
     return { status: 'skipped', reason: 'missing_inputs' };
   }
 
+  // City/region for the service-area fallback inside findAndVerifyPlace.
+  // Read here rather than threaded through every caller — the location row
+  // is already the source of truth and all three onboarding entrypoints
+  // have written it by the time this fires.
+  const dfsLocationName = await buildDfsLocationName(supabase, args.locationId);
+
   let result: Awaited<ReturnType<typeof findAndVerifyPlace>>;
   try {
     result = await findAndVerifyPlace({
       businessName: args.businessName,
       latitude: args.latitude,
       longitude: args.longitude,
+      dfsLocationName,
     });
   } catch (e) {
     console.warn('[places.enrich] findAndVerifyPlace threw', e);

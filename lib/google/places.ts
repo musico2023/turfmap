@@ -24,11 +24,17 @@
  *   environments without the key.
  */
 
+import { findBusinessPlaceIdViaDfs } from '@/lib/dataforseo/client';
+
 const PLACES_BASE = 'https://places.googleapis.com/v1';
 
 /** Strict-match thresholds — see module docstring. */
 const MATCH_RADIUS_M = 100;
 const MATCH_NAME_SIMILARITY = 0.5;
+/** Name-similarity bar for pure service-area businesses, which carry no
+ *  coordinates to distance-check against. Higher than the storefront bar
+ *  because it is the only remaining signal. */
+const MATCH_NAME_SIMILARITY_SAB = 0.7;
 
 /**
  * Field mask for Place Details (Pro tier). Driven by what the AI Coach
@@ -58,6 +64,11 @@ const PLACE_DETAILS_FIELD_MASK = [
   'photos',
   'priceLevel',
   'editorialSummary',
+  // Pure service-area businesses (contractors with no public storefront)
+  // return no address and no coordinates. We need this flag to know that
+  // a missing lat/lng is EXPECTED rather than a bad match — see
+  // isAcceptableMatch below.
+  'pureServiceAreaBusiness',
 ].join(',');
 
 /** Cost in cents per call type — surfaced to callers for dfs-cost-style tracking. */
@@ -114,6 +125,9 @@ export type PlaceDetails = {
   photosCount: number | null;
   priceLevel: string | null;
   editorialSummary: string | null;
+  /** True when Google classes this as a pure service-area business —
+   *  no storefront, hence no address and no coordinates. */
+  pureServiceAreaBusiness: boolean;
   raw: unknown;
   costCents: number;
 };
@@ -308,9 +322,38 @@ export async function getPlaceDetails(
     photosCount: Array.isArray(photos) ? photos.length : null,
     priceLevel: (raw.priceLevel as string | undefined) ?? null,
     editorialSummary: editorial?.text ?? null,
+    pureServiceAreaBusiness: raw.pureServiceAreaBusiness === true,
     raw,
     costCents: COST_CENTS.placeDetailsPro,
   };
+}
+
+/**
+ * Strict-match decision, extracted pure so the guard can pin it.
+ *
+ * The distance gate is the strongest signal we have — but a PURE
+ * SERVICE-AREA BUSINESS has no coordinates at all (Google returns no
+ * `location` for them), so distance is unknowable, not "infinitely far".
+ * Applying the normal gate to an SAB rejects every correct match.
+ *
+ * For SABs we therefore drop the distance test and raise the name bar
+ * instead: the caller has already scoped the lookup to the client's own
+ * city, so a strong name match on top of that is the available evidence.
+ * Still conservative — a weak name match is rejected either way, keeping
+ * the module's "better no GBP signals than wrong-business signals" rule.
+ */
+export function isAcceptableMatch(input: {
+  distanceM: number;
+  nameSimilarity: number;
+  isServiceAreaBusiness: boolean;
+}): boolean {
+  if (input.isServiceAreaBusiness) {
+    return input.nameSimilarity >= MATCH_NAME_SIMILARITY_SAB;
+  }
+  return (
+    input.distanceM <= MATCH_RADIUS_M &&
+    input.nameSimilarity >= MATCH_NAME_SIMILARITY
+  );
 }
 
 /**
@@ -328,6 +371,9 @@ export async function findAndVerifyPlace(input: {
   businessName: string;
   latitude: number;
   longitude: number;
+  /** "City,Region,Country" for the DFS service-area fallback. When
+   *  omitted the fallback is skipped and behaviour is unchanged. */
+  dfsLocationName?: string | null;
 }): Promise<{
   details: PlaceDetails;
   matchDistanceM: number;
@@ -340,12 +386,35 @@ export async function findAndVerifyPlace(input: {
     input.longitude,
     MATCH_RADIUS_M * 2 // search a slightly wider bias than match radius
   );
-  if (!search.placeId) return null;
 
-  const details = await getPlaceDetails(search.placeId);
+  let placeId = search.placeId;
+  let fallbackCostCents = 0;
+
+  // Service-area fallback. Places text search omits pure SABs entirely, so
+  // an empty result here does NOT mean "no listing exists" — it's the
+  // documented blind spot that left three contractor clients falsely
+  // diagnosed as having no GBP. Ask DataForSEO, which reads Google's
+  // business data rather than the search index.
+  if (!placeId && input.dfsLocationName) {
+    const viaDfs = await findBusinessPlaceIdViaDfs({
+      businessName: input.businessName,
+      locationName: input.dfsLocationName,
+    });
+    fallbackCostCents = Math.round(viaDfs.costDollars * 100);
+    if (viaDfs.placeId) {
+      placeId = viaDfs.placeId;
+      console.warn(
+        `[places] "${input.businessName}" not in Places text search; resolved via DFS service-area fallback (place=${viaDfs.placeId})`
+      );
+    }
+  }
+  if (!placeId) return null;
+
+  const details = await getPlaceDetails(placeId);
   if (!details) return null;
 
-  const totalCostCents = search.costCents + details.costCents;
+  const totalCostCents =
+    search.costCents + details.costCents + fallbackCostCents;
 
   // Strict match: distance + name similarity. Reject otherwise.
   const matchDistanceM =
@@ -361,11 +430,14 @@ export async function findAndVerifyPlace(input: {
   );
 
   if (
-    matchDistanceM > MATCH_RADIUS_M ||
-    matchNameSimilarity < MATCH_NAME_SIMILARITY
+    !isAcceptableMatch({
+      distanceM: matchDistanceM,
+      nameSimilarity: matchNameSimilarity,
+      isServiceAreaBusiness: details.pureServiceAreaBusiness,
+    })
   ) {
     console.warn(
-      `[places] match rejected for "${input.businessName}" — dist=${matchDistanceM.toFixed(0)}m sim=${matchNameSimilarity.toFixed(2)} (place=${details.displayName ?? details.placeId})`
+      `[places] match rejected for "${input.businessName}" — dist=${matchDistanceM.toFixed(0)}m sim=${matchNameSimilarity.toFixed(2)} sab=${details.pureServiceAreaBusiness} (place=${details.displayName ?? details.placeId})`
     );
     return null;
   }
