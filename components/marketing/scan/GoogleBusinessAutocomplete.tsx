@@ -34,6 +34,7 @@
  */
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -105,12 +106,29 @@ export type GoogleBusinessAutocompleteProps = {
    *  Component, so the parent gates submit on whether a resolved
    *  place has been set. */
   required?: boolean;
+  /** Fired once when the Google lookup cannot be used at all (script
+   *  blocked/stalled, key rejected, element missing).
+   *
+   *  Parents MUST handle this by switching to their manual-entry path.
+   *  Rendering a plain text box here is not enough on its own: the
+   *  submit gate keys off a RESOLVED place, which a plain box can never
+   *  produce, so the buyer would face a form that looks fillable but a
+   *  button that never enables. Observed live on the paid /intake
+   *  checkout in the Instagram in-app browser (2026-08). */
+  onUnavailable?: () => void;
 };
 
 const MAPS_LIB_URL = (apiKey: string) =>
   `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
     apiKey
-  )}&libraries=places&v=beta&loading=async&callback=__turfmap_gmaps_ready`;
+  )}&libraries=places&v=weekly&loading=async&callback=__turfmap_gmaps_ready`;
+
+/** Hard ceiling on waiting for Google's ready callback. In embedded
+ *  in-app browsers (Instagram/Facebook/TikTok WebViews) the script tag can
+ *  be blocked or stalled such that NEITHER `onload` nor `onerror` ever
+ *  fires — without this the field sits on "Loading business lookup…"
+ *  forever and a paid visitor has no idea the manual path exists. */
+const MAPS_LOAD_TIMEOUT_MS = 8000;
 
 // Singleton flag — guards against double-loading the Maps JS script
 // across React re-renders + multiple component mounts on the same
@@ -125,18 +143,49 @@ function loadMapsScript(apiKey: string): Promise<void> {
   if (window.google?.maps?.importLibrary) return Promise.resolve();
 
   mapsScriptLoading = new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) {
+        // Clear the singleton so a later mount (or a retry) can try
+        // again. Leaving a rejected promise cached permanently poisons
+        // the lookup for the rest of the page session.
+        mapsScriptLoading = null;
+        reject(err);
+      } else {
+        resolve();
+      }
+    };
+    const timer = setTimeout(
+      () => finish(new Error('maps-timeout')),
+      MAPS_LOAD_TIMEOUT_MS
+    );
     // Global callback the Maps JS calls back when ready.
     (window as unknown as Record<string, () => void>)[
       '__turfmap_gmaps_ready'
-    ] = () => resolve();
+    ] = () => finish();
     const s = document.createElement('script');
     s.src = MAPS_LIB_URL(apiKey);
     s.async = true;
     s.defer = true;
-    s.onerror = () => reject(new Error('Failed to load Google Maps JS'));
+    s.onerror = () => finish(new Error('maps-script-error'));
     document.head.appendChild(s);
   });
   return mapsScriptLoading;
+}
+
+/** True once the Maps JS bootstrap has actually populated the global.
+ *  The bootstrap assigns `window.google.maps` on its FIRST line, so if
+ *  this is false after our load promise resolved, the script never ran —
+ *  the exact state that produced a raw
+ *  "undefined is not an object (evaluating 'window.google.maps')"
+ *  TypeError on the live /intake checkout (Instagram in-app browser,
+ *  2026-08). Checking it lets us fail over to manual entry instead of
+ *  dereferencing undefined and printing a JS stack at a paying buyer. */
+function mapsGlobalReady(): boolean {
+  return typeof window !== 'undefined' && !!window.google?.maps?.importLibrary;
 }
 
 export function GoogleBusinessAutocomplete({
@@ -145,23 +194,52 @@ export function GoogleBusinessAutocomplete({
   placeholder = 'Find your business on Google',
   countryCode = 'CA',
   required = true,
+  onUnavailable,
 }: GoogleBusinessAutocompleteProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Google lookup can't be used at all (script blocked, key rejected,
+   *  timed out, element missing). Renders the plain input so checkout
+   *  is never blocked — distinct from `error`, which is a recoverable
+   *  per-pick failure shown alongside a working widget. */
+  const [unavailable, setUnavailable] = useState(false);
   const [resolving, setResolving] = useState(false);
+
+  // Keep the latest callback in a ref so the load effect (which must not
+  // re-run when the parent re-renders) always calls the current one.
+  const onUnavailableRef = useRef(onUnavailable);
+  useEffect(() => {
+    onUnavailableRef.current = onUnavailable;
+  }, [onUnavailable]);
+  /** Single entry point for "Google lookup can't be used": flips to the
+   *  plain input AND tells the parent so it can switch to its manual
+   *  path (the submit gate needs a resolved place). */
+  const markUnavailable = useCallback(() => {
+    setUnavailable(true);
+    onUnavailableRef.current?.();
+  }, []);
 
   useEffect(() => {
     if (!apiKey) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional client-only effect (mount/hydration guard, timer, or external-store sync) — not derivable during render
-      setError('autocomplete unavailable');
+      markUnavailable();
       return;
     }
     let cancelled = false;
     void loadMapsScript(apiKey)
       .then(async () => {
         if (cancelled) return;
+        // Guard BEFORE dereferencing. The load promise resolving does not
+        // prove the bootstrap ran (see mapsGlobalReady docstring) — in an
+        // in-app WebView it can resolve with the global still undefined,
+        // and the old non-null assertions turned that into a raw TypeError
+        // rendered on the checkout form.
+        if (!mapsGlobalReady()) {
+          markUnavailable();
+          return;
+        }
         // Use the recommended importLibrary path (replaces the
         // legacy direct-access pattern). Returns the constructor.
         const places = (await window.google!.maps!.importLibrary!(
@@ -175,7 +253,7 @@ export function GoogleBusinessAutocomplete({
 
         if (cancelled) return;
         if (!places.PlaceAutocompleteElement) {
-          setError('PlaceAutocompleteElement not available');
+          markUnavailable();
           return;
         }
         const el = new places.PlaceAutocompleteElement(
@@ -289,17 +367,22 @@ export function GoogleBusinessAutocomplete({
         // network, etc). Surface so the buyer isn't stuck staring at
         // a broken-feeling field.
         el.addEventListener('gmp-error', () => {
-          setError('Autocomplete unavailable. Try refreshing.');
+          // Invalid key / no network / Google-side fault. Swap to the
+          // plain input rather than leaving a dead widget on the form.
+          markUnavailable();
         });
 
         containerRef.current?.appendChild(el);
         setReady(true);
       })
-      .catch((e: unknown) => {
+      .catch(() => {
         if (cancelled) return;
-        setError(
-          e instanceof Error ? e.message : 'Failed to load autocomplete'
-        );
+        // NEVER surface the raw error text here. This runs on the paid
+        // /intake checkout; the previous behaviour printed the underlying
+        // JS message ("undefined is not an object (evaluating
+        // 'window.google.maps')") directly above the price. Fail over to
+        // the plain input — the buyer can still complete the purchase.
+        markUnavailable();
       });
     return () => {
       cancelled = true;
@@ -316,7 +399,11 @@ export function GoogleBusinessAutocomplete({
   // plain text input so the form is still usable. Parent should
   // handle the "no resolved place" case downstream (i.e. submit
   // gracefully if the buyer typed something without picking).
-  if (!apiKey) {
+  // Key missing, or the Google lookup failed to initialise for any
+  // reason. Either way the buyer gets a working text field instead of a
+  // dead widget or a JS error — the parent already supports the
+  // "typed but not picked" path via manual entry.
+  if (!apiKey || unavailable) {
     return (
       <FallbackInput
         placeholder={placeholder}

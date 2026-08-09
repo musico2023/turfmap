@@ -567,6 +567,12 @@ export function ScanIntakeForm({
           </label>
           <GoogleBusinessAutocomplete
             placeholder="Type your business name…"
+            // Google lookup dead (blocked script / rejected key / in-app
+            // browser). Switch to manual entry automatically — the submit
+            // gate needs a RESOLVED place, which the Google field can no
+            // longer produce, so leaving the buyer here means a button
+            // that never enables on a page they were charged to reach.
+            onUnavailable={() => setManualEntry(true)}
             onResolved={(place) => {
               setBusinessName(place.businessName);
               setAddress(place.formattedAddress);

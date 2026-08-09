@@ -522,6 +522,9 @@ export function ClientCreateForm() {
                 onClear={clearGbpPick}
                 placeholder="Mr. Rooter Plumbing of Toronto"
                 countryCode={null}
+                // Google lookup unusable — drop the operator into the
+                // manual NAP path rather than a dead search box.
+                onUnavailable={() => setGbpMode('manual')}
                 required
               />
             </Field>
