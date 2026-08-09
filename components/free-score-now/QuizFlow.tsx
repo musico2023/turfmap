@@ -61,6 +61,10 @@ import {
   GoogleBusinessAutocomplete,
   type ResolvedPlace,
 } from '@/components/marketing/scan/GoogleBusinessAutocomplete';
+import {
+  AddressAutocomplete,
+  type AddressFields,
+} from '@/components/turfmap/AddressAutocomplete';
 import { primaryTypeToIndustry } from '@/lib/google/primaryTypeToIndustry';
 import { rankLocalKeywordCandidates } from '@/lib/keywords/suggestions';
 import {
@@ -379,7 +383,10 @@ export function QuizFlow({
         fbc_cookie: fbc || undefined,
         event_source_url:
           typeof window !== 'undefined' ? window.location.href : undefined,
-        google_place_id: place.placeId,
+        // Empty on the manual-entry path (business isn't on Google, or
+        // the Maps lookup was unavailable) — send undefined rather than
+        // an empty string so the API's optional field stays absent.
+        google_place_id: place.placeId || undefined,
         google_primary_type: place.primaryType ?? undefined,
         // QuizFlow-specific captures: role + trade + visibility
         // self-rating. Forwarded so /api/score/preview-init can
@@ -981,6 +988,126 @@ function GbpStep({
   onResolved: (p: ResolvedPlace) => void;
   onClear: () => void;
 }) {
+  // Manual fallback. Two ways in:
+  //   1. Automatically, when the Google lookup can't initialise at all
+  //      (script blocked in an in-app browser, key rejected, timeout) —
+  //      previously this step was a hard DEAD END and the lead was lost.
+  //   2. Deliberately, for businesses that genuinely aren't on Google.
+  //      Those are exactly the businesses a visibility scan helps most
+  //      (a missing GBP is the finding), and the funnel used to turn
+  //      them away.
+  const [manual, setManual] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualAddress, setManualAddress] = useState('');
+  /** The Mapbox pick, held so the step can emit whenever BOTH fields are
+   *  satisfied — the buyer may type the name after picking the address,
+   *  and emitting only on address-select would strand that ordering. */
+  const [manualFields, setManualFields] = useState<AddressFields | null>(null);
+
+  // Build the ResolvedPlace shape the rest of the flow expects. lat/lng
+  // come from the Mapbox pick — submit hard-requires them, and
+  // google_place_id / primaryType are optional server-side, so a manual
+  // lead is a first-class scan, just without GBP signals.
+  const emitManual = (name: string, f: AddressFields) => {
+    onResolved({
+      placeId: '',
+      businessName: name.trim(),
+      formattedAddress: f.formatted,
+      latitude: f.latitude,
+      longitude: f.longitude,
+      phone: '',
+      primaryType: null,
+      addressComponents: {
+        streetAddress: f.street_address || null,
+        city: f.city || null,
+        region: f.region || null,
+        postcode: f.postcode || null,
+        countryCode: f.country_code || null,
+      },
+    });
+  };
+
+  if (manual) {
+    return (
+      <StepShell>
+        <StepHeader
+          eyebrow="QUESTION 4 OF 5"
+          title="Where should we scan?"
+          subtitle="Enter your business name and address — we'll scan the map around it."
+        />
+        <label
+          htmlFor="qf-manual-name"
+          className="block text-[13px] font-semibold text-zinc-300 mb-1.5"
+        >
+          Business name
+        </label>
+        <input
+          id="qf-manual-name"
+          type="text"
+          value={manualName}
+          onChange={(e) => {
+            const next = e.target.value;
+            setManualName(next);
+            // Address already picked → completing the name completes the
+            // step, regardless of which order they filled them in.
+            if (next.trim().length >= 2 && manualFields) {
+              emitManual(next, manualFields);
+            }
+          }}
+          placeholder="e.g. Detailed Home Improvement"
+          autoFocus
+          className="w-full rounded-xl border border-zinc-700 bg-[#0a0a0a] px-3.5 py-3 text-[15px] text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-[color:var(--color-lime,#c5ff3a)]"
+        />
+        <label
+          htmlFor="qf-manual-addr"
+          className="block text-[13px] font-semibold text-zinc-300 mt-4 mb-1.5"
+        >
+          Business address or city
+        </label>
+        <AddressAutocomplete
+          id="qf-manual-addr"
+          value={manualAddress}
+          onChange={setManualAddress}
+          onSelect={(f) => {
+            setManualAddress(f.formatted);
+            setManualFields(f);
+            if (manualName.trim().length >= 2) emitManual(manualName, f);
+          }}
+          placeholder="123 Main St, or just your city"
+          inputClassName="w-full rounded-xl border border-zinc-700 bg-[#0a0a0a] px-3.5 py-3 text-[15px] text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-[color:var(--color-lime,#c5ff3a)]"
+        />
+        <p className="text-[12px] text-zinc-500 mt-2 leading-snug">
+          Pick from the dropdown so we can centre the scan grid correctly.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setManual(false);
+            onClear();
+          }}
+          className="mt-4 text-[12.5px] text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          ← Back to Google search
+        </button>
+        {place && (
+          <div className="mt-4 rounded-xl border border-[color:var(--color-lime,#c5ff3a)] bg-[rgba(197,255,58,0.06)] p-3.5">
+            <div className="flex items-start gap-2.5">
+              <span className="text-[16px] leading-none mt-0.5">📍</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-zinc-100 text-[14px] leading-tight">
+                  {place.businessName}
+                </div>
+                <div className="text-[12px] text-zinc-400 mt-1 leading-snug">
+                  {place.formattedAddress}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </StepShell>
+    );
+  }
+
   return (
     <StepShell>
       <StepHeader
@@ -996,7 +1123,18 @@ function GbpStep({
         onClear={() => {
           onClear();
         }}
+        // Lookup unusable (blocked script / rejected key / timeout).
+        // Switch to manual instead of stranding the visitor on a step
+        // they cannot complete.
+        onUnavailable={() => setManual(true)}
       />
+      <button
+        type="button"
+        onClick={() => setManual(true)}
+        className="mt-3 text-[12.5px] text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        Can&rsquo;t find your business on Google? Enter it manually →
+      </button>
       {place && (
         <div className="mt-4 rounded-xl border border-[color:var(--color-lime,#c5ff3a)] bg-[rgba(197,255,58,0.06)] p-3.5">
           <div className="flex items-start gap-2.5">
