@@ -32,6 +32,7 @@ import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import { logLanderVisit } from '@/lib/analytics/landerVisits';
 import { logFunnelEvent } from '@/lib/analytics/funnelEvents';
 import { YourmapFunnelEmitter } from '@/components/yourmap/YourmapFunnelEmitter';
+import { LostRevenueHeadline } from '@/components/yourmap/LostRevenueHeadline';
 import type { ProspectRow } from '@/lib/supabase/types';
 
 /**
@@ -94,6 +95,11 @@ type ProspectPersonalization = {
    *  when false we fall back to the Stripe checkout flow because the
    *  coldscan-fulfill route can't seed the 9x9 grid without geo. */
   hasGeo: boolean;
+  /** Monthly lost-revenue estimate — v2.2 §P0.1, migration 0046.
+   *  Populated by lib/lost_rev.py on the Lead Gen side. NULL on
+   *  pre-2026-07-01 rows; dollar-headline block gates on non-null. */
+  lost_rev_display: string | null;
+  lost_rev_confidence: string | null;
 };
 
 /** Look up the prospect server-side (direct DB query, not an HTTP
@@ -152,6 +158,8 @@ async function loadProspect(
         prospect.latitude != null &&
         prospect.longitude != null &&
         Boolean(prospect.address),
+      lost_rev_display: prospect.lost_rev_display,
+      lost_rev_confidence: prospect.lost_rev_confidence,
     },
   };
 }
@@ -403,6 +411,22 @@ export default async function YourMapLandingPage({
               <YourPreviewScoreCard
                 score={personalization.preview_score}
                 band={personalization.band}
+              />
+            )}
+
+            {/* v2.2 §P0.3 dollar-headline block — renders above the
+             *  existing invisibility card whenever lost_rev_display is
+             *  populated (2026-07-01 onward). Legacy pre-P0.1 rows have
+             *  null lost_rev_display and this component returns null,
+             *  falling back to the existing invisibility hero. */}
+            {personalization && (
+              <LostRevenueHeadline
+                businessName={personalization.business_name}
+                trade={personalization.trade}
+                lostRevDisplay={personalization.lost_rev_display}
+                lostRevConfidence={personalization.lost_rev_confidence}
+                topCompetitorName={personalization.top_competitor_name}
+                invisibilityCount={personalization.invisibility_count}
               />
             )}
 
