@@ -48,6 +48,7 @@ import { getAnthropic } from '@/lib/anthropic/client';
 import ColdReplyScanLinkEmail, {
   COLD_STAGE2_SUBJECT,
 } from '@/components/email/ColdReplyScanLinkEmail';
+import { fireReplyFanout } from '@/lib/analytics/replyFanout';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -220,6 +221,18 @@ export async function POST(req: Request) {
 
   // ─── 3. Classify intent ───────────────────────────────────────────
   const intent = await classifyIntent(replyText);
+
+  // v2.2 P0.2d fanout — fire-and-forget event log + #llm-leads Slack ping +
+  // (on positive) GHL opportunity move to Hot stage. Runs independently of
+  // downstream stage-2 scheduling; failures never affect the reply flow.
+  fireReplyFanout({
+    prospect_id: prospect.id,
+    business_name: prospect.business_name,
+    trade: prospect.trade,
+    email: prospect.email,
+    intent,
+    reply_text_snippet: replyText,
+  });
 
   const resendKey = process.env.RESEND_API_KEY;
   if (!resendKey) {

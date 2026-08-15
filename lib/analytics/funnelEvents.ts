@@ -35,12 +35,20 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { fireScanViewedFanout } from '@/lib/analytics/scanViewedFanout';
 
 export type FunnelEventType =
+  // Original 0041 vocab:
   | 'yourmap_view'
   | 'yourmap_scroll_50'
   | 'yourmap_scroll_form'
   | 'coldscan_cta_click'
   | 'free_scan_started'
-  | 'free_scan_completed';
+  | 'free_scan_completed'
+  // v2.2 §P0.2 + §9.3 (widened in migration 0047):
+  | 'reply_received'
+  | 'mail_scanned'
+  | 'mail_sent'
+  | 'mail_delivered'
+  | 'mail_bounced'
+  | 'mail_address_flag';
 
 export type FunnelEventInput = {
   event_type: FunnelEventType;
