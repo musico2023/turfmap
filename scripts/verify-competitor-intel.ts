@@ -68,5 +68,52 @@ const selfRes = computeCompetitorIntel({
 });
 check('own brand variants excluded from competitors', selfRes === null);
 
+// ── Own AMR ─────────────────────────────────────────────────────────────
+// The card's AMR column compares the client against competitors, so the
+// client's own row has to carry a real number on the same scale. It used
+// to be hardcoded to an em-dash in CompetitorIntelCard, which read as
+// "unmeasurable" on every profile.
+const amrPoints = [
+  { rank: 1, competitors: [{ name: 'Acme Plumbing', rank_group: 1 }] },
+  { rank: 2, competitors: [{ name: 'Acme Plumbing', rank_group: 1 }] },
+  { rank: 3, competitors: [{ name: 'Acme Plumbing', rank_group: 1 }] },
+  { rank: null, competitors: [{ name: 'Acme Plumbing', rank_group: 1 }] },
+];
+const amrRes = computeCompetitorIntel({
+  points: amrPoints,
+  own: { name: 'Bob Plumbing', rating: null, reviews: null },
+  totalCells: 4,
+});
+check('own amr averages in-pack ranks only ((1+2+3)/3 = 2.0)',
+  amrRes?.own.amr === 2, `got ${amrRes?.own.amr}`);
+check('own amr ignores out-of-pack cells (share still 75%)',
+  amrRes?.own.sharePct === 75, `got ${amrRes?.own.sharePct}`);
+
+// Rounds to one decimal, same as competitor AMR: (1+2)/2 = 1.5.
+const amrRound = computeCompetitorIntel({
+  points: [
+    { rank: 1, competitors: [{ name: 'Acme Plumbing', rank_group: 1 }] },
+    { rank: 2, competitors: [{ name: 'Acme Plumbing', rank_group: 1 }] },
+  ],
+  own: { name: 'Bob Plumbing', rating: null, reviews: null },
+  totalCells: 2,
+});
+check('own amr rounds to 1dp (1.5)', amrRound?.own.amr === 1.5, `got ${amrRound?.own.amr}`);
+
+// Zero in-pack cells → null, NOT 0. A 0 would render as a better-than-#1
+// rank and outrank every competitor in the table.
+const amrNone = computeCompetitorIntel({
+  points: Array.from({ length: 4 }, () => ({
+    rank: null,
+    competitors: [{ name: 'Acme Plumbing', rank_group: 1 }],
+  })),
+  own: { name: 'Bob Plumbing', rating: null, reviews: null },
+  totalCells: 4,
+});
+check('own amr is null when the client holds no cells',
+  amrNone !== null && amrNone.own.amr === null, `got ${amrNone?.own.amr}`);
+check('own share is 0 when the client holds no cells',
+  amrNone?.own.sharePct === 0, `got ${amrNone?.own.sharePct}`);
+
 if (failures > 0) { console.error(`\nverify-competitor-intel: ${failures} check(s) failed`); process.exit(1); }
 console.log('\nverify-competitor-intel: all checks passed');

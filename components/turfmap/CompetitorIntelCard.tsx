@@ -51,7 +51,7 @@ export function CompetitorIntelCard({ result }: { result: CompetitorIntelResult 
                 You
               </td>
               <td className="py-2.5 px-3 text-right font-mono text-zinc-200">{own.sharePct}%</td>
-              <td className="py-2.5 px-3 text-right font-mono text-zinc-500">—</td>
+              <td className="py-2.5 px-3 text-right font-mono text-zinc-200">{fmtAmr(own.amr)}</td>
               <td className="py-2.5 px-3 text-right font-mono text-zinc-200">{fmtNum(own.reviews)}</td>
               <td className="py-2.5 px-3 text-right font-mono text-zinc-200">{fmtRating(own.rating)}</td>
             </tr>
@@ -111,4 +111,10 @@ function fmtNum(n: number | null): string {
 }
 function fmtRating(r: number | null): string {
   return r == null ? '—' : `${r.toFixed(1)}★`;
+}
+/** Null AMR means the client holds no cells at all — there's no rank to
+ *  average, which is different from "0". Render it like any other
+ *  unknown so the row never implies a measured value. */
+function fmtAmr(a: number | null): string {
+  return a == null ? '—' : a.toFixed(1);
 }

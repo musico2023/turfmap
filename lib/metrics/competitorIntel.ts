@@ -66,7 +66,21 @@ export type CompetitorIntelEntry = {
 };
 
 export type CompetitorIntelResult = {
-  own: { sharePct: number; rating: number | null; reviews: number | null };
+  own: {
+    sharePct: number;
+    /** Average map rank across the cells where the client is in the
+     *  3-pack — the same measure reported as `amr` for competitors, so
+     *  the card's column compares like with like. Null when the client
+     *  holds no cells (no ranks to average), which the card renders as
+     *  an em-dash exactly like an unknown competitor rating.
+     *
+     *  Equivalent to 4 − TurfRank; computed from the cells directly
+     *  rather than derived, so this stays correct if the TurfRank
+     *  scale is ever rebased. */
+    amr: number | null;
+    rating: number | null;
+    reviews: number | null;
+  };
   competitors: CompetitorIntelEntry[];
   /** the top competitor by grid share, or null when none surface. */
   leader: CompetitorIntelEntry | null;
@@ -98,10 +112,16 @@ export function computeCompetitorIntel(
   );
 
   // Own grid share: cells where the client sits in the 3-pack.
-  const ownInPack = points.filter(
-    (p) => p.rank != null && p.rank >= 1 && p.rank <= 3
-  ).length;
+  const ownRanks = points
+    .map((p) => p.rank)
+    .filter((r): r is number => r != null && r >= 1 && r <= 3);
+  const ownInPack = ownRanks.length;
   const ownSharePct = Math.round((ownInPack / totalCells) * 100);
+  // Own AMR, on the same 1-decimal scale as the competitor rows below.
+  const ownAmr =
+    ownInPack > 0
+      ? Math.round((ownRanks.reduce((a, b) => a + b, 0) / ownInPack) * 10) / 10
+      : null;
 
   type Stats = { ranks: number[]; rating: number | null; reviews: number | null };
   const compStats = new Map<string, Stats>();
@@ -198,7 +218,12 @@ export function computeCompetitorIntel(
   });
 
   return {
-    own: { sharePct: ownSharePct, rating: own.rating, reviews: own.reviews },
+    own: {
+      sharePct: ownSharePct,
+      amr: ownAmr,
+      rating: own.rating,
+      reviews: own.reviews,
+    },
     competitors,
     leader,
     reviewGapToField,
