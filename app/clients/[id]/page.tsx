@@ -50,7 +50,7 @@ import { CitationsPanel } from '@/components/turfmap/CitationsPanel';
 import { GbpScorecardCard } from '@/components/turfmap/GbpScorecardCard';
 import { CompetitorIntelCard } from '@/components/turfmap/CompetitorIntelCard';
 import { KeywordOpportunityCard } from '@/components/turfmap/KeywordOpportunityCard';
-import { getLatestSignals } from '@/lib/google/enrich';
+import { getLatestSignals, getGbpDisplayName } from '@/lib/google/enrich';
 import { scoreGbpProfile } from '@/lib/metrics/gbpScore';
 import { computeCompetitorIntel } from '@/lib/metrics/competitorIntel';
 import { rankKeywordOpportunities } from '@/lib/metrics/keywordOpportunity';
@@ -278,6 +278,13 @@ export default async function ClientDashboardPage({
     showCitationsPanel && activeLocation
       ? await getLatestSignals(supabase, activeLocation.id)
       : null;
+  // GBP display name for Competitor Intel's self-exclusion. Read
+  // separately because getLatestSignals deliberately omits the raw
+  // Place Details blob from its select.
+  const ownGbpName =
+    showCitationsPanel && activeLocation
+      ? await getGbpDisplayName(supabase, activeLocation.id)
+      : null;
   const gbpScore = gbpSignals
     ? scoreGbpProfile({
         rating: gbpSignals.rating,
@@ -358,6 +365,11 @@ export default async function ClientDashboardPage({
         points: points.map((p) => ({ rank: p.rank ?? null, competitors: p.competitors })),
         own: {
           name: client.business_name,
+          // The local pack shows the GBP title, which routinely differs
+          // from the operator-typed business_name. Without it the client's
+          // own listing fails self-exclusion and is billed as their own
+          // competitor.
+          gbpName: ownGbpName,
           rating: gbpSignals?.rating ?? null,
           reviews: gbpSignals?.user_ratings_total ?? null,
         },

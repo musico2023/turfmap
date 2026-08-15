@@ -68,6 +68,74 @@ const selfRes = computeCompetitorIntel({
 });
 check('own brand variants excluded from competitors', selfRes === null);
 
+// ── Self-exclusion must not swallow real rivals ──────────────────────────
+// The old predicate was a first-word regex, so "Clear Choice Windows &
+// Doors" hid every listing containing "clear" and "D Spot Dessert Cafe"
+// (first word "D") hid nearly the whole table. A competitor the card
+// hides is a competitor the client never learns about.
+const clearRes = computeCompetitorIntel({
+  points: Array.from({ length: 10 }, () => ({
+    rank: 2,
+    competitors: [{ name: 'Clear Works', rank_group: 1, rating: 4.6, reviews: 88 }],
+  })),
+  own: { name: 'Clear Choice Windows & Doors', rating: 4.8, reviews: 281 },
+  totalCells: 10,
+});
+check('rival sharing only the first word is NOT excluded',
+  clearRes?.competitors.some((c) => c.name === 'Clear Works') === true,
+  `got ${JSON.stringify(clearRes?.competitors.map((c) => c.name))}`);
+
+const dSpotRes = computeCompetitorIntel({
+  points: Array.from({ length: 10 }, () => ({
+    rank: 2,
+    competitors: [{ name: 'Arctic Dessertz', rank_group: 1 }],
+  })),
+  own: { name: 'D Spot Dessert Cafe', rating: null, reviews: null },
+  totalCells: 10,
+});
+check('single-letter first word no longer erases the table',
+  dSpotRes?.competitors.some((c) => c.name === 'Arctic Dessertz') === true,
+  `got ${JSON.stringify(dSpotRes?.competitors.map((c) => c.name))}`);
+
+// ── ...but the client is still excluded when their GBP name differs ──────
+// The regression risk of the fix: matching on business_name alone makes a
+// drifted client their own competitor. Both real production rows.
+const driftRes = computeCompetitorIntel({
+  points: Array.from({ length: 10 }, () => ({
+    rank: 1,
+    competitors: [{ name: 'BVM Homes', rank_group: 1 }],
+  })),
+  own: { name: 'BVM Contracting', gbpName: 'BVM Homes', rating: null, reviews: null },
+  totalCells: 10,
+});
+check('client excluded via GBP name when the typed name has drifted',
+  driftRes === null, `got ${JSON.stringify(driftRes?.competitors.map((c) => c.name))}`);
+
+const driftNoGbp = computeCompetitorIntel({
+  points: Array.from({ length: 10 }, () => ({
+    rank: 1,
+    competitors: [{ name: 'BVM Homes', rank_group: 1 }],
+  })),
+  own: { name: 'BVM Contracting', rating: null, reviews: null },
+  totalCells: 10,
+});
+check('without a GBP name the drifted listing does surface (documented gap)',
+  driftNoGbp?.competitors.some((c) => c.name === 'BVM Homes') === true,
+  `got ${JSON.stringify(driftNoGbp?.competitors.map((c) => c.name))}`);
+
+// A name that would have broken an unescaped RegExp must not throw.
+let threw = false;
+try {
+  computeCompetitorIntel({
+    points: [{ rank: 1, competitors: [{ name: 'Northwest Exteriors', rank_group: 1 }] }],
+    own: { name: 'Sunshine (Pacific) Roofing', rating: null, reviews: null },
+    totalCells: 1,
+  });
+} catch {
+  threw = true;
+}
+check('regex-hostile client name does not throw', !threw);
+
 // ── Own AMR ─────────────────────────────────────────────────────────────
 // The card's AMR column compares the client against competitors, so the
 // client's own row has to carry a real number on the same scale. It used

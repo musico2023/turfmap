@@ -310,6 +310,52 @@ export async function getLatestSignals(
   return data ?? null;
 }
 
+/**
+ * The location's Google Business Profile display name — the title Google
+ * actually shows in the local pack — or null when the location was never
+ * enriched.
+ *
+ * Needed anywhere we ask "is this listing the client?", because
+ * `clients.business_name` is operator-typed and routinely disagrees with
+ * the GBP title: "BVM Contracting" is listed as "BVM Homes", "D Spot
+ * Dessert Cafe" as "D Spot Desserts <City>". Matching on the typed name
+ * alone makes a client invisible in their own scan (or, on the
+ * Competitor Intel card, makes them show up as their own competitor).
+ *
+ * Lives in the Place Details payload snapshotted on gbp_signals.raw
+ * rather than its own column, so this reads through `raw.displayName`.
+ * Best-effort: a missing or malformed snapshot returns null rather than
+ * throwing, and callers fall back to the typed name.
+ */
+export async function getGbpDisplayName(
+  supabase: SupabaseLike,
+  locationId: string
+): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from('gbp_signals')
+      .select('raw')
+      .eq('client_location_id', locationId)
+      .order('fetched_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ raw: unknown }>();
+    const raw = data?.raw;
+    if (!raw || typeof raw !== 'object') return null;
+    const displayName = (raw as { displayName?: unknown }).displayName;
+    // Places (New) returns { text, languageCode }; older snapshots and the
+    // DFS fallback path may have stored a bare string.
+    const text =
+      typeof displayName === 'string'
+        ? displayName
+        : typeof displayName === 'object' && displayName !== null
+          ? (displayName as { text?: unknown }).text
+          : null;
+    return typeof text === 'string' && text.trim() ? text.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export type GbpSignalsRow = {
   id: string;
   client_location_id: string;

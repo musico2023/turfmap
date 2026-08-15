@@ -45,6 +45,7 @@ import {
   SCAN_AUDIT_REFRESH_WINDOW_MS,
 } from '@/lib/brightlocal/autoAudit';
 import { dispatchScanAlerts } from '@/lib/alerts/postScan';
+import { getGbpDisplayName } from '@/lib/google/enrich';
 import type {
   ClientLocationRow,
   ClientRow,
@@ -103,45 +104,6 @@ export type RunScanResult = RunScanSuccess | RunScanFailure;
  * iterating on GBP edits or re-running after a failed scan.
  */
 const MOMENTUM_BASELINE_WINDOW_HOURS = 12;
-
-/**
- * The location's Google Business Profile display name — the title
- * Google actually shows in the local pack — or null when the location
- * was never enriched.
- *
- * Lives in the Place Details payload we snapshot on gbp_signals.raw
- * rather than its own column, so this reads through `raw.displayName`.
- * Best-effort by design: a missing or malformed snapshot must never
- * fail a scan, it just narrows matching to the operator-typed name.
- */
-async function fetchGbpDisplayName(
-  supabase: SupabaseLike,
-  locationId: string
-): Promise<string | null> {
-  try {
-    const { data } = await supabase
-      .from('gbp_signals')
-      .select('raw')
-      .eq('client_location_id', locationId)
-      .order('fetched_at', { ascending: false })
-      .limit(1)
-      .maybeSingle<{ raw: unknown }>();
-    const raw = data?.raw;
-    if (!raw || typeof raw !== 'object') return null;
-    const displayName = (raw as { displayName?: unknown }).displayName;
-    // Places (New) returns { text, languageCode }; older snapshots and
-    // the DFS fallback path may have stored a bare string.
-    const text =
-      typeof displayName === 'string'
-        ? displayName
-        : typeof displayName === 'object' && displayName !== null
-          ? (displayName as { text?: unknown }).text
-          : null;
-    return typeof text === 'string' && text.trim() ? text.trim() : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function runScanForLocation(
   supabase: SupabaseLike,
@@ -234,7 +196,7 @@ export async function runScanForLocation(
   // wrong as the first-word false positives. Matching on the GBP name
   // alone would instead break locations that were never enriched
   // (google_place_id null), so either name matching is a hit.
-  const gbpDisplayName = await fetchGbpDisplayName(supabase, location.id);
+  const gbpDisplayName = await getGbpDisplayName(supabase, location.id);
   const clientNames = [client.business_name, gbpDisplayName].filter(
     (n): n is string => typeof n === 'string' && n.trim().length > 0
   );

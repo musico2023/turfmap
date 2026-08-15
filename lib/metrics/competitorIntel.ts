@@ -19,6 +19,7 @@
  */
 
 import { competitorState, isOutOfRegion } from '@/lib/metrics/geoRegion';
+import { nameMatches } from '@/lib/citations/napCompare';
 
 /** Minimum grid share (% of cells in the 3-pack) for a competitor to
  *  surface — filters one-off appearances. Matches the coach's floor. */
@@ -33,8 +34,19 @@ export type CompetitorIntelPoint = {
 
 export type CompetitorIntelInput = {
   points: CompetitorIntelPoint[];
-  /** the client's own business — name (for self-exclusion) + GBP signals. */
-  own: { name: string; rating: number | null; reviews: number | null };
+  /** the client's own business — name(s) for self-exclusion + GBP signals. */
+  own: {
+    name: string;
+    /** The location's GBP display name, when it differs from the
+     *  operator-typed `name`. The local pack shows the GBP title, so
+     *  without this a client whose typed name has drifted ("BVM
+     *  Contracting" listed as "BVM Homes") is not recognised as
+     *  themselves and shows up as their own competitor. Null/omitted
+     *  falls back to `name` alone. */
+    gbpName?: string | null;
+    rating: number | null;
+    reviews: number | null;
+  };
   /** total cells in the grid; defaults to points.length (81). */
   totalCells?: number;
   /** how many top competitors to return. */
@@ -106,10 +118,25 @@ export function computeCompetitorIntel(
   const { points, own } = input;
   const totalCells = Math.max(input.totalCells ?? points.length, 1);
   const topN = input.topN ?? 4;
-  const ownNamePattern = new RegExp(
-    escapeRegex(own.name.split(/\s+/)[0] ?? ''),
-    'i'
+  // Self-exclusion: keep the client out of their own competitor list.
+  //
+  // This was `new RegExp(escapeRegex(own.name.split(' ')[0]), 'i')` — the
+  // same first-word matching that corrupted the scan matcher, in mirror
+  // image. Escaped, so it never threw; but massively over-excluding.
+  // "Clear Choice Windows & Doors" silently dropped every rival matching
+  // /clear/i, and "D Spot Dessert Cafe" reduced to /d/i, erasing nearly
+  // the entire competitor table. A competitor the card hides is a
+  // competitor the client never learns about.
+  //
+  // nameMatches over both the typed name and the GBP title is the same
+  // predicate runScan uses to decide the reciprocal question ("is this
+  // listing the client?"), so a listing counted as the client's rank in
+  // the scan can't also be billed as their competitor here.
+  const ownNames = [own.name, own.gbpName].filter(
+    (n): n is string => typeof n === 'string' && n.trim().length > 0
   );
+  const isOwnListing = (name: string): boolean =>
+    ownNames.some((n) => nameMatches(n, name));
 
   // Own grid share: cells where the client sits in the 3-pack.
   const ownRanks = points
@@ -133,7 +160,7 @@ export function computeCompetitorIntel(
 
     for (const c of list) {
       if (!c?.name) continue;
-      if (ownNamePattern.test(c.name)) continue;
+      if (isOwnListing(c.name)) continue;
       // Geo-sanity: drop out-of-state businesses pulled in by an ambiguous
       // city keyword (e.g. Dayton, OH painters for a Dayton, MN client).
       if (
@@ -251,8 +278,4 @@ function buildHeadline(args: {
     return `You lead the map (${ownSharePct}% vs ${leader.name}'s ${leader.sharePct}%) — defend it and watch the reviews gap.`;
   }
   return `${leader.name} edges you on the map (${leader.sharePct}% vs ${ownSharePct}%) — a winnable gap.`;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
