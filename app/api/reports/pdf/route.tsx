@@ -107,6 +107,7 @@ export async function GET(req: Request) {
   const competitors = aggregateCompetitors(points, points.length || 1, {
     excludeNamePattern: ownNamePattern,
     clientRegion: client.region ?? null,
+    clientTrade: { industry: client.industry ?? null, keyword: keyword.keyword ?? null },
   });
 
   const { data: insightRow } = await supabase

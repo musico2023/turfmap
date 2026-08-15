@@ -291,6 +291,10 @@ export default async function ClientPortalPage({
   const competitors = aggregateCompetitors(points, points.length || 1, {
     excludeNamePattern: ownNamePattern,
     clientRegion: client.region ?? null,
+    clientTrade: {
+      industry: client.industry ?? null,
+      keyword: activeKeyword?.keyword ?? null,
+    },
   });
 
   // Billing panel data — loaded only for self-serve subscriptions.

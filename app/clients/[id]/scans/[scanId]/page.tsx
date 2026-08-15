@@ -123,6 +123,7 @@ export default async function PerScanPage({
   const competitors = aggregateCompetitors(points, points.length || 1, {
     excludeNamePattern: ownNamePattern,
     clientRegion: client.region ?? null,
+    clientTrade: { industry: client.industry ?? null, keyword: keyword?.keyword ?? null },
   });
 
   // Fetch the most recent insight for this specific scan (if any).

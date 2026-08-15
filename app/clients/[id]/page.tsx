@@ -333,11 +333,20 @@ export default async function ClientDashboardPage({
   // in from a prominent same-name city (Dayton, OH). Only in auto-discovery
   // mode; curated competitors are operator-chosen and trusted as-is.
   const clientRegion = activeLocation?.region ?? null;
+  // Trade context for out-of-trade competitor filtering. Both signals are
+  // passed because clients.industry is inconsistent across rows (Google
+  // place_types on some, free text on others) — the scanned keyword is
+  // often the sharper tell of which collision applies.
+  const clientTrade = {
+    industry: client.industry ?? null,
+    keyword: activeKeyword?.keyword ?? null,
+  };
   const competitors = isCurated
     ? aggregateCuratedCompetitors(points, curatedNames, points.length || 1)
     : aggregateCompetitors(points, points.length || 1, {
         excludeNamePattern: ownNamePattern,
         clientRegion,
+        clientTrade,
       });
   // Geo-ambiguity warning: does the keyword pull in a real competitor from
   // another state? (Computed on the UNFILTERED set so we can name the
@@ -374,6 +383,7 @@ export default async function ClientDashboardPage({
           reviews: gbpSignals?.user_ratings_total ?? null,
         },
         clientRegion,
+        clientTrade,
       })
     : null;
 

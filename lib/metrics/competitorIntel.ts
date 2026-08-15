@@ -20,6 +20,7 @@
 
 import { competitorState, isOutOfRegion } from '@/lib/metrics/geoRegion';
 import { nameMatches } from '@/lib/citations/napCompare';
+import { isOutOfTrade, type TradeContext } from '@/lib/metrics/tradeRelevance';
 
 /** Minimum grid share (% of cells in the 3-pack) for a competitor to
  *  surface — filters one-off appearances. Matches the coach's floor. */
@@ -54,6 +55,11 @@ export type CompetitorIntelInput = {
   /** Client's NAP region. When set, out-of-state competitors (ambiguous-
    *  keyword geo noise) are excluded — see lib/metrics/geoRegion.ts. */
   clientRegion?: string | null;
+  /** Client's trade context (industry + scanned keyword). When set,
+   *  competitors from an unambiguously different line of business are
+   *  excluded — see lib/metrics/tradeRelevance.ts. Conservative: anything
+   *  uncertain is kept. */
+  clientTrade?: TradeContext | null;
 };
 
 export type CompetitorIntelEntry = {
@@ -169,6 +175,9 @@ export function computeCompetitorIntel(
       ) {
         continue;
       }
+      // Trade-sanity: an auto-glass shop is not a residential window
+      // contractor's competitor, however the local pack ranks it.
+      if (input.clientTrade && isOutOfTrade(c.name, input.clientTrade)) continue;
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
       const prev = cellBest.get(c.name);

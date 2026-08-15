@@ -45,6 +45,7 @@ import {
   normalizeUsState,
   usStateFromText,
 } from '@/lib/metrics/geoRegion';
+import { isOutOfTrade, type TradeContext } from '@/lib/metrics/tradeRelevance';
 
 export type RawCompetitor = {
   name?: string | null;
@@ -86,9 +87,15 @@ export function aggregateCompetitors(
      *  dropped as out-of-region geo noise (the "painter dayton" → Dayton OH
      *  problem). Competitors with no detectable state are always kept. */
     clientRegion?: string | null;
+    /** Client's trade context (industry + scanned keyword). When set,
+     *  competitors from an unambiguously different line of business are
+     *  dropped — the "window replacement" → auto-glass problem. See
+     *  lib/metrics/tradeRelevance.ts; conservative, keeps anything
+     *  uncertain. */
+    clientTrade?: TradeContext | null;
   } = {}
 ): CompetitorAggregate[] {
-  const { excludeNamePattern, topN = 3, clientRegion } = options;
+  const { excludeNamePattern, topN = 3, clientRegion, clientTrade } = options;
   const stats = new Map<string, number[]>();
 
   for (const sp of scanPoints) {
@@ -115,6 +122,9 @@ export function aggregateCompetitors(
       ) {
         continue;
       }
+      // Trade-sanity: drop a different line of business (auto glass on a
+      // residential "window replacement" scan).
+      if (clientTrade && isOutOfTrade(name, clientTrade)) continue;
       const rank = c.rank_group ?? c.rank_absolute ?? null;
       if (rank === null || rank > 3) continue;
       const prev = cellBest.get(name);
