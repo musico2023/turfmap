@@ -33,6 +33,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { runLiveLocalPackScan } from '@/lib/dataforseo/client';
 import { cleanCompetitorName } from '@/lib/dataforseo/cleanCompetitorName';
+import { nameMatches } from '@/lib/citations/napCompare';
 import { usStateFromText } from '@/lib/metrics/geoRegion';
 import { generateGridCoordinates } from '@/lib/dataforseo/grid';
 import { turfReach } from '@/lib/metrics/turfReach';
@@ -103,6 +104,45 @@ export type RunScanResult = RunScanSuccess | RunScanFailure;
  */
 const MOMENTUM_BASELINE_WINDOW_HOURS = 12;
 
+/**
+ * The location's Google Business Profile display name — the title
+ * Google actually shows in the local pack — or null when the location
+ * was never enriched.
+ *
+ * Lives in the Place Details payload we snapshot on gbp_signals.raw
+ * rather than its own column, so this reads through `raw.displayName`.
+ * Best-effort by design: a missing or malformed snapshot must never
+ * fail a scan, it just narrows matching to the operator-typed name.
+ */
+async function fetchGbpDisplayName(
+  supabase: SupabaseLike,
+  locationId: string
+): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from('gbp_signals')
+      .select('raw')
+      .eq('client_location_id', locationId)
+      .order('fetched_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ raw: unknown }>();
+    const raw = data?.raw;
+    if (!raw || typeof raw !== 'object') return null;
+    const displayName = (raw as { displayName?: unknown }).displayName;
+    // Places (New) returns { text, languageCode }; older snapshots and
+    // the DFS fallback path may have stored a bare string.
+    const text =
+      typeof displayName === 'string'
+        ? displayName
+        : typeof displayName === 'object' && displayName !== null
+          ? (displayName as { text?: unknown }).text
+          : null;
+    return typeof text === 'string' && text.trim() ? text.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function runScanForLocation(
   supabase: SupabaseLike,
   input: RunScanInput
@@ -152,16 +192,63 @@ export async function runScanForLocation(
   // per-point errors barely move an 81-cell score; a fifth of the grid
   // missing does. 0.2 = up to 16 of 81 points may fail.
   const MAX_FAILED_POINT_RATIO = 0.2;
-  const firstWord = client.business_name.split(/\s+/)[0]?.toLowerCase() ?? '';
-  const ownPattern = new RegExp(firstWord || '___never_match___', 'i');
+
+  // Is this local-pack listing the client? This decides every cell's
+  // rank, and therefore TurfReach / TurfRank / TurfScore, the AI
+  // Coach's inputs, momentum, and the alert diffs.
+  //
+  // This used to be `new RegExp(business_name.split(' ')[0], 'i')` —
+  // an unanchored substring match on the FIRST WORD ALONE. Two ways
+  // that failed, both real:
+  //
+  //   - False positives. "Clear Choice Windows & Doors" matched the
+  //     unrelated "Clear Works" via /clear/i, crediting a competitor's
+  //     rankings — including #1 cells — to the client. On a 10mi
+  //     Portland-metro grid that inflated TurfScore 10 → 24 and
+  //     TurfReach 19% → 40% (17 of 32 "ranked" cells were bogus).
+  //     Generic first words are the norm in home services: All, Pro,
+  //     Elite, Superior, American, Precision, Quality, First, Advanced.
+  //
+  //   - Unescaped interpolation. The first word went into `new RegExp`
+  //     raw, so "A+ Windows" compiled to /a+/i (matches nearly every
+  //     title) and a name with an unbalanced paren threw mid-scan.
+  //
+  // nameMatches is the citation checker's matcher: forward containment
+  // over normalized, filler-stripped tokens at a 0.75 bar. It's already
+  // been hardened against the failure modes a naive matcher hits here —
+  // single-word brands, load-bearing stopwords ("On Point"), long legal
+  // names vs short listing titles, and sibling franchise locations. No
+  // regex is constructed from user input at all.
+  //
+  // Titles are cleaned first for the same reason scan_points stores
+  // cleaned names below: DFS occasionally concatenates Google UI chrome
+  // ("… My Ad Center") onto the visible title, and those stray tokens
+  // only ever dilute the match.
+  //
+  // We match against the GBP display name AND the operator-typed
+  // business_name, because those routinely disagree and the local pack
+  // shows the GBP one. Real rows: client "D Spot Dessert Cafe" has GBP
+  // "D Spot Desserts Winnipeg"; client "BVM Contracting" has GBP "BVM
+  // Homes". Matching on business_name alone scores both at zero reach
+  // despite them ranking in most cells — a false negative every bit as
+  // wrong as the first-word false positives. Matching on the GBP name
+  // alone would instead break locations that were never enriched
+  // (google_place_id null), so either name matching is a hit.
+  const gbpDisplayName = await fetchGbpDisplayName(supabase, location.id);
+  const clientNames = [client.business_name, gbpDisplayName].filter(
+    (n): n is string => typeof n === 'string' && n.trim().length > 0
+  );
+  const isClientListing = (title: unknown): boolean => {
+    const cleaned = cleanCompetitorName(String(title ?? ''));
+    return clientNames.some((n) => nameMatches(n, cleaned));
+  };
 
   let scan;
   try {
     scan = await runLiveLocalPackScan({
       keyword: keyword.keyword,
       points,
-      targetMatch: (item) =>
-        ownPattern.test((item.title ?? '').toString().toLowerCase()),
+      targetMatch: (item) => isClientListing(item.title),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
