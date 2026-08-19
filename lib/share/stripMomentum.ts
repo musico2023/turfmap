@@ -28,11 +28,32 @@ function mentionsMomentum(s: string): boolean {
   return MOMENTUM_RE.test(s) || SCORE_DELTA_RE.test(s);
 }
 
-/** Split a sentence into clauses on separators the Coach actually emits,
- *  keeping the separator with the clause that follows it so rejoining is
- *  lossless for the clauses we keep. */
-function splitClauses(sentence: string): string[] {
-  return sentence.split(/(?:;\s+|,\s+and\s+)/g).filter((c) => c.trim().length > 0);
+/** A clause plus the separator that preceded it in the source ('' for the
+ *  first). Keeping the original separator matters: ", and " is ambiguous —
+ *  it joins clauses AND terminates an Oxford list ("content, expansion, and
+ *  velocity"). Rejoining survivors with a fixed separator turns the list
+ *  case into "expansion; velocity". Reusing each kept clause's own
+ *  separator reassembles both cases correctly. */
+type Clause = { text: string; sep: string };
+
+function splitClauses(sentence: string): Clause[] {
+  // Capturing split → [clause, sep, clause, sep, …].
+  const parts = sentence.split(/(;\s+|,\s+and\s+)/g);
+  const out: Clause[] = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const text = parts[i];
+    if (!text || !text.trim()) continue;
+    out.push({ text, sep: i === 0 ? '' : (parts[i - 1] ?? '; ') });
+  }
+  return out;
+}
+
+/** Rejoin survivors using each clause's original separator. The first kept
+ *  clause never carries one, whatever it was preceded by. */
+function joinClauses(clauses: Clause[]): string {
+  return clauses
+    .map((c, i) => (i === 0 ? c.text.trim() : `${c.sep}${c.text.trim()}`))
+    .join('');
 }
 
 function splitSentences(text: string): string[] {
@@ -62,9 +83,11 @@ export function stripMomentumText(text: string | null | undefined): string | nul
       keptSentences.push(sentence.trim());
       continue;
     }
-    const keptClauses = splitClauses(sentence).filter((c) => !mentionsMomentum(c));
+    const keptClauses = splitClauses(sentence).filter(
+      (c) => !mentionsMomentum(c.text)
+    );
     if (keptClauses.length === 0) continue;
-    const rebuilt = tidy(keptClauses.join('; '));
+    const rebuilt = tidy(joinClauses(keptClauses));
     if (rebuilt.replace(/[^a-z0-9]/gi, '').length >= MIN_KEEP_CHARS) {
       keptSentences.push(rebuilt);
     }

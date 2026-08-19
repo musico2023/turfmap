@@ -26,6 +26,13 @@ check('projected: score delta removed', !/17\s*→\s*41/.test(scrubbedProjected 
 check('projected: substance preserved', /65–68%/.test(scrubbedProjected ?? '') && /48–55/.test(scrubbedProjected ?? ''));
 check('projected: reads as a sentence', /^[A-Z]/.test(scrubbedProjected ?? '') && /\.$/.test(scrubbedProjected ?? ''));
 
+// Regression: ", and " is ambiguous — it separates clauses AND closes an
+// Oxford list. Rejoining survivors with a fixed "; " mangled the list into
+// "citation expansion; review velocity" (caught in prod, 2026-08-17).
+check('projected: oxford list not mangled',
+  /citation expansion, and review velocity/.test(scrubbedProjected ?? ''));
+check('projected: no stray semicolon', !/;/.test(scrubbedProjected ?? ''));
+
 // ── real action.why from the same scan ──────────────────────────────────
 const action = {
   action: 'Accelerate review velocity to close gap with leading competitors',
