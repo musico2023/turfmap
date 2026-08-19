@@ -62,6 +62,10 @@ import { StatCard } from '@/components/turfmap/StatCard';
 import { MomentumCard } from '@/components/turfmap/MomentumCard';
 import { CompetitorTable } from '@/components/turfmap/CompetitorTable';
 import { AICoach, type AICoachAction } from '@/components/turfmap/AICoach';
+import {
+  stripMomentumText,
+  stripMomentumAction,
+} from '@/lib/share/stripMomentum';
 import { ClientBrandMark } from '@/components/turfmap/ClientBrandMark';
 import { buildCompetitorCells } from '@/lib/metrics/competitorCells';
 import {
@@ -222,6 +226,23 @@ export default async function PublicSharePage({
       actions: AICoachAction[];
       projected_impact: string | null;
     }>();
+
+  // hide_momentum has to reach the Coach copy too — the model quotes the
+  // number inline ("sustaining the +24 Momentum requires…"). ai_insights is
+  // keyed by scan_id and shared with the dashboard/portal/PDF, so we scrub
+  // per-render rather than editing the stored row. Clauses that mention
+  // momentum are dropped whole; everything else survives verbatim.
+  const insight = (() => {
+    if (!insightRow || !share.hide_momentum) return insightRow ?? null;
+    return {
+      ...insightRow,
+      diagnosis: stripMomentumText(insightRow.diagnosis) ?? insightRow.diagnosis,
+      projected_impact: stripMomentumText(insightRow.projected_impact),
+      actions: (insightRow.actions ?? [])
+        .map((a) => stripMomentumAction(a))
+        .filter((a): a is AICoachAction => a !== null),
+    };
+  })();
 
   // Competitor keyword reveal — preview-cohort conversion hook. Populated
   // by the after() builder in createPreviewClient (gated by
@@ -749,7 +770,7 @@ export default async function PublicSharePage({
             <AICoach
               scanId={scan.id}
               shareId={shareId}
-              insight={insightRow ?? null}
+              insight={insight}
               scanComplete={Boolean(scan)}
             />
           )}
