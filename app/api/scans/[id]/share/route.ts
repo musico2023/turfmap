@@ -13,6 +13,7 @@
  *     agencyLabel?: string,     // shown on the public view as "Shared by …"
  *     ctaText?: string,         // bottom-of-page CTA, e.g. "Talk to us"
  *     ctaUrl?: string,          // CTA target URL
+ *     hideMomentum?: boolean,   // omit the Momentum card on the public view
  *   }
  *
  * Response: { id, url, expiresAt }
@@ -31,6 +32,10 @@ const PostBody = z.object({
   agencyLabel: z.string().max(200).optional().nullable(),
   ctaText: z.string().max(120).optional().nullable(),
   ctaUrl: z.string().url().max(500).optional().nullable(),
+  // Presentation-only: omit the Momentum card on the public view. Useful
+  // when the prior scan is an unrepresentative baseline and the delta
+  // would overstate the change. Leaves scans.momentum untouched.
+  hideMomentum: z.boolean().optional(),
 });
 
 const DEFAULT_DAYS = 30;
@@ -87,6 +92,7 @@ export async function POST(
       agency_label: parsed.agencyLabel ?? null,
       cta_text: parsed.ctaText ?? null,
       cta_url: parsed.ctaUrl ?? null,
+      hide_momentum: parsed.hideMomentum ?? false,
     })
     .select('*')
     .single<ScanShareLinkRow>();

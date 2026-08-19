@@ -374,6 +374,10 @@ export type ScanShareLinkRow = {
   agency_label: string | null;
   cta_text: string | null;
   cta_url: string | null;
+  /** Presentation-only: when true, /share/<id> omits the Momentum card.
+   *  Does not alter scans.momentum — the dashboard, portal and PDF still
+   *  show it. */
+  hide_momentum: boolean | null;
 };
 
 export type ScanRow = {

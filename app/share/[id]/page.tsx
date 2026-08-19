@@ -174,8 +174,13 @@ export default async function PublicSharePage({
       ? Number(scan.turf_score)
       : composeTurfScore(reach, rank);
   const band = getTurfScoreBand(score);
+  // Momentum is suppressed per-link (not per-scan): a sales share whose
+  // previous scan was an unrepresentative baseline shouldn't imply a delta
+  // the operator isn't claiming. The scan's own momentum is untouched.
   const momentumValue =
-    scan.momentum != null ? Number(scan.momentum) : null;
+    share.hide_momentum || scan.momentum == null
+      ? null
+      : Number(scan.momentum);
 
   const ownNamePattern = new RegExp(
     client.business_name.split(/\s+/)[0] ?? '',
