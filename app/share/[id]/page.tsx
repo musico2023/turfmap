@@ -236,7 +236,10 @@ export default async function PublicSharePage({
     if (!insightRow || !share.hide_momentum) return insightRow ?? null;
     return {
       ...insightRow,
-      diagnosis: stripMomentumText(insightRow.diagnosis) ?? insightRow.diagnosis,
+      // No `?? insightRow.diagnosis` fallback: null means nothing survived
+      // scrubbing, so falling back would print the momentum copy on the one
+      // page that asked to hide it — failing open, worst-case-first.
+      diagnosis: stripMomentumText(insightRow.diagnosis),
       projected_impact: stripMomentumText(insightRow.projected_impact),
       actions: (insightRow.actions ?? [])
         .map((a) => stripMomentumAction(a))

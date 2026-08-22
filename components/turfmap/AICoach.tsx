@@ -21,7 +21,10 @@ export type AICoachProps = {
   scanId: string | null;
   /** Existing insight, if one was already generated for this scan. */
   insight: {
-    diagnosis: string;
+    /** Null when per-link momentum scrubbing left nothing publishable
+     *  (see lib/share/stripMomentum.ts). The panel drops the Diagnosis
+     *  block rather than printing un-scrubbed copy. */
+    diagnosis: string | null;
     actions: AICoachAction[];
     projected_impact: string | null;
   } | null;
@@ -106,17 +109,19 @@ export function AICoach({
 
       {insight && (
         <>
-          <div
-            className="border-l-2 pl-4 mb-5"
-            style={{ borderColor: 'var(--color-lime)' }}
-          >
-            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1 font-semibold">
-              Diagnosis
+          {insight.diagnosis && (
+            <div
+              className="border-l-2 pl-4 mb-5"
+              style={{ borderColor: 'var(--color-lime)' }}
+            >
+              <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1 font-semibold">
+                Diagnosis
+              </div>
+              <p className="text-sm text-zinc-200 leading-relaxed">
+                {insight.diagnosis}
+              </p>
             </div>
-            <p className="text-sm text-zinc-200 leading-relaxed">
-              {insight.diagnosis}
-            </p>
-          </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
             {insight.actions.map((action, i) => (
