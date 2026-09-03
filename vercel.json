@@ -10,6 +10,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/cron/reap-stuck-audits",
+      "schedule": "20 * * * *"
+    },
+    {
       "path": "/api/cron/reset-citation-quotas",
       "schedule": "5 0 1 1,4,7,10 *"
     },
