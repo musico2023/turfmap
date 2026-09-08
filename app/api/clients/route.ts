@@ -29,6 +29,7 @@ import {
 import type { ClientStatus, ScanFrequency } from '@/lib/supabase/types';
 import { agencyClientUrl } from '@/lib/urls';
 import { hasLocatableCenter } from '@/lib/intake/requireLocatable';
+import { normalizeIndustry } from '@/lib/industries/normalize';
 
 export const runtime = 'nodejs';
 
@@ -165,7 +166,12 @@ export async function POST(req: Request) {
       region: parsed.region ?? null,
       postcode: parsed.postcode ?? null,
       country_code: parsed.country_code ?? 'USA',
-      industry: parsed.industry ?? null,
+      // Normalised so a business NAME can never land in the trade field —
+      // see lib/industries/normalize.ts (the 2026-08-27 outreach incident).
+      industry: normalizeIndustry(parsed.industry, {
+        businessName: parsed.business_name,
+        keyword: parsed.keyword.keyword,
+      }),
       service_radius_miles: parsed.service_radius_miles ?? 1.6,
       primary_color: parsed.primary_color ?? '#c5ff3a',
       monthly_price_cents: parsed.monthly_price_cents ?? null,

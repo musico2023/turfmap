@@ -19,6 +19,7 @@ import { findClientByPublicIdOrUuid } from '@/lib/supabase/client-lookup';
 import { pauseClientCitationMaintenance } from '@/lib/citations/maintenance';
 import { requireAgencyUserForApi } from '@/lib/auth/agency';
 import type { ClientRow } from '@/lib/supabase/types';
+import { normalizeIndustry } from '@/lib/industries/normalize';
 
 export const runtime = 'nodejs';
 
@@ -139,6 +140,13 @@ export async function PATCH(
   // with `{ alert_prefs: { score_movement_email: false } }` flips one
   // toggle without erasing the other keys.
   const updateBody: Record<string, unknown> = { ...parsed };
+  // Same guard as the create path: an operator edit must not be able to put
+  // the business name into the trade field either.
+  if (parsed.industry !== undefined) {
+    updateBody.industry = normalizeIndustry(parsed.industry, {
+      businessName: parsed.business_name ?? existing.business_name,
+    });
+  }
   if (parsed.alert_prefs && existing.alert_prefs) {
     updateBody.alert_prefs = {
       ...existing.alert_prefs,
