@@ -44,3 +44,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# AI visibility Phase 0 spike output (CSV/JSONL dumps, local only)
+spike-output/
