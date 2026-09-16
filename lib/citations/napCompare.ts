@@ -199,9 +199,14 @@ export function classifyCitation(
   //   - or directory's snippet just doesn't show those fields
   // Without a second signal we don't have enough to flag — defer to
   // 'unverified' rather than over-promise a mismatch.
+  // A mismatch needs BOTH sides of the field. A service-area business has no
+  // canonical street address (street_address defaults to ''), so any address
+  // a directory showed used to be flagged as a mismatch against nothing —
+  // advice to "fix" a listing that is correct. Without a canonical value
+  // there is nothing to be inconsistent with; stay unverified.
   if (
-    (found.phone && !phoneOk) ||
-    (found.address && !addressOk)
+    (canonical.phone && found.phone && !phoneOk) ||
+    (canonical.address && found.address && !addressOk)
   ) {
     return 'mismatch';
   }

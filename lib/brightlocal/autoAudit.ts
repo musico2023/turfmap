@@ -111,7 +111,10 @@ export function locationToCitationProfile(
     ClientLocationRow,
     'phone' | 'street_address' | 'city' | 'region' | 'postcode'
     | 'country_code' | 'latitude' | 'longitude'
-  >
+  > &
+    // Optional so callers holding a partial row still compile; the audit
+    // path passes the full row and gets the verified-GBP short-circuit.
+    Partial<Pick<ClientLocationRow, 'google_place_id' | 'google_place_match_status'>>
 ): CitationBusinessProfile | null {
   if (!businessName || !location.city || location.latitude == null || location.longitude == null) {
     return null;
@@ -126,7 +129,19 @@ export function locationToCitationProfile(
     telephone: location.phone ?? null,
     latitude: Number(location.latitude),
     longitude: Number(location.longitude),
+    google_place_id: verifiedPlaceId(location),
   };
+}
+
+/** The location's place_id if TurfMap has linked it and nobody has rejected
+ *  the match; otherwise null so the GBP directory is probed as before. */
+function verifiedPlaceId(
+  location: Partial<Pick<ClientLocationRow, 'google_place_id' | 'google_place_match_status'>>
+): string | null {
+  if (!location.google_place_id) return null;
+  const status = location.google_place_match_status;
+  if (status === 'rejected' || status === 'no_match') return null;
+  return location.google_place_id;
 }
 
 /** Compose a BrightLocal BusinessProfile from a client (for the brand
@@ -297,6 +312,10 @@ export async function maybeRunNapAudit(
   );
 }
 
+/** Above this share of errored directory probes the audit is marked failed
+ *  instead of complete — a mostly-unknown audit must not drive the AI Coach. */
+const MAX_ERRORED_DIRECTORY_RATIO = 0.5;
+
 /** DFS-backed audit path. Runs synchronously (~5-9s for ~9 directories),
  *  inserts a single nap_audits row stamped as 'complete' on success or
  *  'failed' on exception. Never throws to the caller.
@@ -361,6 +380,18 @@ async function runDfsAudit(
     }
 
     const result = await runDfsCitationAudit(canonical, directories, siblings);
+
+    // Integrity gate, same idea as the scan's MAX_FAILED_POINT_RATIO: errored
+    // directories are now omitted from the findings rather than reported as
+    // missing, so an audit taken during a DFS outage would otherwise be saved
+    // as a clean 'complete' with almost nothing in it. Refuse to publish it.
+    const erroredCount = result.errored_directories.length;
+    if (result.probed_count > 0 && erroredCount / result.probed_count > MAX_ERRORED_DIRECTORY_RATIO) {
+      throw new Error(
+        `citation audit incomplete: ${erroredCount}/${result.probed_count} directory probes errored ` +
+          `(${result.errored_directories.join(', ')}) — not publishing findings`
+      );
+    }
 
     const findings = result.findings;
     const totalCitations = findings.citations.length;

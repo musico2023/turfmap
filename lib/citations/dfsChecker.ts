@@ -46,10 +46,22 @@ const DFS_LIVE_ADVANCED = '/v3/serp/google/organic/live/advanced';
  *  at concurrency 6 = 2 batches sequentially = ~3-5s total. */
 const CITATION_CONCURRENCY = 6;
 
-/** Per-call DFS retry: same retryable-codes list as the grid scanner.
- *  IP-not-whitelisted blips on dual-stack networks clear with one retry. */
-const DFS_RETRYABLE_TASK_CODES = new Set<number>([40207]);
-const DFS_MAX_ATTEMPTS = 2;
+/** Per-call DFS retry — kept in step with lib/dataforseo/client.ts.
+ *
+ *  40207 = IP-not-whitelisted blip on dual-stack networks.
+ *  40101 = "Internal SE Server Error", a DFS capacity dip. This was missing
+ *  here even after the grid client learned it, so a transient 40101 on the
+ *  google_business probe was reported to a client as "no Google Business
+ *  Profile — high priority" (Five Star Painting of Austin, 2026-09-16; a
+ *  470-review listing). Four attempts with exponential jittered backoff is
+ *  what cleared 40101 on the grid scanner. */
+const DFS_RETRYABLE_TASK_CODES = new Set<number>([40207, 40101]);
+const DFS_MAX_ATTEMPTS = 4;
+
+/** 500ms → 1s → 2s, jittered so concurrent probes don't retry in lockstep. */
+function retryDelayMs(attempt: number): number {
+  return 500 * Math.pow(2, attempt - 1) + Math.random() * 300;
+}
 
 /** Canonical business profile we audit against. Subset of the
  *  BL BusinessProfile shape — phone is optional because some buyers
@@ -69,6 +81,13 @@ export type CitationBusinessProfile = {
   telephone?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  /** Google place_id for the audited location, set ONLY when TurfMap has
+   *  already linked and verified the listing (see locationToCitationProfile).
+   *  When present the google_business directory is classified from it
+   *  directly instead of being probed — we already know the GBP exists, and
+   *  a flaky local_pack probe was reporting verified 470-review profiles as
+   *  missing. */
+  google_place_id?: string | null;
 };
 
 /** A sibling location of the same brand — used by sibling-aware
@@ -313,7 +332,7 @@ async function probeDirectoryViaSiteSerp(
       if (task.status_code === 20000) break;
       if (!DFS_RETRYABLE_TASK_CODES.has(task.status_code)) break;
       if (attempt < DFS_MAX_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+        await new Promise((r) => setTimeout(r, retryDelayMs(attempt)));
       }
     } catch (e) {
       lastError = e instanceof Error ? e.message : String(e);
@@ -327,7 +346,9 @@ async function probeDirectoryViaSiteSerp(
       found_name: null,
       found_snippet: null,
       cost_dollars: task?.cost ?? 0,
-      error: lastError ?? `DFS task ${task?.status_code}: ${task?.status_message ?? 'unknown'}`,
+      // A thrown request is always an error. A completed task that reports
+      // "no results" (40102) is a real absent answer, so error stays null.
+      error: task ? dfsTaskError(task.status_code, task.status_message) : (lastError ?? 'DFS request failed'),
     };
   }
 
@@ -455,7 +476,7 @@ async function probeDirectoryViaLocalPack(
       if (task.status_code === 20000) break;
       if (!DFS_RETRYABLE_TASK_CODES.has(task.status_code)) break;
       if (attempt < DFS_MAX_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
+        await new Promise((r) => setTimeout(r, retryDelayMs(attempt)));
       }
     } catch (e) {
       lastError = e instanceof Error ? e.message : String(e);
@@ -469,7 +490,9 @@ async function probeDirectoryViaLocalPack(
       found_name: null,
       found_snippet: null,
       cost_dollars: task?.cost ?? 0,
-      error: lastError ?? `DFS task ${task?.status_code}: ${task?.status_message ?? 'unknown'}`,
+      // A thrown request is always an error. A completed task that reports
+      // "no results" (40102) is a real absent answer, so error stays null.
+      error: task ? dfsTaskError(task.status_code, task.status_message) : (lastError ?? 'DFS request failed'),
     };
   }
 
@@ -562,15 +585,129 @@ function extractPhoneFromSnippet(snippet: string | null): string | null {
   return m?.[0] ?? null;
 }
 
-/** Pull a street-address-shaped fragment out of a free-text snippet.
- *  Heuristic: look for "<number> <one-or-more-words>" at the start of
- *  a sentence. Returns the whole matched fragment or null. */
-function extractAddressFromSnippet(snippet: string | null): string | null {
+/** Street-type words that terminate a US/CA street address. Requiring one
+ *  is what separates "500 N Capital of Texas Hwy" from snippet noise. */
+const STREET_SUFFIXES = [
+  'St', 'Street', 'Ave', 'Av', 'Avenue', 'Rd', 'Road', 'Blvd', 'Boulevard',
+  'Dr', 'Drive', 'Ln', 'Lane', 'Hwy', 'Highway', 'Pkwy', 'Parkway', 'Pky',
+  'Way', 'Ct', 'Court', 'Pl', 'Place', 'Cir', 'Circle', 'Ter', 'Terrace',
+  'Trl', 'Trail', 'Sq', 'Square', 'Loop', 'Pike', 'Fwy', 'Freeway', 'Expy',
+  'Expressway', 'Cres', 'Crescent', 'Plz', 'Plaza', 'Xing', 'Crossing',
+  'Tpke', 'Turnpike', 'Cswy', 'Causeway', 'Aly', 'Alley',
+];
+const DIRECTIONALS = 'N|S|E|W|NE|NW|SE|SW|North|South|East|West|Northeast|Northwest|Southeast|Southwest';
+
+/** Words that follow a number in snippets but are never a street name —
+ *  counts, times and durations. Checked against the first word after the
+ *  number, so "248 Photos", "470 Reviews" and "8:00 AM" are rejected even if
+ *  a suffix-shaped word appears later in the fragment. */
+const NON_STREET_WORDS = new Set([
+  'am', 'pm', 'photos', 'photo', 'reviews', 'review', 'ratings', 'rating',
+  'stars', 'star', 'years', 'year', 'yrs', 'months', 'days', 'hours', 'hrs',
+  'minutes', 'mins', 'customers', 'clients', 'jobs', 'projects', 'homes',
+  'people', 'employees', 'locations', 'times', 'percent', 'followers',
+  'likes', 'check', 'checkins', 'visits', 'votes',
+]);
+
+const ADDRESS_RE = new RegExp(
+  String.raw`\b(\d{1,6}[A-Za-z]?(?:-\d{1,6})?)\s+` +
+    String.raw`((?:(?:${DIRECTIONALS})\.?\s+)?` +
+    // Up to five name words, lowercase connectors allowed ("Capital of Texas").
+    // Separators like "·", "|", "•" and commas are excluded, so a match can't
+    // span two snippet fields.
+    String.raw`(?:[A-Za-z0-9][A-Za-z0-9'&.-]*\s+){0,5}?` +
+    String.raw`(?:${STREET_SUFFIXES.join('|')})\b\.?` +
+    String.raw`(?:\s+(?:${DIRECTIONALS})\b\.?)?)`,
+  'gi'
+);
+
+/** Pull a street address out of a free-text snippet, or null.
+ *
+ *  The previous heuristic was "a number followed by a capitalised word",
+ *  which read business hours and counters as addresses — "8:00 AM" became
+ *  the address "00 AM" and "248 Photos" became Yelp's address, and the
+ *  former was then reported to a client as a NAP mismatch to fix. It also
+ *  truncated real addresses at the first lowercase word ("500 N Capital").
+ *
+ *  Now a match must end in a street-type suffix, and the word after the
+ *  number must not be a count/time noun. Returning null is always safe:
+ *  classifyCitation treats a missing address as unverified, never mismatch. */
+export function extractAddressFromSnippet(snippet: string | null): string | null {
   if (!snippet) return null;
-  // Number + 1-6 words before a comma or period or end-of-string.
-  const re = /\b(\d{1,6}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,5})/;
-  const m = snippet.match(re);
-  return m?.[1] ?? null;
+  ADDRESS_RE.lastIndex = 0;
+  for (const m of snippet.matchAll(ADDRESS_RE)) {
+    const rest = m[2] ?? '';
+    const firstWord = rest
+      .replace(new RegExp(String.raw`^(?:${DIRECTIONALS})\.?\s+`, 'i'), '')
+      .split(/\s+/)[0]
+      ?.toLowerCase()
+      .replace(/[^a-z]/g, '');
+    if (firstWord && NON_STREET_WORDS.has(firstWord)) continue;
+    return `${m[1]} ${rest}`.trim();
+  }
+  return null;
+}
+
+/** DFS "No Search Results". An ANSWER, not a failure: the search ran and the
+ *  directory has no listing. Must map to absent — treating it as an error
+ *  both hid genuinely missing listings and counted them toward the audit's
+ *  integrity gate, which would fail whole audits for thin-footprint
+ *  businesses (found live on Bing Places, 2026-09-16). */
+export const DFS_NO_RESULTS_CODE = 40102;
+
+/** Error text for a non-successful DFS task, or null when the task outcome is
+ *  a real answer (success, or no results). */
+export function dfsTaskError(
+  statusCode: number | undefined,
+  statusMessage: string | undefined
+): string | null {
+  if (statusCode === 20000 || statusCode === DFS_NO_RESULTS_CODE) return null;
+  return `DFS task ${statusCode}: ${statusMessage ?? 'unknown'}`;
+}
+
+/** What a single probe tells us. `errored` is kept distinct from `absent`:
+ *  a DFS failure means we don't know, and must never be reported to a client
+ *  as "you have no listing here". */
+export function probeOutcome(probe: {
+  error: string | null;
+  url: string | null;
+}): 'errored' | 'absent' | 'found' {
+  if (probe.error) return 'errored';
+  if (!probe.url) return 'absent';
+  return 'found';
+}
+
+/** Which field actually drove a mismatch, with the matching canonical and
+ *  found values. Replaces `foundPhone && foundAddress ? 'address' : 'name'`,
+ *  which labelled any mismatch lacking a phone as a NAME mismatch while
+ *  putting the canonical ADDRESS beside it ("name: '00 AM' vs '500 North
+ *  Capital of Texas Highway'"). */
+export function describeMismatch(
+  canonical: { name: string; phone: string | null | undefined; address: string | null | undefined },
+  found: { name: string | null; phone: string | null; address: string | null }
+): { field: 'name' | 'address' | 'phone'; canonical: string; found: string } {
+  if (canonical.address && found.address && !addressMatches(canonical.address, found.address)) {
+    return { field: 'address', canonical: canonical.address, found: found.address };
+  }
+  if (canonical.phone && found.phone && !phoneMatches(canonical.phone, found.phone)) {
+    return { field: 'phone', canonical: canonical.phone, found: found.phone };
+  }
+  return { field: 'name', canonical: canonical.name, found: found.name ?? '' };
+}
+
+/** The google_business citation for a location whose GBP TurfMap has already
+ *  linked and verified, or null when there's no verified place_id and the
+ *  directory must be probed as before. */
+export function verifiedGbpCitation(business: CitationBusinessProfile): NapAuditCitation | null {
+  if (!business.google_place_id) return null;
+  return {
+    directory: 'google_business',
+    url: `https://www.google.com/maps/place/?q=place_id:${business.google_place_id}`,
+    name: business.name,
+    address: business.street_address || null,
+    phone: business.telephone ?? null,
+    status: 'matched',
+  };
 }
 
 /** Aggregate cost + per-directory probe summary returned alongside the
@@ -579,6 +716,13 @@ function extractAddressFromSnippet(snippet: string | null): string | null {
 export type DfsCitationAuditResult = {
   findings: NapAuditFindings;
   total_cost_dollars: number;
+  /** Directory ids whose probe errored after retries. They appear in neither
+   *  `citations` nor `missing` — we don't know their state. The caller uses
+   *  the count as an integrity gate (see runDfsAudit in autoAudit.ts). */
+  errored_directories: string[];
+  /** How many directories were actually probed (excludes a google_business
+   *  resolved from a verified place_id). Denominator for that gate. */
+  probed_count: number;
   per_directory_summary: Array<{
     directory_id: string;
     label: string;
@@ -666,8 +810,11 @@ export function resolveFoundNapForDirectory(
  * `occupied_by_sibling` populated. Pass an empty array (or omit) for
  * single-location buyers.
  *
- * Never throws — individual directory failures classify as
- * `missing` so a partial audit is more useful than no audit.
+ * Never throws. A directory whose probe errors is reported in
+ * `errored_directories` and omitted from both `citations` and `missing` —
+ * an outage is "unknown", not "you have no listing". (It used to classify
+ * as missing, which turned DFS 40101 blips into high-priority "claim your
+ * Google Business Profile" advice for businesses that already had one.)
  */
 export async function runDfsCitationAudit(
   business: CitationBusinessProfile,
@@ -678,12 +825,19 @@ export async function runDfsCitationAudit(
     return {
       findings: { citations: [], inconsistencies: [], missing: [] },
       total_cost_dollars: 0,
+      errored_directories: [],
+      probed_count: 0,
       per_directory_summary: [],
     };
   }
 
+  const gbpCitation = verifiedGbpCitation(business);
+  const toProbe = gbpCitation
+    ? directories.filter((d) => d.id !== 'google_business')
+    : Array.from(directories);
+
   const probes = await mapWithConcurrency(
-    Array.from(directories),
+    toProbe,
     CITATION_CONCURRENCY,
     (d) => probeDirectory(business, d)
   );
@@ -692,15 +846,40 @@ export async function runDfsCitationAudit(
   const inconsistencies: NapAuditInconsistency[] = [];
   const missing: NapAuditMissing[] = [];
   const summary: DfsCitationAuditResult['per_directory_summary'] = [];
+  const erroredDirectories: string[] = [];
   let totalCost = 0;
+
+  if (gbpCitation && directories.some((d) => d.id === 'google_business')) {
+    citations.push(gbpCitation);
+    summary.push({
+      directory_id: 'google_business',
+      label: 'Google Business Profile',
+      status: 'matched',
+      url: gbpCitation.url,
+      error: null,
+    });
+  }
 
   for (const probe of probes) {
     totalCost += probe.cost_dollars;
 
-    if (probe.error || !probe.url) {
-      // No listing found OR DFS errored. Both classify as
-      // 'missing' from the operator's perspective — they don't
-      // have a presence on this directory.
+    const outcome = probeOutcome(probe);
+    if (outcome === 'errored') {
+      // Unknown, not absent. Surface it to the operator in the summary, but
+      // keep it out of `missing` so the AI Coach never tells a client to
+      // claim a listing we simply failed to check.
+      erroredDirectories.push(probe.directory.id);
+      summary.push({
+        directory_id: probe.directory.id,
+        label: probe.directory.label,
+        status: 'unverified',
+        url: null,
+        error: probe.error,
+        debug: probe.debug ?? null,
+      });
+      continue;
+    }
+    if (outcome === 'absent') {
       missing.push({
         directory: probe.directory.id,
         priority: probe.directory.priority,
@@ -715,6 +894,10 @@ export async function runDfsCitationAudit(
       });
       continue;
     }
+
+    // outcome === 'found' guarantees a url; restated so the compiler narrows
+    // probe.url to string for the pushes below.
+    if (!probe.url) continue;
 
     // Listing exists — but first hard-gate on name match. If the
     // SERP returned a result whose title is clearly a different
@@ -824,13 +1007,12 @@ export async function runDfsCitationAudit(
     });
 
     if (canonicalStatus === 'mismatch') {
-      // For v1, flag the field generically. A future refinement
-      // would inspect which sub-field (name/phone/address) drove
-      // the mismatch and surface that specifically.
+      const detail = describeMismatch(
+        { name: business.name, phone: business.telephone ?? null, address: business.street_address },
+        { name: probe.found_name, phone: foundPhone, address: foundAddress }
+      );
       inconsistencies.push({
-        field: foundPhone && foundAddress ? 'address' : 'name',
-        canonical: business.street_address || business.name,
-        found: foundAddress || probe.found_name || '',
+        ...detail,
         citation_url: probe.url,
         directory: probe.directory.id,
       });
@@ -840,6 +1022,8 @@ export async function runDfsCitationAudit(
   return {
     findings: { citations, inconsistencies, missing },
     total_cost_dollars: totalCost,
+    errored_directories: erroredDirectories,
+    probed_count: toProbe.length,
     per_directory_summary: summary,
   };
 }
