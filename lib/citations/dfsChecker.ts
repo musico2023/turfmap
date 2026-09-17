@@ -643,7 +643,13 @@ export function extractAddressFromSnippet(snippet: string | null): string | null
       ?.toLowerCase()
       .replace(/[^a-z]/g, '');
     if (firstWord && NON_STREET_WORDS.has(firstWord)) continue;
-    return `${m[1]} ${rest}`.trim();
+    let fragment = `${m[1]} ${rest}`.trim();
+    // "143 4999 43 St SE": a stray number (unit, count) directly before the
+    // real house number gets absorbed as a name word. When the second token
+    // is itself a 3+ digit number, it is the house number. A 1–2 digit second
+    // token is a numbered street ("908 53 Avenue") and is left alone.
+    fragment = fragment.replace(/^\d{1,6}\s+(?=\d{3,6}\s)/, '');
+    return fragment;
   }
   return null;
 }
@@ -675,6 +681,33 @@ export function probeOutcome(probe: {
   if (probe.error) return 'errored';
   if (!probe.url) return 'absent';
   return 'found';
+}
+
+/** Should an absent result get one more probe before being reported missing?
+ *  Only for high-priority directories: those gaps lead the AI Coach's Fix
+ *  List, and Google's site: results are not deterministic — the identical
+ *  query returned Five Star Painting of Austin's BBB profile on one run and
+ *  left it out of the top 10 on the next (2026-09-16/17). */
+export function shouldRetryAbsent(probe: {
+  error: string | null;
+  url: string | null;
+  directory: { priority: string };
+}): boolean {
+  return probeOutcome(probe) === 'absent' && probe.directory.priority === 'high';
+}
+
+/** Combine a first probe with its recall retry. The retry only replaces the
+ *  original when it found the listing; a retry that errors or is also absent
+ *  keeps the original absent answer (an error on a second look must not
+ *  downgrade a real answer to "unknown"). Cost is always summed. */
+export function mergeRecallRetry<T extends { error: string | null; url: string | null; cost_dollars: number }>(
+  original: T,
+  retry: T
+): T {
+  const cost_dollars = original.cost_dollars + retry.cost_dollars;
+  return probeOutcome(retry) === 'found'
+    ? { ...retry, cost_dollars }
+    : { ...original, cost_dollars };
 }
 
 /** Which field actually drove a mismatch, with the matching canonical and
@@ -841,6 +874,21 @@ export async function runDfsCitationAudit(
     CITATION_CONCURRENCY,
     (d) => probeDirectory(business, d)
   );
+
+  // One recall retry for high-priority directories that came back absent
+  // (see shouldRetryAbsent). Bounded: at most one extra call per such
+  // directory, and only when the first answer was "not there".
+  const retryIdx = probes
+    .map((p, idx) => (shouldRetryAbsent(p) ? idx : -1))
+    .filter((idx) => idx >= 0);
+  if (retryIdx.length > 0) {
+    const retries = await mapWithConcurrency(retryIdx, CITATION_CONCURRENCY, (idx) =>
+      probeDirectory(business, probes[idx].directory)
+    );
+    retryIdx.forEach((idx, k) => {
+      probes[idx] = mergeRecallRetry(probes[idx], retries[k]);
+    });
+  }
 
   const citations: NapAuditCitation[] = [];
   const inconsistencies: NapAuditInconsistency[] = [];

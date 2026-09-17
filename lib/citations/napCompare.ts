@@ -42,15 +42,46 @@ export function normalizePhone(s: string | null | undefined): string {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-/** Lowercase + collapse whitespace. Strip punctuation to neutralize
- *  comma/period variants ("Toronto, ON" vs "Toronto ON"). */
+/** Street-type words → USPS abbreviation, so "Balsam Lane" and "Balsam Ln"
+ *  compare equal. Without this, "13661 Balsam Ln." vs "13661 Balsam Lane
+ *  North" scored 0.4 token similarity and was reported to a client as an
+ *  address mismatch on two directories — for his own correct address
+ *  (CertaPro NW Metro, 2026-09-17). It stayed hidden until the snippet
+ *  parser could actually read addresses. */
+const STREET_SUFFIX_CANON: Record<string, string> = {
+  street: 'st', avenue: 'ave', av: 'ave', road: 'rd', drive: 'dr', lane: 'ln',
+  boulevard: 'blvd', highway: 'hwy', parkway: 'pkwy', pky: 'pkwy', court: 'ct',
+  place: 'pl', circle: 'cir', terrace: 'ter', trail: 'trl', square: 'sq',
+  freeway: 'fwy', expressway: 'expy', crescent: 'cres', plaza: 'plz',
+  crossing: 'xing', turnpike: 'tpke', causeway: 'cswy', alley: 'aly',
+};
+const DIRECTIONAL_CANON: Record<string, string> = {
+  north: 'n', south: 's', east: 'e', west: 'w',
+  northeast: 'ne', northwest: 'nw', southeast: 'se', southwest: 'sw',
+};
+const DIRECTIONAL_ABBREVS = new Set(Object.values(DIRECTIONAL_CANON));
+/** Unit designators. The designator and the token after it are dropped —
+ *  "Rd Unit 4" and "Rd" are the same building for citation purposes. */
+const UNIT_WORDS = new Set(['unit', 'suite', 'ste', 'apt', 'apartment', 'bldg', 'building', 'fl', 'floor', 'rm', 'room']);
+
+/** Lowercase, strip punctuation, canonicalise street suffixes and
+ *  directionals, and drop unit designators. Comparison form only — never
+ *  shown to a user. */
 export function normalizeAddress(s: string | null | undefined): string {
   if (!s) return '';
-  return s
+  const tokens = s
     .toLowerCase()
+    .replace(/#\s*\w+/g, ' ')
     .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .split(/\s+/)
+    .filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (UNIT_WORDS.has(t)) { i++; continue; }
+    out.push(STREET_SUFFIX_CANON[t] ?? DIRECTIONAL_CANON[t] ?? t);
+  }
+  return out.join(' ');
 }
 
 /** Token-set similarity in [0,1]: |A∩B| / |A∪B|. */
@@ -156,6 +187,14 @@ export function addressMatches(
   const numA = a.match(streetNumRegex)?.[1] ?? null;
   const numB = b.match(streetNumRegex)?.[1] ?? null;
   if (!numA || !numB || numA !== numB) return false;
+  // Conflicting explicit directionals are different addresses ("100 N Main
+  // St" vs "100 S Main St"), however similar the rest is. A directional
+  // present on only one side is fine — directories routinely drop it.
+  const dirsA = a.split(' ').filter((t) => DIRECTIONAL_ABBREVS.has(t));
+  const dirsB = b.split(' ').filter((t) => DIRECTIONAL_ABBREVS.has(t));
+  if (dirsA.length > 0 && dirsB.length > 0 && !dirsA.some((d) => dirsB.includes(d))) {
+    return false;
+  }
   return tokenSetSimilarity(a, b) >= 0.5;
 }
 

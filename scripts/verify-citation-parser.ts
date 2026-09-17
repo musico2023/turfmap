@@ -18,8 +18,10 @@ import {
   runDfsCitationAudit,
   dfsTaskError,
   DFS_NO_RESULTS_CODE,
+  shouldRetryAbsent,
+  mergeRecallRetry,
 } from '../lib/citations/dfsChecker';
-import { classifyCitation } from '../lib/citations/napCompare';
+import { classifyCitation, addressMatches } from '../lib/citations/napCompare';
 import { locationToCitationProfile } from '../lib/brightlocal/autoAudit';
 import { directoriesForProfile } from '../lib/citations/directories';
 
@@ -78,6 +80,49 @@ function check(name: string, cond: boolean, detail?: unknown) {
       { name: 'Five Star Painting of Austin', phone: '(512) 379-6517', address: '500 N Capital of Texas Hwy' },
       { name: 'Five Star Painting of Austin', phone: '(512) 379-6517', address: null }
     ) === 'matched');
+
+  // ── address comparison: same place, different spelling ────────────────
+  // All from the 2026-09-17 backfill, where a now-working parser exposed that
+  // the comparator treated abbreviations as different addresses.
+  check('"13661 Balsam Ln." = "13661 Balsam Lane North" (CertaPro NW, flagged on 2 dirs)',
+    addressMatches('13661 Balsam Lane North', '13661 Balsam Ln.'));
+  check('"25 Amy Croft Dr" = "25 Amy Croft Drive" (D Spot sibling)',
+    addressMatches('25 Amy Croft Dr', '25 Amy Croft Drive'));
+  check('unit designator ignored ("Rd Unit 4" = "Rd")',
+    addressMatches('1475 Huron Church Rd Unit 4', '1475 Huron Church Rd'));
+  check('"#900" suite ignored',
+    addressMatches('7244 SW Durham Rd #900', '7244 Southwest Durham Road'));
+  check('"500 North Capital of Texas Highway" = "500 N Capital Of Texas Hwy"',
+    addressMatches('500 North Capital of Texas Highway', '500 N Capital Of Texas Hwy'));
+  // …but genuinely different addresses must stay different.
+  check('conflicting directionals differ ("100 N Main St" ≠ "100 S Main St")',
+    !addressMatches('100 N Main St', '100 S Main St'));
+  check('different house numbers differ (CertaPro Calgary vs its BBB address)',
+    !addressMatches('908 53 Avenue Northeast', '4999 43 St SE'));
+  check('CertaPro NW no longer classified a mismatch',
+    classifyCitation(
+      { name: 'CertaPro Painters of Northwest Metro Minneapolis, MN', phone: null, address: '13661 Balsam Lane North' },
+      { name: 'CertaPro Painters of Northwest Metro Minneapolis, MN', phone: null, address: '13661 Balsam Ln.' }
+    ) === 'matched');
+
+  // Stray leading number glued onto the real one (CertaPro Calgary's BBB).
+  const glued = extractAddressFromSnippet('143 4999 43 St SE, Calgary, AB');
+  check('stray leading number stripped ("143 4999 43 St SE" → "4999 43 St SE")', glued === '4999 43 St SE', glued);
+  const numbered = extractAddressFromSnippet('908 53 Avenue Northeast, Calgary');
+  check('numbered street kept ("908 53 Avenue Northeast")', numbered === '908 53 Avenue Northeast', numbered);
+
+  // ── recall retry ──────────────────────────────────────────────────────
+  const hi = { priority: 'high' }, med = { priority: 'medium' };
+  check('retry: high-priority absent → retried', shouldRetryAbsent({ error: null, url: null, directory: hi }));
+  check('retry: medium-priority absent → not retried', !shouldRetryAbsent({ error: null, url: null, directory: med }));
+  check('retry: errored → not retried (already retried at task level)', !shouldRetryAbsent({ error: 'x', url: null, directory: hi }));
+  check('retry: found → not retried', !shouldRetryAbsent({ error: null, url: 'https://bbb.org/x', directory: hi }));
+  const absent = { error: null, url: null, cost_dollars: 0.002, tag: 'first' };
+  const found = mergeRecallRetry(absent, { error: null, url: 'https://www.bbb.org/p', cost_dollars: 0.002, tag: 'retry' });
+  check('merge: retry that finds the listing wins', found.url === 'https://www.bbb.org/p' && found.tag === 'retry');
+  check('merge: cost is summed', Math.abs(found.cost_dollars - 0.004) < 1e-9);
+  const erroredRetry = mergeRecallRetry(absent, { error: '40101', url: null, cost_dollars: 0.002, tag: 'retry' });
+  check('merge: errored retry keeps the original absent answer', erroredRetry.tag === 'first' && erroredRetry.error === null);
 
   // ── mismatch labelling ────────────────────────────────────────────────
   const addr = describeMismatch(
