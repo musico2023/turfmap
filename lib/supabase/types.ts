@@ -378,6 +378,10 @@ export type ScanShareLinkRow = {
    *  Does not alter scans.momentum — the dashboard, portal and PDF still
    *  show it. */
   hide_momentum: boolean | null;
+  /** Presentation-only: when true, /share/<id> omits the AI Coach panel.
+   *  Does not alter ai_insights — the dashboard, portal and PDF still show
+   *  it. */
+  hide_ai_coach: boolean | null;
 };
 
 export type ScanRow = {

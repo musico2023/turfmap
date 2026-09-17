@@ -14,6 +14,7 @@
  *     ctaText?: string,         // bottom-of-page CTA, e.g. "Talk to us"
  *     ctaUrl?: string,          // CTA target URL
  *     hideMomentum?: boolean,   // omit the Momentum card on the public view
+ *     hideAiCoach?: boolean,    // omit the AI Coach panel on the public view
  *   }
  *
  * Response: { id, url, expiresAt }
@@ -36,6 +37,9 @@ const PostBody = z.object({
   // when the prior scan is an unrepresentative baseline and the delta
   // would overstate the change. Leaves scans.momentum untouched.
   hideMomentum: z.boolean().optional(),
+  // Presentation-only: omit the AI Coach panel on the public view. Leaves
+  // ai_insights untouched.
+  hideAiCoach: z.boolean().optional(),
 });
 
 const DEFAULT_DAYS = 30;
@@ -93,6 +97,7 @@ export async function POST(
       cta_text: parsed.ctaText ?? null,
       cta_url: parsed.ctaUrl ?? null,
       hide_momentum: parsed.hideMomentum ?? false,
+      hide_ai_coach: parsed.hideAiCoach ?? false,
     })
     .select('*')
     .single<ScanShareLinkRow>();

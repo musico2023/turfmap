@@ -770,12 +770,19 @@ export default async function PublicSharePage({
               discountedUnlock={discountedUnlock}
             />
           ) : (
-            <AICoach
-              scanId={scan.id}
-              shareId={shareId}
-              insight={insight}
-              scanComplete={Boolean(scan)}
-            />
+            // hide_ai_coach is per-link: an operator can send a clean map when
+            // a scan's stored recommendations are known to be wrong, without
+            // deleting the insight from the dashboard/portal/PDF. Only the
+            // full-client panel is suppressible — a preview's lock is its
+            // conversion CTA, and its sentinel above must stay.
+            !share.hide_ai_coach && (
+              <AICoach
+                scanId={scan.id}
+                shareId={shareId}
+                insight={insight}
+                scanComplete={Boolean(scan)}
+              />
+            )
           )}
         </div>
       </div>
