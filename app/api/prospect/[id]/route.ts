@@ -28,52 +28,20 @@ import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getTurfScoreBand } from '@/lib/metrics/turfScoreBands';
 import type { ProspectRow } from '@/lib/supabase/types';
+import { checkRateLimit, clientIpFromRequest } from '@/lib/security/rateLimit';
 
 export const runtime = 'nodejs';
 
 // ─── Rate limit ────────────────────────────────────────────────────────
 //
-// Sliding-window-ish limit: 100 reqs per IP per rolling hour, kept
-// in a Map<ip, { count, windowStart }>. When the window hits 1h
-// from the first request, it resets. Crude but sufficient for
-// enumeration-prevention; this isn't auth.
-//
-// Module-level state: Vercel Fluid Compute reuses instances across
-// concurrent requests, so the Map persists for the instance's
-// lifetime. A new instance gets a fresh Map; that's fine because
-// (a) instances last minutes-to-hours under load, and (b) cross-
-// instance bypass requires hitting different regions, which is
-// expensive for an attacker.
+// 100 reqs per IP per rolling hour, for enumeration-prevention (this
+// isn't auth). The implementation moved to lib/security/rateLimit so
+// /api/places/resolve — which spends Google Places budget per call —
+// could share it instead of growing a second copy. Behaviour here is
+// unchanged; only the bucket name is new.
 
 const RATE_LIMIT_MAX = 100;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-
-type RateLimitEntry = { count: number; windowStart: number };
-const rateLimitState = new Map<string, RateLimitEntry>();
-
-function checkRateLimit(ip: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const entry = rateLimitState.get(ip);
-  if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
-    rateLimitState.set(ip, { count: 1, windowStart: now });
-    return { allowed: true, remaining: RATE_LIMIT_MAX - 1 };
-  }
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return { allowed: false, remaining: 0 };
-  }
-  entry.count++;
-  return { allowed: true, remaining: RATE_LIMIT_MAX - entry.count };
-}
-
-function clientIpFromRequest(req: Request): string {
-  // Vercel sets x-forwarded-for. First IP is the client; subsequent
-  // entries are intermediate proxies. Fall back to a literal
-  // 'unknown' so the rate limiter still groups requests sensibly
-  // when the header is absent.
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) return xff.split(',')[0].trim();
-  return req.headers.get('x-real-ip') ?? 'unknown';
-}
 
 // ─── Handler ──────────────────────────────────────────────────────────
 
@@ -92,7 +60,10 @@ export async function GET(
   // Rate limit FIRST — short-circuits enumeration before we burn
   // a DB roundtrip.
   const ip = clientIpFromRequest(req);
-  const rl = checkRateLimit(ip);
+  const rl = checkRateLimit('prospect_detail', ip, {
+    max: RATE_LIMIT_MAX,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'rate_limit_exceeded' },
