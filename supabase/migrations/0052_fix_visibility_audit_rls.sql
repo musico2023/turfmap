@@ -1,0 +1,41 @@
+-- Cross-tenant read leak on visibility_audits / roadmap_actions.
+--
+-- 0022 created these policies:
+--
+--   create policy "agency staff read audits" on visibility_audits
+--     for select to authenticated using (true);
+--   create policy "agency staff read actions" on roadmap_actions
+--     for select to authenticated using (true);
+--
+-- with the rationale "the only way to GET an audit row is via a client_id
+-- the agency user already knows about". Both halves are wrong:
+--
+--   1. `authenticated` is not agency staff. Portal BUYERS hold real
+--      Supabase sessions (app/auth/callback exchanges an OTP on the
+--      anon-key client), so every client user of every tenant has this
+--      role.
+--   2. PostgREST needs no client_id. `GET /rest/v1/visibility_audits
+--      ?select=*` with the public anon key plus any signed-in user's JWT
+--      returns every tenant's rows.
+--
+-- Verified 2026-09-22 against production: a throwaway user with NO
+-- client_users row read visibility_audits across tenants, including
+-- roadmap_pdf_url and prep_notes_url — 90-day signed Storage URLs to the
+-- $499 Roadmap PDF and internal strategist prep notes. Exposure at the
+-- time: 5 audits across 5 clients (3 with a Roadmap URL, 1 with prep
+-- notes) reachable by any of 5 portal logins. Directly violates
+-- CLAUDE.md principle 4: "A client must never see another client's data."
+--
+-- Fix: drop both policies. RLS stays enabled, so these tables become
+-- deny-all for anon and authenticated — matching every other tenant table
+-- in the schema. Nothing breaks: every call site reads through
+-- getServerSupabase (service role), which bypasses RLS. Verified across
+-- app/, lib/ and components/ — no browser/anon client touches either
+-- table.
+--
+-- If per-tenant read is ever needed from the browser, add a policy with a
+-- real predicate (client_id in the caller's client_users rows), never
+-- `using (true)`.
+
+drop policy if exists "agency staff read audits" on public.visibility_audits;
+drop policy if exists "agency staff read actions" on public.roadmap_actions;
