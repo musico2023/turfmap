@@ -24,6 +24,7 @@
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { COACH_MODEL, getAnthropic } from '@/lib/anthropic/client';
+import { detectFranchise } from '@/lib/business/franchise';
 import {
   TURF_COACH_PROMPT_VERSION,
   TURF_COACH_SYSTEM_PROMPT,
@@ -305,15 +306,19 @@ export async function generateInsight(
     .slice(-7)
     .map(([date, score]) => ({ date, score }));
 
-  // GBP signals — latest Google Places snapshot for this location.
-  const gbpSignals: GbpSignalsContext | null = scanLocation
-    ? await (async () => {
-        const matchStatus = scanLocation.google_place_match_status;
-        if (matchStatus === 'rejected' || matchStatus === 'no_match') {
-          return null;
-        }
-        const row = await getLatestSignals(supabase, scanLocation.id);
-        if (!row) return null;
+  // GBP signals — latest Google Places snapshot for this location. The row
+  // is hoisted (rather than consumed inside the IIFE) because the franchise
+  // check below needs its website_uri, and re-querying for one column would
+  // be a second round-trip for the same row.
+  const gbpRow = scanLocation
+    && scanLocation.google_place_match_status !== 'rejected'
+    && scanLocation.google_place_match_status !== 'no_match'
+      ? await getLatestSignals(supabase, scanLocation.id)
+      : null;
+
+  const gbpSignals: GbpSignalsContext | null = gbpRow
+    ? (() => {
+        const row = gbpRow;
         const hours = row.regular_opening_hours as
           | { weekdayDescriptions?: string[] }
           | null;
@@ -330,6 +335,15 @@ export async function generateInsight(
         };
       })()
     : null;
+
+  // Franchise context — decides whether website-content recommendations are
+  // executable by this operator at all. A franchisee can't publish to the
+  // brand's corporate domain, so the Coach must reframe those as requests to
+  // corporate instead of shipping impossible advice (see lib/business/franchise).
+  const franchise = detectFranchise({
+    businessName: client.business_name,
+    websiteUri: gbpRow?.website_uri ?? null,
+  });
 
   // Review velocity — the RATE of new reviews, derived from gbp_signals
   // count snapshots over time. The single highest-leverage prominence lever;
@@ -432,6 +446,7 @@ export async function generateInsight(
     gbpSignals,
     reviewVelocity,
     crossKeyword,
+    franchise: franchise.isFranchise ? franchise : null,
   });
 
   // 3. Call Sonnet with structured output + prompt caching.

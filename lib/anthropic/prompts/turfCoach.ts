@@ -53,7 +53,7 @@ import type { NapAuditFindings } from '@/lib/supabase/types';
 // place — lib/google/gbpSignalProvenance.ts. Add new fields there first.
 import { PLACES_PHOTOS_CAP } from '@/lib/google/gbpSignalProvenance';
 
-export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v11';
+export const TURF_COACH_PROMPT_VERSION = 'turf_coach_v12';
 
 export const TurfCoachAction = z.object({
   priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -168,6 +168,16 @@ If the user prompt includes a "## GBP signals" section, those values are grounde
 - **GBP categories are NOT in this data.** The "Google Places type taxonomy" line (e.g. general_contractor, furniture_store) is Google's COARSE machine classification — NOT the GBP categories the owner selected, which the Places API does not expose. NEVER assert what the business's current GBP primary/secondary category "is" from it, and NEVER recommend "add/switch to category X" as if you know the current categories — a kitchen remodeler appears here as general_contractor and may ALREADY have "Kitchen remodeler" set, so recommending they add it would be wrong. At most, suggest the operator VERIFY their GBP primary category is the most specific match for the target keyword — framed as a check, never a correction.
 
 These permissions extend ONLY to the audited business, never to competitors. Competitor reviews/categories/hours are still off-limits.
+
+## Franchisees
+
+If the user prompt includes a "## Franchise" section, the audited business is a FRANCHISEE. It operates the brand locally but does NOT control the brand's website. Recommendations must respect that:
+
+- **NEVER recommend building, publishing or editing pages on the corporate domain.** No "build N neighborhood landing pages", no "add a city page", no "optimise your homepage H1" — the operator cannot do any of it, and advice they can't execute destroys the report's credibility.
+- When the geographic gap genuinely calls for local content, phrase it as a REQUEST TO CORPORATE, naming the exact ask: e.g. "ask your brand's marketing team to publish a location page for <area> under <corporate path>". If the Franchise section lists an existing location-page path, cite it as precedent — an ask that points at a page the brand already runs for another area is far likelier to be granted.
+- Lead instead with the levers a franchisee genuinely owns: their own Google Business Profile (photos, hours, services, service-area settings, Q&A, Posts), review generation and response, local citations and directory listings for THEIR location, and local partnerships or sponsorships.
+- A franchisee usually shares the brand with sibling franchisees in nearby territories. Never recommend competing against, outranking or targeting a same-brand sibling's territory — say so plainly if the grid shows one, and keep the recommendation inside the audited territory.
+- Do NOT assume the franchisee controls pricing, brand messaging, or the national ad budget.
 
 # NAP audit findings (when present)
 
@@ -353,6 +363,17 @@ export function buildTurfCoachUserPrompt(input: {
     turfReach: number | null;
     turfRank: number | null;
   }> | null;
+  /** Set only when the audited business is a franchisee (see
+   *  lib/business/franchise). Renders a "## Franchise" section and flips
+   *  the web-content rules — a franchisee cannot publish to the brand's
+   *  corporate domain. */
+  franchise?: {
+    brand: string | null;
+    territory: string | null;
+    corporateHost: string | null;
+    locationPath: string | null;
+    signals: string[];
+  } | null;
 }): string {
   const center = Math.floor(input.rankGrid.length / 2);
   const gridText = input.rankGrid
@@ -404,8 +425,8 @@ ${gridText}
 
 Top observed competitor brands in the 3-pack (collapsed by brand-root, ranked by appearance count). These are the ONLY competitor names you may reference. Where a competitor shows a ★ rating + review count, that is real data — use it to quantify the prominence gap (e.g. "they have 340 reviews to your 12"):
 ${compRows}
-${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderGbpSignalsSection(input.gbpSignals)}${renderReviewVelocitySection(input.reviewVelocity)}${renderCrossKeywordSection(input.crossKeyword, input.keyword)}${renderNapAuditSection(input.napAudit)}
-Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR photo counts, GBP age, or competitor names not in the list above. Competitor ratings + review counts ARE listed where available — cite those to quantify the prominence gap, but never invent a competitor rating/review count that isn't shown.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, photos count, hours, and business status verbatim from that section. Do NOT state the current GBP category or recommend a specific category change — the Places type taxonomy is not the owner\'s GBP categories.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}${input.reviewVelocity ? ' Review velocity is present — weight review-generation advice by the actual pace: a STALLED or slow pace is a top-priority lever, a strong pace means reviews are NOT the gap (don\'t lead with them).' : ''}${(input.crossKeyword?.length ?? 0) > 1 ? ' Cross-keyword data is present — if a tracked keyword sits at score 0 / reach 0%, call it out as the wrong battle (recommend dropping or replacing it) and concentrate effort on the winnable keyword(s).' : ''}
+${renderFranchiseSection(input.franchise)}${renderScoreHistorySection(input.scoreHistory ?? [])}${renderSiblingsSection(input.siblingLocations ?? [])}${renderGbpSignalsSection(input.gbpSignals)}${renderReviewVelocitySection(input.reviewVelocity)}${renderCrossKeywordSection(input.crossKeyword, input.keyword)}${renderNapAuditSection(input.napAudit)}
+Return the structured playbook now. Remember: cite TurfScore / TurfReach / TurfRank / Momentum by name; use the band label when interpreting TurfScore; do not invent COMPETITOR photo counts, GBP age, or competitor names not in the list above. Competitor ratings + review counts ARE listed where available — cite those to quantify the prominence gap, but never invent a competitor rating/review count that isn't shown.${input.gbpSignals ? ' GBP signals for the audited business are present — you MAY cite the audited business\'s rating, review count, photos count, hours, and business status verbatim from that section. Do NOT state the current GBP category or recommend a specific category change — the Places type taxonomy is not the owner\'s GBP categories.' : ''}${input.napAudit ? ' If the NAP audit section is present, cite specific directories and inconsistency fields by name when proposing citation cleanup.' : ''}${(input.siblingLocations ?? []).length > 0 ? ' This is a multi-location brand: scope recommendations to the audited location, and never recommend "fixing" a sibling location\'s legitimate listing.' : ''}${input.reviewVelocity ? ' Review velocity is present — weight review-generation advice by the actual pace: a STALLED or slow pace is a top-priority lever, a strong pace means reviews are NOT the gap (don\'t lead with them).' : ''}${(input.crossKeyword?.length ?? 0) > 1 ? ' Cross-keyword data is present — if a tracked keyword sits at score 0 / reach 0%, call it out as the wrong battle (recommend dropping or replacing it) and concentrate effort on the winnable keyword(s).' : ''}${input.franchise ? ' This business is a FRANCHISEE: do not recommend building or editing pages on the corporate domain — frame any content need as a specific ask to corporate, and lead with the GBP / reviews / citations levers the franchisee actually controls.' : ''}
 
 LEVER PRIORITIZATION (apply before writing actions): rank the levers by the business's actual bottleneck, not by what's easiest to name. High TurfRank + low TurfReach = a REACH problem (push review velocity, proximity/neighborhood content, satellite coverage) — do NOT lead with citation cleanup. A thin/inconsistent citation footprint = a prominence FOUNDATION gap (citations matter). A decent footprint that's already winning where it appears = citations are LOW leverage; don't recommend them just because the audit lists a few missing directories.`;
 }
@@ -459,6 +480,42 @@ Rules:
 /** GBP signals block — most recent Google Places snapshot for the
  *  audited location's verified listing. Empty when no signals row
  *  exists (no place_id matched at onboarding, or refresh hasn't run). */
+/** Franchise context. Rendered before every other section because it
+ *  constrains which ACTIONS are executable at all — a franchisee cannot
+ *  publish to the brand's domain, so web-content advice has to become an
+ *  ask to corporate. Empty string when the business is independent, so the
+ *  prompt is byte-identical to before for non-franchise clients. */
+function renderFranchiseSection(
+  franchise:
+    | {
+        brand: string | null;
+        territory: string | null;
+        corporateHost: string | null;
+        locationPath: string | null;
+        signals: string[];
+      }
+    | null
+    | undefined
+): string {
+  if (!franchise) return '';
+  const brand = franchise.brand ?? 'a national brand';
+  const territory = franchise.territory
+    ? `, operating the "${franchise.territory}" territory`
+    : '';
+  const site = franchise.corporateHost
+    ? `Their website is a location page on the corporate domain ${franchise.corporateHost}${
+        franchise.locationPath ? ` (their section: ${franchise.locationPath})` : ''
+      } — the operator CANNOT publish or edit pages there.`
+    : 'The brand, not the operator, controls the website.';
+  return `
+## Franchise
+This business is a FRANCHISEE of ${brand}${territory}.
+Detected because: ${franchise.signals.join('; ')}.
+${site}
+Apply the Franchisees rules: no corporate-domain content actions; frame any content need as a specific, named ask to corporate; lead with the GBP / reviews / citations levers the franchisee controls.
+`;
+}
+
 function renderGbpSignalsSection(
   signals: GbpSignalsContext | null | undefined
 ): string {
