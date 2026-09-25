@@ -40,7 +40,7 @@ import {
   type RoadmapKeywordStats,
 } from '@/lib/ai/roadmapGenerator';
 import { patchVisibilityAudit } from '@/lib/audit/visibilityAudits';
-import { uploadRoadmapPdf, signedUrlForAuditFile } from '@/lib/audit/storage';
+import { uploadRoadmapPdf } from '@/lib/audit/storage';
 import {
   RoadmapPdf,
   type RoadmapPdfData,
@@ -65,6 +65,7 @@ import type {
   TrackedKeywordRow,
   VisibilityAuditRow,
 } from '@/lib/supabase/types';
+import { appOrigin } from '@/lib/urls';
 
 export type GenerateRoadmapResult =
   | {
@@ -365,21 +366,22 @@ export async function generateAndStoreRoadmapPdf(
   if (!upload.ok) {
     return { ok: false, stage: 'upload-pdf', error: upload.error };
   }
-  const signed = await signedUrlForAuditFile(supabase, upload.path);
-  if (!signed.ok) {
-    return { ok: false, stage: 'sign-pdf', error: signed.error };
-  }
+  // Stable route, not a signed Storage URL: a signed URL bakes an expiry
+  // into the column and into every email built from it, and all three
+  // stored links had lapsed by the time anyone noticed (2026-09-24). The
+  // route signs nothing — it streams the object per request.
+  const roadmapUrl = `${appOrigin()}/api/audit/${audit.id}/roadmap`;
 
   // ─── 6. Stamp the audit row ────────────────────────────────────────
   await patchVisibilityAudit(supabase, audit.id, {
-    roadmap_pdf_url: signed.url,
+    roadmap_pdf_url: roadmapUrl,
     lift_promise_target_score: projectedTurfScore,
   });
 
   return {
     ok: true,
     pdfBuffer,
-    roadmapUrl: signed.url,
+    roadmapUrl,
     projectedTurfScore,
     ninetyDayTargetLift: roadmap.ninetyDayTargetLift,
     businessName: client.business_name,

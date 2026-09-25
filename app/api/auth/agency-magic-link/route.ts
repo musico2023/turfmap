@@ -32,6 +32,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { isAgencyDomainEmail } from '@/lib/auth/agencyDomains';
 import { sendMagicLink } from '@/lib/auth/sendMagicLink';
 import { appOrigin } from '@/lib/urls';
+import { checkRateLimit, clientIpFromRequest } from '@/lib/security/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -39,6 +40,38 @@ const Body = z.object({
   email: z.string().email().max(320),
   next: z.string().startsWith('/').optional(),
 });
+
+/** Sign-in emails are free to request and land in someone else's inbox, so
+ *  both axes matter: an IP looping the endpoint (mail-bomb, enumeration)
+ *  and one ADDRESS being targeted from many IPs. Neither route had any
+ *  limit — an unauthenticated caller could send unlimited mail to any
+ *  address, which is abuse of the recipient and burns our Resend sending
+ *  reputation. Checked before any lookup or send. */
+const MAGIC_LINK_WINDOW_MS = 60 * 60 * 1000;
+const MAGIC_LINK_MAX_PER_IP = 10;
+const MAGIC_LINK_MAX_PER_EMAIL = 5;
+
+function magicLinkRateLimited(
+  req: Request,
+  email: string
+): NextResponse | null {
+  const byIp = checkRateLimit('magic_link_ip', clientIpFromRequest(req), {
+    max: MAGIC_LINK_MAX_PER_IP,
+    windowMs: MAGIC_LINK_WINDOW_MS,
+  });
+  const byEmail = checkRateLimit('magic_link_email', email.trim().toLowerCase(), {
+    max: MAGIC_LINK_MAX_PER_EMAIL,
+    windowMs: MAGIC_LINK_WINDOW_MS,
+  });
+  if (byIp.allowed && byEmail.allowed) return null;
+  const retryAfter = Math.max(byIp.retryAfterSec, byEmail.retryAfterSec);
+  // Deliberately identical wording whichever limit tripped — saying which
+  // one would tell a caller whether an address is being targeted.
+  return NextResponse.json(
+    { error: 'Too many sign-in requests. Try again in a little while.' },
+    { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+  );
+}
 
 export async function POST(req: Request) {
   let parsed: z.infer<typeof Body>;
@@ -58,6 +91,10 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.email.trim().toLowerCase();
+
+  // Before any account lookup or send.
+  const limited = magicLinkRateLimited(req, email);
+  if (limited) return limited;
   const admin = getServerSupabase();
 
   // ─── 1. Agency staff lookup ─────────────────────────────────────────

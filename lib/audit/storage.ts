@@ -17,6 +17,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { marked } from 'marked';
+import { appOrigin } from '@/lib/urls';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseLike = SupabaseClient<any, any, any>;
@@ -293,17 +294,17 @@ export async function uploadAuditArtifacts(
   });
   if (!prepUp.ok) return { ok: false, stage: 'prep', error: prepUp.error };
 
-  const pdfSigned = await signedUrlForAuditFile(supabase, pdfUp.path);
-  if (!pdfSigned.ok)
-    return { ok: false, stage: 'sign-pdf', error: pdfSigned.error };
-
-  const prepSigned = await signedUrlForAuditFile(supabase, prepUp.path);
-  if (!prepSigned.ok)
-    return { ok: false, stage: 'sign-prep', error: prepSigned.error };
-
+  // Stable app routes, NOT signed Storage URLs. A signed URL freezes an
+  // expiry into whatever we persist or email; every Roadmap link minted
+  // this way had already lapsed (2026-09-24), so buyers clicking the
+  // 60-day milestone email got a dead link to a $499 deliverable. The
+  // route re-reads the object per request, so a link mailed today still
+  // resolves next year. prep_notes_url already worked this way — the PDF
+  // now matches it.
+  const origin = appOrigin();
   return {
     ok: true,
-    roadmapUrl: pdfSigned.url,
-    prepNotesUrl: prepSigned.url,
+    roadmapUrl: `${origin}/api/audit/${args.auditId}/roadmap`,
+    prepNotesUrl: `${origin}/api/audit/${args.auditId}/prep-notes`,
   };
 }
